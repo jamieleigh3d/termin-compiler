@@ -1,0 +1,264 @@
+"""AST node definitions for the an AWS-native Termin runtime DSL.
+
+All nodes are Python dataclasses with a `line` field for error reporting.
+"""
+
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+# --- Type Expressions ---
+
+@dataclass
+class TypeExpr:
+    base_type: str  # "text", "whole_number", "currency", "enum", "reference", "automatic"
+    required: bool = False
+    unique: bool = False
+    minimum: Optional[int] = None
+    enum_values: list[str] = field(default_factory=list)
+    references: Optional[str] = None  # name of referenced Content
+    line: int = 0
+
+
+# --- Content ---
+
+@dataclass
+class Field:
+    name: str
+    type_expr: TypeExpr
+    line: int = 0
+
+
+@dataclass
+class AccessRule:
+    scope: str
+    verbs: list[str]  # "view", "create", "update", "delete", "create or update"
+    line: int = 0
+
+
+@dataclass
+class Content:
+    name: str
+    singular: str
+    fields: list[Field] = field(default_factory=list)
+    access_rules: list[AccessRule] = field(default_factory=list)
+    line: int = 0
+
+
+# --- Identity ---
+
+@dataclass
+class Identity:
+    provider: str  # "stub", or a custom auth provider
+    scopes: list[str] = field(default_factory=list)
+    line: int = 0
+
+
+@dataclass
+class Role:
+    name: str
+    scopes: list[str] = field(default_factory=list)
+    line: int = 0
+
+
+# --- State ---
+
+@dataclass
+class Transition:
+    from_state: str
+    to_state: str
+    required_scope: str
+    line: int = 0
+
+
+@dataclass
+class StateMachine:
+    content_name: str
+    machine_name: str
+    singular: str
+    initial_state: str
+    states: list[str] = field(default_factory=list)  # all states including initial
+    transitions: list[Transition] = field(default_factory=list)
+    line: int = 0
+
+
+# --- Events ---
+
+@dataclass
+class EventCondition:
+    field1: str
+    operator: str  # "at_or_below"
+    field2: str
+    line: int = 0
+
+
+@dataclass
+class EventAction:
+    create_content: str  # Content name to create
+    fields: list[str] = field(default_factory=list)  # field names to copy
+    line: int = 0
+
+
+@dataclass
+class EventRule:
+    content_name: str
+    trigger: str  # "created", "updated", "deleted"
+    condition: Optional[EventCondition] = None
+    action: Optional[EventAction] = None
+    line: int = 0
+
+
+# --- User Story Directives ---
+
+@dataclass
+class Directive:
+    line: int = 0
+
+
+@dataclass
+class ShowPage(Directive):
+    page_name: str = ""
+
+
+@dataclass
+class DisplayTable(Directive):
+    content_name: str = ""
+    columns: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ShowRelated(Directive):
+    content_name: str = ""
+    singular: str = ""
+    related_content: str = ""
+    group_by: str = ""
+
+
+@dataclass
+class HighlightRows(Directive):
+    field: str = ""
+    operator: str = ""
+    threshold_field: str = ""
+
+
+@dataclass
+class AllowFilter(Directive):
+    fields: list[str] = field(default_factory=list)
+
+
+@dataclass
+class AllowSearch(Directive):
+    fields: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SubscribeTo(Directive):
+    content_name: str = ""
+
+
+@dataclass
+class AcceptInput(Directive):
+    fields: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ValidateUnique(Directive):
+    field: str = ""
+
+
+@dataclass
+class CreateAs(Directive):
+    initial_state: str = ""
+
+
+@dataclass
+class AfterSave(Directive):
+    instruction: str = ""
+
+
+@dataclass
+class ShowChart(Directive):
+    content_name: str = ""
+    days: int = 30
+
+
+@dataclass
+class DisplayAggregation(Directive):
+    description: str = ""
+
+
+@dataclass
+class UserStory:
+    role: str
+    action: str
+    objective: str
+    directives: list[Directive] = field(default_factory=list)
+    line: int = 0
+
+
+# --- Navigation ---
+
+@dataclass
+class NavItem:
+    label: str
+    page_name: str
+    visible_to: list[str] = field(default_factory=list)  # role names or ["all"]
+    badge: Optional[str] = None  # expression like "open alert count"
+    line: int = 0
+
+
+@dataclass
+class NavBar:
+    items: list[NavItem] = field(default_factory=list)
+    line: int = 0
+
+
+# --- API ---
+
+@dataclass
+class ApiEndpoint:
+    method: str  # GET, POST, PUT, DELETE
+    path: str
+    description: str
+    line: int = 0
+
+
+@dataclass
+class ApiSection:
+    base_path: str
+    endpoints: list[ApiEndpoint] = field(default_factory=list)
+    line: int = 0
+
+
+# --- Streams ---
+
+@dataclass
+class Stream:
+    description: str
+    path: str
+    line: int = 0
+
+
+# --- Application ---
+
+@dataclass
+class Application:
+    name: str
+    description: str = ""
+    line: int = 0
+
+
+# --- Top-level Program ---
+
+@dataclass
+class Program:
+    application: Optional[Application] = None
+    identity: Optional[Identity] = None
+    roles: list[Role] = field(default_factory=list)
+    contents: list[Content] = field(default_factory=list)
+    state_machines: list[StateMachine] = field(default_factory=list)
+    events: list[EventRule] = field(default_factory=list)
+    stories: list[UserStory] = field(default_factory=list)
+    navigation: Optional[NavBar] = None
+    api: Optional[ApiSection] = None
+    streams: list[Stream] = field(default_factory=list)

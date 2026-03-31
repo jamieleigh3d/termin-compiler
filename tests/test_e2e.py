@@ -1,0 +1,417 @@
+"""End-to-end validation tests per MVP Spec Section 8.
+
+Uses FastAPI's TestClient for in-process testing — no subprocess needed.
+The generated app.py is compiled, imported, and tested directly.
+"""
+
+import importlib
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import pytest
+
+APP_DIR = Path(__file__).parent.parent
+APP_PY = APP_DIR / "app.py"
+DB_PATH = APP_DIR / "app.db"
+
+
+@pytest.fixture(scope="module")
+def client():
+    """Compile the app, import it, and return a TestClient."""
+    from fastapi.testclient import TestClient
+
+    # Compile fresh
+    subprocess.run(
+        [sys.executable, "-m", "termin.cli", "compile",
+         "examples/warehouse.termin", "-o", "app.py"],
+        cwd=str(APP_DIR), check=True,
+    )
+
+    # Clean DB
+    if DB_PATH.exists():
+        DB_PATH.unlink()
+
+    # Import the generated app module
+    spec = importlib.util.spec_from_file_location("generated_app", str(APP_PY))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    with TestClient(mod.app) as tc:
+        yield tc
+
+    if DB_PATH.exists():
+        DB_PATH.unlink()
+
+
+# ============================================================
+# SPEC 8.1: Content tables with correct columns/types/constraints
+# ============================================================
+
+class TestSpec81_DatabaseSchema:
+    def test_tables_exist(self, client):
+        """All Content tables accessible via API."""
+        assert client.get("/api/v1/products").status_code == 200
+        assert client.get("/api/v1/stock-levels").status_code == 200
+        assert client.get("/api/v1/alerts").status_code == 200
+
+    def test_product_fields_and_initial_state(self, client):
+        r = client.post("/api/v1/products", json={
+            "sku": "SCHEMA-001", "name": "Schema Test",
+            "unit_cost": 10.50, "category": "finished good"
+        })
+        assert r.status_code == 201
+        d = r.json()
+        assert d["sku"] == "SCHEMA-001"
+        assert d["unit_cost"] == 10.50
+        assert d["status"] == "draft"
+
+    def test_unique_sku_constraint(self, client):
+        client.post("/api/v1/products", json={"sku": "DUP-001", "name": "First"})
+        r = client.post("/api/v1/products", json={"sku": "DUP-001", "name": "Second"})
+        assert r.status_code == 409
+
+
+# ============================================================
+# SPEC 8.2: API routes respond correctly (CRUD + state transitions)
+# ============================================================
+
+class TestSpec82_APIRoutes:
+    def test_create_product(self, client):
+        r = client.post("/api/v1/products", json={
+            "sku": "CRUD-001", "name": "CRUD Test", "category": "raw material"
+        })
+        assert r.status_code == 201
+        assert "id" in r.json()
+
+    def test_list_products(self, client):
+        r = client.get("/api/v1/products")
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
+    def test_get_by_sku(self, client):
+        client.post("/api/v1/products", json={"sku": "GET-001", "name": "Gettable"})
+        r = client.get("/api/v1/products/GET-001")
+        assert r.status_code == 200
+        assert r.json()["name"] == "Gettable"
+
+    def test_update_product(self, client):
+        client.post("/api/v1/products", json={"sku": "UPD-001", "name": "Before"})
+        r = client.put("/api/v1/products/UPD-001", json={"name": "After"})
+        assert r.status_code == 200
+        assert r.json()["name"] == "After"
+
+    def test_delete_product(self, client):
+        client.post("/api/v1/products", json={"sku": "DEL-001", "name": "Deletable"})
+        r = client.delete("/api/v1/products/DEL-001",
+                          cookies={"termin_role": "warehouse manager"})
+        assert r.status_code == 200
+        assert r.json()["deleted"] is True
+
+    def test_get_nonexistent(self, client):
+        assert client.get("/api/v1/products/NOPE").status_code == 404
+
+    def test_create_stock_level(self, client):
+        r = client.post("/api/v1/products", json={"sku": "STK-001", "name": "Stocked"})
+        pid = r.json()["id"]
+        r2 = client.post("/api/v1/stock-levels", json={
+            "product": pid, "warehouse": "Main", "quantity": 50, "reorder_threshold": 10
+        })
+        assert r2.status_code == 201
+
+    def test_activate_product(self, client):
+        client.post("/api/v1/products", json={"sku": "ACT-001", "name": "Activatable"})
+        r = client.post("/api/v1/products/ACT-001/activate")
+        assert r.status_code == 200
+        assert r.json()["status"] == "active"
+
+    def test_discontinue_product(self, client):
+        client.post("/api/v1/products", json={"sku": "DIS-001", "name": "Discontinuable"})
+        client.post("/api/v1/products/DIS-001/activate")
+        r = client.post("/api/v1/products/DIS-001/discontinue",
+                        cookies={"termin_role": "warehouse manager"})
+        assert r.status_code == 200
+        assert r.json()["status"] == "discontinued"
+
+
+# ============================================================
+# SPEC 8.3: Access control enforced
+# ============================================================
+
+class TestSpec83_AccessControl:
+    def test_clerk_cannot_delete(self, client):
+        client.post("/api/v1/products", json={"sku": "PERM-001", "name": "Protected"})
+        r = client.delete("/api/v1/products/PERM-001",
+                          cookies={"termin_role": "warehouse clerk"})
+        assert r.status_code == 403
+
+    def test_executive_cannot_create(self, client):
+        r = client.post("/api/v1/products",
+                        json={"sku": "EXEC-001", "name": "Blocked"},
+                        cookies={"termin_role": "executive"})
+        assert r.status_code == 403
+
+    def test_executive_cannot_update(self, client):
+        client.post("/api/v1/products", json={"sku": "NOUPD-001", "name": "NoUpdate"})
+        r = client.put("/api/v1/products/NOUPD-001", json={"name": "Changed"},
+                       cookies={"termin_role": "executive"})
+        assert r.status_code == 403
+
+    def test_executive_can_view(self, client):
+        r = client.get("/api/v1/products", cookies={"termin_role": "executive"})
+        assert r.status_code == 200
+
+
+# ============================================================
+# SPEC 8.4: State transitions enforced
+# ============================================================
+
+class TestSpec84_StateTransitions:
+    def test_cannot_activate_already_active(self, client):
+        client.post("/api/v1/products", json={"sku": "ST-001", "name": "State Test"})
+        client.post("/api/v1/products/ST-001/activate")
+        r = client.post("/api/v1/products/ST-001/activate")
+        assert r.status_code == 409
+
+    def test_cannot_discontinue_draft(self, client):
+        """No direct draft -> discontinued path exists."""
+        client.post("/api/v1/products", json={"sku": "ST-002", "name": "Draft Only"})
+        r = client.post("/api/v1/products/ST-002/discontinue",
+                        cookies={"termin_role": "warehouse manager"})
+        assert r.status_code == 409
+
+    def test_clerk_cannot_discontinue(self, client):
+        """Clerk lacks admin scope for active -> discontinued."""
+        client.post("/api/v1/products", json={"sku": "ST-003", "name": "Clerk Block"})
+        client.post("/api/v1/products/ST-003/activate")
+        r = client.post("/api/v1/products/ST-003/discontinue",
+                        cookies={"termin_role": "warehouse clerk"})
+        assert r.status_code == 403
+
+    def test_reactivate_discontinued(self, client):
+        """Discontinued -> active with admin scope."""
+        client.post("/api/v1/products", json={"sku": "ST-004", "name": "Reactivate"})
+        client.post("/api/v1/products/ST-004/activate")
+        client.post("/api/v1/products/ST-004/discontinue",
+                    cookies={"termin_role": "warehouse manager"})
+        r = client.post("/api/v1/products/ST-004/activate",
+                        cookies={"termin_role": "warehouse manager"})
+        assert r.status_code == 200
+        assert r.json()["status"] == "active"
+
+
+# ============================================================
+# SPEC 8.5: Events fire
+# ============================================================
+
+class TestSpec85_Events:
+    def test_low_stock_creates_alert(self, client):
+        r = client.post("/api/v1/products", json={"sku": "EVT-001", "name": "Event Test"})
+        pid = r.json()["id"]
+        r2 = client.post("/api/v1/stock-levels", json={
+            "product": pid, "warehouse": "WH-A",
+            "quantity": 50, "reorder_threshold": 10
+        })
+        sl_id = r2.json()["id"]
+
+        # Update stock below threshold
+        client.put(f"/api/v1/stock-levels/{sl_id}",
+                   json={"quantity": 5, "reorder_threshold": 10})
+
+        alerts = client.get("/api/v1/alerts").json()
+        matching = [a for a in alerts if a["product"] == pid]
+        assert len(matching) >= 1
+        assert matching[0]["current_quantity"] == 5
+        assert matching[0]["threshold"] == 10
+
+    def test_stock_above_threshold_no_alert(self, client):
+        before_count = len(client.get("/api/v1/alerts").json())
+        r = client.post("/api/v1/products", json={"sku": "EVT-002", "name": "No Alert"})
+        pid = r.json()["id"]
+        r2 = client.post("/api/v1/stock-levels", json={
+            "product": pid, "warehouse": "WH-B",
+            "quantity": 100, "reorder_threshold": 10
+        })
+        sl_id = r2.json()["id"]
+        client.put(f"/api/v1/stock-levels/{sl_id}", json={"quantity": 80})
+        after_count = len(client.get("/api/v1/alerts").json())
+        assert after_count == before_count
+
+
+# ============================================================
+# SPEC 8.6: UI renders
+# ============================================================
+
+class TestSpec86_UIRendering:
+    def test_dashboard_renders(self, client):
+        r = client.get("/inventory_dashboard")
+        assert r.status_code == 200
+        assert "Inventory Dashboard" in r.text
+        assert "<table" in r.text
+
+    def test_add_product_page(self, client):
+        r = client.get("/add_product")
+        assert r.status_code == 200
+        assert "Add Product" in r.text
+        assert "<form" in r.text
+
+    def test_overview_page(self, client):
+        r = client.get("/inventory_overview")
+        assert r.status_code == 200
+        assert "Inventory Overview" in r.text
+
+    def test_receive_stock_page(self, client):
+        r = client.get("/receive_stock")
+        assert r.status_code == 200
+        assert "Receive Stock" in r.text
+        assert "<form" in r.text
+
+    def test_reorder_alerts_page(self, client):
+        r = client.get("/reorder_alerts")
+        assert r.status_code == 200
+        assert "Reorder Alerts" in r.text
+        assert "<table" in r.text
+
+    def test_dashboard_shows_data(self, client):
+        r = client.get("/inventory_dashboard")
+        # Should contain at least one SKU from earlier tests
+        assert "SCHEMA-001" in r.text or "CRUD-001" in r.text or "EVT-001" in r.text
+
+    def test_form_creates_product(self, client):
+        r = client.post("/add_product", data={
+            "sku": "FORM-001", "name": "Form Created",
+            "description": "Via form", "unit_cost": "5.00", "category": "packaging"
+        }, follow_redirects=False)
+        assert r.status_code == 303
+
+        r2 = client.get("/api/v1/products/FORM-001")
+        assert r2.status_code == 200
+        assert r2.json()["name"] == "Form Created"
+        assert r2.json()["status"] == "draft"
+
+
+# ============================================================
+# SPEC 8.7: Navigation respects roles
+# ============================================================
+
+class TestSpec87_Navigation:
+    def test_clerk_sees_dashboard(self, client):
+        r = client.get("/inventory_dashboard", cookies={"termin_role": "warehouse clerk"})
+        assert r.status_code == 200
+        assert "Dashboard" in r.text
+
+    def test_clerk_no_add_product_link(self, client):
+        r = client.get("/inventory_dashboard", cookies={"termin_role": "warehouse clerk"})
+        assert 'href="/add_product"' not in r.text
+
+    def test_manager_sees_add_product(self, client):
+        r = client.get("/inventory_dashboard", cookies={"termin_role": "warehouse manager"})
+        assert "Add Product" in r.text
+
+    def test_executive_sees_overview(self, client):
+        r = client.get("/inventory_dashboard", cookies={"termin_role": "executive"})
+        assert "Overview" in r.text
+
+    def test_clerk_sees_receive_stock(self, client):
+        r = client.get("/inventory_dashboard", cookies={"termin_role": "warehouse clerk"})
+        assert "Receive Stock" in r.text
+
+    def test_all_roles_see_alerts(self, client):
+        r = client.get("/inventory_dashboard", cookies={"termin_role": "executive"})
+        assert "Alerts" in r.text
+
+    def test_executive_no_receive_stock(self, client):
+        r = client.get("/inventory_dashboard", cookies={"termin_role": "executive"})
+        assert 'href="/receive_stock"' not in r.text
+
+    def test_role_switcher_present(self, client):
+        r = client.get("/inventory_dashboard")
+        assert "set-role" in r.text
+
+
+# ============================================================
+# SECURITY INVARIANT VALIDATION
+# ============================================================
+
+class TestSecurityInvariants:
+    def test_sql_injection_neutralized(self, client):
+        r = client.post("/api/v1/products", json={
+            "sku": "'; DROP TABLE products; --",
+            "name": "Injection Test"
+        })
+        assert r.status_code in (201, 422, 500)
+        # Table still works
+        r2 = client.get("/api/v1/products")
+        assert r2.status_code == 200
+
+    def test_scope_bypass_blocked(self, client):
+        r = client.post("/api/v1/products",
+                        json={"sku": "INJECT", "name": "Nope"},
+                        cookies={"termin_role": "executive"})
+        assert r.status_code == 403
+
+    def test_invalid_transition_rejected(self, client):
+        client.post("/api/v1/products", json={"sku": "SEC-001", "name": "Security"})
+        r = client.post("/api/v1/products/SEC-001/discontinue",
+                        cookies={"termin_role": "warehouse manager"})
+        assert r.status_code == 409
+
+    def test_invalid_enum_rejected(self, client):
+        r = client.post("/api/v1/products", json={
+            "sku": "BAD-001", "name": "Bad Category", "category": "INVALID"
+        })
+        assert r.status_code == 422
+
+    def test_compile_rejects_missing_access_rules(self):
+        from termin.parser import parse
+        from termin.analyzer import analyze
+        source = ('Users authenticate with stub\nScopes are "read"\n'
+                  'A "user" has "read"\n'
+                  'Content called "broken":\n  Each broken has a name which is text\n')
+        program, _ = parse(source)
+        result = analyze(program)
+        assert not result.ok
+        assert result.has_security_errors
+
+    def test_compile_rejects_undefined_reference(self):
+        from termin.parser import parse
+        from termin.analyzer import analyze
+        source = ('Users authenticate with stub\nScopes are "read"\n'
+                  'A "user" has "read"\n'
+                  'Content called "items":\n'
+                  '  Each item has a ref which references ghosts, required\n'
+                  '  Anyone with "read" can view items\n')
+        program, _ = parse(source)
+        result = analyze(program)
+        assert not result.ok
+        assert any(e.line > 0 for e in result.errors)
+
+
+# ============================================================
+# DEFINITION OF DONE
+# ============================================================
+
+class TestDefinitionOfDone:
+    def test_app_is_running(self, client):
+        assert client.get("/api/v1/products").status_code == 200
+
+    def test_compile_under_60s(self):
+        start = time.time()
+        subprocess.run(
+            [sys.executable, "-m", "termin.cli", "compile",
+             "examples/warehouse.termin", "-o", "app_timing.py"],
+            cwd=str(APP_DIR), check=True,
+        )
+        elapsed = time.time() - start
+        (APP_DIR / "app_timing.py").unlink(missing_ok=True)
+        assert elapsed < 60, f"Took {elapsed:.1f}s"
+
+    def test_termin_file_readable(self):
+        source = (APP_DIR / "examples" / "warehouse.termin").read_text()
+        assert "Application:" in source
+        assert "Each product has a" in source
+        assert "As a warehouse clerk, I want to" in source
+        assert "def " not in source

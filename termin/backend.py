@@ -1,0 +1,75 @@
+"""Backend protocol and plugin discovery for the Termin compiler.
+
+Backends implement the Backend protocol and register via entry points:
+
+    [project.entry-points."termin.backends"]
+    fastapi = "termin.backends.fastapi:FastApiBackend"
+
+The CLI discovers backends at runtime via importlib.metadata.
+"""
+
+from typing import Protocol, runtime_checkable
+from .ir import AppSpec
+
+
+@runtime_checkable
+class Backend(Protocol):
+    """Interface that all Termin backends must implement."""
+
+    name: str
+
+    def generate(self, spec: AppSpec, source_file: str = "") -> str:
+        """Generate output from the given AppSpec.
+
+        Returns the generated code/configuration as a string.
+        """
+        ...
+
+    def required_dependencies(self) -> list[str]:
+        """Return pip package names needed to run the generated output."""
+        ...
+
+
+def discover_backends() -> dict[str, type]:
+    """Discover installed backends via entry points."""
+    import importlib.metadata
+    backends = {}
+    try:
+        eps = importlib.metadata.entry_points()
+        # Python 3.12+ returns a SelectableGroups, 3.10-3.11 returns a dict
+        if hasattr(eps, 'select'):
+            group = eps.select(group="termin.backends")
+        else:
+            group = eps.get("termin.backends", [])
+        for ep in group:
+            try:
+                backends[ep.name] = ep.load()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return backends
+
+
+def get_backend(name: str) -> Backend:
+    """Get a backend instance by name. Falls back to built-in backends."""
+    # Try entry points first
+    backends = discover_backends()
+    if name in backends:
+        cls = backends[name]
+        return cls()
+
+    # Fall back to built-in backends
+    if name == "fastapi":
+        from .codegen import CodeGenerator
+        # Wrap the existing codegen as a backend for backward compatibility
+        class LegacyFastApiBackend:
+            name = "fastapi"
+            def generate(self, spec: AppSpec, source_file: str = "") -> str:
+                raise NotImplementedError("Use the new pipeline via lower() + FastApiBackend")
+            def required_dependencies(self) -> list[str]:
+                return ["fastapi>=0.100.0", "uvicorn>=0.23.0", "aiosqlite>=0.19.0",
+                        "jinja2>=3.1.0", "python-multipart>=0.0.6"]
+        return LegacyFastApiBackend()
+
+    raise ValueError(f"Unknown backend: {name}. Available: {list(backends.keys())}")

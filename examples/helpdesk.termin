@@ -1,0 +1,96 @@
+Application: Help Desk Ticket Tracker
+  Description: Track support tickets from submission to resolution
+
+--- Identity ---
+
+Users authenticate with stub
+Scopes are "view tickets", "create tickets", "manage tickets", and "admin tickets"
+
+--- Roles ---
+
+A "customer" has "view tickets" and "create tickets"
+A "support agent" has "view tickets", "create tickets", and "manage tickets"
+A "support manager" has "view tickets", "create tickets", "manage tickets", and "admin tickets"
+
+--- Content ---
+
+Content called "tickets":
+  Each ticket has a title which is text, required
+  Each ticket has a description which is text, required
+  Each ticket has a priority which is one of: low, medium, high, critical
+  Each ticket has a category which is one of: bug, feature request, question, account issue
+  Each ticket has a submitted by which is text, required
+  Each ticket has an assigned to which is text
+  Each ticket has a created at which is automatic
+  Anyone with "view tickets" can view tickets
+  Anyone with "create tickets" can create tickets
+  Anyone with "manage tickets" can update tickets
+  Anyone with "admin tickets" can delete tickets
+
+Content called "comments":
+  Each comment has a ticket which references tickets, required
+  Each comment has an author which is text, required
+  Each comment has a body which is text, required
+  Each comment has a posted at which is automatic
+  Anyone with "view tickets" can view comments
+  Anyone with "create tickets" can create comments
+
+--- State ---
+
+State for tickets called "ticket lifecycle":
+  A ticket starts as "open"
+  A ticket can also be "in progress", "waiting on customer", "resolved", or "closed"
+  An open ticket can become in progress if the user has "manage tickets"
+  An in progress ticket can become waiting on customer if the user has "manage tickets"
+  A waiting on customer ticket can become in progress if the user has "create tickets"
+  An in progress ticket can become resolved if the user has "manage tickets"
+  A resolved ticket can become closed if the user has "admin tickets"
+  A resolved ticket can become in progress if the user has "create tickets"
+
+--- User Stories ---
+
+As a customer, I want to submit a support ticket
+  so that I can get help with my issue:
+    Show a page called "Submit Ticket"
+    Accept input for title, description, priority, and category
+    Create the ticket as open
+
+As a support agent, I want to see all open tickets
+  so that I can work on resolving them:
+    Show a page called "Ticket Queue"
+    Display a table of tickets with columns: title, priority, category, status, assigned to, created at
+    Highlight rows where priority is at or below priority
+    Allow filtering by status, priority, and category
+    Allow searching by title or description
+    This table subscribes to tickets changes
+
+As a support manager, I want to see ticket metrics
+  so that I can monitor team performance:
+    Show a page called "Support Dashboard"
+    Display total ticket count with open vs resolved breakdown
+    Display total comment count
+
+--- Navigation ---
+
+Navigation bar:
+  "Queue" links to "Ticket Queue" visible to agent, manager
+  "Submit" links to "Submit Ticket" visible to all
+  "Dashboard" links to "Support Dashboard" visible to manager
+
+--- API ---
+
+Expose a REST API at /api/v1:
+  GET    /tickets              lists tickets
+  POST   /tickets              creates a ticket
+  GET    /tickets/{id}         gets a ticket
+  PUT    /tickets/{id}         updates a ticket
+  DELETE /tickets/{id}         deletes a ticket
+  POST   /tickets/{id}/start          transitions to in progress
+  POST   /tickets/{id}/wait           transitions to waiting on customer
+  POST   /tickets/{id}/resolve        transitions to resolved
+  POST   /tickets/{id}/close          transitions to closed
+  POST   /tickets/{id}/reopen         transitions to in progress
+  GET    /comments             lists comments
+  POST   /comments             creates a comment
+
+Stream ticket updates at /api/v1/stream
