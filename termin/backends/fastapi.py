@@ -930,19 +930,17 @@ class FastApiBackend:
         {{{{ content|safe }}}}
     </main>
     <script id="termin-user-data" type="application/json">{{{{ user_profile_json|safe }}}}</script>
-    <script>
-    // Termin.js Runtime
-    window.__termin_user = JSON.parse(document.getElementById("termin-user-data").textContent);
-    window.__termin_user.role = "{{{{ current_role }}}}";
-    window.__termin_compute = {{}};
+    <script type="module">
+    // Termin.js Runtime — powered by jexl expression evaluator
+    import jexl from "https://cdn.jsdelivr.net/npm/jexl@2.3.0/+esm";
+    var ctx = JSON.parse(document.getElementById("termin-user-data").textContent);
+    ctx.role = "{{{{ current_role }}}}";
     {{{{ termin_compute_js|safe }}}}
-    document.addEventListener("DOMContentLoaded", function() {{
-        document.querySelectorAll("[data-termin-expr]").forEach(function(el) {{
-            var expr = el.dataset.terminExpr;
-            var m = expr.match(/^(\\w+)\\((.+)\\)$/);
-            if (m && window.__termin_compute[m[1]]) {{
-                el.textContent = window.__termin_compute[m[1]](window.__termin_user);
-            }}
+    document.querySelectorAll("[data-termin-expr]").forEach(function(el) {{
+        jexl.eval(el.dataset.terminExpr, ctx).then(function(result) {{
+            el.textContent = result;
+        }}).catch(function(err) {{
+            el.textContent = "[Error: " + err.message + "]";
         }});
     }});
     </script>
@@ -1495,15 +1493,14 @@ class FastApiBackend:
                     self._w(f'        rows_cursor = await db.execute("SELECT * FROM {form_table} ORDER BY id DESC")')
                     self._w(f'        context["{form_table}_rows"] = [dict(r) for r in await rows_cursor.fetchall()]')
 
-        # Generate termin.js compute function registrations
+        # Generate jexl function registrations for termin.js runtime
         compute_js_parts = []
         for comp in self.spec.computes:
             if comp.body_lines and comp.input_params:
                 param_name = comp.input_params[0].name if comp.input_params else "x"
-                # Convert expression body to JS
                 body_js = self._compile_compute_to_js(comp)
                 compute_js_parts.append(
-                    f'window.__termin_compute["{comp.name.display}"] = function({param_name}) {{ {body_js} }};'
+                    f'jexl.addFunction("{comp.name.display}", function({param_name}) {{ {body_js} }});'
                 )
         self._w(f'        context["termin_compute_js"] = {repr(chr(10).join(compute_js_parts))}')
 
