@@ -326,12 +326,20 @@ class ChannelSpec:
 # ── Boundaries ──
 
 @dataclass(frozen=True)
+class BoundaryPropertySpec:
+    name: str
+    type_name: str
+    jexl_expr: str
+
+
+@dataclass(frozen=True)
 class BoundarySpec:
     name: QualifiedName
     contains_tables: tuple[str, ...] = ()            # resolved snake_case table names
     contains_boundaries: tuple[str, ...] = ()        # snake_case boundary names
     identity_mode: str = "inherit"                   # "inherit" or "restrict"
     identity_scopes: tuple[str, ...] = ()            # for restrict mode
+    properties: tuple[BoundaryPropertySpec, ...] = ()  # exposed computed properties
 
 
 # ── Top-Level IR ──

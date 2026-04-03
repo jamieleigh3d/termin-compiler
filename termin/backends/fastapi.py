@@ -7,6 +7,7 @@ reference display column is already resolved in the IR.
 Produces functionally equivalent output to the legacy codegen.py.
 """
 
+import json
 import re
 import textwrap
 from datetime import datetime, timezone
@@ -21,7 +22,7 @@ from ..ir import (
     RelatedDataSpec, AggregationSpec, ChartSpec,
     NavItemSpec, StreamSpec, RoleSpec, AuthSpec,
     ComputeSpec, ComputeShape, ChannelSpec, ChannelProtocol,
-    ChannelRequirementSpec, BoundarySpec,
+    ChannelRequirementSpec, BoundarySpec, BoundaryPropertySpec,
 )
 
 
@@ -66,6 +67,7 @@ class FastApiBackend:
         self._emit_api_routes()
         self._emit_compute_routes()
         self._emit_channel_endpoints()
+        self._emit_reflection_endpoint()
         self._emit_sse_stream()
         self._emit_templates()
         self._emit_page_routes()
@@ -873,6 +875,48 @@ class FastApiBackend:
         self._w(f"            event_bus.unsubscribe(q)")
         self._w(f'    return StreamingResponse(generate(), media_type="text/event-stream")')
         self._w()
+
+    # ── Reflection Endpoint ──
+
+    def _emit_reflection_endpoint(self) -> None:
+        """Generate a /api/reflect endpoint that serves the AppSpec IR as JSON."""
+        # Find the first available read scope for access control
+        read_scope = None
+        for g in self.spec.access_grants:
+            if Verb.VIEW in g.verbs:
+                read_scope = g.scope
+                break
+
+        # Pre-serialize the IR to a JSON string at compile time
+        ir_json_str = self._build_ir_json()
+
+        self._w()
+        self._w("# ── Reflection Endpoint ──")
+        self._w()
+
+        scope_dep = f', user=Depends(require_scope("{read_scope}"))' if read_scope else ""
+
+        self._w(f'_REFLECT_JSON = {repr(ir_json_str)}')
+        self._w()
+        self._w(f'@app.get("/api/reflect")')
+        self._w(f"async def api_reflect(request: Request{scope_dep}):")
+        self._w(f'    """Return the AppSpec IR as JSON for runtime introspection."""')
+        self._w(f'    return Response(content=_REFLECT_JSON, media_type="application/json")')
+        self._w()
+
+    def _build_ir_json(self) -> str:
+        """Serialize the AppSpec to a JSON string at compile time."""
+        import dataclasses as dc
+        from enum import Enum as _Enum
+
+        def _default(obj):
+            if isinstance(obj, _Enum):
+                return obj.name
+            if isinstance(obj, (frozenset, set)):
+                return sorted((o.name if isinstance(o, _Enum) else o) for o in obj)
+            raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+        return json.dumps(dc.asdict(self.spec), default=_default)
 
     # ── SSE Stream ──
 

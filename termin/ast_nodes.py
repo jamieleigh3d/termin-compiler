@@ -64,6 +64,13 @@ class Role:
     line: int = 0
 
 
+@dataclass
+class RoleAlias:
+    short_name: str
+    full_name: str
+    line: int = 0
+
+
 # --- State ---
 
 @dataclass
@@ -299,12 +306,21 @@ class ChannelDecl:
 # --- Boundary ---
 
 @dataclass
+class BoundaryProperty:
+    name: str
+    type_name: str
+    jexl_expr: str
+    line: int = 0
+
+
+@dataclass
 class BoundaryDecl:
     name: str
     contains: list[str] = field(default_factory=list)  # content or boundary names
     identity_mode: str = "inherit"  # "inherit" or "restrict"
     identity_parent: Optional[str] = None
     identity_scopes: list[str] = field(default_factory=list)  # for restrict mode
+    properties: list[BoundaryProperty] = field(default_factory=list)
     line: int = 0
 
 
@@ -324,6 +340,7 @@ class Program:
     application: Optional[Application] = None
     identity: Optional[Identity] = None
     roles: list[Role] = field(default_factory=list)
+    role_aliases: list[RoleAlias] = field(default_factory=list)
     contents: list[Content] = field(default_factory=list)
     state_machines: list[StateMachine] = field(default_factory=list)
     events: list[EventRule] = field(default_factory=list)

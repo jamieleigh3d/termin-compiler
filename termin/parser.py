@@ -8,14 +8,14 @@ from typing import Optional
 
 from .lexer import Token, TokenType, tokenize
 from .ast_nodes import (
-    Program, Application, Identity, Role, Content, Field, TypeExpr,
+    Program, Application, Identity, Role, RoleAlias, Content, Field, TypeExpr,
     AccessRule, StateMachine, Transition, EventRule, EventCondition,
     EventAction, UserStory, ShowPage, DisplayTable, ShowRelated,
     HighlightRows, AllowFilter, AllowSearch, SubscribeTo, AcceptInput,
     ValidateUnique, CreateAs, AfterSave, ShowChart, DisplayAggregation,
     NavBar, NavItem, ApiSection, ApiEndpoint, Stream, Directive,
     ComputeNode, ComputeParam, ChannelDecl, ChannelRequirement, BoundaryDecl,
-    DisplayText,
+    BoundaryProperty, DisplayText,
 )
 from .errors import ParseError, CompileResult
 
@@ -107,6 +107,8 @@ class Parser:
                     program.application = self.parse_application()
                 elif t.type == TokenType.USERS_AUTHENTICATE:
                     program.identity = self.parse_identity()
+                elif t.type == TokenType.ROLE_ALIAS:
+                    program.role_aliases.append(self.parse_role_alias())
                 elif t.type == TokenType.ROLE_DECL:
                     program.roles.append(self.parse_role())
                 elif t.type == TokenType.CONTENT_DECL:
@@ -184,6 +186,17 @@ class Parser:
             name = m.group(1)
             scopes = _extract_quoted(m.group(2))
         return Role(name=name, scopes=scopes, line=t.line)
+
+    # ── Role Alias ──
+
+    def parse_role_alias(self) -> RoleAlias:
+        t = self.expect(TokenType.ROLE_ALIAS)
+        # '"clerk" is alias for "warehouse clerk"'
+        quoted = _extract_quoted(t.value)
+        if len(quoted) < 2:
+            raise ParseError(message="Cannot parse role alias", line=t.line,
+                             source_line=self._source_line(t.line))
+        return RoleAlias(short_name=quoted[0], full_name=quoted[1], line=t.line)
 
     # ── Content ──
 
@@ -320,12 +333,23 @@ class Parser:
     def parse_state(self) -> StateMachine:
         t = self.expect(TokenType.STATE_DECL)
         # 'State for products called "product lifecycle":'
-        m = re.match(r'State for\s+(\w+)\s+called\s+"([^"]+)"', t.value)
+        # 'State for channel "order webhook" called "lifecycle":'
+        m = re.match(r'State for\s+(.+?)\s+called\s+"([^"]+)"', t.value)
         if not m:
             raise ParseError(message="Cannot parse state declaration", line=t.line,
                              source_line=self._source_line(t.line))
-        content_name = m.group(1)
+        raw_target = m.group(1).strip()
         machine_name = m.group(2)
+
+        # If the target starts with "channel" or "compute", strip the prefix
+        # and extract the quoted entity name
+        content_name = raw_target
+        prefix_m = re.match(r'^(channel|compute)\s+"([^"]+)"$', raw_target, re.IGNORECASE)
+        if prefix_m:
+            content_name = prefix_m.group(2)
+        else:
+            # Also handle unquoted multi-word (for regular content names)
+            content_name = raw_target
 
         sm = StateMachine(
             content_name=content_name, machine_name=machine_name,
@@ -804,7 +828,7 @@ class Parser:
         name = _extract_quoted(t.value)[0]
         boundary = BoundaryDecl(name=name, line=t.line)
 
-        while self.check(TokenType.BOUNDARY_CONTAINS, TokenType.BOUNDARY_IDENTITY):
+        while self.check(TokenType.BOUNDARY_CONTAINS, TokenType.BOUNDARY_IDENTITY, TokenType.BOUNDARY_EXPOSES):
             ct = self.advance()
             if ct.type == TokenType.BOUNDARY_CONTAINS:
                 # "Contains products, stock levels, and reorder alerts"
@@ -821,6 +845,21 @@ class Parser:
                 elif "restricts" in ct.value:
                     boundary.identity_mode = "restrict"
                     boundary.identity_scopes = _extract_quoted(ct.value)
+            elif ct.type == TokenType.BOUNDARY_EXPOSES:
+                # 'Exposes property "order count" : whole number = [orders.length]'
+                m = re.match(
+                    r'Exposes\s+property\s+"([^"]+)"\s*:\s*(.+?)\s*=\s*\[([^\]]+)\]',
+                    ct.value.strip()
+                )
+                if m:
+                    boundary.properties.append(BoundaryProperty(
+                        name=m.group(1),
+                        type_name=m.group(2).strip(),
+                        jexl_expr=m.group(3).strip(),
+                        line=ct.line,
+                    ))
+                else:
+                    self._error(f"Cannot parse boundary property: {ct.value}", ct.line)
 
         return boundary
 

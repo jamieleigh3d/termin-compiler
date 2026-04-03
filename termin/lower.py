@@ -13,6 +13,7 @@ from .ast_nodes import (
     ShowRelated, HighlightRows, AllowFilter, AllowSearch, SubscribeTo,
     AcceptInput, ValidateUnique, CreateAs, AfterSave, ShowChart,
     DisplayAggregation, DisplayText, ComputeNode, ChannelDecl, BoundaryDecl,
+    BoundaryProperty,
 )
 from .ir import (
     QualifiedName, ColumnType, Column, Table, Verb, AccessGrant,
@@ -22,7 +23,7 @@ from .ir import (
     TableColumn, FilterField, FormField, HighlightRule, RelatedDataSpec,
     AggregationSpec, ChartSpec, PageSpec, NavItemSpec, StreamSpec, AppSpec,
     ComputeShape, ComputeSpec, ComputeParamSpec, ChannelProtocol,
-    ChannelRequirementSpec, ChannelSpec, BoundarySpec,
+    ChannelRequirementSpec, ChannelSpec, BoundarySpec, BoundaryPropertySpec,
 )
 
 
@@ -646,12 +647,21 @@ def lower(program: Program) -> AppSpec:
                 sub_boundaries.append(_snake(item))
             else:
                 bnd_tables.append(_resolve_to_table(item))
+        props = tuple(
+            BoundaryPropertySpec(
+                name=p.name,
+                type_name=p.type_name,
+                jexl_expr=p.jexl_expr,
+            )
+            for p in bnd.properties
+        )
         boundaries.append(BoundarySpec(
             name=_qname(bnd.name),
             contains_tables=tuple(bnd_tables),
             contains_boundaries=tuple(sub_boundaries),
             identity_mode=bnd.identity_mode,
             identity_scopes=tuple(bnd.identity_scopes),
+            properties=props,
         ))
 
     return AppSpec(

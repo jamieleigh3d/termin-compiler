@@ -9,7 +9,7 @@ from .ast_nodes import (
     Program, Content, StateMachine, EventRule, UserStory, ShowPage,
     DisplayTable, AcceptInput, SubscribeTo, ShowRelated, AllowFilter,
     AllowSearch, ShowChart, DisplayAggregation,
-    ComputeNode, ChannelDecl, BoundaryDecl,
+    ComputeNode, ChannelDecl, BoundaryDecl, RoleAlias,
 )
 from .errors import SemanticError, SecurityError, CompileResult
 
@@ -27,7 +27,9 @@ class Analyzer:
         self.page_names: set[str] = set()
         self.content_field_names: dict[str, set[str]] = {}  # content_name -> {field_names}
         self.compute_names: set[str] = set()
+        self.channel_names: set[str] = set()
         self.boundary_names: set[str] = set()
+        self.role_alias_map: dict[str, str] = {}  # short_name -> full_name
 
     def analyze(self) -> CompileResult:
         self._build_symbol_tables()
@@ -54,8 +56,14 @@ class Analyzer:
         for compute in p.computes:
             self.compute_names.add(compute.name)
 
+        for channel in p.channels:
+            self.channel_names.add(channel.name)
+
         for boundary in p.boundaries:
             self.boundary_names.add(boundary.name)
+
+        for alias in p.role_aliases:
+            self.role_alias_map[alias.short_name.lower()] = alias.full_name.lower()
 
         for story in p.stories:
             for d in story.directives:
@@ -81,6 +89,7 @@ class Analyzer:
         return False
 
     def _check_semantics(self) -> None:
+        self._check_role_aliases()
         self._check_role_scopes()
         self._check_content_references()
         self._check_state_machines()
@@ -91,6 +100,17 @@ class Analyzer:
         self._check_computes()
         self._check_channels()
         self._check_boundaries()
+
+    def _check_role_aliases(self) -> None:
+        role_names_lower = {r.lower() for r in self.role_names}
+        for alias in self.program.role_aliases:
+            # Check that the alias target role exists
+            if alias.full_name.lower() not in role_names_lower:
+                self.errors.add(SemanticError(
+                    message=f'Role alias "{alias.short_name}" targets undefined '
+                            f'role "{alias.full_name}"',
+                    line=alias.line,
+                ))
 
     def _check_role_scopes(self) -> None:
         for role in self.program.roles:
@@ -122,7 +142,10 @@ class Analyzer:
 
     def _check_state_machines(self) -> None:
         for sm in self.program.state_machines:
-            if sm.content_name not in self.content_names:
+            # Allow state machines on Content, Channel, or Compute names
+            if (sm.content_name not in self.content_names
+                    and sm.content_name not in self.channel_names
+                    and sm.content_name not in self.compute_names):
                 self.errors.add(SemanticError(
                     message=f'State machine "{sm.machine_name}" references '
                             f'undefined content "{sm.content_name}"',
@@ -175,9 +198,13 @@ class Analyzer:
             if story.role.lower() == "anonymous":
                 continue
             # Check role exists (case-insensitive)
-            if story.role.lower() not in role_names_lower:
+            role_lower = story.role.lower()
+            # Resolve alias if present
+            if role_lower in self.role_alias_map:
+                role_lower = self.role_alias_map[role_lower]
+            if role_lower not in role_names_lower:
                 # Check partial match (e.g., "warehouse clerk" in roles)
-                found = any(story.role.lower() in r.lower() or r.lower() in story.role.lower()
+                found = any(role_lower in r.lower() or r.lower() in role_lower
                             for r in self.role_names)
                 if not found:
                     self.errors.add(SemanticError(

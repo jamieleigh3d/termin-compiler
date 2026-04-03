@@ -21,6 +21,7 @@ class TokenType(Enum):
     SCOPES_ARE = auto()
 
     # Roles
+    ROLE_ALIAS = auto()  # "clerk" is alias for "warehouse clerk"
     ROLE_DECL = auto()  # A "role" has ...
 
     # Content
@@ -86,6 +87,7 @@ class TokenType(Enum):
     BOUNDARY_DECL = auto()     # Boundary called "name":
     BOUNDARY_CONTAINS = auto() # Contains X, Y, and Z
     BOUNDARY_IDENTITY = auto() # Identity inherits/restricts
+    BOUNDARY_EXPOSES = auto()  # Exposes property "name" : type = [jexl]
 
     # Fallback
     UNKNOWN = auto()
@@ -105,12 +107,13 @@ _PATTERNS: list[tuple[re.Pattern, TokenType]] = [
     (re.compile(r'^\s*Description:\s+'), TokenType.DESCRIPTION),
     (re.compile(r'^Users authenticate with\s+'), TokenType.USERS_AUTHENTICATE),
     (re.compile(r'^Scopes are\s+'), TokenType.SCOPES_ARE),
+    (re.compile(r'^"[^"]+"\s+is\s+alias\s+for\s+"[^"]+"'), TokenType.ROLE_ALIAS),
     (re.compile(r'^(?:A|An)\s+"[^"]+"\s+has\s+'), TokenType.ROLE_DECL),
     (re.compile(r'^\w+\s+has\s+"[^"]+"'), TokenType.ROLE_DECL),  # Bare role: Anonymous has "scope"
     (re.compile(r'^Content called\s+"[^"]+"'), TokenType.CONTENT_DECL),
     (re.compile(r'^\s*Each\s+.+?\s+has\s+(?:a|an)\s+'), TokenType.FIELD_DECL),
     (re.compile(r'^\s*Anyone with\s+"[^"]+"\s+can\s+'), TokenType.ACCESS_RULE),
-    (re.compile(r'^State for\s+\w+\s+called\s+"[^"]+"'), TokenType.STATE_DECL),
+    (re.compile(r'^State for\s+.+?\s+called\s+"[^"]+"'), TokenType.STATE_DECL),
     (re.compile(r'^\s*(?:A|An)\s+\w+\s+starts\s+as\s+"[^"]+"'), TokenType.STATE_STARTS),
     (re.compile(r'^\s*(?:A|An)\s+\w+\s+can\s+also\s+be\s+'), TokenType.STATE_ALSO),
     (re.compile(r'^\s*(?:A|An)\s+.+?\s+can\s+become\s+'), TokenType.STATE_TRANSITION),
@@ -152,6 +155,7 @@ _PATTERNS: list[tuple[re.Pattern, TokenType]] = [
     (re.compile(r'^Boundary called\s+"[^"]+"'), TokenType.BOUNDARY_DECL),
     (re.compile(r'^\s*Contains\s+'), TokenType.BOUNDARY_CONTAINS),
     (re.compile(r'^\s*Identity\s+(?:inherits|restricts)'), TokenType.BOUNDARY_IDENTITY),
+    (re.compile(r'^\s*Exposes\s+property\s+'), TokenType.BOUNDARY_EXPOSES),
     # JEXL blocks — standalone [expression] lines (in Compute bodies etc.)
     (re.compile(r'^\s*\[.+\]\s*$'), TokenType.JEXL_BLOCK),
 ]
