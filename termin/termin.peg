@@ -1,0 +1,519 @@
+@@grammar::Termin
+@@whitespace :: /[ \t]+/
+@@left_recursion :: False
+
+# ==================================================================
+# Termin DSL Grammar v2 — AUTHORITATIVE PEG SPECIFICATION
+#
+# Two-level design:
+#   Level 1 (Python): Line classification + block assembly
+#   Level 2 (PEG):    Per-line content parsing — no regex needed
+#
+# Each rule below parses ONE LINE of DSL input. Block structure
+# (which lines are children of which headers) is handled by the
+# Python wrapper, not by this grammar.
+#
+# This grammar is written for TatSu (Python) but the PEG rules
+# are portable to Peggy (JS), pest (Rust), and other PEG parsers.
+# ==================================================================
+
+
+# ==================================================================
+# APPLICATION
+# ==================================================================
+
+application_line
+    = 'Application:' name:rest_of_line $
+    ;
+
+description_line
+    = 'Description:' desc:rest_of_line $
+    ;
+
+
+# ==================================================================
+# IDENTITY
+# ==================================================================
+
+identity_line
+    = 'Users' 'authenticate' 'with' provider:word $
+    ;
+
+scopes_line
+    = 'Scopes' 'are' scopes:quoted_list $
+    ;
+
+
+# ==================================================================
+# ROLES
+# ==================================================================
+
+role_standard_line
+    = article name:quoted_string 'has' scopes:quoted_list $
+    ;
+
+role_bare_line
+    = name:word 'has' scopes:quoted_list $
+    ;
+
+role_alias_line
+    = short:quoted_string 'is' 'alias' 'for' full:quoted_string $
+    ;
+
+
+# ==================================================================
+# CONTENT
+# ==================================================================
+
+content_header
+    = 'Content' 'called' name:quoted_string ':' $
+    ;
+
+field_line
+    = 'Each' singular:words_before_has 'has' article
+      field_name:words_before_which 'which' clause:field_clause $
+    ;
+
+field_clause
+    = 'is' te:type_expr                                #FieldIsType
+    | 'references' ref:word_or_quoted constraints:constraints  #FieldReferences
+    ;
+
+type_expr
+    = 'unique' bt:base_type cs:constraints   #TypeUnique
+    | bt:base_type cs:constraints            #TypePlain
+    ;
+
+base_type
+    = 'text'                       #TypeText
+    | 'currency'                   #TypeCurrency
+    | 'number'                     #TypeNumber
+    | 'percentage'                 #TypePercentage
+    | 'true/false'                 #TypeBoolean
+    | 'boolean'                    #TypeBoolean
+    | 'date' 'and' 'time'         #TypeDatetime
+    | 'date'                       #TypeDate
+    | 'automatic'                  #TypeAutomatic
+    | 'a' 'whole' 'number'        #TypeWholeNumber
+    | 'whole' 'number'            #TypeWholeNumber
+    | 'one' 'of:' vals:enum_vals  #TypeEnum
+    | 'list' 'of' inner:word      #TypeList
+    ;
+
+enum_vals
+    = val+:enum_val { ',' ['and'] val+:enum_val }*
+    ;
+
+enum_val
+    = quoted_string
+    | /\w+(?:\s+\w+)*/
+    ;
+
+constraints
+    = { ',' constraint }*
+    ;
+
+constraint
+    = 'required'              #Required
+    | 'unique'                #Unique
+    | 'minimum' val:number    #Minimum
+    | 'maximum' val:number    #Maximum
+    ;
+
+access_line
+    = 'Anyone' 'with' scope:quoted_string 'can'
+      verbs:verb_phrase content_name:rest_of_line $
+    ;
+
+verb_phrase
+    = 'create' 'or' 'update'      #VerbCreateOrUpdate
+    | 'view'                       #VerbView
+    | 'create'                     #VerbCreate
+    | 'update'                     #VerbUpdate
+    | 'delete'                     #VerbDelete
+    ;
+
+
+# ==================================================================
+# STATE
+# ==================================================================
+
+state_header
+    = 'State' 'for' target:words_before_called 'called' name:quoted_string ':' $
+    ;
+
+state_starts_line
+    = article singular:word 'starts' 'as' state:quoted_string $
+    ;
+
+state_also_line
+    = article word 'can' 'also' 'be' states:quoted_or_list $
+    ;
+
+state_transition_line
+    = article from_state:words_before_word_can
+      singular:word 'can' 'become' to_state:word
+      ['again'] 'if' 'the' 'user' 'has' scope:quoted_string $
+      #TransitionScope
+    | article from_state:words_before_word_can
+      singular:word 'can' 'become' to_state:word
+      ['again'] 'if' jexl:jexl_expr $
+      #TransitionJexl
+    ;
+
+
+# ==================================================================
+# EVENTS
+# ==================================================================
+
+event_jexl_line
+    = 'When' jexl:jexl_expr ':' $
+    ;
+
+event_v1_line
+    = 'When' article content:words_before_is 'is' trigger:trigger_kw
+      condition:[event_condition] ':' $
+    ;
+
+trigger_kw = 'created' | 'updated' | 'deleted' ;
+
+event_condition
+    = 'and' 'its' field1:words_before_is 'is' op:comparison_op 'its' rest_of_line
+    ;
+
+comparison_op
+    = 'at' 'or' 'below'   #OpAtOrBelow
+    | 'above'              #OpAbove
+    | 'below'              #OpBelow
+    | 'equal' 'to'         #OpEqualTo
+    ;
+
+event_action_line
+    = 'Create' article name:word_or_quoted
+      'with' ['the'] fields:comma_list $
+    ;
+
+log_level_line
+    = 'Log' 'level:' level:log_level $
+    ;
+
+log_level = 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' ;
+
+
+# ==================================================================
+# ERROR HANDLING
+# ==================================================================
+
+error_from_line
+    = 'On' 'error' 'from' source:quoted_string
+      ['where' jexl:jexl_expr] ':' $
+    ;
+
+error_catch_all_line
+    = 'On' 'any' 'error:' $
+    ;
+
+error_retry_line
+    = 'Retry' count:number ('times' | 'time')
+      ['with' 'backoff' [',' 'maximum' 'delay' max_delay:duration]] $
+    ;
+
+error_then_line
+    = 'Then' action:error_action $
+    ;
+
+error_action
+    = 'disable' target:word           #ActionDisable
+    | 'escalate'                      #ActionEscalate
+    | 'notify' role:quoted_string 'with' expr:jexl_expr  #ActionNotify
+    | 'create' name:quoted_string rest_of_line  #ActionCreate
+    | 'set' expr:jexl_expr           #ActionSet
+    ;
+
+error_create_line
+    = 'Create' name:quoted_string rest_of_line $
+    ;
+
+
+# ==================================================================
+# USER STORIES
+# ==================================================================
+
+story_header
+    = 'As' [article] role:words_before_comma ','
+      'I' 'want' 'to' action:story_action $
+    ;
+
+story_action
+    = 'see' [article] 'page' page:quoted_string
+      ['so' 'that' so_that:free_text_to_colon [':']]     #StoryActionPage
+    | text:rest_of_line
+      ['so' 'that' so_that:free_text_to_colon [':']]     #StoryActionFree
+    ;
+
+so_that_line
+    = 'so' 'that' text:free_text_to_colon [':'] $
+    ;
+
+
+# ==================================================================
+# DIRECTIVES
+# ==================================================================
+
+show_page_line
+    = 'Show' 'a' 'page' 'called' name:quoted_string $
+    ;
+
+display_table_line
+    = 'Display' 'a' 'table' 'of' content:words
+      'with' 'columns:' cols:comma_list $         #DisplayTableCols
+    | 'Display' 'a' 'table' 'of' content:words $  #DisplayTableNoCols
+    ;
+
+show_related_line
+    = 'For' 'each' singular:word ',' 'show' related:words
+      'grouped' 'by' group:rest_of_line $
+    ;
+
+highlight_rows_line
+    = 'Highlight' 'rows' 'where' jexl:jexl_expr $      #HighlightJexl
+    | 'Highlight' 'rows' 'where' rest:rest_of_line $    #HighlightFree
+    ;
+
+allow_filtering_line
+    = 'Allow' 'filtering' 'by' fields:comma_list $
+    ;
+
+allow_searching_line
+    = 'Allow' 'searching' 'by' fields:or_list $
+    ;
+
+subscribes_to_line
+    = 'This' 'table' 'subscribes' 'to' content:words 'changes' $
+    ;
+
+accept_input_line
+    = 'Accept' 'input' 'for' fields:comma_list $
+    ;
+
+validate_unique_line
+    = 'Validate' 'that' jexl:jexl_expr ['before' 'saving'] $  #ValidateJexl
+    | 'Validate' 'that' field:words 'is' 'unique'
+      ['before' 'saving'] $                                     #ValidateUnique
+    ;
+
+create_as_line
+    = 'Create' 'the' words 'as' state:word $
+    ;
+
+after_saving_line
+    = 'After' 'saving,' text:rest_of_line $
+    ;
+
+show_chart_line
+    = 'Show' 'a' 'chart' 'of' content:words
+      'over' 'the' 'past' days:number 'days' $
+    ;
+
+display_text_line
+    = 'Display' 'text' jexl:jexl_expr $          #DisplayTextJexl
+    | 'Display' 'text' text:quoted_string $       #DisplayTextQuoted
+    | 'Display' 'text' expr:rest_of_line $        #DisplayTextExpr
+    ;
+
+display_agg_line
+    = 'Display' text:rest_of_line $
+    ;
+
+
+# ==================================================================
+# NAVIGATION
+# ==================================================================
+
+nav_bar_line
+    = 'Navigation' 'bar:' $
+    ;
+
+nav_item_line
+    = label:quoted_string 'links' 'to' page:quoted_string rest:rest_of_line $
+    ;
+
+
+# ==================================================================
+# API
+# ==================================================================
+
+api_header_line
+    = 'Expose' 'a' 'REST' 'API' 'at' path:api_path [':'] $
+    ;
+
+api_endpoint_line
+    = method:http_method path:api_path [desc:rest_of_line] $
+    ;
+
+http_method = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' ;
+
+
+# ==================================================================
+# STREAMS
+# ==================================================================
+
+stream_line
+    = 'Stream' desc:words 'at' path:api_path $
+    ;
+
+
+# ==================================================================
+# COMPUTE
+# ==================================================================
+
+compute_header
+    = 'Compute' 'called' name:quoted_string ':' $
+    ;
+
+compute_shape_line
+    = shape:shape_kw ':' io:compute_io $
+    ;
+
+shape_kw = 'Transform' | 'Reduce' | 'Expand' | 'Correlate' | 'Route' ;
+
+compute_io
+    = 'takes' inputs:param_list ',' 'produces' outputs:param_list  #ComputeIOParams
+    | text:rest_of_line                                              #ComputeIOFree
+    ;
+
+param_list
+    = param+:param { 'and' param+:param }*
+    ;
+
+param
+    = [article] name:word_or_quoted ':' type_name:word  #ParamTyped
+    | [article] name:words                               #ParamUntyped
+    ;
+
+compute_body_jexl_line
+    = jexl:jexl_expr $
+    ;
+
+compute_body_text_line
+    = text:rest_of_line $
+    ;
+
+compute_access_line
+    = role:word_or_quoted 'can' 'execute' 'this' $
+    ;
+
+
+# ==================================================================
+# CHANNELS
+# ==================================================================
+
+channel_header
+    = 'Channel' 'called' name:quoted_string ':' $
+    ;
+
+channel_carries_line = 'Carries' content:words $                        ;
+channel_direction_line = 'Direction:' dir:direction $                    ;
+channel_delivery_line = 'Delivery:' del:delivery $                      ;
+channel_requires_line = 'Requires' scope:quoted_string 'to' dir:send_recv $ ;
+channel_endpoint_line = 'Endpoint:' path:api_path $                     ;
+
+direction = 'inbound' | 'outbound' | 'bidirectional' | 'internal' ;
+delivery = 'realtime' | 'reliable' | 'batch' | 'auto' ;
+send_recv = 'send' | 'receive' ;
+
+
+# ==================================================================
+# BOUNDARIES
+# ==================================================================
+
+boundary_header
+    = 'Boundary' 'called' name:quoted_string ':' $
+    ;
+
+boundary_contains_line
+    = 'Contains' items:comma_list $
+    ;
+
+boundary_inherits_line
+    = 'Identity' 'inherits' 'from' parent:word $
+    ;
+
+boundary_restricts_line
+    = 'Identity' 'restricts' 'to' scopes:quoted_list $
+    ;
+
+boundary_exposes_line
+    = 'Exposes' 'property' name:quoted_string ':'
+      type_name:words '=' jexl:jexl_expr $
+    ;
+
+
+# ==================================================================
+# SHARED RULES
+# ==================================================================
+
+# Comma-separated list: a, b, and c
+comma_list
+    = item+:comma_item { ',' ['and'] item+:comma_item }*
+    ;
+
+comma_item
+    = quoted_string | words
+    ;
+
+# Or-separated list: a or b
+or_list
+    = item+:words { 'or' item+:words }*
+    ;
+
+# Quoted list: "a", "b", and "c" OR "a" and "b"
+quoted_list
+    = val+:quoted_string { (',' ['and'] | 'and') val+:quoted_string }*
+    ;
+
+# Quoted or list: "a" or "b"
+quoted_or_list
+    = val+:quoted_string { 'or' val+:quoted_string }*
+    ;
+
+
+# ==================================================================
+# TERMINALS
+# ==================================================================
+
+article = /\b[Aa]n?\b/ | /\b[Tt]he\b/ ;
+
+quoted_string = '"' content:/[^"]*/ '"' ;
+
+jexl_expr = '[' content:/[^\]]+/ ']' ;
+
+word = /\w+/ ;
+
+word_or_quoted = quoted_string | word ;
+
+# Multiple words (greedy)
+words = /\w+(?:\s+\w+)*/ ;
+
+# Words before specific keywords (non-greedy via negative lookahead)
+words_before_has = /\w+(?:\s+(?!has\b)\w+)*/ ;
+words_before_which = /\w+(?:\s+(?!which\b)\w+)*/ ;
+words_before_called = /\w+(?:\s+(?!called\b)\w+)*/ ;
+words_before_is = /\w+(?:\s+(?!is\b)\w+)*/ ;
+words_before_comma = /\w+(?:\s+(?!,)\w+)*/ ;
+words_before_word_can = /\w+(?:\s+\w+)*?(?=\s+\w+\s+can\b)/ ;
+
+# Free text (rest of line, greedy)
+rest_of_line = /\S[^\n]*/ ;
+
+# Free text stopping before colon
+free_text_to_colon = /[^\n:]+/ ;
+
+# Number
+number = /\d+/ ;
+
+# Duration
+duration = /\d+\s*(?:seconds?|minutes?|hours?)/ ;
+
+# API path
+api_path = /\/\S+/ ;

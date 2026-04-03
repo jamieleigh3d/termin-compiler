@@ -1,17 +1,12 @@
-// Lark EBNF Grammar for the Termin DSL v2
+// Termin DSL Grammar v2 — AUTHORITATIVE
 //
-// This is the AUTHORITATIVE specification of the Termin DSL syntax.
-// The hand-rolled lexer.py and parser.py must conform to this grammar.
+// This is the single source of truth for the Termin DSL syntax.
+// lark_parser.py loads this file directly.
 //
-// The Termin DSL is line-oriented.  Pre-processing strips comments, section
-// dividers, and blank lines.  Each logical line is then fed to this grammar.
-//
-// Because Termin is NOT free-form (indentation and line breaks carry meaning),
-// the grammar operates on pre-tokenised "logical lines" separated by NEWLINE.
-// A lightweight preprocessor in lark_parser.py normalises the source before
-// Lark sees it.
+// The grammar fully parses all structured constructs (types, constraints,
+// field declarations, access rules, etc.) so the Transformer needs no regex.
 
-start: (_section NEWLINE)* _section?
+start: (_section _NL)* _section?
 
 _section: application_block
         | identity_line
@@ -31,81 +26,123 @@ _section: application_block
         | error_block
 
 
-// -------------------------------------------------------------------
-// APPLICATION (block: header + optional description)
-// -------------------------------------------------------------------
-application_block: application (NEWLINE description)?
-application: "Application:" REST_OF_LINE
-description: "Description:" REST_OF_LINE
+// ===================================================================
+// APPLICATION
+// ===================================================================
+application_block: application (_NL description)?
+application: "Application:" NAME_TEXT
+description: "Description:" FREE_TEXT
 
-// -------------------------------------------------------------------
+// ===================================================================
 // IDENTITY
-// -------------------------------------------------------------------
-identity_line: "Users authenticate with" REST_OF_LINE
-scopes_line: "Scopes are" REST_OF_LINE
+// ===================================================================
+identity_line: "Users authenticate with" WORD
+scopes_line: "Scopes are" quoted_list
 
-// -------------------------------------------------------------------
+// ===================================================================
 // ROLES
-// -------------------------------------------------------------------
-// A "role" has "scope1" and "scope2"   OR   Anonymous has "scope1"
-role_decl: ARTICLE QUOTED "has" REST_OF_LINE       -> role_standard
-         | BARE_WORD "has" REST_OF_LINE             -> role_bare
+// ===================================================================
+role_decl: _ARTICLE QUOTED "has" quoted_list     -> role_standard
+         | WORD "has" quoted_list                 -> role_bare
 
-// "clerk" is alias for "warehouse clerk"
 role_alias: QUOTED "is alias for" QUOTED
 
-// -------------------------------------------------------------------
-// CONTENT (block: header + field/access children)
-// -------------------------------------------------------------------
-content_block: content_decl (NEWLINE (field_decl | access_rule))*
+// ===================================================================
+// CONTENT
+// ===================================================================
+content_block: content_decl (_NL (field_decl | access_rule))*
 content_decl: "Content called" QUOTED ":"
-field_decl: "Each" REST_OF_LINE
-access_rule: "Anyone with" QUOTED "can" REST_OF_LINE
 
-// -------------------------------------------------------------------
-// STATE (block: header + starts/also/transition children)
-// -------------------------------------------------------------------
-state_block: state_decl (NEWLINE (state_starts | state_also | state_transition))*
-// State for products called "lifecycle":
-// State for channel "order webhook" called "lifecycle":
-state_decl: "State for" WORDS_BEFORE_CALLED "called" QUOTED ":"
-state_starts: ARTICLE WORDS_BEFORE_STARTS "starts as" QUOTED
-state_also: ARTICLE WORDS_BEFORE_CAN "can also be" REST_OF_LINE
-state_transition: ARTICLE WORDS_BEFORE_CAN "can become" REST_OF_LINE
+field_decl: "Each" WORDS "has" _ARTICLE FIELD_NAME "which" field_type_clause
+field_type_clause: "is" type_expr     -> field_is_type
+                 | "references" WORD constraint_list  -> field_references
 
-// -------------------------------------------------------------------
-// EVENTS (block: header + action/log-level children)
-// -------------------------------------------------------------------
-event_block: (event_when_jexl | event_when_v1) (NEWLINE (event_action | event_log_level))*
-event_when_jexl: "When" JEXL_EXPR ":"
-event_when_v1: "When" ARTICLE REST_OF_LINE
-event_action: "Create" ARTICLE REST_OF_LINE
-event_log_level: "Log level:" REST_OF_LINE
+type_expr: "unique"? base_type constraint_list
+base_type: "text"                     -> type_text
+         | "currency"                 -> type_currency
+         | "number"                   -> type_number
+         | "percentage"               -> type_percentage
+         | "true/false"               -> type_boolean
+         | "boolean"                  -> type_boolean
+         | "date and time"            -> type_datetime
+         | "date"                     -> type_date
+         | "automatic"                -> type_automatic
+         | "a whole number"           -> type_whole_number
+         | "whole number"             -> type_whole_number
+         | "one of:" enum_values      -> type_enum
+         | "list of" WORD             -> type_list
 
-// -------------------------------------------------------------------
-// ERROR HANDLING (block: header + retry/then/log children)
-// -------------------------------------------------------------------
-error_block: (error_handler | error_catch_all) (NEWLINE (error_retry | error_then | event_log_level))*
-// On error from "primitive" where [condition]:
-// On error from "primitive":
-error_handler: "On error from" QUOTED ("where" JEXL_EXPR)? ":"
-// On any error:
-error_catch_all: "On any error:"
-// Retry N times [with backoff[, maximum delay X]]
-error_retry: "Retry" REST_OF_LINE
-// Then disable/escalate/notify/create/set
-error_then: "Then" REST_OF_LINE
+enum_values: enum_value ("," _AND? enum_value)*
+enum_value: QUOTED | WORD
 
-// -------------------------------------------------------------------
-// USER STORIES (block: header + so_that + directives)
-// -------------------------------------------------------------------
-story_block: story_header (NEWLINE story_so_that)? (NEWLINE _directive)*
-story_header: "As" REST_OF_LINE
-story_so_that: "so that" REST_OF_LINE
+constraint_list: ("," constraint)*
+constraint: "required"                -> constraint_required
+          | "unique"                  -> constraint_unique
+          | "minimum" NUMBER          -> constraint_minimum
+          | "maximum" NUMBER          -> constraint_maximum
 
-// -------------------------------------------------------------------
-// DIRECTIVES (inside user stories)
-// -------------------------------------------------------------------
+access_rule: "Anyone with" QUOTED "can" verb_list WORDS
+verb_list: VERB (_OR VERB)*
+VERB: "view" | "create or update" | "create" | "update" | "delete"
+
+// ===================================================================
+// STATE
+// ===================================================================
+state_block: state_decl (_NL (state_starts | state_also | state_transition))*
+state_decl: "State for" WORDS "called" QUOTED ":"
+state_starts: _ARTICLE WORD "starts as" QUOTED
+state_also: _ARTICLE WORD "can also be" quoted_or_list
+state_transition: _ARTICLE STATE_WORDS WORD "can become" WORD transition_tail
+transition_tail: "again"? "if the user has" QUOTED   -> transition_scope
+               | "again"? "if" JEXL_EXPR             -> transition_jexl
+
+// State words: multi-word state name (e.g., "in progress")
+STATE_WORDS: /(?:\w+\s+)*?(?=\w+\s+can\s+become)/
+
+// ===================================================================
+// EVENTS
+// ===================================================================
+event_block: event_header (_NL (event_action | event_log_level))*
+event_header: "When" JEXL_EXPR ":"                  -> event_when_jexl
+            | "When" _ARTICLE WORDS "is" TRIGGER event_condition? ":"  -> event_when_v1
+TRIGGER: "created" | "updated" | "deleted"
+event_condition: "and its" WORDS "is" COMPARISON_OP "its" WORDS
+COMPARISON_OP: "at or below" | "above" | "below" | "equal to"
+
+event_action: "Create" _ARTICLE QUOTED? WORDS? "with" _THE? comma_list
+event_log_level: "Log level:" LOG_LEVEL
+LOG_LEVEL: "TRACE" | "DEBUG" | "INFO" | "WARN" | "ERROR"
+
+// ===================================================================
+// ERROR HANDLING
+// ===================================================================
+error_block: error_header (_NL (error_retry | error_then | event_log_level | error_create))*
+error_header: "On error from" QUOTED ("where" JEXL_EXPR)? ":"   -> error_from
+            | "On any error:"                                     -> error_catch_all
+
+error_retry: "Retry" NUMBER "times" ("with backoff" ("," "maximum delay" DURATION)?)?
+error_then: "Then" error_action
+error_action: "disable" WORD                     -> action_disable
+            | "escalate"                         -> action_escalate
+            | "notify" QUOTED "with" JEXL_EXPR   -> action_notify
+            | "set" JEXL_EXPR                    -> action_set
+            | "create" QUOTED WORDS? "with" JEXL_EXPR  -> action_create
+error_create: "Create" QUOTED WORDS? "with" JEXL_EXPR
+
+// ===================================================================
+// USER STORIES
+// ===================================================================
+story_block: story_header (_NL story_so_that)? (_NL _directive)*
+story_header: "As" _ARTICLE? WORDS "," "I want to" story_action
+story_action: "see" _ARTICLE? "page" QUOTED so_that_inline?  -> story_action_page
+            | FREE_TEXT so_that_inline?                        -> story_action_free
+
+so_that_inline: "so that" FREE_TEXT ":"?
+story_so_that: "so that" FREE_TEXT ":"?
+
+// ===================================================================
+// DIRECTIVES
+// ===================================================================
 _directive: show_page
           | display_table
           | show_related
@@ -122,111 +159,158 @@ _directive: show_page
           | display_aggregation
 
 show_page: "Show a page called" QUOTED
-display_table: "Display a table of" REST_OF_LINE
-show_related: "For each" REST_OF_LINE
-highlight_rows: "Highlight rows where" REST_OF_LINE
-allow_filtering: "Allow filtering by" REST_OF_LINE
-allow_searching: "Allow searching by" REST_OF_LINE
-subscribes_to: "This table subscribes to" REST_OF_LINE
-accept_input: "Accept input for" REST_OF_LINE
-validate_unique: "Validate that" REST_OF_LINE
-create_as: "Create the" REST_OF_LINE
-after_saving: "After saving," REST_OF_LINE
-show_chart: "Show a chart of" REST_OF_LINE
-display_text: "Display text" REST_OF_LINE
-display_aggregation: "Display" REST_OF_LINE
+display_table: "Display a table of" WORDS ("with columns:" comma_list)?
+show_related: "For each" WORD "," "show" WORDS "grouped by" WORDS
+highlight_rows: "Highlight rows where" (JEXL_EXPR | WORDS "is" COMPARISON_OP WORDS)
+allow_filtering: "Allow filtering by" comma_list
+allow_searching: "Allow searching by" or_list
+subscribes_to: "This table subscribes to" WORDS "changes"
+accept_input: "Accept input for" comma_list
+validate_unique: "Validate that" (JEXL_EXPR "before saving" | WORDS "is unique" "before saving"?)
+create_as: "Create the" WORDS "as" WORD
+after_saving: "After saving," FREE_TEXT
+show_chart: "Show a chart of" WORDS "over the past" NUMBER "days"
+display_text: "Display text" (JEXL_EXPR | QUOTED | FREE_TEXT)
+display_aggregation: "Display" FREE_TEXT
 
-// -------------------------------------------------------------------
-// NAVIGATION (block: header + nav items)
-// -------------------------------------------------------------------
-nav_block: nav_bar (NEWLINE nav_item)*
+// ===================================================================
+// NAVIGATION
+// ===================================================================
+nav_block: nav_bar (_NL nav_item)*
 nav_bar: "Navigation bar:"
-nav_item: QUOTED "links to" QUOTED REST_OF_LINE?
+nav_item: QUOTED "links to" QUOTED nav_visibility? nav_badge?
+nav_visibility: "visible to" comma_list
+nav_badge: "," "badge:" FREE_TEXT
 
-// -------------------------------------------------------------------
-// API (block: header + endpoints)
-// -------------------------------------------------------------------
-api_block: api_section (NEWLINE api_endpoint)*
-api_section: "Expose a REST API at" REST_OF_LINE ":"?
-api_endpoint: HTTP_METHOD API_PATH REST_OF_LINE
+// ===================================================================
+// API
+// ===================================================================
+api_block: api_section (_NL api_endpoint)*
+api_section: "Expose a REST API at" API_PATH ":"?
+api_endpoint: HTTP_METHOD API_PATH FREE_TEXT?
 
-// -------------------------------------------------------------------
+// ===================================================================
 // STREAMS
-// -------------------------------------------------------------------
-stream_decl: "Stream" REST_OF_LINE
+// ===================================================================
+stream_decl: "Stream" FREE_TEXT "at" API_PATH
 
-// -------------------------------------------------------------------
-// COMPUTE (block: header + shape + body/access children)
-// -------------------------------------------------------------------
-compute_block: compute_decl (NEWLINE (compute_shape | compute_body_jexl | compute_body_text | access_rule))*
+// ===================================================================
+// COMPUTE
+// ===================================================================
+compute_block: compute_decl (_NL (compute_shape | compute_body | access_rule | compute_access))*
 compute_decl: "Compute called" QUOTED ":"
-compute_shape: SHAPE_KW ":" REST_OF_LINE
-compute_body_jexl: JEXL_EXPR
-compute_body_text: BODY_LINE
+compute_shape: SHAPE_KW ":" compute_io
+compute_io: "takes" param_list "," "produces" param_list   -> compute_io_params
+          | FREE_TEXT                                        -> compute_io_free
+param_list: param (_AND param)*
+param: _ARTICLE? (QUOTED | WORD) ":" WORD     -> param_typed
+     | _ARTICLE? WORDS                         -> param_untyped
 
-// -------------------------------------------------------------------
-// CHANNELS (block: header + property children)
-// -------------------------------------------------------------------
-channel_block: channel_decl (NEWLINE (channel_carries | channel_direction | channel_delivery | channel_requires | channel_endpoint))*
+compute_body: JEXL_EXPR                       -> compute_body_jexl
+            | BODY_LINE                        -> compute_body_text
+compute_access: (QUOTED | WORD) "can execute this"
+
+// ===================================================================
+// CHANNELS
+// ===================================================================
+channel_block: channel_decl (_NL (channel_prop))*
 channel_decl: "Channel called" QUOTED ":"
-channel_carries: "Carries" REST_OF_LINE
-channel_direction: "Direction:" REST_OF_LINE
-channel_delivery: "Delivery:" REST_OF_LINE
-channel_requires: "Requires" QUOTED "to" REST_OF_LINE
-channel_endpoint: "Endpoint:" REST_OF_LINE
+channel_prop: "Carries" WORDS                            -> channel_carries
+            | "Direction:" DIRECTION                      -> channel_direction
+            | "Delivery:" DELIVERY                        -> channel_delivery
+            | "Requires" QUOTED "to" SEND_RECV            -> channel_requires
+            | "Endpoint:" API_PATH                        -> channel_endpoint
 
-// -------------------------------------------------------------------
-// BOUNDARIES (block: header + property children)
-// -------------------------------------------------------------------
-boundary_block: boundary_decl (NEWLINE (boundary_contains | boundary_identity | boundary_exposes))*
+DIRECTION: "inbound" | "outbound" | "bidirectional" | "internal"
+DELIVERY: "realtime" | "reliable" | "batch" | "auto"
+SEND_RECV: "send" | "receive"
+
+// ===================================================================
+// BOUNDARIES
+// ===================================================================
+boundary_block: boundary_decl (_NL boundary_prop)*
 boundary_decl: "Boundary called" QUOTED ":"
-boundary_contains: "Contains" REST_OF_LINE
-boundary_identity: "Identity" REST_OF_LINE
-boundary_exposes: "Exposes property" QUOTED ":" REST_OF_LINE
+boundary_prop: "Contains" comma_list                                      -> boundary_contains
+             | "Identity inherits from" WORD                              -> boundary_inherits
+             | "Identity restricts to" quoted_list                        -> boundary_restricts
+             | "Exposes property" QUOTED ":" WORDS "=" JEXL_EXPR          -> boundary_exposes
+
+
+// ===================================================================
+// SHARED RULES
+// ===================================================================
+
+// Comma-separated list: a, b, and c
+comma_list: list_item ("," _AND? list_item)*
+list_item: QUOTED | WORDS
+
+// Or-separated list: a or b
+or_list: WORDS (_OR WORDS)*
+
+// Quoted list: "a", "b", and "c" or "a" and "b"
+quoted_list: QUOTED (("," _AND? | _AND) QUOTED)*
+
+// Quoted or bare list: "a" or "b"
+quoted_or_list: QUOTED (_OR QUOTED)*
 
 
 // ===================================================================
 // TERMINALS
 // ===================================================================
 
-// A quoted string: "anything"
+// Quoted string
 QUOTED: "\"" /[^"]*/ "\""
 
-// [jexl expression] — preserved as-is
+// JEXL expression in brackets
 JEXL_EXPR: "[" /[^\]]+/ "]"
 
-// Article: A, An, a, an, The, the
-ARTICLE: /(?:A|An|The|a|an|the)\b/
+// Articles (consumed but not captured)
+_ARTICLE: /\b(?:a|an|the|A|An|The)\b/
+_AND: "and"
+_OR: "or"
+_THE: "the"
 
-// A single word (used where we need exactly one)
+// Number
+NUMBER: /\d+/
+
+// Duration (for retry delays)
+DURATION: /\d+\s*(?:seconds?|minutes?|hours?)/
+
+// Single word
 WORD: /\w+/
 
-// Bare word for role names like Anonymous
-BARE_WORD: /[A-Z]\w*/
+// Multiple words (non-greedy, stops at known delimiters)
+WORDS: /(?:(?!\b(?:which|has|can|called|with|is|starts|produces|takes|visible|badge|where|so that|I want)\b)[^\n,:])+/
 
-// Compute shape keywords (Chain removed in R1)
+// Field name (before "which")
+FIELD_NAME: /(?:(?!\bwhich\b)\S)+(?:\s+(?:(?!\bwhich\b)\S)+)*/
+
+// Free text (rest of line, for descriptions etc.)
+FREE_TEXT: /[^\n]+/
+
+// Name text (for Application name — stops at newline)
+NAME_TEXT: /[^\n]+/
+
+// Compute shape keywords
 SHAPE_KW: "Transform" | "Reduce" | "Expand" | "Correlate" | "Route"
 
 // HTTP methods
 HTTP_METHOD: "GET" | "POST" | "PUT" | "DELETE" | "PATCH"
 
-// API path: starts with /
+// API path
 API_PATH: /\/\S+/
 
-// A compute body line (not starting with [ and not a section header or access rule)
+// Compute body line (not [ and not a section keyword)
 BODY_LINE: /(?![\[\]]|Compute called|Channel called|Boundary called|When |As |Navigation|Expose|Stream |Content called|State for|On error|On any|Anyone with).+/
 
-// Non-greedy word sequences for rules with embedded keywords
-WORDS_BEFORE_CALLED: /(?:(?!called)[^\n])+/
-WORDS_BEFORE_STARTS: /(?:(?!starts)[^\n])+/
-WORDS_BEFORE_CAN: /(?:(?!can )[^\n])+/
-
-// Everything else on the line after the keyword prefix
-REST_OF_LINE: /[^\n]+/
-
-// Line separator (injected by preprocessor)
+// Newline (block separator)
+_NL: NEWLINE+
 NEWLINE: /\n/
 
-// Whitespace between tokens on the same line
+// Whitespace between tokens
 %import common.WS_INLINE
 %ignore WS_INLINE
+
+// NOTE: Comments and section dividers are stripped by the preprocessor
+// in lark_parser.py before Lark sees the text. This is because Lark's
+// %ignore doesn't reliably handle multiline-anchored patterns.
