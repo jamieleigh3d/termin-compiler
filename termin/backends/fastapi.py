@@ -233,7 +233,8 @@ class FastApiBackend:
         for role in self.spec.auth.roles:
             roles_dict[role.name] = list(role.scopes)
         # Anonymous is always available as a built-in role (listed last so real roles are default)
-        roles_dict["anonymous"] = []
+        if not any(k.lower() == "anonymous" for k in roles_dict):
+            roles_dict["anonymous"] = []
 
         self._w(f"ROLES = {repr(roles_dict)}")
         self._w()
@@ -933,8 +934,10 @@ class FastApiBackend:
     <script type="module">
     // Termin.js Runtime — powered by jexl expression evaluator
     import jexl from "https://cdn.jsdelivr.net/npm/jexl@2.3.0/+esm";
-    var ctx = JSON.parse(document.getElementById("termin-user-data").textContent);
-    ctx.role = "{{{{ current_role }}}}";
+    var profile = JSON.parse(document.getElementById("termin-user-data").textContent);
+    var role = "{{{{ current_role }}}}";
+    var ctx = {{ role: role, CurrentUser: profile }};
+    ctx[role] = {{ CurrentUser: profile }};
     {{{{ termin_compute_js|safe }}}}
     document.querySelectorAll("[data-termin-expr]").forEach(function(el) {{
         jexl.eval(el.dataset.terminExpr, ctx).then(function(result) {{
