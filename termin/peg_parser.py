@@ -4,22 +4,11 @@ Two-level design:
   Level 1 (Python): Line classification by keyword + block assembly
   Level 2 (TatSu PEG): Per-line content parsing using termin.peg
 
-Each PEG rule parses ONE line and returns structured data (AST dict from
-TatSu).  The Python wrapper preprocesses, classifies, parses, assembles
-blocks, and builds the same AST dataclass nodes as the hand-rolled parser.
-
-Public API
-----------
-    parse_peg(source: str) -> tuple[Program, CompileResult]
-
-This is a drop-in replacement for ``termin.parser.parse``.
+Public API: parse_peg(source: str) -> tuple[Program, CompileResult]
 """
-
 from __future__ import annotations
-
 from pathlib import Path
 from typing import Optional
-
 import tatsu
 
 from .ast_nodes import (
@@ -30,2001 +19,719 @@ from .ast_nodes import (
     ValidateUnique, CreateAs, AfterSave, ShowChart, DisplayAggregation,
     NavBar, NavItem, ApiSection, ApiEndpoint, Stream, Directive,
     ComputeNode, ComputeParam, ChannelDecl, ChannelRequirement, BoundaryDecl,
-    BoundaryProperty, DisplayText,
-    ErrorHandler, ErrorAction,
+    BoundaryProperty, DisplayText, ErrorHandler, ErrorAction,
 )
 from .errors import ParseError, CompileResult
 
-
-# ---------------------------------------------------------------------------
-# Load TatSu grammar
-# ---------------------------------------------------------------------------
-
+# --- Load TatSu grammar ---
 _GRAMMAR_PATH = Path(__file__).parent / "termin.peg"
-_grammar_text = _GRAMMAR_PATH.read_text(encoding="utf-8")
-_model = tatsu.compile(_grammar_text)
+_model = tatsu.compile(_GRAMMAR_PATH.read_text(encoding="utf-8"))
 
-
-# ---------------------------------------------------------------------------
-# Preprocessor: strips comments, dividers, blank lines
-# ---------------------------------------------------------------------------
-
+# --- Preprocessor ---
 def _preprocess(source: str) -> list[tuple[int, str]]:
-    """Return (line_number, cleaned_text) pairs for non-blank, non-comment lines."""
     result = []
-    for line_num, raw_line in enumerate(source.splitlines(), start=1):
-        stripped = raw_line.strip()
-        if not stripped or stripped.startswith("---"):
+    for line_num, raw in enumerate(source.splitlines(), start=1):
+        s = raw.strip()
+        if not s or s.startswith("---"):
             continue
-        if stripped.startswith("(") and stripped.endswith(")"):
+        if s.startswith("(") and s.endswith(")"):
             continue
-        # Strip inline parenthesis comments (but not function calls)
-        idx = stripped.find(" (")
+        idx = s.find(" (")
         if idx > 0:
-            tail = stripped[idx:]
-            # Only strip if the tail matches " (text)" at end of line
-            paren_close = tail.find(")")
-            if paren_close > 0 and paren_close == len(tail) - 1:
-                stripped = stripped[:idx].strip()
-        result.append((line_num, stripped))
+            tail = s[idx:]
+            pc = tail.find(")")
+            if pc > 0 and pc == len(tail) - 1:
+                s = s[:idx].strip()
+        result.append((line_num, s))
     return result
 
-
-# ---------------------------------------------------------------------------
-# Line classification
-# ---------------------------------------------------------------------------
-
-# Order matters: first match wins.
-_LINE_CLASSIFIERS: list[tuple[str, str]] = [
-    ("Application:", "application_line"),
-    ("Description:", "description_line"),
-    ("Users authenticate with", "identity_line"),
-    ("Scopes are", "scopes_line"),
-    # Role alias must come before role standard (both start with ")
-    ('"ALIAS_CHECK"', "role_alias_line"),  # special: checked by content
-    ('A "', "role_standard_line"),
-    ('An "', "role_standard_line"),
-    # Bare role: word has "scope"  (no leading article+quote)
-    ("BARE_ROLE_CHECK", "role_bare_line"),
-    ("Content called", "content_header"),
-    ("Each ", "field_line"),
-    ("Anyone with", "access_line"),
-    ("State for", "state_header"),
-    # state_starts must come before state_also and state_transition
-    ("STATE_STARTS_CHECK", "state_starts_line"),
-    ("STATE_ALSO_CHECK", "state_also_line"),
-    ("STATE_TRANSITION_CHECK", "state_transition_line"),
-    ("When [", "event_jexl_line"),
-    ("When a ", "event_v1_line"),
-    ("When an ", "event_v1_line"),
-    ("Create a ", "event_action_line"),
-    ("Create an ", "event_action_line"),
-    ("Log level:", "log_level_line"),
-    ("On error from", "error_from_line"),
-    ("On any error:", "error_catch_all_line"),
-    ("Retry ", "error_retry_line"),
-    ("Then ", "error_then_line"),
-    ("As ", "story_header"),
-    ("so that ", "so_that_line"),
-    ("Show a page called", "show_page_line"),
-    ("Display a table of", "display_table_line"),
-    ("For each ", "show_related_line"),
-    ("Highlight rows where", "highlight_rows_line"),
-    ("Allow filtering by", "allow_filtering_line"),
-    ("Allow searching by", "allow_searching_line"),
-    ("This table subscribes to", "subscribes_to_line"),
-    ("Accept input for", "accept_input_line"),
-    ("Validate that", "validate_unique_line"),
-    ("Create the ", "create_as_line"),
-    ("After saving,", "after_saving_line"),
-    ("Show a chart of", "show_chart_line"),
-    ("Display text", "display_text_line"),
-    ("Display ", "display_agg_line"),
-    ("Navigation bar:", "nav_bar_line"),
-    # nav item starts with "
-    ("NAV_ITEM_CHECK", "nav_item_line"),
-    ("Expose a REST API at", "api_header_line"),
-    ("API_ENDPOINT_CHECK", "api_endpoint_line"),
-    ("Stream ", "stream_line"),
-    ("Compute called", "compute_header"),
-    ("COMPUTE_SHAPE_CHECK", "compute_shape_line"),
-    ("Channel called", "channel_header"),
-    ("Carries ", "channel_carries_line"),
-    ("Direction:", "channel_direction_line"),
-    ("Delivery:", "channel_delivery_line"),
-    ("Requires ", "channel_requires_line"),
-    ("Endpoint:", "channel_endpoint_line"),
-    ("Boundary called", "boundary_header"),
-    ("Contains ", "boundary_contains_line"),
-    ("Identity inherits", "boundary_inherits_line"),
-    ("Identity restricts", "boundary_restricts_line"),
+# --- Line classifier ---
+_PREFIXES: list[tuple[str, str]] = [
+    ("Application:", "application_line"), ("Description:", "description_line"),
+    ("Users authenticate with", "identity_line"), ("Scopes are", "scopes_line"),
+    ("Content called", "content_header"), ("Each ", "field_line"),
+    ("Anyone with", "access_line"), ("State for", "state_header"),
+    ("When [", "event_jexl_line"), ("When a ", "event_v1_line"), ("When an ", "event_v1_line"),
+    ("Create a ", "event_action_line"), ("Create an ", "event_action_line"),
+    ("Log level:", "log_level_line"), ("On error from", "error_from_line"),
+    ("On any error:", "error_catch_all_line"), ("Retry ", "error_retry_line"),
+    ("Then ", "error_then_line"), ("As ", "story_header"), ("so that ", "so_that_line"),
+    ("Show a page called", "show_page_line"), ("Display a table of", "display_table_line"),
+    ("For each ", "show_related_line"), ("Highlight rows where", "highlight_rows_line"),
+    ("Allow filtering by", "allow_filtering_line"), ("Allow searching by", "allow_searching_line"),
+    ("This table subscribes to", "subscribes_to_line"), ("Accept input for", "accept_input_line"),
+    ("Validate that", "validate_unique_line"), ("Create the ", "create_as_line"),
+    ("After saving,", "after_saving_line"), ("Show a chart of", "show_chart_line"),
+    ("Display text", "display_text_line"), ("Display ", "display_agg_line"),
+    ("Navigation bar:", "nav_bar_line"), ("Expose a REST API at", "api_header_line"),
+    ("Stream ", "stream_line"), ("Compute called", "compute_header"),
+    ("Channel called", "channel_header"), ("Carries ", "channel_carries_line"),
+    ("Direction:", "channel_direction_line"), ("Delivery:", "channel_delivery_line"),
+    ("Requires ", "channel_requires_line"), ("Endpoint:", "channel_endpoint_line"),
+    ("Boundary called", "boundary_header"), ("Contains ", "boundary_contains_line"),
+    ("Identity inherits", "boundary_inherits_line"), ("Identity restricts", "boundary_restricts_line"),
     ("Exposes property", "boundary_exposes_line"),
-    # JEXL standalone (compute body)
-    ("JEXL_BLOCK_CHECK", "compute_body_jexl_line"),
-    # compute body text / role access fallback
-    ("COMPUTE_ACCESS_CHECK", "compute_access_line"),
 ]
-
-_SHAPE_KEYWORDS = ("Transform:", "Reduce:", "Expand:", "Correlate:", "Route:")
+_SHAPE_KW = ("Transform:", "Reduce:", "Expand:", "Correlate:", "Route:")
 _HTTP_METHODS = ("GET ", "POST ", "PUT ", "DELETE ", "PATCH ")
 
-
 def _classify_line(text: str) -> str:
-    """Classify a preprocessed line into a rule name."""
-    for prefix, rule in _LINE_CLASSIFIERS:
-        # Special checks that can't be done by simple prefix
-        if prefix == '"ALIAS_CHECK"':
-            if text.startswith('"') and " is alias for " in text:
-                return rule
-            continue
-        if prefix == "BARE_ROLE_CHECK":
-            # word has "scope" — not starting with A/An + quote
-            if " has " in text and '"' in text and not text.startswith(("A ", "An ", '"', "Content", "Each")):
-                return rule
-            continue
-        if prefix == "STATE_STARTS_CHECK":
-            if " starts as " in text and text.startswith(("A ", "An ")):
-                return rule
-            continue
-        if prefix == "STATE_ALSO_CHECK":
-            if " can also be " in text and text.startswith(("A ", "An ")):
-                return rule
-            continue
-        if prefix == "STATE_TRANSITION_CHECK":
-            if " can become " in text and text.startswith(("A ", "An ")):
-                return rule
-            continue
-        if prefix == "NAV_ITEM_CHECK":
-            if text.startswith('"') and " links to " in text:
-                return rule
-            continue
-        if prefix == "API_ENDPOINT_CHECK":
-            for method in _HTTP_METHODS:
-                if text.startswith(method) or text.lstrip().startswith(method):
-                    return rule
-            continue
-        if prefix == "COMPUTE_SHAPE_CHECK":
-            for kw in _SHAPE_KEYWORDS:
-                if text.startswith(kw):
-                    return rule
-            continue
-        if prefix == "JEXL_BLOCK_CHECK":
-            if text.startswith("[") and text.endswith("]"):
-                return rule
-            continue
-        if prefix == "COMPUTE_ACCESS_CHECK":
-            if " can execute this" in text:
-                return rule
-            continue
-        # Normal prefix check
-        if text.startswith(prefix):
-            return rule
+    if text.startswith('"') and " is alias for " in text: return "role_alias_line"
+    if text.startswith(('A "', 'An "')) and " has " in text: return "role_standard_line"
+    if " has " in text and '"' in text and not text.startswith(("A ", "An ", '"', "Content", "Each")):
+        return "role_bare_line"
+    if text.startswith(("A ", "An ")):
+        if " starts as " in text: return "state_starts_line"
+        if " can also be " in text: return "state_also_line"
+        if " can become " in text: return "state_transition_line"
+    for prefix, rule in _PREFIXES:
+        if text.startswith(prefix): return rule
+    if text.startswith('"') and " links to " in text: return "nav_item_line"
+    if any(text.startswith(m) or text.lstrip().startswith(m) for m in _HTTP_METHODS): return "api_endpoint_line"
+    if any(text.startswith(kw) for kw in _SHAPE_KW): return "compute_shape_line"
+    if text.startswith("[") and text.endswith("]"): return "compute_body_jexl_line"
+    if " can execute this" in text: return "compute_access_line"
     return "unknown"
 
+# --- TatSu helpers ---
+def _try_parse(line, rule):
+    try: return _model.parse(line, rule_name=rule)
+    except Exception: return None
 
-# ---------------------------------------------------------------------------
-# TatSu result helpers (NO REGEX)
-# ---------------------------------------------------------------------------
-
-def _qs(result) -> str:
-    """Extract content from a TatSu quoted_string result: {'content': '...'} -> str."""
-    if isinstance(result, dict) and "content" in result:
-        return result["content"]
-    if isinstance(result, str):
-        return result
-    return str(result) if result is not None else ""
-
-
-def _quoted_list(result) -> list[str]:
-    """Extract list from a TatSu quoted_list result: {'val': [{'content': '...'}, ...]}."""
-    if result is None:
-        return []
-    if isinstance(result, dict) and "val" in result:
-        vals = result["val"]
-        if isinstance(vals, list):
-            return [_qs(v) for v in vals]
-        return [_qs(vals)]
-    if isinstance(result, list):
-        return [_qs(v) for v in result]
-    return [_qs(result)]
-
-
-def _comma_list(result) -> list[str]:
-    """Extract list from a TatSu comma_list result: {'item': [...]}."""
-    if result is None:
-        return []
-    if isinstance(result, dict) and "item" in result:
-        items = result["item"]
-    elif isinstance(result, dict) and "item_" in result:
-        items = result["item_"]
-    elif isinstance(result, dict) and "items_" in result:
-        items = result["items_"]["item"] if isinstance(result["items_"], dict) else result["items_"]
-    elif isinstance(result, list):
-        items = result
-    else:
-        items = [result]
-    if not isinstance(items, list):
-        items = [items]
-    return [str(i).strip() for i in items if i is not None and str(i).strip()]
-
-
-def _or_list(result) -> list[str]:
-    """Extract list from a TatSu or_list result: {'item': [...]}."""
-    if result is None:
-        return []
-    if isinstance(result, dict) and "item" in result:
-        items = result["item"]
-        if not isinstance(items, list):
-            items = [items]
-        return [str(i).strip() for i in items if i is not None]
-    if isinstance(result, list):
-        return [str(i).strip() for i in result if i is not None]
-    return [str(result).strip()]
-
-
-def _safe_int(val, default=0) -> int:
-    """Convert a value to int safely."""
-    if val is None:
-        return default
-    try:
-        return int(val)
-    except (ValueError, TypeError):
-        return default
-
-
-def _try_parse(line: str, rule_name: str):
-    """Try to parse a line with TatSu. Returns the result or None on failure."""
-    try:
-        return _model.parse(line, rule_name=rule_name)
-    except Exception:
-        return None
-
-
-# ---------------------------------------------------------------------------
-# String-splitting helpers for rules where TatSu's greedy `words` fails.
-# These use only str methods (split, find, partition, etc.) -- NO REGEX.
-# ---------------------------------------------------------------------------
-
-def _split_display_table(text: str) -> tuple[str, list[str]]:
-    """Parse 'Display a table of CONTENT [with columns: COL1, COL2]'."""
-    # Remove 'Display a table of ' prefix
-    rest = text[len("Display a table of "):].strip()
-    with_idx = rest.find(" with columns:")
-    if with_idx >= 0:
-        content_name = rest[:with_idx].strip()
-        cols_text = rest[with_idx + len(" with columns:"):].strip()
-        cols = _split_comma_and_list(cols_text)
-        return content_name, cols
-    return rest.strip(), []
-
-
-def _split_show_related(text: str) -> tuple[str, str, str]:
-    """Parse 'For each SINGULAR, show RELATED grouped by GROUP'."""
-    rest = text[len("For each "):].strip()
-    comma_idx = rest.find(",")
-    if comma_idx < 0:
-        return rest, "", ""
-    singular = rest[:comma_idx].strip()
-    after_comma = rest[comma_idx + 1:].strip()
-    # Remove 'show '
-    if after_comma.lower().startswith("show "):
-        after_comma = after_comma[5:].strip()
-    grouped_idx = after_comma.find(" grouped by ")
-    if grouped_idx < 0:
-        return singular, after_comma, ""
-    related = after_comma[:grouped_idx].strip()
-    group_by = after_comma[grouped_idx + len(" grouped by "):].strip()
-    return singular, related, group_by
-
-
-def _split_show_chart(text: str) -> tuple[str, int]:
-    """Parse 'Show a chart of CONTENT over the past N days'."""
-    rest = text[len("Show a chart of "):].strip()
-    over_idx = rest.find(" over the past ")
-    if over_idx < 0:
-        return rest, 30
-    content_name = rest[:over_idx].strip()
-    after_over = rest[over_idx + len(" over the past "):].strip()
-    # after_over is like '30 days'
-    space_idx = after_over.find(" ")
-    if space_idx > 0:
-        days = _safe_int(after_over[:space_idx], 30)
-    else:
-        days = _safe_int(after_over, 30)
-    return content_name, days
-
-
-def _split_stream(text: str) -> tuple[str, str]:
-    """Parse 'Stream DESCRIPTION at PATH'."""
-    rest = text[len("Stream "):].strip()
-    at_idx = rest.rfind(" at ")
-    if at_idx < 0:
-        return rest, ""
-    desc = rest[:at_idx].strip()
-    path = rest[at_idx + len(" at "):].strip()
-    return desc, path
-
-
-def _split_validate_unique(text: str) -> tuple[str, Optional[str]]:
-    """Parse 'Validate that FIELD is unique [before saving]' or 'Validate that [jexl] ...'."""
-    rest = text[len("Validate that "):].strip()
-    if rest.startswith("["):
-        # JEXL
-        bracket_end = rest.find("]")
-        if bracket_end > 0:
-            return "", rest[1:bracket_end].strip()
-        return "", rest[1:].strip()
-    # plain: FIELD is unique [before saving]
-    is_idx = rest.find(" is unique")
-    if is_idx >= 0:
-        return rest[:is_idx].strip(), None
-    return rest.strip(), None
-
-
-def _split_create_as(text: str) -> str:
-    """Parse 'Create the CONTENT as STATE'."""
-    rest = text[len("Create the "):].strip()
-    as_idx = rest.rfind(" as ")
-    if as_idx >= 0:
-        return rest[as_idx + len(" as "):].strip()
-    return ""
-
-
-def _split_highlight_free(text: str) -> tuple[str, str, str]:
-    """Parse 'Highlight rows where FIELD is OP FIELD2' (non-jexl case)."""
-    rest = text[len("Highlight rows where "):].strip()
-    # Check for JEXL
-    if rest.startswith("["):
-        return "", "", ""
-    # Try to find 'is at or below', 'is above', 'is below', 'is equal to'
-    ops = [" is at or below ", " is above ", " is below ", " is equal to "]
-    for op_str in ops:
-        idx = rest.find(op_str)
-        if idx >= 0:
-            field = rest[:idx].strip()
-            op = op_str.strip()[3:]  # remove 'is '
-            threshold = rest[idx + len(op_str):].strip()
-            return field, op, threshold
-    return "", "", ""
-
-
-def _split_subscribes_to(text: str) -> str:
-    """Parse 'This table subscribes to CONTENT changes'."""
-    rest = text[len("This table subscribes to "):].strip()
-    if rest.endswith(" changes"):
-        return rest[:-len(" changes")].strip()
-    return rest.strip()
-
-
-def _split_comma_and_list(text: str) -> list[str]:
-    """Split a comma-and-'and'-separated list. No regex.
-
-    Handles: 'SKU, name, description, unit cost, and category'
-    Returns: ['SKU', 'name', 'description', 'unit cost', 'category']
-    """
-    text = text.strip().rstrip(":")
-    # First split by comma
-    parts = text.split(",")
-    result = []
-    for part in parts:
-        p = part.strip()
-        if not p:
-            continue
-        # Handle leading 'and '
-        if p.startswith("and "):
-            p = p[4:].strip()
-        # Handle standalone 'and' joining in the middle (e.g., 'a and b' with no comma)
-        and_parts = p.split(" and ")
-        for ap in and_parts:
-            ap = ap.strip()
-            if ap:
-                result.append(ap)
-    return result
-
-
-def _split_or_list(text: str) -> list[str]:
-    """Split an 'or'-separated list. No regex."""
-    parts = text.split(" or ")
-    return [p.strip() for p in parts if p.strip()]
-
-
-def _extract_quoted_strings(text: str) -> list[str]:
-    """Extract all double-quoted string contents from text. No regex."""
-    result = []
-    start = 0
-    while True:
-        q1 = text.find('"', start)
-        if q1 < 0:
-            break
-        q2 = text.find('"', q1 + 1)
-        if q2 < 0:
-            break
-        result.append(text[q1 + 1:q2])
-        start = q2 + 1
-    return result
-
-
-def _extract_first_quoted(text: str) -> str:
-    """Extract the first double-quoted string. No regex."""
-    q1 = text.find('"')
-    if q1 < 0:
-        return ""
-    q2 = text.find('"', q1 + 1)
-    if q2 < 0:
-        return ""
-    return text[q1 + 1:q2]
-
-
-def _extract_jexl_bracket(text: str) -> Optional[str]:
-    """Extract [expr] content. No regex."""
-    b1 = text.find("[")
-    if b1 < 0:
-        return None
-    b2 = text.find("]", b1 + 1)
-    if b2 < 0:
-        return None
-    return text[b1 + 1:b2].strip()
-
-
-# ---------------------------------------------------------------------------
-# AST builders -- map TatSu parse results or string-split results to AST nodes
-# ---------------------------------------------------------------------------
-
-def _build_type_expr(clause) -> TypeExpr:
-    """Build a TypeExpr from a TatSu field_clause result."""
-    if clause is None:
-        return TypeExpr(base_type="text")
-
-    # Reference case: {'ref': 'categories', 'constraints': [...]}
-    if "ref" in clause:
-        ref = _qs(clause["ref"])
-        te = TypeExpr(base_type="reference", references=ref)
-        _apply_constraints(te, clause.get("constraints"))
-        return te
-
-    # Type expression case: {'te': {...}}
-    te_result = clause.get("te")
-    if te_result is None:
-        return TypeExpr(base_type="text")
-
-    return _build_type_from_te(te_result)
-
-
-def _build_type_from_te(te) -> TypeExpr:
-    """Build TypeExpr from a type_expr result."""
-    if te is None:
-        return TypeExpr(base_type="text")
-
-    bt_raw = te.get("bt", "text")
-    constraints = te.get("cs")
-
-    # Parse unique flag from named alternative
-    unique = False
-    # TatSu named alternatives: if the result has a parseinfo with rule ending in Unique
-    # For simplicity, check if the TatSu AST signals uniqueness
-    # The rule is: 'unique' bt:base_type cs:constraints => #TypeUnique
-    # or:          bt:base_type cs:constraints           => #TypePlain
-    # When unique, bt is the text after 'unique'
-    # In practice, TatSu puts the rule name in the result's parseinfo
-    # Let's check via the __class__ or type
-    rule_name = _get_rule_name(te)
-    if rule_name == "TypeUnique":
-        unique = True
-
-    base_type = _map_base_type(bt_raw)
-    expr = TypeExpr(base_type=base_type, unique=unique)
-
-    # Enum values
-    if base_type == "enum" and isinstance(bt_raw, dict) and "vals" in bt_raw:
-        expr.enum_values = _extract_enum_values(bt_raw["vals"])
-    elif base_type == "enum" and isinstance(bt_raw, str):
-        # Check if bt_raw itself has the values
-        pass
-
-    # List inner type
-    if base_type == "list" and isinstance(bt_raw, dict) and "inner" in bt_raw:
-        expr.list_type = str(bt_raw["inner"]).strip()
-
-    _apply_constraints(expr, constraints)
-    return expr
-
-
-def _get_rule_name(result) -> str:
-    """Get the named rule (parseinfo.rule) from a TatSu AST result."""
-    if hasattr(result, "parseinfo") and result.parseinfo is not None:
-        return result.parseinfo.rule or ""
+def _rule(result) -> str:
+    if hasattr(result, "parseinfo") and result.parseinfo: return result.parseinfo.rule or ""
     if isinstance(result, dict):
         pi = result.get("parseinfo")
-        if pi is not None and hasattr(pi, "rule"):
-            return pi.rule or ""
+        if pi and hasattr(pi, "rule"): return pi.rule or ""
     return ""
 
+def _qs(r) -> str:
+    if isinstance(r, dict) and "content" in r: return r["content"]
+    return str(r) if r is not None else "" if not isinstance(r, str) else r
 
-def _map_base_type(bt) -> str:
-    """Map a TatSu base_type result to our AST base_type string."""
-    rule = _get_rule_name(bt)
-    type_map = {
-        "TypeText": "text",
-        "TypeCurrency": "currency",
-        "TypeNumber": "number",
-        "TypePercentage": "percentage",
-        "TypeBoolean": "boolean",
-        "TypeDate": "date",
-        "TypeDatetime": "datetime",
-        "TypeAutomatic": "automatic",
-        "TypeWholeNumber": "whole_number",
-        "TypeEnum": "enum",
-        "TypeList": "list",
-    }
-    if rule in type_map:
-        return type_map[rule]
-    # Fallback: check string value
-    if isinstance(bt, str):
-        bt_lower = bt.strip().lower()
-        str_map = {
-            "text": "text",
-            "currency": "currency",
-            "number": "number",
-            "percentage": "percentage",
-            "boolean": "boolean",
-            "true/false": "boolean",
-            "date": "date",
-            "automatic": "automatic",
-        }
-        return str_map.get(bt_lower, "text")
-    return "text"
+def _ql(r) -> list[str]:
+    if r is None: return []
+    if isinstance(r, dict) and "val" in r:
+        v = r["val"]
+        return [_qs(x) for x in v] if isinstance(v, list) else [_qs(v)]
+    return [_qs(x) for x in r] if isinstance(r, list) else [_qs(r)]
 
+def _cl(r) -> list[str]:
+    if r is None: return []
+    items = r.get("item") if isinstance(r, dict) and "item" in r else r if isinstance(r, list) else [r]
+    if not isinstance(items, list): items = [items]
+    return [str(i).strip() for i in items if i is not None and str(i).strip()]
 
-def _extract_enum_values(vals_result) -> list[str]:
-    """Extract enum values from a TatSu enum_vals result."""
-    if vals_result is None:
-        return []
-    val_list = vals_result.get("val") if isinstance(vals_result, dict) else vals_result
-    if val_list is None:
-        return []
-    if not isinstance(val_list, list):
-        val_list = [val_list]
+def _ol(r) -> list[str]:
+    if r is None: return []
+    if isinstance(r, dict) and "item" in r:
+        items = r["item"]
+        if not isinstance(items, list): items = [items]
+        return [str(i).strip() for i in items if i is not None]
+    return [str(i).strip() for i in r if i is not None] if isinstance(r, list) else [str(r).strip()]
+
+def _si(val, d=0) -> int:
+    if val is None: return d
+    try: return int(val)
+    except (ValueError, TypeError): return d
+
+def _scal(text: str) -> list[str]:
+    """Split comma-and list: 'a, b, and c' -> ['a','b','c']."""
+    text = text.strip().rstrip(":")
     result = []
-    for v in val_list:
-        s = _qs(v) if isinstance(v, dict) else str(v).strip()
-        if s:
-            result.append(s)
+    for part in text.split(","):
+        p = part.strip()
+        if not p: continue
+        if p.startswith("and "): p = p[4:].strip()
+        for ap in p.split(" and "):
+            if ap.strip(): result.append(ap.strip())
     return result
 
-
-def _apply_constraints(expr: TypeExpr, constraints) -> None:
-    """Apply constraint list to a TypeExpr."""
-    if constraints is None:
-        return
-    if isinstance(constraints, list):
-        items = constraints
-    elif isinstance(constraints, tuple):
-        items = list(constraints)
-    else:
-        items = [constraints]
-    for item in items:
-        if item is None or item == ",":
-            continue
-        if isinstance(item, list):
-            for sub in item:
-                _apply_single_constraint(expr, sub)
-        elif isinstance(item, tuple):
-            for sub in item:
-                _apply_single_constraint(expr, sub)
-        else:
-            _apply_single_constraint(expr, item)
-
-
-def _apply_single_constraint(expr: TypeExpr, item) -> None:
-    """Apply a single constraint to a TypeExpr."""
-    if item is None or item == ",":
-        return
-    rule = _get_rule_name(item)
-    if rule == "Required" or item == "required":
-        expr.required = True
-    elif rule == "Unique" or item == "unique":
-        expr.unique = True
-    elif rule == "Minimum":
-        if isinstance(item, dict) and "val" in item:
-            expr.minimum = _safe_int(item["val"])
-    elif rule == "Maximum":
-        if isinstance(item, dict) and "val" in item:
-            expr.maximum = _safe_int(item["val"])
-    elif isinstance(item, str):
-        s = item.strip().lower()
-        if s == "required":
-            expr.required = True
-        elif s == "unique":
-            expr.unique = True
-
-
-def _build_access_rule(result, line_num: int) -> AccessRule:
-    """Build an AccessRule from a TatSu access_line result."""
-    scope = _qs(result.get("scope", ""))
-    verbs_raw = result.get("verbs")
-    if isinstance(verbs_raw, (list, tuple)):
-        # TatSu returns ['create', 'or', 'update'] for "create or update"
-        joined = " ".join(str(v) for v in verbs_raw).strip()
-        if joined == "create or update":
-            verbs = ["create or update"]
-        else:
-            # Filter out 'or' connectors
-            verbs = [str(v).strip() for v in verbs_raw if str(v).strip() != "or"]
-    elif isinstance(verbs_raw, str):
-        verbs = [verbs_raw.strip()]
-    else:
-        rule = _get_rule_name(verbs_raw)
-        verb_map = {
-            "VerbView": ["view"],
-            "VerbCreate": ["create"],
-            "VerbUpdate": ["update"],
-            "VerbDelete": ["delete"],
-            "VerbCreateOrUpdate": ["create or update"],
-        }
-        verbs = verb_map.get(rule, ["view"])
-    return AccessRule(scope=scope, verbs=verbs, line=line_num)
-
-
-def _build_story(text: str, line_num: int) -> UserStory:
-    """Build a UserStory from the story_header result using TatSu."""
-    result = _try_parse(text, "story_header")
-    if result is None:
-        # Fallback: parse manually
-        return _build_story_manual(text, line_num)
-
-    role = str(result.get("role", "")).strip()
-    action_result = result.get("action")
-
-    action_text = ""
-    objective = ""
-    page_name = None
-
-    if isinstance(action_result, dict):
-        # Could be StoryActionPage or StoryActionFree
-        so_that = action_result.get("so_that")
-        if so_that:
-            objective = str(so_that).strip().rstrip(":")
-        page = action_result.get("page")
-        if page:
-            page_name = _qs(page)
-            action_text = "see a page"
-        else:
-            action_text = str(action_result.get("text", "")).strip()
-            # Check if the action text has 'so that' embedded
-            so_idx = action_text.find(" so that ")
-            if so_idx >= 0 and not objective:
-                objective = action_text[so_idx + len(" so that "):].strip().rstrip(":")
-                action_text = action_text[:so_idx].strip()
-    elif isinstance(action_result, str):
-        action_text = action_result.strip()
-
-    story = UserStory(role=role, action=action_text, objective=objective, line=line_num)
-    if page_name:
-        story.directives.append(ShowPage(page_name=page_name, line=line_num))
-    return story
-
-
-def _build_story_manual(text: str, line_num: int) -> UserStory:
-    """Fallback: parse story header using string operations."""
-    # Remove 'As ' prefix
-    rest = text[3:].strip()
-    # Remove optional article
-    for article in ("a ", "an ", "the "):
-        if rest.startswith(article):
-            rest = rest[len(article):].strip()
-            break
-
-    # Find ', I want to '
-    marker = ", I want to "
-    idx = rest.find(marker)
-    if idx < 0:
-        return UserStory(role=rest, action="", objective="", line=line_num)
-
-    role = rest[:idx].strip()
-    action_text = rest[idx + len(marker):].strip()
-
-    objective = ""
-    page_name = None
-
-    # Check for inline 'so that' in action
-    so_idx = action_text.find(" so that ")
-    if so_idx >= 0:
-        objective = action_text[so_idx + len(" so that "):].strip().rstrip(":")
-        action_text = action_text[:so_idx].strip()
-
-    # Check for 'see a page "Name"'
-    see_page = "see a page "
-    if action_text.startswith(see_page):
-        pn = _extract_first_quoted(action_text)
-        if pn:
-            page_name = pn
-
-    story = UserStory(role=role, action=action_text, objective=objective, line=line_num)
-    if page_name:
-        story.directives.append(ShowPage(page_name=page_name, line=line_num))
-    return story
-
-
-def _build_nav_item(text: str, line_num: int) -> NavItem:
-    """Build a NavItem from a TatSu nav_item_line result."""
-    result = _try_parse(text, "nav_item_line")
-    if result is None:
-        return _build_nav_item_manual(text, line_num)
-    label = _qs(result.get("label", ""))
-    page = _qs(result.get("page", ""))
-    rest = str(result.get("rest", "")).strip()
-
-    visible_to = []
-    badge = None
-
-    # Parse 'visible to X, Y, ..., badge: EXPR'
-    vis_marker = "visible to "
-    vis_idx = rest.find(vis_marker)
-    if vis_idx >= 0:
-        vis_text = rest[vis_idx + len(vis_marker):]
-        badge_idx = vis_text.find(", badge:")
-        if badge_idx >= 0:
-            badge = vis_text[badge_idx + len(", badge:"):].strip()
-            vis_text = vis_text[:badge_idx]
-        visible_to = _split_comma_and_list(vis_text)
-
-    return NavItem(label=label, page_name=page, visible_to=visible_to, badge=badge, line=line_num)
-
-
-def _build_nav_item_manual(text: str, line_num: int) -> NavItem:
-    """Fallback: parse nav item using string operations."""
-    quotes = _extract_quoted_strings(text)
-    label = quotes[0] if len(quotes) > 0 else ""
-    page = quotes[1] if len(quotes) > 1 else ""
-
-    visible_to = []
-    badge = None
-    vis_marker = "visible to "
-    vis_idx = text.find(vis_marker)
-    if vis_idx >= 0:
-        vis_text = text[vis_idx + len(vis_marker):]
-        badge_idx = vis_text.find(", badge:")
-        if badge_idx >= 0:
-            badge = vis_text[badge_idx + len(", badge:"):].strip()
-            vis_text = vis_text[:badge_idx]
-        visible_to = _split_comma_and_list(vis_text)
-
-    return NavItem(label=label, page_name=page, visible_to=visible_to, badge=badge, line=line_num)
-
-
-def _build_transition(text: str, line_num: int) -> Optional[Transition]:
-    """Build a Transition from a TatSu state_transition_line result."""
-    result = _try_parse(text, "state_transition_line")
-    if result is not None:
-        from_state = str(result.get("from_state", "")).strip()
-        to_state = str(result.get("to_state", "")).strip()
-        scope = _qs(result.get("scope", ""))
-        return Transition(from_state=from_state, to_state=to_state, required_scope=scope, line=line_num)
-
-    # Manual fallback
-    return _build_transition_manual(text, line_num)
-
-
-def _build_transition_manual(text: str, line_num: int) -> Optional[Transition]:
-    """Parse transition manually: 'A STATE SINGULAR can become TARGET [again] if the user has "SCOPE"'."""
-    # Remove leading article
-    rest = text.strip()
-    for article in ("A ", "An "):
-        if rest.startswith(article):
-            rest = rest[len(article):]
-            break
-
-    can_idx = rest.find(" can become ")
-    if can_idx < 0:
-        return None
-
-    before_can = rest[:can_idx].strip()
-    after_can = rest[can_idx + len(" can become "):].strip()
-
-    # before_can is "STATE SINGULAR" — from_state is everything except the last word
-    parts = before_can.rsplit(" ", 1)
-    from_state = parts[0] if len(parts) > 1 else before_can
-
-    # after_can is "TARGET [again] if the user has "SCOPE""
-    if_idx = after_can.find(" if the user has ")
-    if if_idx >= 0:
-        to_state = after_can[:if_idx].strip()
-        # Remove trailing 'again'
-        if to_state.endswith(" again"):
-            to_state = to_state[:-len(" again")].strip()
-        scope = _extract_first_quoted(after_can[if_idx:])
-        return Transition(from_state=from_state, to_state=to_state, required_scope=scope, line=line_num)
-
-    # Check for JEXL condition
-    if_idx = after_can.find(" if ")
-    if if_idx >= 0:
-        to_state = after_can[:if_idx].strip()
-        if to_state.endswith(" again"):
-            to_state = to_state[:-len(" again")].strip()
-        return Transition(from_state=from_state, to_state=to_state, required_scope="", line=line_num)
-
-    return Transition(from_state=from_state, to_state=after_can.strip(), required_scope="", line=line_num)
-
-
-def _build_event_v1(text: str, line_num: int) -> EventRule:
-    """Build an EventRule from a v1 event line."""
-    result = _try_parse(text, "event_v1_line")
-    if result is not None:
-        content = str(result.get("content", "")).strip()
-        trigger = str(result.get("trigger", "")).strip()
-        ev = EventRule(content_name=content, trigger=trigger, line=line_num)
-        cond = result.get("condition")
-        if cond and isinstance(cond, dict):
-            field1 = str(cond.get("field1", "")).strip()
-            op_raw = cond.get("op")
-            op = _get_rule_name(op_raw)
-            op_map = {
-                "OpAtOrBelow": "at or below",
-                "OpAbove": "above",
-                "OpBelow": "below",
-                "OpEqualTo": "equal to",
-            }
-            op_str = op_map.get(op, str(op_raw).strip() if op_raw else "")
-            # field2 is the rest_of_line after 'its'
-            field2 = str(cond.get("rest_of_line", "")).strip()
-            # Actually field2 comes from rest_of_line in the grammar
-            # Let's get it from the raw text
-            ev.condition = EventCondition(field1=field1, operator=op_str, field2="", line=line_num)
-            # Need to extract field2 from text
-            _fill_event_condition_field2(ev.condition, text)
-        return ev
-
-    # Fallback
-    return _build_event_v1_manual(text, line_num)
-
-
-def _fill_event_condition_field2(cond: EventCondition, text: str) -> None:
-    """Extract field2 from the event text after 'its <op> its FIELD2'."""
-    # Find the operator in the text
-    op = cond.operator
-    if not op:
-        return
-    marker = " is " + op + " its "
-    idx = text.find(marker)
-    if idx >= 0:
-        rest = text[idx + len(marker):].strip().rstrip(":")
-        cond.field2 = rest
-
-
-def _build_event_v1_manual(text: str, line_num: int) -> EventRule:
-    """Fallback: parse v1 event line manually."""
-    # 'When a CONTENT is TRIGGER [and its FIELD1 is OP its FIELD2]:'
-    rest = text[len("When "):].strip().rstrip(":")
-    # Remove article
-    for article in ("a ", "an ", "the "):
-        if rest.startswith(article):
-            rest = rest[len(article):]
-            break
-
-    # Find 'is created/updated/deleted'
-    for trigger in ("created", "updated", "deleted"):
-        is_trigger = " is " + trigger
-        idx = rest.find(is_trigger)
-        if idx >= 0:
-            content = rest[:idx].strip()
-            ev = EventRule(content_name=content, trigger=trigger, line=line_num)
-            after = rest[idx + len(is_trigger):].strip()
-            if after.startswith("and its "):
-                _parse_event_condition(ev, after[len("and its "):].strip())
-            return ev
-    return EventRule(content_name=rest, trigger="unknown", line=line_num)
-
-
-def _parse_event_condition(ev: EventRule, text: str) -> None:
-    """Parse 'FIELD1 is OP its FIELD2' into an EventCondition."""
-    ops = [
-        ("at or below", "at or below"),
-        ("above", "above"),
-        ("below", "below"),
-        ("equal to", "equal to"),
-    ]
-    for op_text, op_name in ops:
-        marker = " is " + op_text + " its "
-        idx = text.find(marker)
-        if idx >= 0:
-            field1 = text[:idx].strip()
-            field2 = text[idx + len(marker):].strip()
-            ev.condition = EventCondition(field1=field1, operator=op_name, field2=field2, line=ev.line)
-            return
-
-
-def _build_compute_shape(text: str, line_num: int) -> tuple:
-    """Build compute shape data from a compute_shape_line.
-
-    Always uses manual IO parsing because TatSu's greedy ``words`` rule
-    merges untyped params like 'orders and order lines' into a single name.
-    TatSu is only used to extract the shape keyword reliably.
-    """
-    # Extract shape keyword (before the colon)
-    colon_idx = text.find(":")
-    if colon_idx < 0:
-        return ("transform", [], [], [], [])
-    shape = text[:colon_idx].strip().lower()
-    rest = text[colon_idx + 1:].strip()
-    return _parse_compute_io_text(shape, rest)
-
-
-def _parse_param_list(raw) -> list[ComputeParam]:
-    """Parse a TatSu param_list result into ComputeParam list."""
-    if raw is None:
-        return []
-    params = raw.get("param") if isinstance(raw, dict) else raw
-    if params is None:
-        return []
-    if not isinstance(params, list):
-        params = [params]
-    result = []
-    for p in params:
-        if isinstance(p, dict):
-            name = _qs(p.get("name", ""))
-            type_name = str(p.get("type_name", "")).strip()
-            result.append(ComputeParam(name=name, type_name=type_name))
-        elif isinstance(p, str):
-            result.append(ComputeParam(name=p.strip(), type_name=""))
-    return result
-
-
-def _parse_compute_io_text(shape: str, text: str) -> tuple:
-    """Parse compute IO from free text like 'takes orders, produces one of bugs or features'."""
-    inputs, outputs, in_p, out_p = [], [], [], []
-
-    takes_idx = text.find("takes ")
-    produces_idx = text.find("produces ")
-    if takes_idx >= 0 and produces_idx >= 0:
-        takes_text = text[takes_idx + 6:produces_idx].strip().rstrip(",").strip()
-        produces_text = text[produces_idx + 9:].strip()
-
-        # Remove articles
-        for article in ("a ", "an ", "the "):
-            if takes_text.startswith(article):
-                takes_text = takes_text[len(article):]
-            if produces_text.startswith(article):
-                produces_text = produces_text[len(article):]
-
-        # Check for typed params (name : Type)
-        if " : " in takes_text or ": " in takes_text:
-            in_p = _parse_typed_params_text(takes_text)
-            inputs = [p.type_name for p in in_p] if in_p and in_p[0].type_name else [p.name for p in in_p]
-        else:
-            inputs = _split_and_list(takes_text)
-
-        if produces_text.startswith("one of "):
-            outputs = _split_or_and_comma(produces_text[7:])
-        elif " : " in produces_text or ": " in produces_text:
-            out_p = _parse_typed_params_text(produces_text)
-            outputs = [p.type_name for p in out_p] if out_p and out_p[0].type_name else [p.name for p in out_p]
-        else:
-            outputs = _split_and_list(produces_text)
-
-    return (shape, inputs, outputs, in_p, out_p)
-
-
-def _parse_typed_params_text(text: str) -> list[ComputeParam]:
-    """Parse typed params from text like 'u : UserProfile and msg : Text'."""
-    # Split by 'and' or ','
-    parts = text.replace(" and ", ",").split(",")
-    result = []
-    for part in parts:
-        part = part.strip()
-        if not part:
-            continue
-        # Remove article
-        for article in ("a ", "an ", "the "):
-            if part.startswith(article):
-                part = part[len(article):]
-        colon_idx = part.find(":")
-        if colon_idx > 0:
-            name = part[:colon_idx].strip().strip('"')
-            type_name = part[colon_idx + 1:].strip()
-            result.append(ComputeParam(name=name, type_name=type_name))
-        else:
-            result.append(ComputeParam(name=part.strip(), type_name=""))
-    return result
-
-
-def _split_and_list(text: str) -> list[str]:
-    """Split by 'and' and commas."""
-    parts = text.replace(" and ", ",").split(",")
-    return [p.strip() for p in parts if p.strip()]
-
-
-def _split_or_and_comma(text: str) -> list[str]:
-    """Split by 'or' and commas."""
-    parts = text.replace(" or ", ",").split(",")
-    return [p.strip() for p in parts if p.strip()]
-
-
-def _build_compute_shape_manual(text: str, line_num: int) -> tuple:
-    """Fallback: parse compute shape manually."""
-    colon_idx = text.find(":")
-    if colon_idx < 0:
-        return ("transform", [], [], [], [])
-    shape = text[:colon_idx].strip().lower()
-    rest = text[colon_idx + 1:].strip()
-    return _parse_compute_io_text(shape, rest)
-
-
-def _build_error_action(text: str, line_num: int) -> ErrorAction:
-    """Build ErrorAction from a 'Then ...' line."""
-    result = _try_parse(text, "error_then_line")
-    if result is not None:
-        action_raw = result.get("action")
-        rule = _get_rule_name(action_raw)
-        if rule == "ActionDisable":
-            return ErrorAction(kind="disable", target=str(action_raw.get("target", "")).strip(), line=line_num)
-        elif rule == "ActionEscalate" or action_raw == "escalate":
-            return ErrorAction(kind="escalate", line=line_num)
-        elif rule == "ActionNotify":
-            return ErrorAction(kind="notify", target=_qs(action_raw.get("role", "")),
-                               jexl_expr=_qs(action_raw.get("expr", "")), line=line_num)
-        elif rule == "ActionCreate":
-            return ErrorAction(kind="create", target=_qs(action_raw.get("name", "")), line=line_num)
-        elif rule == "ActionSet":
-            return ErrorAction(kind="set", jexl_expr=_qs(action_raw.get("expr", "")), line=line_num)
-
-    # Manual fallback
-    rest = text[len("Then "):].strip()
-    if rest.startswith("disable "):
-        return ErrorAction(kind="disable", target=rest[8:].strip(), line=line_num)
-    elif rest == "escalate":
-        return ErrorAction(kind="escalate", line=line_num)
-    elif rest.startswith("notify "):
-        target = _extract_first_quoted(rest)
-        jexl = _extract_jexl_bracket(rest)
-        return ErrorAction(kind="notify", target=target, jexl_expr=jexl or "", line=line_num)
-    elif rest.startswith("create "):
-        target = _extract_first_quoted(rest)
-        return ErrorAction(kind="create", target=target, line=line_num)
-    elif rest.startswith("set "):
-        jexl = _extract_jexl_bracket(rest)
-        return ErrorAction(kind="set", jexl_expr=jexl or "", line=line_num)
-    return ErrorAction(kind="unknown", target=rest, line=line_num)
-
-
-# ---------------------------------------------------------------------------
-# Parse + classify each line
-# ---------------------------------------------------------------------------
-
-def _parse_line(text: str, rule: str, line_num: int):
-    """Parse a single classified line and return a partial AST fragment."""
-
-    if rule == "application_line":
-        r = _try_parse(text, rule)
-        if r:
-            return ("application", Application(name=str(r["name"]).strip(), line=line_num))
-        # Fallback
-        return ("application", Application(name=text[len("Application:"):].strip(), line=line_num))
-
-    if rule == "description_line":
-        r = _try_parse(text, rule)
-        if r:
-            return ("description", str(r["desc"]).strip())
-        return ("description", text[len("Description:"):].strip())
-
-    if rule == "identity_line":
-        r = _try_parse(text, rule)
-        if r:
-            return ("identity", Identity(provider=str(r["provider"]).strip(), line=line_num))
-        return ("identity", Identity(provider=text.split("with", 1)[1].strip(), line=line_num))
-
-    if rule == "scopes_line":
-        r = _try_parse(text, rule)
-        if r:
-            return ("scopes", _quoted_list(r.get("scopes")))
-        return ("scopes", _extract_quoted_strings(text))
-
-    if rule == "role_standard_line":
-        r = _try_parse(text, rule)
-        if r:
-            name = _qs(r.get("name", ""))
-            scopes = _quoted_list(r.get("scopes"))
-            return ("role", Role(name=name, scopes=scopes, line=line_num))
-        # Fallback
-        name = _extract_first_quoted(text)
-        scopes = _extract_quoted_strings(text)
-        # Remove the role name from scopes (it's the first quoted string in A "name" has ...)
-        if scopes and scopes[0] == name:
-            scopes = scopes[1:]
-        return ("role", Role(name=name, scopes=scopes, line=line_num))
-
-    if rule == "role_bare_line":
-        r = _try_parse(text, rule)
-        if r:
-            name = str(r.get("name", "")).strip()
-            scopes = _quoted_list(r.get("scopes"))
-            return ("role", Role(name=name, scopes=scopes, line=line_num))
-        # Fallback
-        has_idx = text.find(" has ")
-        name = text[:has_idx].strip() if has_idx >= 0 else text.strip()
-        scopes = _extract_quoted_strings(text)
-        return ("role", Role(name=name, scopes=scopes, line=line_num))
-
-    if rule == "role_alias_line":
-        r = _try_parse(text, rule)
-        if r:
-            return ("role_alias", RoleAlias(short_name=_qs(r.get("short", "")),
-                                            full_name=_qs(r.get("full", "")), line=line_num))
-        quotes = _extract_quoted_strings(text)
-        return ("role_alias", RoleAlias(
-            short_name=quotes[0] if quotes else "",
-            full_name=quotes[1] if len(quotes) > 1 else "",
-            line=line_num))
-
-    if rule == "content_header":
-        r = _try_parse(text, rule)
-        if r:
-            name = _qs(r.get("name", ""))
-        else:
-            name = _extract_first_quoted(text)
-        singular = name.rstrip("s") if name.endswith("s") else name
-        return ("content_header", Content(name=name, singular=singular, line=line_num))
-
-    if rule == "field_line":
-        r = _try_parse(text, rule)
-        if r:
-            singular = str(r.get("singular", "")).strip()
-            field_name = str(r.get("field_name", "")).strip()
-            # Use manual type parsing for reliability -- TatSu's named
-            # alternatives don't expose which variant matched
-            which_idx = text.find(" which ")
-            if which_idx >= 0:
-                after_which = text[which_idx + 7:].strip()
-                if after_which.startswith("is "):
-                    te = _parse_type_text(after_which[3:], line_num)
-                elif after_which.startswith("references "):
-                    ref_text = after_which[11:].strip()
-                    comma_idx = ref_text.find(",")
-                    constraints_text = ""
-                    if comma_idx >= 0:
-                        constraints_text = ref_text[comma_idx:]
-                        ref_text = ref_text[:comma_idx].strip()
-                    te = TypeExpr(base_type="reference", references=ref_text.strip('"'), line=line_num)
-                    if "required" in constraints_text:
-                        te.required = True
-                    if "unique" in constraints_text:
-                        te.unique = True
-                else:
-                    te = TypeExpr(base_type="text", line=line_num)
-            else:
-                te = TypeExpr(base_type="text", line=line_num)
-            return ("field", Field(name=field_name, type_expr=te, line=line_num), singular)
-        # Manual fallback for field lines
-        return _parse_field_manual(text, line_num)
-
-    if rule == "access_line":
-        r = _try_parse(text, rule)
-        if r:
-            return ("access", _build_access_rule(r, line_num))
-        # Fallback
-        scope = _extract_first_quoted(text)
-        can_idx = text.find(" can ")
-        if can_idx >= 0:
-            rest = text[can_idx + 5:].strip()
-            space_idx = rest.rfind(" ")
-            verb = rest[:space_idx].strip() if space_idx >= 0 else rest
-            return ("access", AccessRule(scope=scope, verbs=[verb], line=line_num))
-        return ("access", AccessRule(scope=scope, verbs=["view"], line=line_num))
-
-    if rule == "state_header":
-        r = _try_parse(text, rule)
-        if r:
-            target = str(r.get("target", "")).strip()
-            machine_name = _qs(r.get("name", ""))
-        else:
-            # Manual
-            machine_name = _extract_first_quoted(text)
-            called_idx = text.find(" called ")
-            target = text[len("State for "):called_idx].strip() if called_idx >= 0 else ""
-        return ("state_header", StateMachine(content_name=target, machine_name=machine_name,
-                                             singular="", initial_state="", line=line_num))
-
-    if rule == "state_starts_line":
-        r = _try_parse(text, rule)
-        if r:
-            singular = str(r.get("singular", "")).strip()
-            state = _qs(r.get("state", ""))
-            return ("state_starts", singular, state)
-        # Fallback
-        state = _extract_first_quoted(text)
-        # 'A SINGULAR starts as "STATE"'
-        starts_idx = text.find(" starts as ")
-        before = text[:starts_idx].strip() if starts_idx >= 0 else ""
-        # Remove article
-        for article in ("A ", "An "):
-            if before.startswith(article):
-                before = before[len(article):]
-        return ("state_starts", before.strip(), state)
-
-    if rule == "state_also_line":
-        r = _try_parse(text, rule)
-        if r:
-            states = _quoted_list(r.get("states"))
-            return ("state_also", states)
-        return ("state_also", _extract_quoted_strings(text))
-
-    if rule == "state_transition_line":
-        t = _build_transition(text, line_num)
-        if t:
-            return ("state_transition", t)
-        return None
-
-    if rule == "event_jexl_line":
-        r = _try_parse(text, rule)
-        if r:
-            jexl = _qs(r.get("jexl", ""))
-            return ("event_header", EventRule(content_name="", trigger="jexl",
-                                             jexl_condition=jexl, line=line_num))
-        jexl = _extract_jexl_bracket(text)
-        return ("event_header", EventRule(content_name="", trigger="jexl",
-                                         jexl_condition=jexl or "", line=line_num))
-
-    if rule == "event_v1_line":
-        ev = _build_event_v1(text, line_num)
-        return ("event_header", ev)
-
-    if rule == "event_action_line":
-        r = _try_parse(text, rule)
-        if r:
-            name = _qs(r.get("name", ""))
-            fields = _comma_list(r.get("fields"))
-            return ("event_action", EventAction(create_content=name, fields=fields, line=line_num))
-        # Fallback
-        return _parse_event_action_manual(text, line_num)
-
-    if rule == "log_level_line":
-        r = _try_parse(text, rule)
-        if r:
-            return ("log_level", str(r.get("level", "")).strip())
-        # Fallback
-        return ("log_level", text.split(":", 1)[1].strip() if ":" in text else "")
-
-    if rule == "error_from_line":
-        r = _try_parse(text, rule)
-        if r:
-            source = _qs(r.get("source", ""))
-            jexl = _qs(r.get("jexl", "")) if r.get("jexl") else None
-            return ("error_header", ErrorHandler(source=source, condition_jexl=jexl, line=line_num))
-        source = _extract_first_quoted(text)
-        jexl = _extract_jexl_bracket(text)
-        return ("error_header", ErrorHandler(source=source, condition_jexl=jexl, line=line_num))
-
-    if rule == "error_catch_all_line":
-        return ("error_header", ErrorHandler(source="", is_catch_all=True, line=line_num))
-
-    if rule == "error_retry_line":
-        r = _try_parse(text, rule)
-        if r:
-            count = _safe_int(r.get("count"), 1)
-            backoff = "backoff" in text.lower()
-            max_delay = str(r.get("max_delay", "")).strip() if r.get("max_delay") else None
-            return ("error_retry", ErrorAction(kind="retry", retry_count=count,
-                                               retry_backoff=backoff, retry_max_delay=max_delay, line=line_num))
-        # Fallback
-        parts = text.split()
-        count = 1
-        for i, p in enumerate(parts):
-            if p.isdigit():
-                count = int(p)
-                break
-        return ("error_retry", ErrorAction(kind="retry", retry_count=count,
-                                           retry_backoff="backoff" in text.lower(), line=line_num))
-
-    if rule == "error_then_line":
-        return ("error_then", _build_error_action(text, line_num))
-
-    if rule == "story_header":
-        story = _build_story(text, line_num)
-        return ("story_header", story)
-
-    if rule == "so_that_line":
-        r = _try_parse(text, rule)
-        if r:
-            return ("so_that", str(r.get("text", "")).strip().rstrip(":"))
-        rest = text[len("so that "):].strip().rstrip(":")
-        return ("so_that", rest)
-
-    if rule == "show_page_line":
-        r = _try_parse(text, rule)
-        if r:
-            return ("directive", ShowPage(page_name=_qs(r.get("name", "")), line=line_num))
-        return ("directive", ShowPage(page_name=_extract_first_quoted(text), line=line_num))
-
-    if rule == "display_table_line":
-        content_name, cols = _split_display_table(text)
-        return ("directive", DisplayTable(content_name=content_name, columns=cols, line=line_num))
-
-    if rule == "show_related_line":
-        singular, related, group_by = _split_show_related(text)
-        return ("directive", ShowRelated(singular=singular, related_content=related,
-                                        group_by=group_by, line=line_num))
-
-    if rule == "highlight_rows_line":
-        # Try JEXL first
-        rest = text[len("Highlight rows where "):].strip()
-        jexl = _extract_jexl_bracket(rest)
-        if jexl:
-            return ("directive", HighlightRows(jexl_condition=jexl, line=line_num))
-        field, op, threshold = _split_highlight_free(text)
-        return ("directive", HighlightRows(field=field, operator=op,
-                                           threshold_field=threshold, line=line_num))
-
-    if rule == "allow_filtering_line":
-        r = _try_parse(text, rule)
-        if r:
-            fields = _comma_list(r.get("fields"))
-            return ("directive", AllowFilter(fields=fields, line=line_num))
-        rest = text[len("Allow filtering by "):].strip()
-        return ("directive", AllowFilter(fields=_split_comma_and_list(rest), line=line_num))
-
-    if rule == "allow_searching_line":
-        r = _try_parse(text, rule)
-        if r:
-            fields = _or_list(r.get("fields"))
-            return ("directive", AllowSearch(fields=fields, line=line_num))
-        rest = text[len("Allow searching by "):].strip()
-        return ("directive", AllowSearch(fields=_split_or_list(rest), line=line_num))
-
-    if rule == "subscribes_to_line":
-        content = _split_subscribes_to(text)
-        return ("directive", SubscribeTo(content_name=content, line=line_num))
-
-    if rule == "accept_input_line":
-        r = _try_parse(text, rule)
-        if r:
-            fields = _comma_list(r.get("fields"))
-            return ("directive", AcceptInput(fields=fields, line=line_num))
-        rest = text[len("Accept input for "):].strip()
-        return ("directive", AcceptInput(fields=_split_comma_and_list(rest), line=line_num))
-
-    if rule == "validate_unique_line":
-        field, jexl = _split_validate_unique(text)
-        if jexl:
-            return ("directive", ValidateUnique(jexl_condition=jexl, line=line_num))
-        return ("directive", ValidateUnique(field=field, line=line_num))
-
-    if rule == "create_as_line":
-        state = _split_create_as(text)
-        return ("directive", CreateAs(initial_state=state, line=line_num))
-
-    if rule == "after_saving_line":
-        r = _try_parse(text, rule)
-        if r:
-            return ("directive", AfterSave(instruction=str(r.get("text", "")).strip(), line=line_num))
-        rest = text[len("After saving,"):].strip()
-        return ("directive", AfterSave(instruction=rest, line=line_num))
-
-    if rule == "show_chart_line":
-        content_name, days = _split_show_chart(text)
-        return ("directive", ShowChart(content_name=content_name, days=days, line=line_num))
-
-    if rule == "display_text_line":
-        r = _try_parse(text, rule)
-        if r:
-            # Check which variant
-            jexl = r.get("jexl")
-            if jexl:
-                return ("directive", DisplayText(text=_qs(jexl), is_expression=True, line=line_num))
-            quoted = r.get("text")
-            if quoted:
-                return ("directive", DisplayText(text=_qs(quoted), line=line_num))
-            expr = r.get("expr")
-            if expr:
-                return ("directive", DisplayText(text=str(expr).strip(), is_expression=True, line=line_num))
-        # Fallback
-        rest = text[len("Display text"):].strip()
-        jexl = _extract_jexl_bracket(rest)
-        if jexl:
-            return ("directive", DisplayText(text=jexl, is_expression=True, line=line_num))
-        quoted = _extract_first_quoted(rest)
-        if quoted:
-            return ("directive", DisplayText(text=quoted, line=line_num))
-        return ("directive", DisplayText(text=rest.strip(), is_expression=True, line=line_num))
-
-    if rule == "display_agg_line":
-        r = _try_parse(text, rule)
-        if r:
-            return ("directive", DisplayAggregation(description=str(r.get("text", "")).strip(), line=line_num))
-        rest = text[len("Display "):].strip()
-        return ("directive", DisplayAggregation(description=rest, line=line_num))
-
-    if rule == "nav_bar_line":
-        return ("nav_bar",)
-
-    if rule == "nav_item_line":
-        return ("nav_item", _build_nav_item(text, line_num))
-
-    if rule == "api_header_line":
-        r = _try_parse(text, rule)
-        if r:
-            path = str(r.get("path", "")).strip().rstrip(":")
-            return ("api_header", ApiSection(base_path=path, line=line_num))
-        # Fallback
-        rest = text[len("Expose a REST API at "):].strip().rstrip(":")
-        return ("api_header", ApiSection(base_path=rest, line=line_num))
-
-    if rule == "api_endpoint_line":
-        r = _try_parse(text, rule)
-        if r:
-            method = str(r.get("method", "")).strip()
-            path = str(r.get("path", "")).strip()
-            desc = str(r.get("desc", "")).strip() if r.get("desc") else ""
-            return ("api_endpoint", ApiEndpoint(method=method, path=path, description=desc, line=line_num))
-        # Fallback
-        parts = text.strip().split(None, 2)
-        method = parts[0] if parts else ""
-        path = parts[1] if len(parts) > 1 else ""
-        desc = parts[2] if len(parts) > 2 else ""
-        return ("api_endpoint", ApiEndpoint(method=method, path=path, description=desc.strip(), line=line_num))
-
-    if rule == "stream_line":
-        desc, path = _split_stream(text)
-        return ("stream", Stream(description=desc, path=path, line=line_num))
-
-    if rule == "compute_header":
-        r = _try_parse(text, rule)
-        if r:
-            name = _qs(r.get("name", ""))
-        else:
-            name = _extract_first_quoted(text)
-        return ("compute_header", ComputeNode(name=name, line=line_num))
-
-    if rule == "compute_shape_line":
-        shape_data = _build_compute_shape(text, line_num)
-        return ("compute_shape", shape_data)
-
-    if rule == "compute_body_jexl_line":
-        content = text[1:-1].strip()  # Strip [ and ]
-        return ("compute_body", content)
-
-    if rule == "compute_access_line":
-        r = _try_parse(text, rule)
-        if r:
-            role = _qs(r.get("role", ""))
-            return ("compute_access", role)
-        # Fallback
-        can_idx = text.find(" can execute this")
-        if can_idx >= 0:
-            role = text[:can_idx].strip().strip('"')
-            return ("compute_access", role)
-        return ("compute_access", "")
-
-    if rule == "channel_header":
-        r = _try_parse(text, rule)
-        if r:
-            name = _qs(r.get("name", ""))
-        else:
-            name = _extract_first_quoted(text)
-        return ("channel_header", ChannelDecl(name=name, line=line_num))
-
-    if rule == "channel_carries_line":
-        r = _try_parse(text, rule)
-        if r:
-            return ("channel_prop", "carries", str(r.get("content", "")).strip())
-        return ("channel_prop", "carries", text[len("Carries "):].strip())
-
-    if rule == "channel_direction_line":
-        r = _try_parse(text, rule)
-        if r:
-            return ("channel_prop", "direction", str(r.get("dir", "")).strip().lower())
-        return ("channel_prop", "direction", text.split(":", 1)[1].strip().lower())
-
-    if rule == "channel_delivery_line":
-        r = _try_parse(text, rule)
-        if r:
-            return ("channel_prop", "delivery", str(r.get("del", "")).strip().lower())
-        return ("channel_prop", "delivery", text.split(":", 1)[1].strip().lower())
-
-    if rule == "channel_requires_line":
-        r = _try_parse(text, rule)
-        if r:
-            scope = _qs(r.get("scope", ""))
-            direction = str(r.get("dir", "")).strip()
-            return ("channel_prop", "requires", ChannelRequirement(scope=scope, direction=direction, line=line_num))
-        scope = _extract_first_quoted(text)
-        direction = "send" if " to send" in text else "receive"
-        return ("channel_prop", "requires", ChannelRequirement(scope=scope, direction=direction, line=line_num))
-
-    if rule == "channel_endpoint_line":
-        r = _try_parse(text, rule)
-        if r:
-            return ("channel_prop", "endpoint", str(r.get("path", "")).strip())
-        return ("channel_prop", "endpoint", text.split(":", 1)[1].strip())
-
-    if rule == "boundary_header":
-        r = _try_parse(text, rule)
-        if r:
-            name = _qs(r.get("name", ""))
-        else:
-            name = _extract_first_quoted(text)
-        return ("boundary_header", BoundaryDecl(name=name, line=line_num))
-
-    if rule == "boundary_contains_line":
-        r = _try_parse(text, rule)
-        if r:
-            items_raw = r.get("items_") or r.get("items")
-            items = _comma_list(items_raw)
-            return ("boundary_prop", "contains", items)
-        rest = text[len("Contains "):].strip()
-        return ("boundary_prop", "contains", _split_comma_and_list(rest))
-
-    if rule == "boundary_inherits_line":
-        r = _try_parse(text, rule)
-        if r:
-            parent = str(r.get("parent", "")).strip()
-            return ("boundary_prop", "inherits", parent)
-        rest = text[len("Identity inherits from "):].strip()
-        return ("boundary_prop", "inherits", rest)
-
-    if rule == "boundary_restricts_line":
-        r = _try_parse(text, rule)
-        if r:
-            scopes = _quoted_list(r.get("scopes"))
-            return ("boundary_prop", "restricts", scopes)
-        return ("boundary_prop", "restricts", _extract_quoted_strings(text))
-
-    if rule == "boundary_exposes_line":
-        r = _try_parse(text, rule)
-        if r:
-            name = _qs(r.get("name", ""))
-            type_name = str(r.get("type_name", "")).strip()
-            jexl = _qs(r.get("jexl", ""))
-            return ("boundary_prop", "exposes",
-                    BoundaryProperty(name=name, type_name=type_name, jexl_expr=jexl, line=line_num))
-        # Fallback
-        name = _extract_first_quoted(text)
-        jexl = _extract_jexl_bracket(text)
-        # type_name is between ': ' and '='
-        colon_idx = text.find(":", text.find('"', text.find('"') + 1) + 1)
-        eq_idx = text.find("=")
-        type_name = text[colon_idx + 1:eq_idx].strip() if colon_idx >= 0 and eq_idx > colon_idx else ""
-        return ("boundary_prop", "exposes",
-                BoundaryProperty(name=name, type_name=type_name, jexl_expr=jexl or "", line=line_num))
-
-    return None
-
-
-def _parse_field_manual(text: str, line_num: int):
-    """Manual fallback for field_line parsing."""
-    # 'Each SINGULAR has a FIELD which is/references TYPE'
-    has_idx = text.find(" has ")
-    if has_idx < 0:
-        return ("field", Field(name="unknown", type_expr=TypeExpr(base_type="text"), line=line_num), "")
-
-    singular_part = text[len("Each "):has_idx].strip()
-    after_has = text[has_idx + 5:].strip()
-
-    # Remove article
-    for article in ("a ", "an ", "the "):
-        if after_has.startswith(article):
-            after_has = after_has[len(article):]
-            break
-
-    which_idx = after_has.find(" which ")
-    if which_idx < 0:
-        return ("field", Field(name="unknown", type_expr=TypeExpr(base_type="text"), line=line_num), singular_part)
-
-    field_name = after_has[:which_idx].strip()
-    type_part = after_has[which_idx + 7:].strip()  # after ' which '
-
-    if type_part.startswith("is "):
-        type_text = type_part[3:].strip()
-    elif type_part.startswith("references "):
-        ref_name = type_part[11:].strip()
-        # Check for constraints after the reference name
-        comma_idx = ref_name.find(",")
-        constraints_text = ""
-        if comma_idx >= 0:
-            constraints_text = ref_name[comma_idx:]
-            ref_name = ref_name[:comma_idx].strip()
-        te = TypeExpr(base_type="reference", references=ref_name.strip('"'), line=line_num)
-        if "required" in constraints_text:
-            te.required = True
-        if "unique" in constraints_text:
-            te.unique = True
-        return ("field", Field(name=field_name, type_expr=te, line=line_num), singular_part)
-    else:
-        type_text = type_part
-
-    te = _parse_type_text(type_text, line_num)
-    return ("field", Field(name=field_name, type_expr=te, line=line_num), singular_part)
-
-
-def _parse_type_text(text: str, line_num: int = 0) -> TypeExpr:
-    """Parse a type expression from text using string operations only."""
-    expr = TypeExpr(base_type="text", line=line_num)
-
-    # Extract constraints at end: ', required', ', unique', ', minimum N', ', maximum N'
+def _eqs(text: str) -> list[str]:
+    result, start = [], 0
     while True:
-        text_lower = text.lower().rstrip()
-        if text_lower.endswith(", required") or text_lower.endswith(",required"):
-            expr.required = True
-            text = text[:text.lower().rfind("required")].rstrip().rstrip(",").strip()
-            continue
-        if text_lower.endswith(", unique") or text_lower.endswith(",unique"):
-            expr.unique = True
-            text = text[:text.lower().rfind("unique")].rstrip().rstrip(",").strip()
-            continue
-        # Check for minimum N
-        min_marker = ", minimum "
-        min_idx = text_lower.rfind(min_marker)
-        if min_idx >= 0:
-            val_text = text[min_idx + len(min_marker):].strip().rstrip(",").strip()
-            # val_text might have more constraints after it
-            space = val_text.find(",")
-            if space >= 0:
-                expr.minimum = _safe_int(val_text[:space].strip())
-            else:
-                expr.minimum = _safe_int(val_text)
-            text = text[:min_idx].strip()
-            continue
-        max_marker = ", maximum "
-        max_idx = text_lower.rfind(max_marker)
-        if max_idx >= 0:
-            val_text = text[max_idx + len(max_marker):].strip().rstrip(",").strip()
-            space = val_text.find(",")
-            if space >= 0:
-                expr.maximum = _safe_int(val_text[:space].strip())
-            else:
-                expr.maximum = _safe_int(val_text)
-            text = text[:max_idx].strip()
-            continue
-        break
+        q1 = text.find('"', start)
+        if q1 < 0: break
+        q2 = text.find('"', q1 + 1)
+        if q2 < 0: break
+        result.append(text[q1 + 1:q2]); start = q2 + 1
+    return result
 
+def _fq(text: str) -> str:
+    q1 = text.find('"')
+    if q1 < 0: return ""
+    q2 = text.find('"', q1 + 1)
+    return text[q1 + 1:q2] if q2 >= 0 else ""
+
+def _jb(text: str) -> Optional[str]:
+    b1 = text.find("[")
+    if b1 < 0: return None
+    b2 = text.find("]", b1 + 1)
+    return text[b1 + 1:b2].strip() if b2 >= 0 else None
+
+# --- Type expression ---
+def _parse_type_text(text: str, ln: int = 0) -> TypeExpr:
+    expr = TypeExpr(base_type="text", line=ln)
+    while True:
+        tl = text.lower().rstrip()
+        if tl.endswith(", required") or tl.endswith(",required"):
+            expr.required = True; text = text[:text.lower().rfind("required")].rstrip().rstrip(",").strip(); continue
+        if tl.endswith(", unique") or tl.endswith(",unique"):
+            expr.unique = True; text = text[:text.lower().rfind("unique")].rstrip().rstrip(",").strip(); continue
+        changed = False
+        for mk, attr in [(",minimum ", "minimum"), (", minimum ", "minimum"),
+                         (",maximum ", "maximum"), (", maximum ", "maximum")]:
+            idx = tl.rfind(mk)
+            if idx >= 0:
+                vt = text[idx + len(mk):].strip().rstrip(",").strip()
+                c = vt.find(",")
+                setattr(expr, attr, _si(vt[:c].strip() if c >= 0 else vt))
+                text = text[:idx].strip(); changed = True; break
+        if not changed: break
     text = text.strip()
-
     if text.startswith("unique "):
-        expr.unique = True
-        text = text[7:].strip()
-
-    if text == "text":
-        expr.base_type = "text"
-    elif text == "currency":
-        expr.base_type = "currency"
-    elif text == "number":
-        expr.base_type = "number"
-    elif text == "percentage":
-        expr.base_type = "percentage"
-    elif text in ("true/false", "boolean"):
-        expr.base_type = "boolean"
-    elif text == "date and time":
-        expr.base_type = "datetime"
-    elif text == "date":
-        expr.base_type = "date"
-    elif text == "automatic":
-        expr.base_type = "automatic"
-    elif text in ("a whole number", "whole number"):
-        expr.base_type = "whole_number"
+        expr.unique = True; text = text[7:].strip()
+    TM = {"text": "text", "currency": "currency", "number": "number",
+          "percentage": "percentage", "true/false": "boolean", "boolean": "boolean",
+          "date and time": "datetime", "date": "date", "automatic": "automatic",
+          "a whole number": "whole_number", "whole number": "whole_number"}
+    if text in TM: expr.base_type = TM[text]
     elif text.startswith("one of:"):
         expr.base_type = "enum"
-        vals = text[7:].strip()
-        expr.enum_values = [v.strip().strip('"') for v in _split_comma_and_list(vals)]
+        expr.enum_values = [v.strip().strip('"') for v in _scal(text[7:])]
     elif text.startswith("list of "):
-        expr.base_type = "list"
-        expr.list_type = text[8:].strip().strip('"')
+        expr.base_type = "list"; expr.list_type = text[8:].strip().strip('"')
     return expr
 
+def _parse_field_type(text: str, ln: int) -> TypeExpr:
+    if text.startswith("is "): return _parse_type_text(text[3:], ln)
+    if text.startswith("references "):
+        rt = text[11:].strip(); ci = rt.find(","); ct = ""
+        if ci >= 0: ct = rt[ci:]; rt = rt[:ci].strip()
+        te = TypeExpr(base_type="reference", references=rt.strip('"'), line=ln)
+        if "required" in ct: te.required = True
+        if "unique" in ct: te.unique = True
+        return te
+    return TypeExpr(base_type="text", line=ln)
 
-def _parse_event_action_manual(text: str, line_num: int):
-    """Parse event action line manually."""
-    # 'Create a NAME with [the] FIELDS'
-    rest = text[len("Create "):].strip()
-    # Remove article
-    for article in ("a ", "an ", "the "):
-        if rest.startswith(article):
-            rest = rest[len(article):]
-            break
+# --- AST builders ---
+def _build_access(r, ln) -> AccessRule:
+    scope = _qs(r.get("scope", ""))
+    vr = r.get("verbs")
+    vm = {"VerbView": ["view"], "VerbCreate": ["create"], "VerbUpdate": ["update"],
+          "VerbDelete": ["delete"], "VerbCreateOrUpdate": ["create or update"]}
+    rn = _rule(vr)
+    if rn in vm: return AccessRule(scope=scope, verbs=vm[rn], line=ln)
+    if isinstance(vr, (list, tuple)):
+        j = " ".join(str(v) for v in vr).strip()
+        vs = ["create or update"] if j == "create or update" else [str(v).strip() for v in vr if str(v).strip() != "or"]
+    elif isinstance(vr, str): vs = [vr.strip()]
+    else: vs = ["view"]
+    return AccessRule(scope=scope, verbs=vs, line=ln)
 
-    with_idx = rest.find(" with ")
-    if with_idx >= 0:
-        name = rest[:with_idx].strip().strip('"')
-        fields_text = rest[with_idx + 6:].strip()
-        # Remove leading 'the '
-        if fields_text.startswith("the "):
-            fields_text = fields_text[4:]
-        fields = _split_comma_and_list(fields_text)
-        return ("event_action", EventAction(create_content=name, fields=fields, line=line_num))
-    return ("event_action", EventAction(create_content=rest.strip().strip('"'), line=line_num))
-
-
-# ---------------------------------------------------------------------------
-# Block assembly
-# ---------------------------------------------------------------------------
-
-def _assemble(parsed_lines: list) -> Program:
-    """Assemble parsed line fragments into a complete Program AST."""
-    prog = Program()
-    i = 0
-    n = len(parsed_lines)
-
-    while i < n:
-        item = parsed_lines[i]
-        if item is None:
-            i += 1
-            continue
-
-        kind = item[0]
-
-        if kind == "application":
-            app = item[1]
-            # Check next line for description
-            if i + 1 < n and parsed_lines[i + 1] is not None and parsed_lines[i + 1][0] == "description":
-                app.description = parsed_lines[i + 1][1]
-                i += 2
+def _build_story(text, ln) -> UserStory:
+    r = _try_parse(text, "story_header")
+    if r is not None:
+        role = str(r.get("role", "")).strip()
+        ar = r.get("action"); at, obj, pn = "", "", None
+        if isinstance(ar, dict):
+            st = ar.get("so_that")
+            if st: obj = str(st).strip().rstrip(":")
+            pg = ar.get("page")
+            if pg: pn = _qs(pg); at = "see a page"
             else:
-                i += 1
-            prog.application = app
+                at = str(ar.get("text", "")).strip()
+                si = at.find(" so that ")
+                if si >= 0 and not obj: obj = at[si+9:].strip().rstrip(":"); at = at[:si].strip()
+        elif isinstance(ar, str): at = ar.strip()
+        s = UserStory(role=role, action=at, objective=obj, line=ln)
+        if pn: s.directives.append(ShowPage(page_name=pn, line=ln))
+        return s
+    rest = text[3:].strip()
+    for a in ("a ", "an ", "the "):
+        if rest.startswith(a): rest = rest[len(a):]; break
+    mk = ", I want to "; idx = rest.find(mk)
+    if idx < 0: return UserStory(role=rest, action="", objective="", line=ln)
+    role = rest[:idx].strip(); at = rest[idx+len(mk):].strip(); obj = ""
+    si = at.find(" so that ")
+    if si >= 0: obj = at[si+9:].strip().rstrip(":"); at = at[:si].strip()
+    pn = _fq(at) if at.startswith("see a page ") else None
+    s = UserStory(role=role, action=at, objective=obj, line=ln)
+    if pn: s.directives.append(ShowPage(page_name=pn, line=ln))
+    return s
 
-        elif kind == "description":
-            # Standalone description (should have been consumed by application)
-            if prog.application:
-                prog.application.description = item[1]
-            i += 1
+def _build_nav(text, ln) -> NavItem:
+    r = _try_parse(text, "nav_item_line")
+    if r: label, page, rt = _qs(r.get("label","")), _qs(r.get("page","")), str(r.get("rest","")).strip()
+    else:
+        qs = _eqs(text); label = qs[0] if qs else ""; page = qs[1] if len(qs)>1 else ""; rt = text
+    vis, badge = [], None
+    vi = rt.find("visible to ")
+    if vi >= 0:
+        vt = rt[vi+11:]; bi = vt.find(", badge:")
+        if bi >= 0: badge = vt[bi+8:].strip(); vt = vt[:bi]
+        vis = _scal(vt)
+    return NavItem(label=label, page_name=page, visible_to=vis, badge=badge, line=ln)
 
-        elif kind == "identity":
-            prog.identity = item[1]
-            i += 1
+def _build_trans(text, ln) -> Optional[Transition]:
+    r = _try_parse(text, "state_transition_line")
+    if r is not None:
+        return Transition(from_state=str(r.get("from_state","")).strip(),
+                          to_state=str(r.get("to_state","")).strip(),
+                          required_scope=_qs(r.get("scope","")), line=ln)
+    rest = text.strip()
+    for a in ("A ", "An "):
+        if rest.startswith(a): rest = rest[len(a):]; break
+    ci = rest.find(" can become ")
+    if ci < 0: return None
+    bc = rest[:ci].strip(); ac = rest[ci+12:].strip()
+    parts = bc.rsplit(" ", 1); fs = parts[0] if len(parts)>1 else bc
+    ii = ac.find(" if the user has ")
+    if ii >= 0:
+        ts = ac[:ii].strip()
+        if ts.endswith(" again"): ts = ts[:-6].strip()
+        return Transition(from_state=fs, to_state=ts, required_scope=_fq(ac[ii:]), line=ln)
+    ii = ac.find(" if ")
+    if ii >= 0:
+        ts = ac[:ii].strip()
+        if ts.endswith(" again"): ts = ts[:-6].strip()
+        return Transition(from_state=fs, to_state=ts, required_scope="", line=ln)
+    return Transition(from_state=fs, to_state=ac.strip(), required_scope="", line=ln)
 
-        elif kind == "scopes":
-            if prog.identity:
-                prog.identity.scopes = item[1]
-            else:
-                prog.identity = Identity(provider="stub", scopes=item[1])
-            i += 1
+def _build_ev1(text, ln) -> EventRule:
+    r = _try_parse(text, "event_v1_line")
+    if r is not None:
+        c = str(r.get("content","")).strip(); t = str(r.get("trigger","")).strip()
+        ev = EventRule(content_name=c, trigger=t, line=ln)
+        cond = r.get("condition")
+        if cond and isinstance(cond, dict):
+            f1 = str(cond.get("field1","")).strip()
+            om = {"OpAtOrBelow":"at or below","OpAbove":"above","OpBelow":"below","OpEqualTo":"equal to"}
+            op_raw = cond.get("op"); op = om.get(_rule(op_raw), str(op_raw).strip() if op_raw else "")
+            ev.condition = EventCondition(field1=f1, operator=op, field2="", line=ln)
+            mk = " is "+op+" its "; mi = text.find(mk)
+            if mi >= 0: ev.condition.field2 = text[mi+len(mk):].strip().rstrip(":")
+        return ev
+    rest = text[5:].strip().rstrip(":")
+    for a in ("a ","an ","the "):
+        if rest.startswith(a): rest = rest[len(a):]; break
+    for trig in ("created","updated","deleted"):
+        idx = rest.find(" is "+trig)
+        if idx >= 0:
+            ev = EventRule(content_name=rest[:idx].strip(), trigger=trig, line=ln)
+            after = rest[idx+4+len(trig):].strip()
+            if after.startswith("and its "):
+                _parse_ev_cond(ev, after[8:].strip())
+            return ev
+    return EventRule(content_name=rest, trigger="unknown", line=ln)
 
-        elif kind == "role":
-            prog.roles.append(item[1])
-            i += 1
+def _parse_ev_cond(ev, text):
+    for op in ("at or below","above","below","equal to"):
+        mk = " is "+op+" its "; idx = text.find(mk)
+        if idx >= 0:
+            ev.condition = EventCondition(field1=text[:idx].strip(), operator=op,
+                                          field2=text[idx+len(mk):].strip(), line=ev.line)
+            return
 
-        elif kind == "role_alias":
-            prog.role_aliases.append(item[1])
-            i += 1
+def _build_err_act(text, ln) -> ErrorAction:
+    r = _try_parse(text, "error_then_line")
+    if r is not None:
+        ar = r.get("action"); rn = _rule(ar)
+        if rn == "ActionDisable": return ErrorAction(kind="disable", target=str(ar.get("target","")).strip(), line=ln)
+        if rn == "ActionEscalate" or ar == "escalate": return ErrorAction(kind="escalate", line=ln)
+        if rn == "ActionNotify": return ErrorAction(kind="notify", target=_qs(ar.get("role","")),
+                                                     jexl_expr=_qs(ar.get("expr","")), line=ln)
+        if rn == "ActionCreate": return ErrorAction(kind="create", target=_qs(ar.get("name","")), line=ln)
+        if rn == "ActionSet": return ErrorAction(kind="set", jexl_expr=_qs(ar.get("expr","")), line=ln)
+    rest = text[5:].strip()
+    if rest.startswith("disable "): return ErrorAction(kind="disable", target=rest[8:].strip(), line=ln)
+    if rest == "escalate": return ErrorAction(kind="escalate", line=ln)
+    if rest.startswith("notify "): return ErrorAction(kind="notify", target=_fq(rest), jexl_expr=_jb(rest) or "", line=ln)
+    if rest.startswith("create "): return ErrorAction(kind="create", target=_fq(rest), line=ln)
+    if rest.startswith("set "): return ErrorAction(kind="set", jexl_expr=_jb(rest) or "", line=ln)
+    return ErrorAction(kind="unknown", target=rest, line=ln)
 
-        elif kind == "content_header":
-            content = item[1]
-            i += 1
-            # Collect fields and access rules
-            while i < n and parsed_lines[i] is not None:
-                ck = parsed_lines[i][0]
-                if ck == "field":
-                    field = parsed_lines[i][1]
-                    singular = parsed_lines[i][2]
-                    if singular and not content.singular:
-                        content.singular = singular
-                    elif singular:
-                        content.singular = singular
-                    content.fields.append(field)
-                    i += 1
-                elif ck == "access":
-                    content.access_rules.append(parsed_lines[i][1])
-                    i += 1
-                else:
-                    break
-            prog.contents.append(content)
+def _build_comp_shape(text) -> tuple:
+    ci = text.find(":")
+    if ci < 0: return ("transform", [], [], [], [])
+    shape = text[:ci].strip().lower(); rest = text[ci+1:].strip()
+    ins, outs, ip, op = [], [], [], []
+    ti = rest.find("takes "); pi = rest.find("produces ")
+    if ti >= 0 and pi >= 0:
+        tt = rest[ti+6:pi].strip().rstrip(",").strip(); pt = rest[pi+9:].strip()
+        for a in ("a ","an ","the "):
+            if tt.startswith(a): tt = tt[len(a):]
+            if pt.startswith(a): pt = pt[len(a):]
+        if " : " in tt or ": " in tt:
+            ip = _parse_tp(tt)
+            ins = [p.type_name for p in ip] if ip and ip[0].type_name else [p.name for p in ip]
+        else: ins = [i.strip() for i in tt.replace(" and ",",").split(",") if i.strip()]
+        if pt.startswith("one of "):
+            outs = [o.strip() for o in pt[7:].replace(" or ",",").split(",") if o.strip()]
+        elif " : " in pt or ": " in pt:
+            op = _parse_tp(pt)
+            outs = [p.type_name for p in op] if op and op[0].type_name else [p.name for p in op]
+        else: outs = [o.strip() for o in pt.replace(" and ",",").split(",") if o.strip()]
+    return (shape, ins, outs, ip, op)
 
-        elif kind == "state_header":
-            sm = item[1]
-            i += 1
-            while i < n and parsed_lines[i] is not None:
-                sk = parsed_lines[i][0]
-                if sk == "state_starts":
-                    sm.singular = parsed_lines[i][1]
-                    sm.initial_state = parsed_lines[i][2]
-                    sm.states.append(sm.initial_state)
-                    i += 1
-                elif sk == "state_also":
-                    sm.states.extend(parsed_lines[i][1])
-                    i += 1
-                elif sk == "state_transition":
-                    sm.transitions.append(parsed_lines[i][1])
-                    i += 1
-                else:
-                    break
-            prog.state_machines.append(sm)
+def _parse_tp(text) -> list[ComputeParam]:
+    result = []
+    for part in text.replace(" and ",",").split(","):
+        p = part.strip()
+        if not p: continue
+        for a in ("a ","an ","the "):
+            if p.startswith(a): p = p[len(a):]
+        ci = p.find(":")
+        if ci > 0: result.append(ComputeParam(name=p[:ci].strip().strip('"'), type_name=p[ci+1:].strip()))
+        else: result.append(ComputeParam(name=p.strip(), type_name=""))
+    return result
 
-        elif kind == "event_header":
-            ev = item[1]
-            i += 1
-            while i < n and parsed_lines[i] is not None:
-                ek = parsed_lines[i][0]
-                if ek == "event_action":
-                    ev.action = parsed_lines[i][1]
-                    i += 1
-                elif ek == "log_level":
-                    ev.log_level = parsed_lines[i][1]
-                    i += 1
-                else:
-                    break
-            prog.events.append(ev)
+# --- Per-line parse dispatch ---
+def _parse_line(text: str, rule: str, ln: int):
+    P = _try_parse  # alias
 
-        elif kind == "error_header":
-            handler = item[1]
-            i += 1
-            while i < n and parsed_lines[i] is not None:
-                ek = parsed_lines[i][0]
-                if ek == "error_retry":
-                    handler.actions.append(parsed_lines[i][1])
-                    i += 1
-                elif ek == "error_then":
-                    handler.actions.append(parsed_lines[i][1])
-                    i += 1
-                elif ek == "log_level":
-                    handler.actions.append(ErrorAction(kind="log_level", target=parsed_lines[i][1]))
-                    i += 1
-                else:
-                    break
-            prog.error_handlers.append(handler)
-
-        elif kind == "story_header":
-            story = item[1]
-            i += 1
-            # Collect so_that and directives
-            while i < n and parsed_lines[i] is not None:
-                dk = parsed_lines[i][0]
-                if dk == "so_that":
-                    story.objective = parsed_lines[i][1]
-                    i += 1
-                elif dk == "directive":
-                    story.directives.append(parsed_lines[i][1])
-                    i += 1
-                else:
-                    break
-            prog.stories.append(story)
-
-        elif kind == "nav_bar":
-            nav = NavBar()
-            i += 1
-            while i < n and parsed_lines[i] is not None:
-                nk = parsed_lines[i][0]
-                if nk == "nav_item":
-                    nav.items.append(parsed_lines[i][1])
-                    i += 1
-                else:
-                    break
-            prog.navigation = nav
-
-        elif kind == "api_header":
-            api = item[1]
-            i += 1
-            while i < n and parsed_lines[i] is not None:
-                ak = parsed_lines[i][0]
-                if ak == "api_endpoint":
-                    api.endpoints.append(parsed_lines[i][1])
-                    i += 1
-                else:
-                    break
-            prog.api = api
-
-        elif kind == "stream":
-            prog.streams.append(item[1])
-            i += 1
-
-        elif kind == "compute_header":
-            node = item[1]
-            i += 1
-            while i < n and parsed_lines[i] is not None:
-                ck = parsed_lines[i][0]
-                if ck == "compute_shape":
-                    shape_data = parsed_lines[i][1]
-                    node.shape = shape_data[0]
-                    node.inputs = shape_data[1]
-                    node.outputs = shape_data[2]
-                    node.input_params = shape_data[3]
-                    node.output_params = shape_data[4]
-                    i += 1
-                elif ck == "compute_body":
-                    node.body_lines.append(parsed_lines[i][1])
-                    i += 1
-                elif ck == "compute_access":
-                    role = parsed_lines[i][1]
-                    # Check if it looks like a scope (has quotes)
-                    if role:
-                        node.access_role = role
-                    i += 1
-                elif ck == "access":
-                    node.access_scope = parsed_lines[i][1].scope
-                    i += 1
-                else:
-                    break
-            # Check if any access line was actually 'Anyone with "scope" can...'
-            # vs role-based 'RoleName can execute this'
-            # If access_role is a quoted scope, move it to access_scope
-            prog.computes.append(node)
-
-        elif kind == "channel_header":
-            ch = item[1]
-            i += 1
-            while i < n and parsed_lines[i] is not None:
-                ck = parsed_lines[i][0]
-                if ck == "channel_prop":
-                    prop_kind = parsed_lines[i][1]
-                    value = parsed_lines[i][2]
-                    if prop_kind == "carries":
-                        ch.carries = value
-                    elif prop_kind == "direction":
-                        ch.direction = value
-                    elif prop_kind == "delivery":
-                        ch.delivery = value
-                    elif prop_kind == "endpoint":
-                        ch.endpoint = value
-                    elif prop_kind == "requires":
-                        ch.requirements.append(value)
-                    i += 1
-                else:
-                    break
-            prog.channels.append(ch)
-
-        elif kind == "boundary_header":
-            bnd = item[1]
-            i += 1
-            while i < n and parsed_lines[i] is not None:
-                bk = parsed_lines[i][0]
-                if bk == "boundary_prop":
-                    prop_kind = parsed_lines[i][1]
-                    value = parsed_lines[i][2]
-                    if prop_kind == "contains":
-                        bnd.contains = value
-                    elif prop_kind == "inherits":
-                        bnd.identity_mode = "inherit"
-                        bnd.identity_parent = value
-                    elif prop_kind == "restricts":
-                        bnd.identity_mode = "restrict"
-                        bnd.identity_scopes = value
-                    elif prop_kind == "exposes":
-                        bnd.properties.append(value)
-                    i += 1
-                else:
-                    break
-            prog.boundaries.append(bnd)
-
+    if rule == "application_line":
+        r = P(text, rule); return ("application", Application(name=str(r["name"]).strip() if r else text[12:].strip(), line=ln))
+    if rule == "description_line":
+        r = P(text, rule); return ("description", str(r["desc"]).strip() if r else text[12:].strip())
+    if rule == "identity_line":
+        r = P(text, rule); return ("identity", Identity(provider=str(r["provider"]).strip() if r else text.split("with",1)[1].strip(), line=ln))
+    if rule == "scopes_line":
+        r = P(text, rule); return ("scopes", _ql(r.get("scopes")) if r else _eqs(text))
+    if rule == "role_standard_line":
+        r = P(text, rule)
+        if r: return ("role", Role(name=_qs(r.get("name","")), scopes=_ql(r.get("scopes")), line=ln))
+        n = _fq(text); sc = _eqs(text)
+        if sc and sc[0] == n: sc = sc[1:]
+        return ("role", Role(name=n, scopes=sc, line=ln))
+    if rule == "role_bare_line":
+        r = P(text, rule)
+        if r: return ("role", Role(name=str(r.get("name","")).strip(), scopes=_ql(r.get("scopes")), line=ln))
+        hi = text.find(" has "); return ("role", Role(name=text[:hi].strip() if hi>=0 else text.strip(), scopes=_eqs(text), line=ln))
+    if rule == "role_alias_line":
+        r = P(text, rule)
+        if r: return ("role_alias", RoleAlias(short_name=_qs(r.get("short","")), full_name=_qs(r.get("full","")), line=ln))
+        qs = _eqs(text); return ("role_alias", RoleAlias(short_name=qs[0] if qs else "", full_name=qs[1] if len(qs)>1 else "", line=ln))
+    if rule == "content_header":
+        r = P(text, rule); n = _qs(r.get("name","")) if r else _fq(text)
+        sg = n.rstrip("s") if n.endswith("s") else n
+        return ("content_header", Content(name=n, singular=sg, line=ln))
+    if rule == "field_line":
+        r = P(text, rule)
+        if r: sg = str(r.get("singular","")).strip(); fn = str(r.get("field_name","")).strip()
         else:
-            # Unknown or unhandled — skip
-            i += 1
+            hi = text.find(" has ")
+            if hi < 0: return ("field", Field(name="unknown", type_expr=TypeExpr(base_type="text"), line=ln), "")
+            sg = text[5:hi].strip(); ah = text[hi+5:].strip()
+            for a in ("a ","an ","the "):
+                if ah.startswith(a): ah = ah[len(a):]; break
+            wi = ah.find(" which ")
+            if wi < 0: return ("field", Field(name="unknown", type_expr=TypeExpr(base_type="text"), line=ln), sg)
+            fn = ah[:wi].strip()
+        wi = text.find(" which ")
+        te = _parse_field_type(text[wi+7:].strip(), ln) if wi >= 0 else TypeExpr(base_type="text", line=ln)
+        return ("field", Field(name=fn, type_expr=te, line=ln), sg)
+    if rule == "access_line":
+        r = P(text, rule)
+        if r: return ("access", _build_access(r, ln))
+        sc = _fq(text); ci = text.find(" can ")
+        if ci >= 0:
+            rest = text[ci+5:].strip(); si = rest.rfind(" ")
+            v = rest[:si].strip() if si >= 0 else rest
+            return ("access", AccessRule(scope=sc, verbs=[v], line=ln))
+        return ("access", AccessRule(scope=sc, verbs=["view"], line=ln))
+    if rule == "state_header":
+        r = P(text, rule)
+        if r: tgt = str(r.get("target","")).strip(); mn = _qs(r.get("name",""))
+        else: mn = _fq(text); ci = text.find(" called "); tgt = text[10:ci].strip() if ci>=0 else ""
+        return ("state_header", StateMachine(content_name=tgt, machine_name=mn, singular="", initial_state="", line=ln))
+    if rule == "state_starts_line":
+        r = P(text, rule)
+        if r: return ("state_starts", str(r.get("singular","")).strip(), _qs(r.get("state","")))
+        st = _fq(text); si = text.find(" starts as "); b = text[:si].strip() if si>=0 else ""
+        for a in ("A ","An "):
+            if b.startswith(a): b = b[len(a):]
+        return ("state_starts", b.strip(), st)
+    if rule == "state_also_line":
+        r = P(text, rule); return ("state_also", _ql(r.get("states")) if r else _eqs(text))
+    if rule == "state_transition_line":
+        t = _build_trans(text, ln); return ("state_transition", t) if t else None
+    if rule == "event_jexl_line":
+        r = P(text, rule); j = _qs(r.get("jexl","")) if r else (_jb(text) or "")
+        return ("event_header", EventRule(content_name="", trigger="jexl", jexl_condition=j, line=ln))
+    if rule == "event_v1_line":
+        return ("event_header", _build_ev1(text, ln))
+    if rule == "event_action_line":
+        r = P(text, rule)
+        if r: return ("event_action", EventAction(create_content=_qs(r.get("name","")), fields=_cl(r.get("fields")), line=ln))
+        rest = text[7:].strip()
+        for a in ("a ","an ","the "):
+            if rest.startswith(a): rest = rest[len(a):]; break
+        wi = rest.find(" with ")
+        if wi >= 0:
+            n = rest[:wi].strip().strip('"'); ft = rest[wi+6:].strip()
+            if ft.startswith("the "): ft = ft[4:]
+            return ("event_action", EventAction(create_content=n, fields=_scal(ft), line=ln))
+        return ("event_action", EventAction(create_content=rest.strip().strip('"'), line=ln))
+    if rule == "log_level_line":
+        r = P(text, rule); return ("log_level", str(r.get("level","")).strip() if r else text.split(":",1)[1].strip())
+    if rule == "error_from_line":
+        r = P(text, rule)
+        if r: src = _qs(r.get("source","")); j = _qs(r.get("jexl","")) if r.get("jexl") else None
+        else: src = _fq(text); j = _jb(text)
+        return ("error_header", ErrorHandler(source=src, condition_jexl=j, line=ln))
+    if rule == "error_catch_all_line":
+        return ("error_header", ErrorHandler(source="", is_catch_all=True, line=ln))
+    if rule == "error_retry_line":
+        r = P(text, rule)
+        if r: cnt = _si(r.get("count"),1); md = str(r.get("max_delay","")).strip() if r.get("max_delay") else None
+        else:
+            cnt = 1; md = None
+            for p in text.split():
+                if p.isdigit(): cnt = int(p); break
+        return ("error_retry", ErrorAction(kind="retry", retry_count=cnt, retry_backoff="backoff" in text.lower(), retry_max_delay=md, line=ln))
+    if rule == "error_then_line":
+        return ("error_then", _build_err_act(text, ln))
+    if rule == "story_header":
+        return ("story_header", _build_story(text, ln))
+    if rule == "so_that_line":
+        r = P(text, rule); return ("so_that", str(r.get("text","")).strip().rstrip(":") if r else text[8:].strip().rstrip(":"))
+    if rule == "show_page_line":
+        r = P(text, rule); return ("directive", ShowPage(page_name=_qs(r.get("name","")) if r else _fq(text), line=ln))
+    if rule == "display_table_line":
+        rest = text[19:].strip(); wi = rest.find(" with columns:")
+        cn = rest[:wi].strip() if wi>=0 else rest.strip()
+        cols = _scal(rest[wi+14:]) if wi>=0 else []
+        return ("directive", DisplayTable(content_name=cn, columns=cols, line=ln))
+    if rule == "show_related_line":
+        rest = text[9:].strip(); ci = rest.find(",")
+        if ci < 0: return ("directive", ShowRelated(singular=rest, line=ln))
+        sg = rest[:ci].strip(); af = rest[ci+1:].strip()
+        if af.lower().startswith("show "): af = af[5:].strip()
+        gi = af.find(" grouped by ")
+        if gi < 0: return ("directive", ShowRelated(singular=sg, related_content=af, line=ln))
+        return ("directive", ShowRelated(singular=sg, related_content=af[:gi].strip(), group_by=af[gi+12:].strip(), line=ln))
+    if rule == "highlight_rows_line":
+        rest = text[21:].strip(); j = _jb(rest)
+        if j: return ("directive", HighlightRows(jexl_condition=j, line=ln))
+        for op in (" is at or below "," is above "," is below "," is equal to "):
+            idx = rest.find(op)
+            if idx >= 0: return ("directive", HighlightRows(field=rest[:idx].strip(), operator=op.strip()[3:],
+                                                             threshold_field=rest[idx+len(op):].strip(), line=ln))
+        return ("directive", HighlightRows(line=ln))
+    if rule == "allow_filtering_line":
+        r = P(text, rule); return ("directive", AllowFilter(fields=_cl(r.get("fields")) if r else _scal(text[20:]), line=ln))
+    if rule == "allow_searching_line":
+        r = P(text, rule)
+        fs = _ol(r.get("fields")) if r else [f.strip() for f in text[20:].strip().split(" or ") if f.strip()]
+        return ("directive", AllowSearch(fields=fs, line=ln))
+    if rule == "subscribes_to_line":
+        rest = text[25:].strip()
+        if rest.endswith(" changes"): rest = rest[:-8].strip()
+        return ("directive", SubscribeTo(content_name=rest, line=ln))
+    if rule == "accept_input_line":
+        r = P(text, rule); return ("directive", AcceptInput(fields=_cl(r.get("fields")) if r else _scal(text[17:]), line=ln))
+    if rule == "validate_unique_line":
+        rest = text[14:].strip()
+        if rest.startswith("["):
+            be = rest.find("]"); return ("directive", ValidateUnique(jexl_condition=rest[1:be].strip() if be>0 else rest[1:].strip(), line=ln))
+        ii = rest.find(" is unique"); return ("directive", ValidateUnique(field=rest[:ii].strip() if ii>=0 else rest.strip(), line=ln))
+    if rule == "create_as_line":
+        rest = text[11:].strip(); ai = rest.rfind(" as ")
+        return ("directive", CreateAs(initial_state=rest[ai+4:].strip() if ai>=0 else "", line=ln))
+    if rule == "after_saving_line":
+        r = P(text, rule); return ("directive", AfterSave(instruction=str(r.get("text","")).strip() if r else text[14:].strip(), line=ln))
+    if rule == "show_chart_line":
+        rest = text[16:].strip(); oi = rest.find(" over the past ")
+        if oi < 0: return ("directive", ShowChart(content_name=rest, days=30, line=ln))
+        cn = rest[:oi].strip(); af = rest[oi+15:].strip(); sp = af.find(" ")
+        return ("directive", ShowChart(content_name=cn, days=_si(af[:sp] if sp>0 else af, 30), line=ln))
+    if rule == "display_text_line":
+        r = P(text, rule)
+        if r:
+            if r.get("jexl"): return ("directive", DisplayText(text=_qs(r["jexl"]), is_expression=True, line=ln))
+            if r.get("text"): return ("directive", DisplayText(text=_qs(r["text"]), line=ln))
+            if r.get("expr"): return ("directive", DisplayText(text=str(r["expr"]).strip(), is_expression=True, line=ln))
+        rest = text[12:].strip(); j = _jb(rest)
+        if j: return ("directive", DisplayText(text=j, is_expression=True, line=ln))
+        q = _fq(rest)
+        if q: return ("directive", DisplayText(text=q, line=ln))
+        return ("directive", DisplayText(text=rest.strip(), is_expression=True, line=ln))
+    if rule == "display_agg_line":
+        r = P(text, rule); return ("directive", DisplayAggregation(description=str(r.get("text","")).strip() if r else text[8:].strip(), line=ln))
+    if rule == "nav_bar_line": return ("nav_bar",)
+    if rule == "nav_item_line": return ("nav_item", _build_nav(text, ln))
+    if rule == "api_header_line":
+        r = P(text, rule); return ("api_header", ApiSection(base_path=str(r.get("path","")).strip().rstrip(":") if r else text[21:].strip().rstrip(":"), line=ln))
+    if rule == "api_endpoint_line":
+        r = P(text, rule)
+        if r: return ("api_endpoint", ApiEndpoint(method=str(r.get("method","")).strip(), path=str(r.get("path","")).strip(),
+                                                   description=str(r.get("desc","")).strip() if r.get("desc") else "", line=ln))
+        ps = text.strip().split(None, 2)
+        return ("api_endpoint", ApiEndpoint(method=ps[0] if ps else "", path=ps[1] if len(ps)>1 else "",
+                                             description=ps[2].strip() if len(ps)>2 else "", line=ln))
+    if rule == "stream_line":
+        rest = text[7:].strip(); ai = rest.rfind(" at ")
+        if ai < 0: return ("stream", Stream(description=rest, path="", line=ln))
+        return ("stream", Stream(description=rest[:ai].strip(), path=rest[ai+4:].strip(), line=ln))
+    if rule == "compute_header":
+        r = P(text, rule); return ("compute_header", ComputeNode(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
+    if rule == "compute_shape_line": return ("compute_shape", _build_comp_shape(text))
+    if rule == "compute_body_jexl_line": return ("compute_body", text[1:-1].strip())
+    if rule == "compute_access_line":
+        r = P(text, rule)
+        if r: return ("compute_access", _qs(r.get("role","")))
+        ci = text.find(" can execute this"); return ("compute_access", text[:ci].strip().strip('"') if ci>=0 else "")
+    if rule == "channel_header":
+        r = P(text, rule); return ("channel_header", ChannelDecl(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
+    if rule == "channel_carries_line":
+        r = P(text, rule); return ("channel_prop", "carries", str(r.get("content","")).strip() if r else text[8:].strip())
+    if rule == "channel_direction_line":
+        r = P(text, rule); return ("channel_prop", "direction", str(r.get("dir","")).strip().lower() if r else text.split(":",1)[1].strip().lower())
+    if rule == "channel_delivery_line":
+        r = P(text, rule); return ("channel_prop", "delivery", str(r.get("del","")).strip().lower() if r else text.split(":",1)[1].strip().lower())
+    if rule == "channel_requires_line":
+        r = P(text, rule)
+        if r: return ("channel_prop", "requires", ChannelRequirement(scope=_qs(r.get("scope","")), direction=str(r.get("dir","")).strip(), line=ln))
+        return ("channel_prop", "requires", ChannelRequirement(scope=_fq(text), direction="send" if " to send" in text else "receive", line=ln))
+    if rule == "channel_endpoint_line":
+        r = P(text, rule); return ("channel_prop", "endpoint", str(r.get("path","")).strip() if r else text.split(":",1)[1].strip())
+    if rule == "boundary_header":
+        r = P(text, rule); return ("boundary_header", BoundaryDecl(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
+    if rule == "boundary_contains_line":
+        r = P(text, rule); return ("boundary_prop", "contains", _cl(r.get("items_") or r.get("items")) if r else _scal(text[9:]))
+    if rule == "boundary_inherits_line":
+        r = P(text, rule); return ("boundary_prop", "inherits", str(r.get("parent","")).strip() if r else text[24:].strip())
+    if rule == "boundary_restricts_line":
+        r = P(text, rule); return ("boundary_prop", "restricts", _ql(r.get("scopes")) if r else _eqs(text))
+    if rule == "boundary_exposes_line":
+        r = P(text, rule)
+        if r: return ("boundary_prop", "exposes", BoundaryProperty(name=_qs(r.get("name","")),
+                          type_name=str(r.get("type_name","")).strip(), jexl_expr=_qs(r.get("jexl","")), line=ln))
+        n = _fq(text); j = _jb(text)
+        ci = text.find(":", text.find('"', text.find('"')+1)+1); ei = text.find("=")
+        tn = text[ci+1:ei].strip() if ci>=0 and ei>ci else ""
+        return ("boundary_prop", "exposes", BoundaryProperty(name=n, type_name=tn, jexl_expr=j or "", line=ln))
+    return None
 
+# --- Block assembly ---
+def _assemble(parsed: list) -> Program:
+    prog = Program(); i = 0; n = len(parsed)
+    def _collect(pred):
+        nonlocal i
+        while i < n and parsed[i] is not None and pred(parsed[i][0]):
+            yield parsed[i]; i += 1
+    while i < n:
+        item = parsed[i]
+        if item is None: i += 1; continue
+        k = item[0]
+        if k == "application":
+            app = item[1]; i += 1
+            if i < n and parsed[i] is not None and parsed[i][0] == "description":
+                app.description = parsed[i][1]; i += 1
+            prog.application = app
+        elif k == "description":
+            if prog.application: prog.application.description = item[1]
+            i += 1
+        elif k == "identity": prog.identity = item[1]; i += 1
+        elif k == "scopes":
+            if prog.identity: prog.identity.scopes = item[1]
+            else: prog.identity = Identity(provider="stub", scopes=item[1])
+            i += 1
+        elif k == "role": prog.roles.append(item[1]); i += 1
+        elif k == "role_alias": prog.role_aliases.append(item[1]); i += 1
+        elif k == "content_header":
+            ct = item[1]; i += 1
+            for ch in _collect(lambda x: x in ("field","access")):
+                if ch[0] == "field":
+                    if ch[2]: ct.singular = ch[2]
+                    ct.fields.append(ch[1])
+                else: ct.access_rules.append(ch[1])
+            prog.contents.append(ct)
+        elif k == "state_header":
+            sm = item[1]; i += 1
+            for ch in _collect(lambda x: x in ("state_starts","state_also","state_transition")):
+                if ch[0] == "state_starts": sm.singular = ch[1]; sm.initial_state = ch[2]; sm.states.append(sm.initial_state)
+                elif ch[0] == "state_also": sm.states.extend(ch[1])
+                elif ch[0] == "state_transition": sm.transitions.append(ch[1])
+            prog.state_machines.append(sm)
+        elif k == "event_header":
+            ev = item[1]; i += 1
+            for ch in _collect(lambda x: x in ("event_action","log_level")):
+                if ch[0] == "event_action": ev.action = ch[1]
+                elif ch[0] == "log_level": ev.log_level = ch[1]
+            prog.events.append(ev)
+        elif k == "error_header":
+            h = item[1]; i += 1
+            for ch in _collect(lambda x: x in ("error_retry","error_then","log_level")):
+                if ch[0] == "log_level": h.actions.append(ErrorAction(kind="log_level", target=ch[1]))
+                else: h.actions.append(ch[1])
+            prog.error_handlers.append(h)
+        elif k == "story_header":
+            st = item[1]; i += 1
+            for ch in _collect(lambda x: x in ("so_that","directive")):
+                if ch[0] == "so_that": st.objective = ch[1]
+                else: st.directives.append(ch[1])
+            prog.stories.append(st)
+        elif k == "nav_bar":
+            nav = NavBar(); i += 1
+            for ch in _collect(lambda x: x == "nav_item"): nav.items.append(ch[1])
+            prog.navigation = nav
+        elif k == "api_header":
+            api = item[1]; i += 1
+            for ch in _collect(lambda x: x == "api_endpoint"): api.endpoints.append(ch[1])
+            prog.api = api
+        elif k == "stream": prog.streams.append(item[1]); i += 1
+        elif k == "compute_header":
+            nd = item[1]; i += 1
+            for ch in _collect(lambda x: x in ("compute_shape","compute_body","compute_access","access")):
+                if ch[0] == "compute_shape":
+                    sd = ch[1]; nd.shape, nd.inputs, nd.outputs = sd[0], sd[1], sd[2]; nd.input_params, nd.output_params = sd[3], sd[4]
+                elif ch[0] == "compute_body": nd.body_lines.append(ch[1])
+                elif ch[0] == "compute_access":
+                    if ch[1]: nd.access_role = ch[1]
+                elif ch[0] == "access": nd.access_scope = ch[1].scope
+            prog.computes.append(nd)
+        elif k == "channel_header":
+            ch_ = item[1]; i += 1
+            for child in _collect(lambda x: x == "channel_prop"):
+                p, v = child[1], child[2]
+                if p == "carries": ch_.carries = v
+                elif p == "direction": ch_.direction = v
+                elif p == "delivery": ch_.delivery = v
+                elif p == "endpoint": ch_.endpoint = v
+                elif p == "requires": ch_.requirements.append(v)
+            prog.channels.append(ch_)
+        elif k == "boundary_header":
+            bnd = item[1]; i += 1
+            for child in _collect(lambda x: x == "boundary_prop"):
+                p, v = child[1], child[2]
+                if p == "contains": bnd.contains = v
+                elif p == "inherits": bnd.identity_mode = "inherit"; bnd.identity_parent = v
+                elif p == "restricts": bnd.identity_mode = "restrict"; bnd.identity_scopes = v
+                elif p == "exposes": bnd.properties.append(v)
+            prog.boundaries.append(bnd)
+        else: i += 1
     return prog
 
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
+# --- Public API ---
 def parse_peg(source: str) -> tuple[Program, CompileResult]:
-    """Parse a .termin source string using the TatSu PEG grammar.
-
-    Drop-in replacement for ``termin.parser.parse()``.
-    """
     errors = CompileResult()
-
-    try:
-        lines = _preprocess(source)
+    try: lines = _preprocess(source)
     except Exception as e:
-        errors.add(ParseError(message=f"Preprocessing failed: {e}", line=0))
-        return Program(), errors
-
+        errors.add(ParseError(message=f"Preprocessing failed: {e}", line=0)); return Program(), errors
     parsed = []
     for line_num, text in lines:
         rule = _classify_line(text)
         if rule == "unknown":
-            errors.add(ParseError(message=f"Unrecognized line: {text}", line=line_num, source_line=text))
-            continue
+            errors.add(ParseError(message=f"Unrecognized line: {text}", line=line_num, source_line=text)); continue
         try:
             result = _parse_line(text, rule, line_num)
-            if result is not None:
-                parsed.append(result)
+            if result is not None: parsed.append(result)
         except Exception as e:
             errors.add(ParseError(message=f"Failed to parse line: {e}", line=line_num, source_line=text))
-
-    if not errors.ok:
-        return Program(), errors
-
-    try:
-        program = _assemble(parsed)
+    if not errors.ok: return Program(), errors
+    try: program = _assemble(parsed)
     except Exception as e:
-        errors.add(ParseError(message=f"Block assembly failed: {e}", line=0))
-        return Program(), errors
-
+        errors.add(ParseError(message=f"Block assembly failed: {e}", line=0)); return Program(), errors
     return program, errors

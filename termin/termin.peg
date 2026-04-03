@@ -265,13 +265,13 @@ show_page_line
     ;
 
 display_table_line
-    = 'Display' 'a' 'table' 'of' content:words
+    = 'Display' 'a' 'table' 'of' content:words_before_with
       'with' 'columns:' cols:comma_list $         #DisplayTableCols
     | 'Display' 'a' 'table' 'of' content:words $  #DisplayTableNoCols
     ;
 
 show_related_line
-    = 'For' 'each' singular:word ',' 'show' related:words
+    = 'For' 'each' singular:word ',' 'show' related:words_before_grouped
       'grouped' 'by' group:rest_of_line $
     ;
 
@@ -289,7 +289,7 @@ allow_searching_line
     ;
 
 subscribes_to_line
-    = 'This' 'table' 'subscribes' 'to' content:words 'changes' $
+    = 'This' 'table' 'subscribes' 'to' content:words_before_changes 'changes' $
     ;
 
 accept_input_line
@@ -298,12 +298,12 @@ accept_input_line
 
 validate_unique_line
     = 'Validate' 'that' jexl:jexl_expr ['before' 'saving'] $  #ValidateJexl
-    | 'Validate' 'that' field:words 'is' 'unique'
+    | 'Validate' 'that' field:words_before_is 'is' 'unique'
       ['before' 'saving'] $                                     #ValidateUnique
     ;
 
 create_as_line
-    = 'Create' 'the' words 'as' state:word $
+    = 'Create' 'the' words_before_as 'as' state:word $
     ;
 
 after_saving_line
@@ -311,7 +311,7 @@ after_saving_line
     ;
 
 show_chart_line
-    = 'Show' 'a' 'chart' 'of' content:words
+    = 'Show' 'a' 'chart' 'of' content:words_before_over
       'over' 'the' 'past' days:number 'days' $
     ;
 
@@ -359,7 +359,7 @@ http_method = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' ;
 # ==================================================================
 
 stream_line
-    = 'Stream' desc:words 'at' path:api_path $
+    = 'Stream' desc:words_before_at 'at' path:api_path $
     ;
 
 
@@ -502,6 +502,12 @@ words_before_called = /\w+(?:\s+(?!called\b)\w+)*/ ;
 words_before_is = /\w+(?:\s+(?!is\b)\w+)*/ ;
 words_before_comma = /\w+(?:\s+(?!,)\w+)*/ ;
 words_before_word_can = /\w+(?:\s+\w+)*?(?=\s+\w+\s+can\b)/ ;
+words_before_with = /\w+(?:\s+(?!with\b)\w+)*/ ;
+words_before_grouped = /\w+(?:\s+(?!grouped\b)\w+)*/ ;
+words_before_over = /\w+(?:\s+(?!over\b)\w+)*/ ;
+words_before_at = /\w+(?:\s+(?!at\b)\w+)*/ ;
+words_before_as = /\w+(?:\s+(?!as\b)\w+)*/ ;
+words_before_changes = /\w+(?:\s+(?!changes\b)\w+)*/ ;
 
 # Free text (rest of line, greedy)
 rest_of_line = /\S[^\n]*/ ;
