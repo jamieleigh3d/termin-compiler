@@ -12,10 +12,9 @@ As Anonymous, I want to see a page "Hello" so that I can be greeted:
   Display text "Anon, Hello!"
 
 As LoggedInUser, I want to see a page "Hello" so that I can be greeted:
-  Display text SayHelloTo(LoggedInUser.CurrentUser)
+  Display text [SayHelloTo(LoggedInUser.CurrentUser)]
 
 Compute called "SayHelloTo":
   Transform: takes u : UserProfile, produces "greeting" : Text
-  greeting = "Hello, " + u.FirstName + "!"
-  LoggedInUser can execute this
-
+  [greeting = "Hello, " + u.FirstName + "!"]
+  "LoggedInUser" can execute this

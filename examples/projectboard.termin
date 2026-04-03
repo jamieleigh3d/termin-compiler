@@ -17,7 +17,7 @@ A "stakeholder" has "view projects"
 Content called "projects":
   Each project has a name which is unique text, required
   Each project has a description which is text
-  Each project has a status which is one of: active, on hold, completed
+  Each project has a status which is one of: "active", "on hold", "completed"
   Anyone with "view projects" can view projects
   Anyone with "admin projects" can create or update projects
   Anyone with "admin projects" can delete projects
@@ -25,7 +25,7 @@ Content called "projects":
 Content called "team members":
   Each team member has a name which is text, required
   Each team member has an email which is unique text, required
-  Each team member has a role which is one of: developer, designer, qa, devops
+  Each team member has a role which is one of: "developer", "designer", "qa", "devops"
   Each team member has a project which references projects, required
   Anyone with "view projects" can view team members
   Anyone with "admin projects" can create or update team members
@@ -45,7 +45,7 @@ Content called "tasks":
   Each task has a sprint which references sprints
   Each task has an assignee which references team members
   Each task has a points which is a whole number, minimum 0
-  Each task has a priority which is one of: low, medium, high, critical
+  Each task has a priority which is one of: "low", "medium", "high", "critical"
   Anyone with "view projects" can view tasks
   Anyone with "manage tasks" can create or update tasks
   Anyone with "admin projects" can delete tasks
@@ -94,7 +94,7 @@ As a project manager, I want to see project health metrics
   so that I can report progress to stakeholders:
     Show a page called "Project Dashboard"
     Display total task count with backlog vs done breakdown
-    Display total time logged
+    Display total time logged [sum(hours)]
 
 As a project manager, I want to create new projects
   so that we can organize work:

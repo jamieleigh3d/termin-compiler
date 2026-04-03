@@ -93,11 +93,9 @@ class TestWarehouseIR:
     def test_events(self):
         assert len(self.spec.events) == 1
         ev = self.spec.events[0]
-        assert ev.source_table == "stock_levels"
-        assert ev.trigger == "updated"
-        assert ev.condition.left_column == "quantity"
-        assert ev.condition.operator == "lte"
-        assert ev.condition.right_column == "reorder_threshold"
+        assert ev.trigger == "jexl"
+        assert ev.jexl_condition is not None
+        assert "stockLevel" in ev.jexl_condition
         assert ev.action.target_table == "reorder_alerts"
 
     def test_routes(self):

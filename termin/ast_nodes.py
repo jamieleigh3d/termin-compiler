@@ -294,11 +294,8 @@ class ChannelRequirement:
 class ChannelDecl:
     name: str
     carries: str = ""           # Content name
-    protocol: str = ""          # v1 compat: "rest", "sse", "websocket", "webhook", "pubsub", "internal"
-    direction: str = ""         # v2: "inbound", "outbound", "bidirectional", "internal"
-    delivery: str = ""          # v2: "realtime", "reliable", "batch", "auto"
-    source: str = ""            # v1 compat: Boundary name or "external" / "application"
-    destination: str = ""       # v1 compat: Boundary name or "external" / "application"
+    direction: str = ""         # "inbound", "outbound", "bidirectional", "internal"
+    delivery: str = ""          # "realtime", "reliable", "batch", "auto"
     endpoint: Optional[str] = None
     requirements: list[ChannelRequirement] = field(default_factory=list)
     line: int = 0

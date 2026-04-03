@@ -19,7 +19,7 @@ Content called "products":
   Each product has a name which is text, required
   Each product has a description which is text
   Each product has a unit cost which is currency
-  Each product has a category which is one of: raw material, finished good, packaging
+  Each product has a category which is one of: "raw material", "finished good", "packaging"
   Anyone with "read inventory" can view products
   Anyone with "write inventory" can create or update products
   Anyone with "admin inventory" can delete products
@@ -53,8 +53,8 @@ State for products called "product lifecycle":
 
 --- Events ---
 
-When a stock level is updated and its quantity is at or below its reorder threshold:
-  Create a reorder alert with the product, warehouse, current quantity, and threshold
+When [stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold]:
+  Create a "reorder alert" with the product, warehouse, current quantity, and threshold
 
 --- User Stories ---
 
@@ -63,7 +63,7 @@ As a warehouse clerk, I want to see all products and their current stock levels
     Show a page called "Inventory Dashboard"
     Display a table of products with columns: SKU, name, category, status
     For each product, show stock levels grouped by warehouse
-    Highlight rows where quantity is at or below reorder threshold
+    Highlight rows where [quantity <= reorder_threshold]
     Allow filtering by category, warehouse, and status
     Allow searching by SKU or name
     This table subscribes to stock level changes
@@ -86,7 +86,7 @@ As a warehouse manager, I want to add new products to the catalog
   so that we can track their inventory:
     Show a page called "Add Product"
     Accept input for SKU, name, description, unit cost, and category
-    Validate that SKU is unique before saving
+    Validate that [SKU != ""] before saving
     Create the product as draft
     After saving, offer to set initial stock levels per warehouse
 
@@ -94,7 +94,7 @@ As an executive, I want to see an overview of inventory health
   so that I can make purchasing decisions:
     Show a page called "Inventory Overview"
     Display total product count with active vs discontinued breakdown
-    Display total stock value (sum of quantity times unit cost)
+    Display total stock value [sum(quantity * unit_cost)]
     Show a chart of reorder alerts over the past 30 days
 
 --- Navigation ---

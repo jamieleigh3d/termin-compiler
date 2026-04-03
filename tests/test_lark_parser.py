@@ -1,7 +1,7 @@
 """Tests for the Lark-based parser.
 
 Verifies that ``lark_parser.parse_lark()`` produces equivalent AST nodes
-to ``parser.parse()`` for every example file (v1 and v2).
+to ``parser.parse()`` for every example file.
 """
 
 from pathlib import Path
@@ -198,11 +198,8 @@ def _assert_compute_eq(a: ComputeNode, b: ComputeNode, label: str):
 def _assert_channel_eq(a: ChannelDecl, b: ChannelDecl, label: str):
     assert a.name == b.name, f"{label}: name"
     assert a.carries == b.carries, f"{label}: carries"
-    assert a.protocol == b.protocol, f"{label}: protocol"
     assert a.direction == b.direction, f"{label}: direction"
     assert a.delivery == b.delivery, f"{label}: delivery"
-    assert a.source == b.source, f"{label}: source"
-    assert a.destination == b.destination, f"{label}: destination"
     assert a.endpoint == b.endpoint, f"{label}: endpoint"
     assert len(a.requirements) == len(b.requirements), f"{label}: requirement count"
     for i, (ra, rb) in enumerate(zip(a.requirements, b.requirements)):
@@ -430,7 +427,7 @@ class TestLarkEvents:
         assert ev.condition.operator == "at or below"
         assert ev.action.create_content == "reorder alert"
 
-    def test_v2_jexl_event(self):
+    def test_jexl_event(self):
         source = '''When [stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold]:
   Create a "reorder alert" with the product, warehouse, current quantity, and threshold'''
         prog, err = parse_lark(source)
@@ -512,8 +509,8 @@ class TestLarkChannels:
     def test_channel(self):
         source = '''Channel called "order webhook":
   Carries orders
-  Protocol: webhook
-  From external to application
+  Direction: inbound
+  Delivery: reliable
   Endpoint: /webhooks/orders
   Requires "write orders" to send'''
         prog, err = parse_lark(source)
@@ -521,9 +518,8 @@ class TestLarkChannels:
         ch = prog.channels[0]
         assert ch.name == "order webhook"
         assert ch.carries == "orders"
-        assert ch.protocol == "webhook"
-        assert ch.source == "external"
-        assert ch.destination == "application"
+        assert ch.direction == "inbound"
+        assert ch.delivery == "reliable"
         assert ch.endpoint == "/webhooks/orders"
         assert len(ch.requirements) == 1
         assert ch.requirements[0].scope == "write orders"

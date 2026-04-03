@@ -345,7 +345,6 @@ class Analyzer:
 
     # ── Channel Checks ──
 
-    VALID_PROTOCOLS = {"rest", "sse", "websocket", "webhook", "pubsub", "internal"}
     VALID_DIRECTIONS = {"inbound", "outbound", "bidirectional", "internal"}
     VALID_DELIVERIES = {"realtime", "reliable", "batch", "auto"}
 
@@ -370,13 +369,6 @@ class Analyzer:
                             f'Valid deliveries: {", ".join(sorted(self.VALID_DELIVERIES))}',
                     line=channel.line,
                 ))
-            # v1 compat: validate protocol
-            if channel.protocol and channel.protocol not in self.VALID_PROTOCOLS:
-                self.errors.add(SemanticError(
-                    message=f'Channel "{channel.name}" has invalid protocol "{channel.protocol}". '
-                            f'Valid protocols: {", ".join(sorted(self.VALID_PROTOCOLS))}',
-                    line=channel.line,
-                ))
             for req in channel.requirements:
                 if req.scope not in self.scope_names:
                     self.errors.add(SemanticError(
@@ -386,12 +378,8 @@ class Analyzer:
                     ))
 
     def _is_channel_internal(self, channel) -> bool:
-        """Check if a channel is internal (either v1 protocol or v2 direction)."""
-        if channel.direction == "internal":
-            return True
-        if channel.protocol == "internal":
-            return True
-        return False
+        """Check if a channel is internal."""
+        return channel.direction == "internal"
 
     def _check_channel_has_auth(self) -> None:
         """Every non-internal Channel must have auth requirements."""

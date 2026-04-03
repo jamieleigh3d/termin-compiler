@@ -224,51 +224,7 @@ def test_parse_compute_route():
     assert c.outputs == ["bugs", "features"]
 
 
-# ── Channel parsing (v1 - Protocol/From-To) ──
-
-def test_parse_channel_webhook_v1():
-    program, errors = parse('''Channel called "order hook":
-  Carries orders
-  Protocol: webhook
-  From external to application
-  Endpoint: /webhooks/orders
-  Requires "write" to send''')
-    assert errors.ok
-    ch = program.channels[0]
-    assert ch.name == "order hook"
-    assert ch.carries == "orders"
-    assert ch.protocol == "webhook"
-    assert ch.source == "external"
-    assert ch.destination == "application"
-    assert ch.endpoint == "/webhooks/orders"
-    assert len(ch.requirements) == 1
-    assert ch.requirements[0].scope == "write"
-    assert ch.requirements[0].direction == "send"
-
-
-def test_parse_channel_sse_v1():
-    program, errors = parse('''Channel called "updates":
-  Carries items
-  Protocol: SSE
-  From application to external
-  Requires "read" to receive''')
-    assert errors.ok
-    ch = program.channels[0]
-    assert ch.protocol == "sse"
-    assert ch.requirements[0].direction == "receive"
-
-
-def test_parse_channel_internal_v1():
-    program, errors = parse('''Channel called "bus":
-  Carries items
-  Protocol: internal''')
-    assert errors.ok
-    ch = program.channels[0]
-    assert ch.protocol == "internal"
-    assert len(ch.requirements) == 0
-
-
-# ── Channel parsing (v2 - Direction/Delivery) ──
+# ── Channel parsing ──
 
 def test_parse_channel_inbound_reliable():
     program, errors = parse('''Channel called "order hook":
@@ -302,7 +258,7 @@ def test_parse_channel_outbound_realtime():
     assert ch.requirements[0].direction == "receive"
 
 
-def test_parse_channel_internal_v2():
+def test_parse_channel_internal():
     program, errors = parse('''Channel called "bus":
   Carries items
   Direction: internal
@@ -379,16 +335,6 @@ def test_parse_bare_role():
     assert errors.ok, errors.format()
     assert program.roles[0].name == "Anonymous"
     assert program.roles[0].scopes == ["view", "write"]
-
-
-def test_parse_display_text_expression():
-    program, errors = parse('''As anonymous, I want to see a page "Hello" so that I can test:
-  Display text SayHello(User.Name)''')
-    assert errors.ok, errors.format()
-    dt = [d for d in program.stories[0].directives if isinstance(d, DisplayText)]
-    assert len(dt) == 1
-    assert dt[0].is_expression is True
-    assert dt[0].text == "SayHello(User.Name)"
 
 
 def test_parse_compute_typed_params():
@@ -474,9 +420,9 @@ def test_parse_new_types():
     assert types["count"].maximum == 9999
 
 
-def test_parse_all_v2_examples():
+def test_parse_all_examples():
     from pathlib import Path
-    for name in ["hello_v2", "hello_user_v2", "warehouse_v2", "helpdesk_v2", "projectboard_v2", "compute_demo_v2"]:
+    for name in ["hello", "hello_user", "warehouse", "helpdesk", "projectboard", "compute_demo"]:
         source = Path(f"examples/{name}.termin").read_text()
         program, errors = parse(source)
         assert errors.ok, f"{name}: {errors.format()}"

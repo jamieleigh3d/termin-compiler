@@ -612,23 +612,6 @@ def lower(program: Program) -> AppSpec:
         ))
 
     # ── Lower channels ──
-    # v1 Protocol -> (Direction, Delivery) mapping for backward compat
-    PROTOCOL_TO_DIRECTION: dict[str, ChannelDirection] = {
-        "webhook": ChannelDirection.INBOUND,
-        "rest": ChannelDirection.INBOUND,
-        "sse": ChannelDirection.OUTBOUND,
-        "websocket": ChannelDirection.BIDIRECTIONAL,
-        "pubsub": ChannelDirection.BIDIRECTIONAL,
-        "internal": ChannelDirection.INTERNAL,
-    }
-    PROTOCOL_TO_DELIVERY: dict[str, ChannelDelivery] = {
-        "webhook": ChannelDelivery.RELIABLE,
-        "rest": ChannelDelivery.RELIABLE,
-        "sse": ChannelDelivery.REALTIME,
-        "websocket": ChannelDelivery.REALTIME,
-        "pubsub": ChannelDelivery.REALTIME,
-        "internal": ChannelDelivery.AUTO,
-    }
     DIRECTION_MAP = {
         "inbound": ChannelDirection.INBOUND,
         "outbound": ChannelDirection.OUTBOUND,
@@ -643,16 +626,8 @@ def lower(program: Program) -> AppSpec:
     }
     channels = []
     for ch in program.channels:
-        # Determine direction and delivery from v2 fields or v1 protocol
-        if ch.direction:
-            direction = DIRECTION_MAP.get(ch.direction, ChannelDirection.INBOUND)
-            delivery = DELIVERY_MAP.get(ch.delivery, ChannelDelivery.AUTO)
-        elif ch.protocol:
-            direction = PROTOCOL_TO_DIRECTION.get(ch.protocol, ChannelDirection.INBOUND)
-            delivery = PROTOCOL_TO_DELIVERY.get(ch.protocol, ChannelDelivery.AUTO)
-        else:
-            direction = ChannelDirection.INBOUND
-            delivery = ChannelDelivery.AUTO
+        direction = DIRECTION_MAP.get(ch.direction, ChannelDirection.INBOUND)
+        delivery = DELIVERY_MAP.get(ch.delivery, ChannelDelivery.AUTO)
         channels.append(ChannelSpec(
             name=_qname(ch.name),
             carries_table=_resolve_to_table(ch.carries) if ch.carries else "",

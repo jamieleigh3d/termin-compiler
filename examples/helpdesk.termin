@@ -17,8 +17,8 @@ A "support manager" has "view tickets", "create tickets", "manage tickets", and 
 Content called "tickets":
   Each ticket has a title which is text, required
   Each ticket has a description which is text, required
-  Each ticket has a priority which is one of: low, medium, high, critical
-  Each ticket has a category which is one of: bug, feature request, question, account issue
+  Each ticket has a priority which is one of: "low", "medium", "high", "critical"
+  Each ticket has a category which is one of: "bug", "feature request", "question", "account issue"
   Each ticket has a submitted by which is text, required
   Each ticket has an assigned to which is text
   Each ticket has a created at which is automatic
@@ -59,7 +59,7 @@ As a support agent, I want to see all open tickets
   so that I can work on resolving them:
     Show a page called "Ticket Queue"
     Display a table of tickets with columns: title, priority, category, status, assigned to, created at
-    Highlight rows where priority is at or below priority
+    Highlight rows where [priority == "critical" || priority == "high"]
     Allow filtering by status, priority, and category
     Allow searching by title or description
     This table subscribes to tickets changes

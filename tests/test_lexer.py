@@ -100,15 +100,7 @@ def test_tokenize_channel_carries():
     tokens = tokenize('  Carries orders')
     assert tokens[0].type == TokenType.CHANNEL_CARRIES
 
-def test_tokenize_channel_protocol():
-    tokens = tokenize('  Protocol: webhook')
-    assert tokens[0].type == TokenType.CHANNEL_PROTOCOL
-
-def test_tokenize_channel_direction_v1():
-    tokens = tokenize('  From external to application')
-    assert tokens[0].type == TokenType.CHANNEL_DIRECTION
-
-def test_tokenize_channel_direction_v2():
+def test_tokenize_channel_direction():
     tokens = tokenize('  Direction: inbound')
     assert tokens[0].type == TokenType.CHANNEL_DIRECTION
 
@@ -186,9 +178,9 @@ def test_tokenize_display_text_jexl():
     tokens = tokenize('  Display text [SayHelloTo(LoggedInUser.CurrentUser)]')
     assert tokens[0].type == TokenType.DISPLAY_TEXT
 
-def test_tokenize_v2_examples():
+def test_tokenize_all_examples():
     from pathlib import Path
-    for name in ["hello_v2", "hello_user_v2", "warehouse_v2", "helpdesk_v2", "projectboard_v2", "compute_demo_v2"]:
+    for name in ["hello", "hello_user", "warehouse", "helpdesk", "projectboard", "compute_demo"]:
         source = Path(f"examples/{name}.termin").read_text()
         tokens = tokenize(source)
         # No tokens should be UNKNOWN except Compute body lines (which may be UNKNOWN or JEXL_BLOCK)

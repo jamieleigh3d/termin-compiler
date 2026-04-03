@@ -204,26 +204,11 @@ Content called "items":
 
 Channel called "hook":
   Carries nonexistent
-  Protocol: webhook
+  Direction: inbound
   Requires "read" to send
 ''')
     assert not result.ok
     assert any("undefined" in str(e).lower() and "content" in str(e).lower() for e in result.errors)
-
-
-def test_channel_invalid_protocol():
-    result = _analyze(VALID_BASE + '''
-Content called "items":
-  Each item has a name which is text
-  Anyone with "read" can view items
-
-Channel called "hook":
-  Carries items
-  Protocol: ftp
-  Requires "read" to send
-''')
-    assert not result.ok
-    assert any("invalid protocol" in str(e).lower() for e in result.errors)
 
 
 def test_channel_without_auth():
@@ -234,7 +219,7 @@ Content called "items":
 
 Channel called "hook":
   Carries items
-  Protocol: webhook
+  Direction: inbound
 ''')
     assert not result.ok
     assert result.has_security_errors
@@ -242,19 +227,6 @@ Channel called "hook":
 
 
 def test_channel_internal_no_auth_ok():
-    result = _analyze(VALID_BASE + '''
-Content called "items":
-  Each item has a name which is text
-  Anyone with "read" can view items
-
-Channel called "bus":
-  Carries items
-  Protocol: internal
-''')
-    assert result.ok, result.format()
-
-
-def test_channel_internal_v2_no_auth_ok():
     result = _analyze(VALID_BASE + '''
 Content called "items":
   Each item has a name which is text
@@ -396,9 +368,9 @@ def test_hello_user_example_passes():
     assert result.ok, result.format()
 
 
-def test_all_v2_examples_pass():
+def test_all_examples_pass():
     from pathlib import Path
-    for name in ["hello_v2", "hello_user_v2", "warehouse_v2", "helpdesk_v2", "projectboard_v2", "compute_demo_v2"]:
+    for name in ["hello", "hello_user", "warehouse", "helpdesk", "projectboard", "compute_demo"]:
         source = Path(f"examples/{name}.termin").read_text()
         program, parse_errors = parse(source)
         assert parse_errors.ok, f"{name} parse: {parse_errors.format()}"

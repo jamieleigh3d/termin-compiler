@@ -16,7 +16,7 @@ An "order manager" has "read orders", "write orders", and "admin orders"
 Content called "orders":
   Each order has a customer which is text, required
   Each order has a total which is currency
-  Each order has a priority which is one of: low, medium, high
+  Each order has a priority which is one of: "low", "medium", "high"
   Anyone with "read orders" can view orders
   Anyone with "write orders" can create or update orders
   Anyone with "admin orders" can delete orders
@@ -47,54 +47,55 @@ State for orders called "order lifecycle":
 
 Compute called "calculate order total":
   Transform: takes an order, produces an order
-  Sum all line item quantities times unit prices
+  [order.total = order.lines.reduce((acc, line) => acc + line.quantity * line.unit_price, 0)]
   Anyone with "write orders" can execute this
 
 Compute called "revenue report":
   Reduce: takes orders, produces a report
-  Count orders and sum totals grouped by status
+  [report.total_count = orders.length; report.total_revenue = orders.reduce((acc, o) => acc + o.total, 0)]
   Anyone with "read orders" can execute this
 
 Compute called "split order into lines":
   Expand: takes an order, produces order lines
-  Decompose the order into individual line items
+  [order.lines.map(line => ({ parent_order: order.id, product_name: line.product_name, quantity: line.quantity, unit_price: line.unit_price }))]
   Anyone with "write orders" can execute this
 
 Compute called "match orders to lines":
   Correlate: takes orders and order lines, produces reports
-  Match on order reference equals order id
+  [orders.join(order_lines, (o, l) => o.id == l.parent_order)]
   Anyone with "read orders" can execute this
 
 Compute called "triage order":
   Route: takes an order, produces one of orders or reports
-  Route based on the priority field
+  [order.priority == "high" ? "orders" : "reports"]
   Anyone with "write orders" can execute this
 
 --- Channels ---
 
 Channel called "order webhook":
   Carries orders
-  Protocol: webhook
-  From external to application
+  Direction: inbound
+  Delivery: reliable
   Endpoint: /webhooks/orders
   Requires "write orders" to send
 
 Channel called "order updates stream":
   Carries orders
-  Protocol: SSE
-  From application to external
+  Direction: outbound
+  Delivery: realtime
   Requires "read orders" to receive
 
 Channel called "order notifications":
   Carries orders
-  Protocol: websocket
-  From application to external
+  Direction: bidirectional
+  Delivery: realtime
   Endpoint: /ws/orders
   Requires "read orders" to receive
 
 Channel called "internal order bus":
   Carries orders
-  Protocol: internal
+  Direction: internal
+  Delivery: auto
 
 --- Boundaries ---
 

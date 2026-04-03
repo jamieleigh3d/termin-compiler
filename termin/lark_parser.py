@@ -1,4 +1,4 @@
-"""Lark-based parser for the Termin DSL v2 (backward-compatible with v1).
+"""Lark-based parser for the Termin DSL.
 
 Uses a two-phase approach:
   1. **Pre-process**: strip comments/dividers, classify each line via the
@@ -103,9 +103,7 @@ _LINE_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r'^\s*(?:Transform|Reduce|Expand|Correlate|Route):\s+'), 'COMPUTE_SHAPE'),
     (re.compile(r'^Channel called\s+"[^"]+"'),                  'CHANNEL_DECL'),
     (re.compile(r'^\s*Carries\s+'),                             'CHANNEL_CARRIES'),
-    (re.compile(r'^\s*Protocol:\s+'),                           'CHANNEL_PROTOCOL'),
     (re.compile(r'^\s*Direction:\s+'),                          'CHANNEL_DIR'),
-    (re.compile(r'^\s*From\s+.+\s+to\s+'),                     'CHANNEL_DIR'),
     (re.compile(r'^\s*Delivery:\s+'),                          'CHANNEL_DELIVERY'),
     (re.compile(r'^\s*Requires\s+"[^"]+"\s+to\s+'),             'CHANNEL_REQ'),
     (re.compile(r'^\s*Endpoint:\s+'),                           'CHANNEL_EP'),
@@ -239,7 +237,6 @@ compute_shape_line: COMPUTE_SHAPE_LINE
 // -- Channel --
 channel_block: CHANNEL_DECL_LINE channel_child*
 ?channel_child: CHANNEL_CARRIES_LINE
-              | CHANNEL_PROTOCOL_LINE
               | CHANNEL_DIR_LINE
               | CHANNEL_DELIVERY_LINE
               | CHANNEL_REQ_LINE
@@ -296,7 +293,6 @@ COMPUTE_SHAPE_LINE: /[^\n]+/
 JEXL_LINE: /[^\n]+/
 CHANNEL_DECL_LINE: /[^\n]+/
 CHANNEL_CARRIES_LINE: /[^\n]+/
-CHANNEL_PROTOCOL_LINE: /[^\n]+/
 CHANNEL_DIR_LINE: /[^\n]+/
 CHANNEL_REQ_LINE: /[^\n]+/
 CHANNEL_EP_LINE: /[^\n]+/
@@ -353,7 +349,6 @@ _TAG_TO_TERMINAL: dict[str, str] = {
     "JEXL_BLOCK":        "JEXL_LINE",
     "CHANNEL_DECL":      "CHANNEL_DECL_LINE",
     "CHANNEL_CARRIES":   "CHANNEL_CARRIES_LINE",
-    "CHANNEL_PROTOCOL":  "CHANNEL_PROTOCOL_LINE",
     "CHANNEL_DIR":       "CHANNEL_DIR_LINE",
     "CHANNEL_DELIVERY":  "CHANNEL_DELIVERY_LINE",
     "CHANNEL_REQ":       "CHANNEL_REQ_LINE",
@@ -1148,13 +1143,8 @@ class _TerminTransformer(Transformer):
                 tag = child[0]
                 if tag == "carries":
                     channel.carries = child[1]
-                elif tag == "protocol":
-                    channel.protocol = child[1]
-                elif tag == "direction_v2":
+                elif tag == "direction":
                     channel.direction = child[1]
-                elif tag == "direction_v1":
-                    channel.source = child[1]
-                    channel.destination = child[2]
                 elif tag == "delivery":
                     channel.delivery = child[1]
                 elif tag == "requirement":
@@ -1170,21 +1160,10 @@ class _TerminTransformer(Transformer):
         val = _strip_prefix(str(token))
         return ("carries", val.split("Carries", 1)[1].strip())
 
-    def CHANNEL_PROTOCOL_LINE(self, token):
-        val = _strip_prefix(str(token))
-        return ("protocol", val.split(":", 1)[1].strip().lower())
-
     def CHANNEL_DIR_LINE(self, token):
         val = _strip_prefix(str(token))
-        # v2: "Direction: inbound"
-        if val.strip().startswith("Direction:"):
-            direction = val.split(":", 1)[1].strip().lower()
-            return ("direction_v2", direction)
-        # v1: "From application to external"
-        m = re.match(r'\s*From\s+(.+?)\s+to\s+(.+)', val)
-        if m:
-            return ("direction_v1", m.group(1).strip().lower(), m.group(2).strip().lower())
-        return None
+        direction = val.split(":", 1)[1].strip().lower()
+        return ("direction", direction)
 
     def CHANNEL_DELIVERY_LINE(self, token):
         val = _strip_prefix(str(token))
@@ -1466,7 +1445,7 @@ def _build_tree_from_lines(lines: list[_PreprocessedLine]) -> tuple[Tree, _LineM
         elif ln.tag == "CHANNEL_DECL":
             children = [make_token("CHANNEL_DECL_LINE", ln)]
             i += 1
-            channel_tags = {"CHANNEL_CARRIES", "CHANNEL_PROTOCOL", "CHANNEL_DIR",
+            channel_tags = {"CHANNEL_CARRIES", "CHANNEL_DIR",
                             "CHANNEL_DELIVERY", "CHANNEL_REQ", "CHANNEL_EP"}
             while i < len(lines) and lines[i].tag in channel_tags:
                 cl = lines[i]

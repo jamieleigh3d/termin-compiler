@@ -163,8 +163,8 @@ Compute called "{name}":
 
 Channel called "{name}":
   Carries {content}
-  Protocol: {REST|SSE|WebSocket|webhook|pubsub|internal}
-  From {source} to {destination}
+  Direction: {inbound|outbound|bidirectional|internal}
+  Delivery: {realtime|reliable|batch|auto}
   Endpoint: {path}
   Requires "{scope}" to {send|receive}
 

@@ -606,11 +606,11 @@ class Parser:
             jexl = _extract_jexl(t.value)
             if jexl:
                 return DisplayText(text=jexl, is_expression=True, line=t.line)
-            # v1: 'Display text "Hello, World"' (quoted literal)
+            # 'Display text "Hello, World"' (quoted literal)
             quoted = _extract_quoted(t.value)
             if quoted:
                 return DisplayText(text=quoted[0], line=t.line)
-            # v1 fallback: unquoted expression (backward compat)
+            # Fallback: treat as expression
             expr = re.sub(r'^\s*Display\s+text\s+', '', t.value).strip()
             return DisplayText(text=expr, is_expression=True, line=t.line)
 
@@ -786,7 +786,7 @@ class Parser:
         channel = ChannelDecl(name=name, line=t.line)
 
         while self.check(
-            TokenType.CHANNEL_CARRIES, TokenType.CHANNEL_PROTOCOL,
+            TokenType.CHANNEL_CARRIES,
             TokenType.CHANNEL_DIRECTION, TokenType.CHANNEL_DELIVERY,
             TokenType.CHANNEL_REQUIRES, TokenType.CHANNEL_ENDPOINT,
         ):
@@ -794,19 +794,9 @@ class Parser:
             if ct.type == TokenType.CHANNEL_CARRIES:
                 # "Carries products"
                 channel.carries = ct.value.split("Carries", 1)[1].strip()
-            elif ct.type == TokenType.CHANNEL_PROTOCOL:
-                # v1: "Protocol: SSE"
-                channel.protocol = ct.value.split(":", 1)[1].strip().lower()
             elif ct.type == TokenType.CHANNEL_DIRECTION:
-                # v2: "Direction: inbound" or v1: "From application to external"
-                if ct.value.strip().startswith("Direction:"):
-                    channel.direction = ct.value.split(":", 1)[1].strip().lower()
-                else:
-                    # v1 compat: "From application to external"
-                    m = re.match(r'\s*From\s+(.+?)\s+to\s+(.+)', ct.value)
-                    if m:
-                        channel.source = m.group(1).strip().lower()
-                        channel.destination = m.group(2).strip().lower()
+                # "Direction: inbound"
+                channel.direction = ct.value.split(":", 1)[1].strip().lower()
             elif ct.type == TokenType.CHANNEL_DELIVERY:
                 # v2: "Delivery: reliable"
                 channel.delivery = ct.value.split(":", 1)[1].strip().lower()
