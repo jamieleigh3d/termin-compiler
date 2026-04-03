@@ -10,6 +10,7 @@ from .ast_nodes import (
     DisplayTable, AcceptInput, SubscribeTo, ShowRelated, AllowFilter,
     AllowSearch, ShowChart, DisplayAggregation,
     ComputeNode, ChannelDecl, BoundaryDecl, RoleAlias,
+    ErrorHandler,
 )
 from .errors import SemanticError, SecurityError, CompileResult
 
@@ -29,6 +30,7 @@ class Analyzer:
         self.compute_names: set[str] = set()
         self.channel_names: set[str] = set()
         self.boundary_names: set[str] = set()
+        self.state_machine_names: set[str] = set()
         self.role_alias_map: dict[str, str] = {}  # short_name -> full_name
 
     def analyze(self) -> CompileResult:
@@ -61,6 +63,9 @@ class Analyzer:
 
         for boundary in p.boundaries:
             self.boundary_names.add(boundary.name)
+
+        for sm in p.state_machines:
+            self.state_machine_names.add(sm.machine_name)
 
         for alias in p.role_aliases:
             self.role_alias_map[alias.short_name.lower()] = alias.full_name.lower()
@@ -100,6 +105,7 @@ class Analyzer:
         self._check_computes()
         self._check_channels()
         self._check_boundaries()
+        self._check_error_handlers()
 
     def _check_role_aliases(self) -> None:
         role_names_lower = {r.lower() for r in self.role_names}
@@ -402,6 +408,21 @@ class Analyzer:
                                 f'item "{item}"',
                         line=boundary.line,
                     ))
+
+    def _check_error_handlers(self) -> None:
+        """Validate that error handler sources reference defined primitives."""
+        all_primitive_names = (
+            self.content_names | self.compute_names | self.channel_names
+            | self.state_machine_names | self.boundary_names
+        )
+        for handler in self.program.error_handlers:
+            if handler.is_catch_all:
+                continue
+            if handler.source and handler.source not in all_primitive_names:
+                self.errors.add(SemanticError(
+                    message=f'Error handler references undefined primitive "{handler.source}"',
+                    line=handler.line,
+                ))
 
     def _check_boundary_scope_restriction(self) -> None:
         """Boundary scope restrictions must use valid scopes."""

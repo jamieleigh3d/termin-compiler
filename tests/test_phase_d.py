@@ -270,7 +270,7 @@ class TestReflectionEndpoint:
         code = self._compile_to_code(VALID_BASE)
         assert "/api/reflect" in code
         assert "api_reflect" in code
-        assert "_REFLECT_JSON" in code
+        assert "APP_SPEC_JSON" in code
 
     def test_reflection_endpoint_valid_python(self):
         code = self._compile_to_code(VALID_BASE)

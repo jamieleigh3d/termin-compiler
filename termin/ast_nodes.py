@@ -323,6 +323,29 @@ class BoundaryDecl:
     line: int = 0
 
 
+# --- Error Handling ---
+
+@dataclass
+class ErrorAction:
+    kind: str  # "retry", "disable", "escalate", "create", "notify", "set"
+    retry_count: int = 0
+    retry_backoff: bool = False
+    retry_max_delay: Optional[str] = None
+    target: Optional[str] = None  # for disable/notify
+    jexl_expr: Optional[str] = None  # for create/notify/set
+    log_level: Optional[str] = None
+    line: int = 0
+
+
+@dataclass
+class ErrorHandler:
+    source: str  # primitive name, or "" for catch-all
+    condition_jexl: Optional[str] = None  # where [expr]
+    actions: list[ErrorAction] = field(default_factory=list)
+    is_catch_all: bool = False
+    line: int = 0
+
+
 # --- Application ---
 
 @dataclass
@@ -350,3 +373,4 @@ class Program:
     computes: list[ComputeNode] = field(default_factory=list)
     channels: list[ChannelDecl] = field(default_factory=list)
     boundaries: list[BoundaryDecl] = field(default_factory=list)
+    error_handlers: list[ErrorHandler] = field(default_factory=list)

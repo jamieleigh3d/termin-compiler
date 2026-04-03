@@ -16,6 +16,7 @@ from .ast_nodes import (
     NavBar, NavItem, ApiSection, ApiEndpoint, Stream, Directive,
     ComputeNode, ComputeParam, ChannelDecl, ChannelRequirement, BoundaryDecl,
     BoundaryProperty, DisplayText,
+    ErrorHandler, ErrorAction,
 )
 from .errors import ParseError, CompileResult
 
@@ -131,6 +132,8 @@ class Parser:
                     program.channels.append(self.parse_channel())
                 elif t.type == TokenType.BOUNDARY_DECL:
                     program.boundaries.append(self.parse_boundary())
+                elif t.type in (TokenType.ERROR_HANDLER, TokenType.ERROR_CATCH_ALL):
+                    program.error_handlers.append(self.parse_error_handler())
                 else:
                     self._error(f"Unexpected line: {t.value}", t.line)
                     self.advance()
@@ -862,6 +865,116 @@ class Parser:
                     self._error(f"Cannot parse boundary property: {ct.value}", ct.line)
 
         return boundary
+
+
+    # ── Error Handling ──
+
+    def parse_error_handler(self) -> ErrorHandler:
+        t = self.peek()
+
+        if t.type == TokenType.ERROR_CATCH_ALL:
+            self.advance()
+            handler = ErrorHandler(source="", is_catch_all=True, line=t.line)
+        else:
+            self.expect(TokenType.ERROR_HANDLER)
+            # 'On error from "order webhook":' or
+            # 'On error from "order webhook" where [error.kind == "external"]:'
+            source_name = _extract_quoted(t.value)
+            name = source_name[0] if source_name else ""
+            jexl = _extract_jexl(t.value)
+            handler = ErrorHandler(source=name, condition_jexl=jexl, line=t.line)
+
+        # Parse action lines: Retry, Then, Log level, Create (without Then)
+        while self.check(
+            TokenType.ERROR_RETRY, TokenType.ERROR_THEN,
+            TokenType.EVENT_LOG_LEVEL, TokenType.EVENT_ACTION,
+        ):
+            nt = self.peek()
+
+            if nt.type == TokenType.ERROR_RETRY:
+                self.advance()
+                action = self._parse_retry_action(nt)
+                handler.actions.append(action)
+
+            elif nt.type == TokenType.ERROR_THEN:
+                self.advance()
+                action = self._parse_then_action(nt)
+                handler.actions.append(action)
+
+            elif nt.type == TokenType.EVENT_ACTION:
+                # "Create <event> with [expr]" without a "Then" prefix
+                self.advance()
+                m = re.match(r'Create\s+(?:a|an\s+)?"?([^"]+?)"?\s+(?:event\s+)?with\s+\[([^\]]+)\]', nt.value.strip())
+                if not m:
+                    m = re.match(r'Create\s+(?:a|an\s+)?"?([^"]+?)"?\s+(?:event\s+)?with\s+(.*)', nt.value.strip())
+                if m:
+                    handler.actions.append(ErrorAction(
+                        kind="create",
+                        target=m.group(1).strip().strip('"'),
+                        jexl_expr=m.group(2).strip().strip('[]'),
+                        line=nt.line,
+                    ))
+
+            elif nt.type == TokenType.EVENT_LOG_LEVEL:
+                self.advance()
+                level = nt.value.split(":", 1)[1].strip().upper()
+                # Attach log level to the last action, or create a standalone one
+                if handler.actions:
+                    handler.actions[-1].log_level = level
+                else:
+                    handler.actions.append(ErrorAction(kind="retry", log_level=level, line=nt.line))
+
+        return handler
+
+    def _parse_retry_action(self, token: Token) -> ErrorAction:
+        """Parse 'Retry N times [with backoff[, maximum delay X]]'."""
+        text = token.value.strip()
+        m = re.match(r'Retry\s+(\d+)\s+times?(?:\s+with\s+backoff)?(?:,\s*maximum\s+delay\s+(.+))?', text)
+        count = int(m.group(1)) if m else 0
+        backoff = "with backoff" in text
+        max_delay = m.group(2).strip() if m and m.group(2) else None
+        return ErrorAction(
+            kind="retry",
+            retry_count=count,
+            retry_backoff=backoff,
+            retry_max_delay=max_delay,
+            line=token.line,
+        )
+
+    def _parse_then_action(self, token: Token) -> ErrorAction:
+        """Parse 'Then disable/escalate/notify/create/set ...'."""
+        text = token.value.strip()
+
+        # Then disable channel/compute
+        m = re.match(r'Then\s+disable\s+(\w+)', text)
+        if m:
+            return ErrorAction(kind="disable", target=m.group(1), line=token.line)
+
+        # Then escalate
+        if re.match(r'Then\s+escalate', text):
+            return ErrorAction(kind="escalate", line=token.line)
+
+        # Then notify "role" with [expr]
+        m = re.match(r'Then\s+notify\s+"([^"]+)"\s+with\s+\[([^\]]+)\]', text)
+        if not m:
+            m = re.match(r'Then\s+notify\s+\[([^\]]+)\]\s+with\s+\[([^\]]+)\]', text)
+            if m:
+                return ErrorAction(kind="notify", target=m.group(1), jexl_expr=m.group(2), line=token.line)
+        if m:
+            return ErrorAction(kind="notify", target=m.group(1), jexl_expr=m.group(2), line=token.line)
+
+        # Then create "event" with [expr]
+        m = re.match(r'Then\s+create\s+"([^"]+)"\s+(?:event\s+)?with\s+\[([^\]]+)\]', text)
+        if m:
+            return ErrorAction(kind="create", target=m.group(1), jexl_expr=m.group(2), line=token.line)
+
+        # Then set [expr]
+        m = re.match(r'Then\s+set\s+\[([^\]]+)\]', text)
+        if m:
+            return ErrorAction(kind="set", jexl_expr=m.group(1), line=token.line)
+
+        self._error(f"Cannot parse error action: {text}", token.line)
+        return ErrorAction(kind="escalate", line=token.line)
 
 
 def parse(source: str) -> tuple[Program, CompileResult]:

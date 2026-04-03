@@ -345,6 +345,27 @@ class BoundarySpec:
     properties: tuple[BoundaryPropertySpec, ...] = ()  # exposed computed properties
 
 
+# ── Error Handling ──
+
+@dataclass(frozen=True)
+class ErrorActionSpec:
+    kind: str  # "retry", "disable", "escalate", "create", "notify", "set"
+    retry_count: int = 0
+    retry_backoff: bool = False
+    retry_max_delay: Optional[str] = None
+    target: Optional[str] = None
+    jexl_expr: Optional[str] = None
+    log_level: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class ErrorHandlerSpec:
+    source: str  # primitive name, or "" for catch-all
+    condition_jexl: Optional[str] = None
+    actions: tuple['ErrorActionSpec', ...] = ()
+    is_catch_all: bool = False
+
+
 # ── Top-Level IR ──
 
 @dataclass(frozen=True)
@@ -364,3 +385,4 @@ class AppSpec:
     computes: tuple[ComputeSpec, ...] = ()
     channels: tuple[ChannelSpec, ...] = ()
     boundaries: tuple[BoundarySpec, ...] = ()
+    error_handlers: tuple[ErrorHandlerSpec, ...] = ()

@@ -13,7 +13,7 @@ from .ast_nodes import (
     ShowRelated, HighlightRows, AllowFilter, AllowSearch, SubscribeTo,
     AcceptInput, ValidateUnique, CreateAs, AfterSave, ShowChart,
     DisplayAggregation, DisplayText, ComputeNode, ChannelDecl, BoundaryDecl,
-    BoundaryProperty,
+    BoundaryProperty, ErrorHandler, ErrorAction,
 )
 from .ir import (
     QualifiedName, ColumnType, Column, Table, Verb, AccessGrant,
@@ -24,7 +24,7 @@ from .ir import (
     AggregationSpec, ChartSpec, PageSpec, NavItemSpec, StreamSpec, AppSpec,
     ComputeShape, ComputeSpec, ComputeParamSpec, ChannelDirection,
     ChannelDelivery, ChannelRequirementSpec, ChannelSpec, BoundarySpec,
-    BoundaryPropertySpec,
+    BoundaryPropertySpec, ErrorHandlerSpec, ErrorActionSpec,
 )
 
 
@@ -669,6 +669,27 @@ def lower(program: Program) -> AppSpec:
             properties=props,
         ))
 
+    # ── Lower error handlers ──
+    error_handlers = []
+    for eh in program.error_handlers:
+        actions = []
+        for a in eh.actions:
+            actions.append(ErrorActionSpec(
+                kind=a.kind,
+                retry_count=a.retry_count,
+                retry_backoff=a.retry_backoff,
+                retry_max_delay=a.retry_max_delay,
+                target=a.target,
+                jexl_expr=a.jexl_expr,
+                log_level=a.log_level,
+            ))
+        error_handlers.append(ErrorHandlerSpec(
+            source=eh.source,
+            condition_jexl=eh.condition_jexl,
+            actions=tuple(actions),
+            is_catch_all=eh.is_catch_all,
+        ))
+
     return AppSpec(
         name=program.application.name if program.application else "App",
         description=program.application.description if program.application else "",
@@ -684,4 +705,5 @@ def lower(program: Program) -> AppSpec:
         computes=tuple(computes),
         channels=tuple(channels),
         boundaries=tuple(boundaries),
+        error_handlers=tuple(error_handlers),
     )

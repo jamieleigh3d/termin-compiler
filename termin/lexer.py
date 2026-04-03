@@ -90,6 +90,12 @@ class TokenType(Enum):
     BOUNDARY_IDENTITY = auto() # Identity inherits/restricts
     BOUNDARY_EXPOSES = auto()  # Exposes property "name" : type = [jexl]
 
+    # Error Handling
+    ERROR_HANDLER = auto()     # On error from "name": / On error from "name" where [jexl]:
+    ERROR_CATCH_ALL = auto()   # On any error:
+    ERROR_RETRY = auto()       # Retry N times / Retry N times with backoff
+    ERROR_THEN = auto()        # Then disable/escalate/notify/create/set
+
     # Fallback
     UNKNOWN = auto()
 
@@ -158,6 +164,11 @@ _PATTERNS: list[tuple[re.Pattern, TokenType]] = [
     (re.compile(r'^\s*Contains\s+'), TokenType.BOUNDARY_CONTAINS),
     (re.compile(r'^\s*Identity\s+(?:inherits|restricts)'), TokenType.BOUNDARY_IDENTITY),
     (re.compile(r'^\s*Exposes\s+property\s+'), TokenType.BOUNDARY_EXPOSES),
+    # Error Handling
+    (re.compile(r'^\s*On\s+error\s+from\s+"[^"]+"'), TokenType.ERROR_HANDLER),
+    (re.compile(r'^\s*On\s+any\s+error:'), TokenType.ERROR_CATCH_ALL),
+    (re.compile(r'^\s*Retry\s+\d+\s+times?'), TokenType.ERROR_RETRY),
+    (re.compile(r'^\s*Then\s+(?:disable|escalate|notify|create|set)\b'), TokenType.ERROR_THEN),
     # JEXL blocks — standalone [expression] lines (in Compute bodies etc.)
     (re.compile(r'^\s*\[.+\]\s*$'), TokenType.JEXL_BLOCK),
 ]

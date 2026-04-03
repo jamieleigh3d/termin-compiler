@@ -23,7 +23,7 @@ from ..ir import (
     NavItemSpec, StreamSpec, RoleSpec, AuthSpec,
     ComputeSpec, ComputeShape, ChannelSpec, ChannelDirection,
     ChannelDelivery, ChannelRequirementSpec, BoundarySpec,
-    BoundaryPropertySpec,
+    BoundaryPropertySpec, ErrorHandlerSpec, ErrorActionSpec,
 )
 
 
@@ -71,7 +71,9 @@ class FastApiBackend:
         self._emit_compute_routes()
         self._emit_compute_registrations()
         self._emit_channel_endpoints()
+        self._emit_reflection_engine()
         self._emit_reflection_endpoint()
+        self._emit_error_handlers_registration()
         self._emit_error_log_endpoint()
         self._emit_events_endpoint()
         self._emit_sse_stream()
@@ -180,10 +182,15 @@ class FastApiBackend:
             class TerminAtor:
                 def __init__(self):
                     self._handlers = {}
+                    self._typed_handlers = []  # list of {source, condition, actions, is_catch_all}
                     self._error_log = []
 
                 def route(self, error: TerminError):
                     self._error_log.append(error.__dict__)
+                    # Try typed error handlers first
+                    handled = self.handle_error(error)
+                    if handled:
+                        return
                     # Try boundary-specific handler
                     for boundary in error.boundary_path:
                         if boundary in self._handlers:
@@ -192,11 +199,64 @@ class FastApiBackend:
                     # Global fallback
                     print(f"[TerminAtor] {error.kind}: {error.message} (from {error.source})")
 
-                def register_handler(self, boundary, handler):
-                    self._handlers[boundary] = handler
+                def register_handler(self, source_or_boundary, handler_or_spec=None):
+                    if isinstance(handler_or_spec, dict):
+                        self._typed_handlers.append(handler_or_spec)
+                    elif callable(handler_or_spec):
+                        self._handlers[source_or_boundary] = handler_or_spec
+                    else:
+                        self._handlers[source_or_boundary] = handler_or_spec
+
+                def handle_error(self, error: TerminError):
+                    """Evaluate typed handlers in declaration order."""
+                    for handler in self._typed_handlers:
+                        # Match source
+                        if handler.get("is_catch_all"):
+                            pass  # catch-all matches everything
+                        elif handler.get("source") and handler["source"] != error.source:
+                            continue
+                        # Evaluate condition if present
+                        condition = handler.get("condition")
+                        if condition:
+                            try:
+                                ctx = {"error": error.__dict__}
+                                result = expr_eval.evaluate(condition, ctx)
+                                if not result:
+                                    continue
+                            except Exception:
+                                continue
+                        # Execute actions in sequence
+                        for action in handler.get("actions", []):
+                            kind = action.get("kind")
+                            if kind == "retry":
+                                count = action.get("retry_count", 0)
+                                print(f"[TerminAtor] Retry {count} times for {error.source}")
+                            elif kind == "disable":
+                                target = action.get("target", "")
+                                print(f"[TerminAtor] Disabling {target} for {error.source}")
+                            elif kind == "escalate":
+                                print(f"[TerminAtor] Escalating error from {error.source}")
+                                return False  # Let it propagate
+                            elif kind == "create":
+                                target = action.get("target", "")
+                                print(f"[TerminAtor] Creating {target} event for {error.source}")
+                            elif kind == "notify":
+                                target = action.get("target", "")
+                                print(f"[TerminAtor] Notifying {target} about {error.source}")
+                            elif kind == "set":
+                                expr = action.get("jexl_expr", "")
+                                print(f"[TerminAtor] Setting {expr} for {error.source}")
+                            log_level = action.get("log_level")
+                            if log_level:
+                                print(f"[TerminAtor] [{log_level}] {error.message}")
+                        return True
+                    return False
 
                 def get_error_log(self):
                     return self._error_log
+
+                def get_typed_handlers(self):
+                    return self._typed_handlers
 
             terminator = TerminAtor()
         ''')
@@ -1012,10 +1072,140 @@ class FastApiBackend:
         self._w(f'    return StreamingResponse(generate(), media_type="text/event-stream")')
         self._w()
 
+    # ── Reflection Engine ──
+
+    def _emit_reflection_engine(self) -> None:
+        """Generate the ReflectionEngine class and instantiate it."""
+        ir_json_str = self._build_ir_json()
+
+        self._w()
+        self._w("# ── Reflection Engine ──")
+        self._w()
+        self._w(f'APP_SPEC_JSON = {repr(ir_json_str)}')
+        self._w()
+        self._wblock('''\
+            class ReflectionEngine:
+                def __init__(self, app_spec_json):
+                    self._spec = json.loads(app_spec_json)
+                    self._channel_metrics = {}  # channel_name -> {sent: 0, errors: 0, lastActive: None}
+                    self._state_history = {}    # primitive_name -> [{from, to, at, by}]
+
+                def content_schemas(self):
+                    return [t['name']['display'] for t in self._spec.get('tables', [])]
+
+                def content_count(self, name, db):
+                    # Returns count from DB (async, must be called with await)
+                    for t in self._spec.get('tables', []):
+                        if t['name']['display'] == name or t['name']['snake'] == name:
+                            return t['name']['snake']
+                    return None
+
+                def content_schema(self, name):
+                    for t in self._spec.get('tables', []):
+                        if t['name']['display'] == name or t['name']['snake'] == name:
+                            fields = [c['display_name'] for c in t['columns']]
+                            field_details = {}
+                            for c in t['columns']:
+                                constraints = []
+                                if c.get('required'):
+                                    constraints.append('required')
+                                if c.get('unique'):
+                                    constraints.append('unique')
+                                field_details[c['display_name']] = {
+                                    'type': c['column_type'],
+                                    'constraints': constraints,
+                                }
+                            return {'fields': fields, 'field_details': field_details}
+                    return None
+
+                def compute_functions(self):
+                    return [c['name']['display'] for c in self._spec.get('computes', [])]
+
+                def compute_function(self, name):
+                    for c in self._spec.get('computes', []):
+                        if c['name']['display'] == name or c['name']['snake'] == name:
+                            return {
+                                'shape': c['shape'],
+                                'inputs': c.get('input_params', []),
+                                'outputs': c.get('output_params', []),
+                            }
+                    return None
+
+                def channel_state(self, name):
+                    return self._channel_metrics.get(name, {}).get('state', 'open')
+
+                def channel_metrics(self, name):
+                    return self._channel_metrics.get(name, {'sent': 0, 'errors': 0, 'lastActive': None})
+
+                def update_channel_metric(self, name, metric, value):
+                    if name not in self._channel_metrics:
+                        self._channel_metrics[name] = {'sent': 0, 'errors': 0, 'lastActive': None, 'state': 'open'}
+                    self._channel_metrics[name][metric] = value
+
+                def identity_context(self, user):
+                    return {
+                        'role': user.get('role', 'anonymous'),
+                        'scopes': user.get('scopes', []),
+                        'isAnonymous': user.get('role', 'anonymous') == 'anonymous',
+                    }
+
+                def boundary_info(self, name):
+                    for b in self._spec.get('boundaries', []):
+                        if b['name']['display'] == name or b['name']['snake'] == name:
+                            return b
+                    return None
+
+                def boundaries(self):
+                    return [b['name']['display'] for b in self._spec.get('boundaries', [])]
+
+                def channels(self):
+                    return [c['name']['display'] for c in self._spec.get('channels', [])]
+
+            reflection = ReflectionEngine(APP_SPEC_JSON)
+        ''')
+
+        # Register reflection context with the expression evaluator
+        self._w()
+        self._w("# Register reflection accessors with expression evaluator")
+        self._w("expr_eval.register_function('Content', type('Content', (), {")
+        self._w("    'reflect': type('ContentReflect', (), {")
+        self._w("        'schemas': property(lambda self: reflection.content_schemas()),")
+        self._w("        'count': staticmethod(lambda name: reflection.content_count(name, None)),")
+        self._w("        'schema': staticmethod(lambda name: reflection.content_schema(name)),")
+        self._w("    })(),")
+        self._w("})())")
+        self._w("expr_eval.register_function('Compute', type('Compute', (), {")
+        self._w("    'reflect': type('ComputeReflect', (), {")
+        self._w("        'functions': property(lambda self: reflection.compute_functions()),")
+        self._w("        'function': staticmethod(lambda name: reflection.compute_function(name)),")
+        self._w("    })(),")
+        self._w("})())")
+        self._w("expr_eval.register_function('Channel', type('Channel', (), {")
+        self._w("    'reflect': type('ChannelReflect', (), {")
+        self._w("        'channels': property(lambda self: reflection.channels()),")
+        self._w("        'channel': staticmethod(lambda name: reflection.channel_metrics(name)),")
+        self._w("    })(),")
+        self._w("})())")
+        self._w("expr_eval.register_function('Boundary', type('Boundary', (), {")
+        self._w("    'reflect': type('BoundaryReflect', (), {")
+        self._w("        'boundaries': property(lambda self: reflection.boundaries()),")
+        self._w("        'boundary': staticmethod(lambda name: reflection.boundary_info(name)),")
+        self._w("    })(),")
+        self._w("})())")
+        self._w("expr_eval.register_function('Identity', type('Identity', (), {")
+        self._w("    'reflect': type('IdentityReflect', (), {")
+        self._w("        'role': '',")
+        self._w("        'scopes': [],")
+        self._w("        'isAnonymous': True,")
+        self._w("        'hasScope': staticmethod(lambda scope: False),")
+        self._w("    })(),")
+        self._w("})())")
+        self._w()
+
     # ── Reflection Endpoint ──
 
     def _emit_reflection_endpoint(self) -> None:
-        """Generate a /api/reflect endpoint that serves the AppSpec IR as JSON."""
+        """Generate reflection endpoints that serve the AppSpec IR as JSON."""
         # Find the first available read scope for access control
         read_scope = None
         for g in self.spec.access_grants:
@@ -1023,21 +1213,72 @@ class FastApiBackend:
                 read_scope = g.scope
                 break
 
-        # Pre-serialize the IR to a JSON string at compile time
-        ir_json_str = self._build_ir_json()
-
         self._w()
-        self._w("# ── Reflection Endpoint ──")
+        self._w("# ── Reflection Endpoints ──")
         self._w()
 
         scope_dep = f', user=Depends(require_scope("{read_scope}"))' if read_scope else ""
 
-        self._w(f'_REFLECT_JSON = {repr(ir_json_str)}')
-        self._w()
+        # GET /api/reflect — full IR
         self._w(f'@app.get("/api/reflect")')
         self._w(f"async def api_reflect(request: Request{scope_dep}):")
         self._w(f'    """Return the AppSpec IR as JSON for runtime introspection."""')
-        self._w(f'    return Response(content=_REFLECT_JSON, media_type="application/json")')
+        self._w(f'    return Response(content=APP_SPEC_JSON, media_type="application/json")')
+        self._w()
+
+        # GET /api/reflect/content — content schemas
+        self._w(f'@app.get("/api/reflect/content")')
+        self._w(f"async def api_reflect_content(request: Request{scope_dep}):")
+        self._w(f'    """Return content schemas via ReflectionEngine."""')
+        self._w(f'    schemas = reflection.content_schemas()')
+        self._w(f'    result = {{}}')
+        self._w(f'    for name in schemas:')
+        self._w(f'        result[name] = reflection.content_schema(name)')
+        self._w(f'    return result')
+        self._w()
+
+        # GET /api/reflect/compute — compute functions
+        self._w(f'@app.get("/api/reflect/compute")')
+        self._w(f"async def api_reflect_compute(request: Request{scope_dep}):")
+        self._w(f'    """Return compute functions via ReflectionEngine."""')
+        self._w(f'    functions = reflection.compute_functions()')
+        self._w(f'    result = {{}}')
+        self._w(f'    for name in functions:')
+        self._w(f'        result[name] = reflection.compute_function(name)')
+        self._w(f'    return result')
+        self._w()
+
+        # GET /api/reflect/channels — channel states and metrics
+        self._w(f'@app.get("/api/reflect/channels")')
+        self._w(f"async def api_reflect_channels(request: Request{scope_dep}):")
+        self._w(f'    """Return channel states and metrics via ReflectionEngine."""')
+        self._w(f'    channels = reflection.channels()')
+        self._w(f'    result = {{}}')
+        self._w(f'    for name in channels:')
+        self._w(f'        result[name] = {{')
+        self._w(f'            "state": reflection.channel_state(name),')
+        self._w(f'            "metrics": reflection.channel_metrics(name),')
+        self._w(f'        }}')
+        self._w(f'    return result')
+        self._w()
+
+        # GET /api/reflect/identity — current identity context
+        self._w(f'@app.get("/api/reflect/identity")')
+        self._w(f"async def api_reflect_identity(request: Request):")
+        self._w(f'    """Return current identity context via ReflectionEngine."""')
+        self._w(f'    user = get_current_user(request)')
+        self._w(f'    return reflection.identity_context(user)')
+        self._w()
+
+        # GET /api/reflect/boundaries — boundary info
+        self._w(f'@app.get("/api/reflect/boundaries")')
+        self._w(f"async def api_reflect_boundaries(request: Request{scope_dep}):")
+        self._w(f'    """Return boundary info via ReflectionEngine."""')
+        self._w(f'    names = reflection.boundaries()')
+        self._w(f'    result = {{}}')
+        self._w(f'    for name in names:')
+        self._w(f'        result[name] = reflection.boundary_info(name)')
+        self._w(f'    return result')
         self._w()
 
     def _build_ir_json(self) -> str:
@@ -1057,6 +1298,47 @@ class FastApiBackend:
     # ── SSE Stream ──
 
     # ── Error Log Endpoint ──
+
+    def _emit_error_handlers_registration(self) -> None:
+        """Register IR error handlers with the TerminAtor."""
+        if not self.spec.error_handlers:
+            return
+
+        self._w()
+        self._w("# ── Error Handler Registration ──")
+        self._w()
+
+        for i, eh in enumerate(self.spec.error_handlers):
+            actions_list = []
+            for a in eh.actions:
+                action_dict = f'{{"kind": "{a.kind}"'
+                if a.retry_count:
+                    action_dict += f', "retry_count": {a.retry_count}'
+                if a.retry_backoff:
+                    action_dict += f', "retry_backoff": True'
+                if a.retry_max_delay:
+                    action_dict += f', "retry_max_delay": "{a.retry_max_delay}"'
+                if a.target:
+                    action_dict += f', "target": "{a.target}"'
+                if a.jexl_expr:
+                    action_dict += f', "jexl_expr": {repr(a.jexl_expr)}'
+                if a.log_level:
+                    action_dict += f', "log_level": "{a.log_level}"'
+                action_dict += "}"
+                actions_list.append(action_dict)
+
+            actions_str = ", ".join(actions_list)
+            source = eh.source
+            condition = repr(eh.condition_jexl) if eh.condition_jexl else "None"
+            is_catch_all = "True" if eh.is_catch_all else "False"
+
+            self._w(f'terminator.register_handler("{source}", {{')
+            self._w(f'    "source": "{source}",')
+            self._w(f'    "condition": {condition},')
+            self._w(f'    "actions": [{actions_str}],')
+            self._w(f'    "is_catch_all": {is_catch_all},')
+            self._w(f'}})')
+        self._w()
 
     def _emit_error_log_endpoint(self) -> None:
         self._w()
@@ -1917,6 +2199,13 @@ class FastApiBackend:
         # Register events
         for ev in self.spec.events:
             self._w(f'    # Event: {ev.source_table} {ev.trigger}')
+
+        # Register error handlers
+        for eh in self.spec.error_handlers:
+            if eh.is_catch_all:
+                self._w(f'    # Error handler: catch-all')
+            else:
+                self._w(f'    # Error handler: {eh.source}')
         self._w()
 
         # Phase 5: Serve
