@@ -57,6 +57,7 @@ class FastApiBackend:
 
         self._emit_header(source_file)
         self._emit_imports()
+        self._emit_expression_evaluator()
         self._emit_app_setup()
         self._emit_database()
         self._emit_identity()
@@ -67,6 +68,7 @@ class FastApiBackend:
         self._emit_event_handlers()
         self._emit_api_routes()
         self._emit_compute_routes()
+        self._emit_compute_registrations()
         self._emit_channel_endpoints()
         self._emit_reflection_endpoint()
         self._emit_sse_stream()
@@ -83,6 +85,7 @@ class FastApiBackend:
             "aiosqlite>=0.19.0",
             "jinja2>=3.1.0",
             "python-multipart>=0.0.6",
+            "pyjexl>=0.3.0",
         ]
 
     # ── Helpers ──
@@ -133,6 +136,29 @@ class FastApiBackend:
             from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
             from jinja2 import Environment, BaseLoader
             from pydantic import BaseModel, field_validator
+        ''')
+
+    # ── Expression Evaluator ──
+
+    def _emit_expression_evaluator(self) -> None:
+        self._wblock('''\
+            from pyjexl import JEXL
+
+            class ExpressionEvaluator:
+                def __init__(self):
+                    self.jexl = JEXL()
+                    self._functions = {}
+
+                def register_function(self, name, fn):
+                    self._functions[name] = fn
+
+                def evaluate(self, expression, context=None):
+                    ctx = context or {}
+                    for name, fn in self._functions.items():
+                        ctx[name] = fn
+                    return self.jexl.evaluate(expression, ctx)
+
+            expr_eval = ExpressionEvaluator()
         ''')
 
     # ── App Setup ──
@@ -464,34 +490,42 @@ class FastApiBackend:
         self._w('    """Execute event rules that match the content mutation."""')
 
         for ev in self.spec.events:
-            self._w(f'    if content_name == "{ev.source_table}" and trigger == "{ev.trigger}":')
-
-            if ev.condition:
+            # JEXL-triggered events use expression evaluation
+            if ev.trigger == "jexl" and ev.jexl_condition:
+                jexl_expr = ev.jexl_condition.replace("'", "\\'")
+                self._w(f'    if content_name == "{ev.source_table}":')
+                self._w(f"        if expr_eval.evaluate('{jexl_expr}', record):")
+            elif ev.condition:
+                self._w(f'    if content_name == "{ev.source_table}" and trigger == "{ev.trigger}":')
                 left = ev.condition.left_column
                 right = ev.condition.right_column
                 if ev.condition.operator == "lte":
                     self._w(f'        if record.get("{left}", 0) <= record.get("{right}", 0):')
                 else:
                     self._w(f'        if True:  # condition: {ev.condition.operator}')
-
-                if ev.action:
-                    target_table = ev.action.target_table
-                    target_cols = [pair[0] for pair in ev.action.column_mapping]
-                    source_keys = [pair[1] for pair in ev.action.column_mapping]
-
-                    cols = ", ".join(target_cols)
-                    placeholders = ", ".join(["?"] * len(target_cols))
-                    values = ", ".join(f'record.get("{sk}", "")' for sk in source_keys)
-
-                    self._w(f'            await db.execute(')
-                    self._w(f'                "INSERT INTO {target_table} ({cols}) VALUES ({placeholders})",')
-                    self._w(f'                ({values},)')
-                    self._w(f'            )')
-                    self._w(f'            await db.commit()')
-                    self._w(f'            await event_bus.publish({{"type": "{target_table}_created"}})')
             else:
-                if ev.action:
-                    self._w(f'        pass  # TODO: unconditional event action')
+                self._w(f'    if content_name == "{ev.source_table}" and trigger == "{ev.trigger}":')
+
+            if ev.action and ev.action.column_mapping:
+                target_table = ev.action.target_table
+                target_cols = [pair[0] for pair in ev.action.column_mapping]
+                source_keys = [pair[1] for pair in ev.action.column_mapping]
+
+                cols = ", ".join(target_cols)
+                placeholders = ", ".join(["?"] * len(target_cols))
+                values = ", ".join(f'record.get("{sk}", "")' for sk in source_keys)
+
+                self._w(f'            await db.execute(')
+                self._w(f'                "INSERT INTO {target_table} ({cols}) VALUES ({placeholders})",')
+                self._w(f'                ({values},)')
+                self._w(f'            )')
+                self._w(f'            await db.commit()')
+                self._w(f'            await event_bus.publish({{"type": "{target_table}_created"}})')
+            elif ev.action:
+                # Action with no column mapping — emit event only
+                self._w(f'            await event_bus.publish({{"type": "{ev.action.target_table}_created", "data": record}})')
+            else:
+                self._w(f'        pass  # No action defined for this event')
 
         self._w()
 
@@ -714,10 +748,19 @@ class FastApiBackend:
         self._w(f'@app.post("/compute/{snake}")')
         self._w(f"async def compute_{snake}(request: Request{scope_dep}):")
         self._w(f"    body = await request.json()")
-        for line in comp.body_lines:
-            self._w(f"    # {line}")
-        self._w(f"    # Input from: {input_table}")
-        self._w(f"    return body  # TODO: apply transformation logic")
+        if comp.body_lines:
+            # Use the first body line as a JEXL expression to evaluate
+            expr = comp.body_lines[0].replace("'", "\\'")
+            for line in comp.body_lines:
+                self._w(f"    # {line}")
+            self._w(f"    try:")
+            self._w(f"        result = expr_eval.evaluate('{expr}', {{'input': body}})")
+            self._w(f"        return result")
+            self._w(f"    except Exception:")
+            self._w(f"        return body  # Expression evaluation failed, return input")
+        else:
+            self._w(f"    # Input from: {input_table}")
+            self._w(f"    return body  # No body expression defined")
         self._w()
 
     def _emit_compute_reduce(self, comp: ComputeSpec, snake: str, scope_dep: str) -> None:
@@ -776,6 +819,33 @@ class FastApiBackend:
         self._w(f'    # Route: classify input into one of {outputs}')
         self._w(f'    return {{"input": body, "routed_to": "{outputs[0] if outputs else "unknown"}"}}  # TODO: apply routing logic')
         self._w()
+
+    # ── Compute Registrations ──
+
+    def _emit_compute_registrations(self) -> None:
+        """Register each Compute as a callable function in the expression evaluator."""
+        if not self.spec.computes:
+            return
+
+        self._w()
+        self._w("# ── Register Compute Functions with Expression Evaluator ──")
+        self._w()
+
+        for comp in self.spec.computes:
+            snake = comp.name.snake
+            display = comp.name.display
+            # Register a sync wrapper that calls the compute endpoint logic
+            self._w(f"def _compute_fn_{snake}(input_data):")
+            if comp.body_lines:
+                expr = comp.body_lines[0].replace("'", "\\'")
+                self._w(f"    try:")
+                self._w(f"        return expr_eval.evaluate('{expr}', {{'input': input_data}})")
+                self._w(f"    except Exception:")
+                self._w(f"        return input_data  # Expression evaluation failed")
+            else:
+                self._w(f"    return input_data  # passthrough")
+            self._w(f'expr_eval.register_function("{display}", _compute_fn_{snake})')
+            self._w()
 
     # ── Channel Endpoints ──
 

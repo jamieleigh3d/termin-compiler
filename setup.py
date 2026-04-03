@@ -10,6 +10,7 @@ setup(
     install_requires=[
         "click>=8.0",
         "jinja2>=3.1.0",
+        "pyjexl>=0.3.0",
     ],
     entry_points={
         "console_scripts": [
