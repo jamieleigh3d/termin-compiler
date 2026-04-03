@@ -10,7 +10,7 @@ from termin.parser import parse
 from termin.analyzer import analyze
 from termin.lower import lower
 from termin.ir import (
-    ColumnType, Verb, RouteKind, HttpMethod,
+    FieldType, Verb, RouteKind, HttpMethod,
     ComputeShape, ChannelDirection, ChannelDelivery, ComputeParamSpec,
 )
 
@@ -36,38 +36,38 @@ class TestWarehouseIR:
         assert self.spec.name == "Warehouse Inventory Manager"
 
     def test_tables(self):
-        names = [t.name.snake for t in self.spec.tables]
+        names = [t.name.snake for t in self.spec.content]
         assert "products" in names
         assert "stock_levels" in names
         assert "reorder_alerts" in names
 
     def test_products_columns(self):
-        products = next(t for t in self.spec.tables if t.name.snake == "products")
-        col_names = [c.name for c in products.columns]
+        products = next(t for t in self.spec.content if t.name.snake == "products")
+        col_names = [c.name for c in products.fields]
         assert "sku" in col_names
         assert "name" in col_names
         assert "unit_cost" in col_names
         assert "category" in col_names
 
     def test_products_column_types(self):
-        products = next(t for t in self.spec.tables if t.name.snake == "products")
-        cols = {c.name: c for c in products.columns}
-        assert cols["sku"].column_type == ColumnType.TEXT
+        products = next(t for t in self.spec.content if t.name.snake == "products")
+        cols = {c.name: c for c in products.fields}
+        assert cols["sku"].column_type == FieldType.TEXT
         assert cols["sku"].unique is True
         assert cols["sku"].required is True
-        assert cols["unit_cost"].column_type == ColumnType.REAL
+        assert cols["unit_cost"].column_type == FieldType.REAL
         assert cols["category"].enum_values == ("raw material", "finished good", "packaging")
 
     def test_products_state_machine(self):
-        products = next(t for t in self.spec.tables if t.name.snake == "products")
-        assert products.has_status_column is True
-        assert products.initial_status == "draft"
+        products = next(t for t in self.spec.content if t.name.snake == "products")
+        assert products.has_state_machine is True
+        assert products.initial_state == "draft"
 
     def test_stock_levels_foreign_key(self):
-        sl = next(t for t in self.spec.tables if t.name.snake == "stock_levels")
-        product_col = next(c for c in sl.columns if c.name == "product")
+        sl = next(t for t in self.spec.content if t.name.snake == "stock_levels")
+        product_col = next(c for c in sl.fields if c.name == "product")
         assert product_col.foreign_key == "products"
-        assert product_col.column_type == ColumnType.INTEGER
+        assert product_col.column_type == FieldType.INTEGER
 
     def test_auth(self):
         assert self.spec.auth.provider == "stub"
@@ -75,14 +75,14 @@ class TestWarehouseIR:
         assert len(self.spec.auth.roles) == 3
 
     def test_access_grants(self):
-        product_grants = [g for g in self.spec.access_grants if g.table == "products"]
+        product_grants = [g for g in self.spec.access_grants if g.content == "products"]
         view_grant = next(g for g in product_grants if Verb.VIEW in g.verbs)
         assert view_grant.scope == "read inventory"
         delete_grant = next(g for g in product_grants if Verb.DELETE in g.verbs)
         assert delete_grant.scope == "admin inventory"
 
     def test_state_machine(self):
-        sm = next(s for s in self.spec.state_machines if s.table == "products")
+        sm = next(s for s in self.spec.state_machines if s.content_ref == "products")
         assert sm.initial_state == "draft"
         assert "active" in sm.states
         assert "discontinued" in sm.states
@@ -96,7 +96,7 @@ class TestWarehouseIR:
         assert ev.trigger == "jexl"
         assert ev.jexl_condition is not None
         assert "stockLevel" in ev.jexl_condition
-        assert ev.action.target_table == "reorder_alerts"
+        assert ev.action.target_content == "reorder_alerts"
 
     def test_routes(self):
         routes_by_path = {r.path: r for r in self.spec.routes}
@@ -122,7 +122,7 @@ class TestWarehouseIR:
 
     def test_dashboard_page(self):
         dash = next(p for p in self.spec.pages if p.slug == "inventory_dashboard")
-        assert dash.display_table == "products"
+        assert dash.display_content == "products"
         assert len(dash.table_columns) >= 4
         assert len(dash.filters) == 3
         # Category filter should be enum
@@ -136,7 +136,7 @@ class TestWarehouseIR:
 
     def test_add_product_form(self):
         add = next(p for p in self.spec.pages if p.slug == "add_product")
-        assert add.form_target_table == "products"
+        assert add.form_target_content == "products"
         assert len(add.form_fields) >= 5
         sku_field = next(f for f in add.form_fields if f.key == "sku")
         assert sku_field.input_type == "text"
@@ -149,7 +149,7 @@ class TestWarehouseIR:
         rs = next(p for p in self.spec.pages if p.slug == "receive_stock")
         product_field = next(f for f in rs.form_fields if f.key == "product")
         assert product_field.input_type == "reference"
-        assert product_field.reference_table == "products"
+        assert product_field.reference_content == "products"
         assert product_field.reference_display_col == "name"
         assert product_field.reference_unique_col == "sku"
 
@@ -170,7 +170,7 @@ class TestHelpdeskIR:
         self.spec = _load_and_lower("helpdesk.termin")
 
     def test_multi_word_states(self):
-        sm = next(s for s in self.spec.state_machines if s.table == "tickets")
+        sm = next(s for s in self.spec.state_machines if s.content_ref == "tickets")
         assert "in progress" in sm.states
         assert "waiting on customer" in sm.states
         assert "resolved" in sm.states
@@ -184,13 +184,13 @@ class TestHelpdeskIR:
         assert resolve_route.target_state == "resolved"
 
     def test_ticket_priority_enum(self):
-        tickets = next(t for t in self.spec.tables if t.name.snake == "tickets")
-        priority = next(c for c in tickets.columns if c.name == "priority")
+        tickets = next(t for t in self.spec.content if t.name.snake == "tickets")
+        priority = next(c for c in tickets.fields if c.name == "priority")
         assert priority.enum_values == ("low", "medium", "high", "critical")
 
     def test_comments_reference(self):
-        comments = next(t for t in self.spec.tables if t.name.snake == "comments")
-        ticket_col = next(c for c in comments.columns if c.name == "ticket")
+        comments = next(t for t in self.spec.content if t.name.snake == "comments")
+        ticket_col = next(c for c in comments.fields if c.name == "ticket")
         assert ticket_col.foreign_key == "tickets"
 
 
@@ -203,7 +203,7 @@ class TestProjectBoardIR:
         self.spec = _load_and_lower("projectboard.termin")
 
     def test_five_tables(self):
-        names = [t.name.snake for t in self.spec.tables]
+        names = [t.name.snake for t in self.spec.content]
         assert "projects" in names
         assert "team_members" in names
         assert "sprints" in names
@@ -212,14 +212,14 @@ class TestProjectBoardIR:
 
     def test_deep_fk_chain(self):
         """tasks -> sprints -> projects (3-level FK chain)."""
-        tasks = next(t for t in self.spec.tables if t.name.snake == "tasks")
-        cols = {c.name: c for c in tasks.columns}
+        tasks = next(t for t in self.spec.content if t.name.snake == "tasks")
+        cols = {c.name: c for c in tasks.fields}
         assert cols["project"].foreign_key == "projects"
         assert cols["sprint"].foreign_key == "sprints"
         assert cols["assignee"].foreign_key == "team_members"
 
     def test_task_lifecycle(self):
-        sm = next(s for s in self.spec.state_machines if s.table == "tasks")
+        sm = next(s for s in self.spec.state_machines if s.content_ref == "tasks")
         assert sm.initial_state == "backlog"
         assert "in sprint" in sm.states
         assert "in review" in sm.states
@@ -231,10 +231,10 @@ class TestProjectBoardIR:
 
     def test_create_task_form_fields(self):
         ct = next(p for p in self.spec.pages if p.slug == "create_task")
-        assert ct.form_target_table == "tasks"
+        assert ct.form_target_content == "tasks"
         project_field = next(f for f in ct.form_fields if f.key == "project")
         assert project_field.input_type == "reference"
-        assert project_field.reference_table == "projects"
+        assert project_field.reference_content == "projects"
         priority_field = next(f for f in ct.form_fields if f.key == "priority")
         assert priority_field.input_type == "enum"
 
@@ -300,7 +300,7 @@ class TestComputeDemoIR:
         assert self.spec.name == "Order Processing Demo"
 
     def test_tables(self):
-        names = [t.name.snake for t in self.spec.tables]
+        names = [t.name.snake for t in self.spec.content]
         assert "orders" in names
         assert "order_lines" in names
         assert "reports" in names
@@ -313,14 +313,14 @@ class TestComputeDemoIR:
     def test_compute_transform(self):
         c = next(c for c in self.spec.computes if c.name.snake == "calculate_order_total")
         assert c.shape == ComputeShape.TRANSFORM
-        assert "orders" in c.input_tables
-        assert "orders" in c.output_tables
+        assert "orders" in c.input_content
+        assert "orders" in c.output_content
         assert c.required_scope == "write orders"
 
     def test_compute_reduce(self):
         c = next(c for c in self.spec.computes if c.name.snake == "revenue_report")
         assert c.shape == ComputeShape.REDUCE
-        assert "orders" in c.input_tables
+        assert "orders" in c.input_content
 
     def test_compute_expand(self):
         c = next(c for c in self.spec.computes if c.name.snake == "split_order_into_lines")
@@ -329,8 +329,8 @@ class TestComputeDemoIR:
     def test_compute_correlate(self):
         c = next(c for c in self.spec.computes if c.name.snake == "match_orders_to_lines")
         assert c.shape == ComputeShape.CORRELATE
-        assert "orders" in c.input_tables
-        assert "order_lines" in c.input_tables
+        assert "orders" in c.input_content
+        assert "order_lines" in c.input_content
 
     def test_compute_route(self):
         c = next(c for c in self.spec.computes if c.name.snake == "triage_order")
@@ -345,7 +345,7 @@ class TestComputeDemoIR:
         ch = next(c for c in self.spec.channels if c.name.snake == "order_webhook")
         assert ch.direction == ChannelDirection.INBOUND
         assert ch.delivery == ChannelDelivery.RELIABLE
-        assert ch.carries_table == "orders"
+        assert ch.carries_content == "orders"
         assert ch.endpoint == "/webhooks/orders"
 
     def test_sse_channel(self):
@@ -370,13 +370,13 @@ class TestComputeDemoIR:
 
     def test_order_processing_boundary(self):
         b = next(b for b in self.spec.boundaries if b.name.snake == "order_processing")
-        assert "orders" in b.contains_tables
-        assert "order_lines" in b.contains_tables
+        assert "orders" in b.contains_content
+        assert "order_lines" in b.contains_content
         assert b.identity_mode == "inherit"
 
     def test_hello_user_no_tables(self):
         spec = _load_and_lower("hello_user.termin")
-        assert spec.tables == ()
+        assert spec.content == ()
 
     def test_hello_user_compute_typed_params(self):
         spec = _load_and_lower("hello_user.termin")
@@ -399,6 +399,6 @@ class TestComputeDemoIR:
 
     def test_order_reporting_boundary(self):
         b = next(b for b in self.spec.boundaries if b.name.snake == "order_reporting")
-        assert "reports" in b.contains_tables
+        assert "reports" in b.contains_content
         assert b.identity_mode == "restrict"
         assert "read orders" in b.identity_scopes

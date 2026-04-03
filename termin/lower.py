@@ -16,7 +16,7 @@ from .ast_nodes import (
     BoundaryProperty, ErrorHandler, ErrorAction,
 )
 from .ir import (
-    QualifiedName, ColumnType, Column, Table, Verb, AccessGrant,
+    QualifiedName, FieldType, FieldSpec, ContentSchema, Verb, AccessGrant,
     RoleSpec, AuthSpec, TransitionSpec, StateMachineSpec,
     EventConditionSpec, EventActionSpec, EventSpec,
     HttpMethod, RouteKind, RouteSpec,
@@ -44,24 +44,24 @@ def _qname(display: str) -> QualifiedName:
 
 # ── Type mapping ──
 
-def _column_type(te: TypeExpr) -> ColumnType:
+def _field_type(te: TypeExpr) -> FieldType:
     if te.base_type in ("text", "enum"):
-        return ColumnType.TEXT
+        return FieldType.TEXT
     if te.base_type in ("whole_number", "reference"):
-        return ColumnType.INTEGER
+        return FieldType.INTEGER
     if te.base_type in ("currency", "number", "percentage"):
-        return ColumnType.REAL
+        return FieldType.REAL
     if te.base_type == "boolean":
-        return ColumnType.INTEGER  # SQLite: 0/1
+        return FieldType.INTEGER  # SQLite: 0/1
     if te.base_type == "date":
-        return ColumnType.TEXT     # SQLite: ISO date string
+        return FieldType.TEXT     # SQLite: ISO date string
     if te.base_type == "datetime":
-        return ColumnType.TIMESTAMP
+        return FieldType.TIMESTAMP
     if te.base_type == "automatic":
-        return ColumnType.TIMESTAMP
+        return FieldType.TIMESTAMP
     if te.base_type == "list":
-        return ColumnType.JSON
-    return ColumnType.TEXT
+        return FieldType.JSON
+    return FieldType.TEXT
 
 
 # ── Scope resolution ──
@@ -171,9 +171,9 @@ def _resolve_ref_display(ref_content: Content) -> tuple[str, Optional[str]]:
     return display_col, unique_col
 
 
-# ════════════════════════════════════════════════════════════
+# ═══════════════════════════════��════════════════════════════
 # Main lowering function
-# ════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════��═══════════
 
 def lower(program: Program) -> AppSpec:
     """Lower a validated Program AST into an AppSpec IR."""
@@ -190,15 +190,15 @@ def lower(program: Program) -> AppSpec:
     for sm in program.state_machines:
         sm_by_content[sm.content_name] = sm
 
-    # ── Lower tables ──
-    tables = []
+    # ── Lower content schemas ──
+    content_schemas = []
     for c in program.contents:
-        cols = []
+        fields = []
         for f in c.fields:
-            cols.append(Column(
+            fields.append(FieldSpec(
                 name=_snake(f.name),
                 display_name=f.name,
-                column_type=_column_type(f.type_expr),
+                column_type=_field_type(f.type_expr),
                 required=f.type_expr.required,
                 unique=f.type_expr.unique,
                 minimum=f.type_expr.minimum,
@@ -209,11 +209,11 @@ def lower(program: Program) -> AppSpec:
                 list_type=f.type_expr.list_type,
             ))
         has_sm = c.name in sm_by_content
-        tables.append(Table(
+        content_schemas.append(ContentSchema(
             name=_qname(c.name),
-            columns=tuple(cols),
-            has_status_column=has_sm,
-            initial_status=sm_by_content[c.name].initial_state if has_sm else None,
+            fields=tuple(fields),
+            has_state_machine=has_sm,
+            initial_state=sm_by_content[c.name].initial_state if has_sm else None,
         ))
 
     # ── Lower auth ──
@@ -241,7 +241,7 @@ def lower(program: Program) -> AppSpec:
                 elif v == "delete":
                     verbs.add(Verb.DELETE)
             grants.append(AccessGrant(
-                table=_snake(c.name),
+                content=_snake(c.name),
                 scope=rule.scope,
                 verbs=frozenset(verbs),
             ))
@@ -250,7 +250,7 @@ def lower(program: Program) -> AppSpec:
     state_machines = []
     for sm in program.state_machines:
         state_machines.append(StateMachineSpec(
-            table=_snake(sm.content_name),
+            content_ref=_snake(sm.content_name),
             machine_name=sm.machine_name,
             initial_state=sm.initial_state,
             states=tuple(sm.states),
@@ -271,7 +271,7 @@ def lower(program: Program) -> AppSpec:
         if not resolved_content:
             resolved_content = content_by_singular.get(ev.content_name)
 
-        # For JEXL events, try to infer source table from expression prefix
+        # For JEXL events, try to infer source content from expression prefix
         # e.g., "stockLevel.updated" -> content "stock levels"
         if not resolved_content and ev.jexl_condition:
             prefix = ev.jexl_condition.split(".")[0].strip()
@@ -287,7 +287,7 @@ def lower(program: Program) -> AppSpec:
                     resolved_content = c
                     break
 
-        source_table = _snake(resolved_content.name) if resolved_content else _snake(ev.content_name)
+        source_content = _snake(resolved_content.name) if resolved_content else _snake(ev.content_name)
 
         cond = None
         if ev.condition:
@@ -298,13 +298,13 @@ def lower(program: Program) -> AppSpec:
             )
         action = None
         if ev.action:
-            target_content = content_by_name.get(ev.action.create_content)
-            if not target_content:
-                target_content = content_by_singular.get(ev.action.create_content)
-            source_content = resolved_content
+            target_content_obj = content_by_name.get(ev.action.create_content)
+            if not target_content_obj:
+                target_content_obj = content_by_singular.get(ev.action.create_content)
+            source_content_obj = resolved_content
             mapping = []
-            if target_content and source_content:
-                source_cols = {_snake(f.name) for f in source_content.fields}
+            if target_content_obj and source_content_obj:
+                source_cols = {_snake(f.name) for f in source_content_obj.fields}
                 for target_field_name in ev.action.fields:
                     tcol = _snake(target_field_name)
                     # Direct match in source
@@ -318,11 +318,11 @@ def lower(program: Program) -> AppSpec:
                         mapping.append((tcol, tcol))
 
             action = EventActionSpec(
-                target_table=_snake(target_content.name) if target_content else _snake(ev.action.create_content),
+                target_content=_snake(target_content_obj.name) if target_content_obj else _snake(ev.action.create_content),
                 column_mapping=tuple(mapping),
             )
         events.append(EventSpec(
-            source_table=source_table,
+            source_content=source_content,
             trigger=ev.trigger,
             condition=cond,
             action=action,
@@ -336,7 +336,7 @@ def lower(program: Program) -> AppSpec:
         for ep in program.api.endpoints:
             path = program.api.base_path.rstrip("/") + ep.path
             content = _infer_content_for_path(ep.path, program.contents)
-            table = _snake(content.name) if content else ""
+            content_ref = _snake(content.name) if content else ""
             method = HttpMethod(ep.method)
 
             # Determine route kind
@@ -394,7 +394,7 @@ def lower(program: Program) -> AppSpec:
                 method=method,
                 path=path,
                 kind=kind,
-                table=table,
+                content_ref=content_ref,
                 required_scope=scope,
                 lookup_column=lookup_col,
                 target_state=target_state,
@@ -404,7 +404,7 @@ def lower(program: Program) -> AppSpec:
     pages = []
     for story in program.stories:
         page_name = ""
-        display_table_name = None
+        display_content_name = None
         table_columns = []
         filters = []
         search_fields = []
@@ -412,7 +412,7 @@ def lower(program: Program) -> AppSpec:
         subscribe = None
         related = None
         form_fields = []
-        form_target_table = None
+        form_target_content = None
         create_as = None
         validate_unique = None
         after_save = None
@@ -427,13 +427,13 @@ def lower(program: Program) -> AppSpec:
             elif isinstance(d, DisplayTable):
                 dt_content = content_by_name.get(d.content_name)
                 if dt_content:
-                    display_table_name = _snake(d.content_name)
+                    display_content_name = _snake(d.content_name)
                     table_columns = [TableColumn(display=col, key=_snake(col)) for col in d.columns]
             elif isinstance(d, AllowFilter):
-                if display_table_name and d.fields:
+                if display_content_name and d.fields:
                     dt_content = None
                     for c in program.contents:
-                        if _snake(c.name) == display_table_name:
+                        if _snake(c.name) == display_content_name:
                             dt_content = c
                             break
                     for fname in d.fields:
@@ -464,14 +464,14 @@ def lower(program: Program) -> AppSpec:
                 subscribe = d.content_name
             elif isinstance(d, ShowRelated):
                 related = RelatedDataSpec(
-                    related_table=_snake(d.related_content),
+                    related_content=_snake(d.related_content),
                     join_column=_snake(d.singular) if d.singular else "product",
                     display_columns=(_snake(d.group_by),) if d.group_by else (),
                 )
             elif isinstance(d, AcceptInput):
                 target_content = _best_content_for_fields(d.fields, program.contents)
                 if target_content:
-                    form_target_table = _snake(target_content.name)
+                    form_target_content = _snake(target_content.name)
                     for fname in d.fields:
                         col = _snake(fname)
                         field_obj = next((f for f in target_content.fields if _snake(f.name) == col), None)
@@ -495,7 +495,7 @@ def lower(program: Program) -> AppSpec:
                                     ref_display, ref_unique = _resolve_ref_display(ref_content)
                                 ff = FormField(key=col, display=fname, input_type="reference",
                                                required=field_obj.type_expr.required,
-                                               reference_table=_snake(field_obj.type_expr.references),
+                                               reference_content=_snake(field_obj.type_expr.references),
                                                reference_display_col=ref_display,
                                                reference_unique_col=ref_unique)
                             else:
@@ -506,9 +506,9 @@ def lower(program: Program) -> AppSpec:
                 validate_unique = _snake(d.field)
             elif isinstance(d, CreateAs):
                 # Only set create_as if the target content has a state machine
-                if form_target_table:
+                if form_target_content:
                     for c in program.contents:
-                        if _snake(c.name) == form_target_table and c.name in sm_by_content:
+                        if _snake(c.name) == form_target_content and c.name in sm_by_content:
                             create_as = d.initial_state
                             break
             elif isinstance(d, AfterSave):
@@ -528,7 +528,7 @@ def lower(program: Program) -> AppSpec:
                     elif "sum" in desc_lower or "value" in desc_lower:
                         agg_type = "sum_join"
                     aggregations.append(AggregationSpec(
-                        key=slug, description=d.description, agg_type=agg_type, table=tbl,
+                        key=slug, description=d.description, agg_type=agg_type, content_ref=tbl,
                     ))
             elif isinstance(d, DisplayText):
                 if d.is_expression:
@@ -536,13 +536,13 @@ def lower(program: Program) -> AppSpec:
                 else:
                     static_texts.append(d.text)
             elif isinstance(d, ShowChart):
-                chart = ChartSpec(table=_snake(d.content_name), days=d.days)
+                chart = ChartSpec(content_ref=_snake(d.content_name), days=d.days)
 
         # Resolve required scope for form POST
         req_scope = None
-        if form_target_table:
+        if form_target_content:
             for c in program.contents:
-                if _snake(c.name) == form_target_table:
+                if _snake(c.name) == form_target_content:
                     req_scope = _scope_for_verb(c.access_rules, "create")
                     break
 
@@ -551,7 +551,7 @@ def lower(program: Program) -> AppSpec:
                 name=page_name,
                 slug=_snake(page_name),
                 role=story.role,
-                display_table=display_table_name,
+                display_content=display_content_name,
                 table_columns=tuple(table_columns),
                 filters=tuple(filters),
                 search_fields=tuple(search_fields) if search_fields else (),
@@ -559,7 +559,7 @@ def lower(program: Program) -> AppSpec:
                 subscribe_stream=subscribe,
                 related=related,
                 form_fields=tuple(form_fields),
-                form_target_table=form_target_table,
+                form_target_content=form_target_content,
                 create_as_status=create_as,
                 validate_unique_field=validate_unique,
                 after_save_instruction=after_save,
@@ -574,14 +574,14 @@ def lower(program: Program) -> AppSpec:
     nav_items = []
     if program.navigation:
         for item in program.navigation.items:
-            badge_table = None
+            badge_content = None
             if item.badge and "alert" in item.badge.lower() and "count" in item.badge.lower():
-                badge_table = "reorder_alerts"
+                badge_content = "reorder_alerts"
             nav_items.append(NavItemSpec(
                 label=item.label,
                 page_slug=_snake(item.page_name),
                 visible_to=tuple(item.visible_to),
-                badge_table=badge_table,
+                badge_content=badge_content,
             ))
 
     # ── Lower streams ──
@@ -590,7 +590,7 @@ def lower(program: Program) -> AppSpec:
         streams.append(StreamSpec(description=s.description, path=s.path))
 
     # ── Helper: resolve content name to snake table name ──
-    def _resolve_to_table(name: str) -> str:
+    def _resolve_to_content(name: str) -> str:
         c = content_by_name.get(name) or content_by_singular.get(name)
         if c:
             return _snake(c.name)
@@ -614,8 +614,8 @@ def lower(program: Program) -> AppSpec:
         computes.append(ComputeSpec(
             name=_qname(comp.name),
             shape=SHAPE_MAP.get(comp.shape, ComputeShape.TRANSFORM),
-            input_tables=tuple(_resolve_to_table(i) for i in comp.inputs),
-            output_tables=tuple(_resolve_to_table(o) for o in comp.outputs),
+            input_content=tuple(_resolve_to_content(i) for i in comp.inputs),
+            output_content=tuple(_resolve_to_content(o) for o in comp.outputs),
             body_lines=tuple(comp.body_lines),
             required_scope=comp.access_scope,
             required_role=comp.access_role,
@@ -648,7 +648,7 @@ def lower(program: Program) -> AppSpec:
         delivery = DELIVERY_MAP.get(ch.delivery, ChannelDelivery.AUTO)
         channels.append(ChannelSpec(
             name=_qname(ch.name),
-            carries_table=_resolve_to_table(ch.carries) if ch.carries else "",
+            carries_content=_resolve_to_content(ch.carries) if ch.carries else "",
             direction=direction,
             delivery=delivery,
             endpoint=ch.endpoint,
@@ -662,13 +662,13 @@ def lower(program: Program) -> AppSpec:
     boundaries = []
     boundary_names_set = {b.name for b in program.boundaries}
     for bnd in program.boundaries:
-        bnd_tables = []
+        bnd_content = []
         sub_boundaries = []
         for item in bnd.contains:
             if item in boundary_names_set:
                 sub_boundaries.append(_snake(item))
             else:
-                bnd_tables.append(_resolve_to_table(item))
+                bnd_content.append(_resolve_to_content(item))
         props = tuple(
             BoundaryPropertySpec(
                 name=p.name,
@@ -679,7 +679,7 @@ def lower(program: Program) -> AppSpec:
         )
         boundaries.append(BoundarySpec(
             name=_qname(bnd.name),
-            contains_tables=tuple(bnd_tables),
+            contains_content=tuple(bnd_content),
             contains_boundaries=tuple(sub_boundaries),
             identity_mode=bnd.identity_mode,
             identity_scopes=tuple(bnd.identity_scopes),
@@ -711,7 +711,7 @@ def lower(program: Program) -> AppSpec:
         name=program.application.name if program.application else "App",
         description=program.application.description if program.application else "",
         auth=auth,
-        tables=tuple(tables),
+        content=tuple(content_schemas),
         access_grants=tuple(grants),
         state_machines=tuple(state_machines),
         events=tuple(events),

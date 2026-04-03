@@ -1,0 +1,46 @@
+{
+  "name": "Hello World",
+  "description": "The simplest possible Termin application",
+  "auth": {
+    "provider": "stub",
+    "scopes": [],
+    "roles": []
+  },
+  "tables": [],
+  "access_grants": [],
+  "state_machines": [],
+  "events": [],
+  "routes": [],
+  "pages": [
+    {
+      "name": "Hello",
+      "slug": "hello",
+      "role": "anonymous",
+      "display_table": null,
+      "table_columns": [],
+      "filters": [],
+      "search_fields": [],
+      "highlight": null,
+      "subscribe_stream": null,
+      "related": null,
+      "form_fields": [],
+      "form_target_table": null,
+      "create_as_status": null,
+      "validate_unique_field": null,
+      "after_save_instruction": null,
+      "aggregations": [],
+      "chart": null,
+      "required_scope": null,
+      "static_texts": [
+        "Hello, World"
+      ],
+      "static_expressions": []
+    }
+  ],
+  "nav_items": [],
+  "streams": [],
+  "computes": [],
+  "channels": [],
+  "boundaries": [],
+  "error_handlers": []
+}

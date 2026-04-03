@@ -1,0 +1,862 @@
+{
+  "name": "Warehouse Inventory Manager",
+  "description": "Track products and stock levels across warehouses",
+  "auth": {
+    "provider": "stub",
+    "scopes": [
+      "read inventory",
+      "write inventory",
+      "admin inventory"
+    ],
+    "roles": [
+      {
+        "name": "warehouse clerk",
+        "scopes": [
+          "read inventory",
+          "write inventory"
+        ]
+      },
+      {
+        "name": "warehouse manager",
+        "scopes": [
+          "read inventory",
+          "write inventory",
+          "admin inventory"
+        ]
+      },
+      {
+        "name": "executive",
+        "scopes": [
+          "read inventory"
+        ]
+      }
+    ]
+  },
+  "tables": [
+    {
+      "name": {
+        "display": "products",
+        "snake": "products",
+        "pascal": "Products"
+      },
+      "columns": [
+        {
+          "name": "sku",
+          "display_name": "SKU",
+          "column_type": "TEXT",
+          "required": true,
+          "unique": true,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "name",
+          "display_name": "name",
+          "column_type": "TEXT",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "description",
+          "display_name": "description",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "unit_cost",
+          "display_name": "unit cost",
+          "column_type": "REAL",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "category",
+          "display_name": "category",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [
+            "raw material",
+            "finished good",
+            "packaging"
+          ],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        }
+      ],
+      "has_status_column": true,
+      "initial_status": "draft"
+    },
+    {
+      "name": {
+        "display": "stock levels",
+        "snake": "stock_levels",
+        "pascal": "StockLevels"
+      },
+      "columns": [
+        {
+          "name": "product",
+          "display_name": "product",
+          "column_type": "INTEGER",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": "products",
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "warehouse",
+          "display_name": "warehouse",
+          "column_type": "TEXT",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "quantity",
+          "display_name": "quantity",
+          "column_type": "INTEGER",
+          "required": false,
+          "unique": false,
+          "minimum": 0,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "reorder_threshold",
+          "display_name": "reorder threshold",
+          "column_type": "INTEGER",
+          "required": false,
+          "unique": false,
+          "minimum": 0,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        }
+      ],
+      "has_status_column": false,
+      "initial_status": null
+    },
+    {
+      "name": {
+        "display": "reorder alerts",
+        "snake": "reorder_alerts",
+        "pascal": "ReorderAlerts"
+      },
+      "columns": [
+        {
+          "name": "product",
+          "display_name": "product",
+          "column_type": "INTEGER",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": "products",
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "warehouse",
+          "display_name": "warehouse",
+          "column_type": "TEXT",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "current_quantity",
+          "display_name": "current quantity",
+          "column_type": "INTEGER",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "threshold",
+          "display_name": "threshold",
+          "column_type": "INTEGER",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "created_at",
+          "display_name": "created at",
+          "column_type": "TIMESTAMP",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": true,
+          "list_type": null
+        }
+      ],
+      "has_status_column": false,
+      "initial_status": null
+    }
+  ],
+  "access_grants": [
+    {
+      "table": "products",
+      "scope": "read inventory",
+      "verbs": [
+        "VIEW"
+      ]
+    },
+    {
+      "table": "products",
+      "scope": "write inventory",
+      "verbs": [
+        "CREATE",
+        "UPDATE"
+      ]
+    },
+    {
+      "table": "products",
+      "scope": "admin inventory",
+      "verbs": [
+        "DELETE"
+      ]
+    },
+    {
+      "table": "stock_levels",
+      "scope": "read inventory",
+      "verbs": [
+        "VIEW"
+      ]
+    },
+    {
+      "table": "stock_levels",
+      "scope": "write inventory",
+      "verbs": [
+        "CREATE",
+        "UPDATE"
+      ]
+    },
+    {
+      "table": "reorder_alerts",
+      "scope": "read inventory",
+      "verbs": [
+        "VIEW"
+      ]
+    },
+    {
+      "table": "reorder_alerts",
+      "scope": "write inventory",
+      "verbs": [
+        "CREATE"
+      ]
+    },
+    {
+      "table": "reorder_alerts",
+      "scope": "admin inventory",
+      "verbs": [
+        "UPDATE"
+      ]
+    }
+  ],
+  "state_machines": [
+    {
+      "table": "products",
+      "machine_name": "product lifecycle",
+      "initial_state": "draft",
+      "states": [
+        "draft",
+        "active",
+        "discontinued"
+      ],
+      "transitions": [
+        {
+          "from_state": "draft",
+          "to_state": "active",
+          "required_scope": "write inventory"
+        },
+        {
+          "from_state": "active",
+          "to_state": "discontinued",
+          "required_scope": "admin inventory"
+        },
+        {
+          "from_state": "discontinued",
+          "to_state": "active",
+          "required_scope": "admin inventory"
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "source_table": "stock_levels",
+      "trigger": "jexl",
+      "condition": null,
+      "action": {
+        "target_table": "reorder_alerts",
+        "column_mapping": [
+          [
+            "product",
+            "product"
+          ],
+          [
+            "warehouse",
+            "warehouse"
+          ],
+          [
+            "current_quantity",
+            "quantity"
+          ],
+          [
+            "threshold",
+            "reorder_threshold"
+          ]
+        ]
+      },
+      "jexl_condition": "stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold",
+      "log_level": "INFO"
+    }
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/v1/products",
+      "kind": "LIST",
+      "table": "products",
+      "required_scope": "read inventory",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/products",
+      "kind": "CREATE",
+      "table": "products",
+      "required_scope": "write inventory",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/products/{sku}",
+      "kind": "GET_ONE",
+      "table": "products",
+      "required_scope": "read inventory",
+      "lookup_column": "sku",
+      "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/products/{sku}",
+      "kind": "UPDATE",
+      "table": "products",
+      "required_scope": "write inventory",
+      "lookup_column": "sku",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/products/{sku}",
+      "kind": "DELETE",
+      "table": "products",
+      "required_scope": "admin inventory",
+      "lookup_column": "sku",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/products/{sku}/activate",
+      "kind": "TRANSITION",
+      "table": "products",
+      "required_scope": null,
+      "lookup_column": "sku",
+      "target_state": "active"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/products/{sku}/discontinue",
+      "kind": "TRANSITION",
+      "table": "products",
+      "required_scope": null,
+      "lookup_column": "sku",
+      "target_state": "discontinued"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/stock-levels",
+      "kind": "LIST",
+      "table": "stock_levels",
+      "required_scope": "read inventory",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/stock-levels",
+      "kind": "CREATE",
+      "table": "stock_levels",
+      "required_scope": "write inventory",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/stock-levels/{id}",
+      "kind": "UPDATE",
+      "table": "stock_levels",
+      "required_scope": "write inventory",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/alerts",
+      "kind": "LIST",
+      "table": "reorder_alerts",
+      "required_scope": "read inventory",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/alerts/{id}/acknowledge",
+      "kind": "LIST",
+      "table": "reorder_alerts",
+      "required_scope": "read inventory",
+      "lookup_column": "id",
+      "target_state": null
+    }
+  ],
+  "pages": [
+    {
+      "name": "Inventory Dashboard",
+      "slug": "inventory_dashboard",
+      "role": "warehouse clerk",
+      "display_table": "products",
+      "table_columns": [
+        {
+          "display": "SKU",
+          "key": "sku"
+        },
+        {
+          "display": "name",
+          "key": "name"
+        },
+        {
+          "display": "category",
+          "key": "category"
+        },
+        {
+          "display": "status",
+          "key": "status"
+        }
+      ],
+      "filters": [
+        {
+          "key": "category",
+          "display": "category",
+          "filter_type": "enum",
+          "options": [
+            "raw material",
+            "finished good",
+            "packaging"
+          ]
+        },
+        {
+          "key": "warehouse",
+          "display": "warehouse",
+          "filter_type": "distinct",
+          "options": []
+        },
+        {
+          "key": "status",
+          "display": "status",
+          "filter_type": "status",
+          "options": [
+            "draft",
+            "active",
+            "discontinued"
+          ]
+        }
+      ],
+      "search_fields": [
+        "sku_or_name"
+      ],
+      "highlight": {
+        "field": "",
+        "operator": "lte",
+        "threshold_field": ""
+      },
+      "subscribe_stream": "stock level",
+      "related": {
+        "related_table": "stock_levels",
+        "join_column": "product",
+        "display_columns": [
+          "warehouse"
+        ]
+      },
+      "form_fields": [],
+      "form_target_table": null,
+      "create_as_status": null,
+      "validate_unique_field": null,
+      "after_save_instruction": null,
+      "aggregations": [],
+      "chart": null,
+      "required_scope": null,
+      "static_texts": [],
+      "static_expressions": []
+    },
+    {
+      "name": "Receive Stock",
+      "slug": "receive_stock",
+      "role": "warehouse clerk",
+      "display_table": null,
+      "table_columns": [],
+      "filters": [],
+      "search_fields": [],
+      "highlight": null,
+      "subscribe_stream": null,
+      "related": null,
+      "form_fields": [
+        {
+          "key": "product",
+          "display": "product",
+          "input_type": "reference",
+          "required": true,
+          "minimum": null,
+          "step": null,
+          "enum_values": [],
+          "reference_table": "products",
+          "reference_display_col": "name",
+          "reference_unique_col": "sku"
+        },
+        {
+          "key": "warehouse",
+          "display": "warehouse",
+          "input_type": "text",
+          "required": true,
+          "minimum": null,
+          "step": null,
+          "enum_values": [],
+          "reference_table": null,
+          "reference_display_col": null,
+          "reference_unique_col": null
+        },
+        {
+          "key": "quantity",
+          "display": "quantity",
+          "input_type": "number",
+          "required": false,
+          "minimum": 0,
+          "step": null,
+          "enum_values": [],
+          "reference_table": null,
+          "reference_display_col": null,
+          "reference_unique_col": null
+        },
+        {
+          "key": "reorder_threshold",
+          "display": "reorder threshold",
+          "input_type": "number",
+          "required": false,
+          "minimum": 0,
+          "step": null,
+          "enum_values": [],
+          "reference_table": null,
+          "reference_display_col": null,
+          "reference_unique_col": null
+        }
+      ],
+      "form_target_table": "stock_levels",
+      "create_as_status": null,
+      "validate_unique_field": null,
+      "after_save_instruction": "return to the Inventory Dashboard",
+      "aggregations": [],
+      "chart": null,
+      "required_scope": "write inventory",
+      "static_texts": [],
+      "static_expressions": []
+    },
+    {
+      "name": "Reorder Alerts",
+      "slug": "reorder_alerts",
+      "role": "warehouse clerk",
+      "display_table": "reorder_alerts",
+      "table_columns": [
+        {
+          "display": "product",
+          "key": "product"
+        },
+        {
+          "display": "warehouse",
+          "key": "warehouse"
+        },
+        {
+          "display": "current quantity",
+          "key": "current_quantity"
+        },
+        {
+          "display": "threshold",
+          "key": "threshold"
+        },
+        {
+          "display": "created at",
+          "key": "created_at"
+        }
+      ],
+      "filters": [
+        {
+          "key": "warehouse",
+          "display": "warehouse",
+          "filter_type": "distinct",
+          "options": []
+        }
+      ],
+      "search_fields": [],
+      "highlight": null,
+      "subscribe_stream": "reorder alerts",
+      "related": null,
+      "form_fields": [],
+      "form_target_table": null,
+      "create_as_status": null,
+      "validate_unique_field": null,
+      "after_save_instruction": null,
+      "aggregations": [],
+      "chart": null,
+      "required_scope": null,
+      "static_texts": [],
+      "static_expressions": []
+    },
+    {
+      "name": "Add Product",
+      "slug": "add_product",
+      "role": "warehouse manager",
+      "display_table": null,
+      "table_columns": [],
+      "filters": [],
+      "search_fields": [],
+      "highlight": null,
+      "subscribe_stream": null,
+      "related": null,
+      "form_fields": [
+        {
+          "key": "sku",
+          "display": "SKU",
+          "input_type": "text",
+          "required": true,
+          "minimum": null,
+          "step": null,
+          "enum_values": [],
+          "reference_table": null,
+          "reference_display_col": null,
+          "reference_unique_col": null
+        },
+        {
+          "key": "name",
+          "display": "name",
+          "input_type": "text",
+          "required": true,
+          "minimum": null,
+          "step": null,
+          "enum_values": [],
+          "reference_table": null,
+          "reference_display_col": null,
+          "reference_unique_col": null
+        },
+        {
+          "key": "description",
+          "display": "description",
+          "input_type": "text",
+          "required": false,
+          "minimum": null,
+          "step": null,
+          "enum_values": [],
+          "reference_table": null,
+          "reference_display_col": null,
+          "reference_unique_col": null
+        },
+        {
+          "key": "unit_cost",
+          "display": "unit cost",
+          "input_type": "currency",
+          "required": false,
+          "minimum": null,
+          "step": "0.01",
+          "enum_values": [],
+          "reference_table": null,
+          "reference_display_col": null,
+          "reference_unique_col": null
+        },
+        {
+          "key": "category",
+          "display": "category",
+          "input_type": "enum",
+          "required": false,
+          "minimum": null,
+          "step": null,
+          "enum_values": [
+            "raw material",
+            "finished good",
+            "packaging"
+          ],
+          "reference_table": null,
+          "reference_display_col": null,
+          "reference_unique_col": null
+        }
+      ],
+      "form_target_table": "products",
+      "create_as_status": "draft",
+      "validate_unique_field": "",
+      "after_save_instruction": "offer to set initial stock levels per warehouse",
+      "aggregations": [],
+      "chart": null,
+      "required_scope": "write inventory",
+      "static_texts": [],
+      "static_expressions": []
+    },
+    {
+      "name": "Inventory Overview",
+      "slug": "inventory_overview",
+      "role": "executive",
+      "display_table": null,
+      "table_columns": [],
+      "filters": [],
+      "search_fields": [],
+      "highlight": null,
+      "subscribe_stream": null,
+      "related": null,
+      "form_fields": [],
+      "form_target_table": null,
+      "create_as_status": null,
+      "validate_unique_field": null,
+      "after_save_instruction": null,
+      "aggregations": [
+        {
+          "key": "total_product_count_with_activ",
+          "description": "total product count with active vs discontinued breakdown",
+          "agg_type": "count_by_status",
+          "table": "products",
+          "join_table": null,
+          "join_column": null,
+          "sum_expression": null
+        }
+      ],
+      "chart": {
+        "table": "reorder_alerts",
+        "days": 30,
+        "chart_type": "line"
+      },
+      "required_scope": null,
+      "static_texts": [],
+      "static_expressions": []
+    }
+  ],
+  "nav_items": [
+    {
+      "label": "Dashboard",
+      "page_slug": "inventory_dashboard",
+      "visible_to": [
+        "all"
+      ],
+      "badge_table": null
+    },
+    {
+      "label": "Receive Stock",
+      "page_slug": "receive_stock",
+      "visible_to": [
+        "clerk",
+        "manager"
+      ],
+      "badge_table": null
+    },
+    {
+      "label": "Alerts",
+      "page_slug": "reorder_alerts",
+      "visible_to": [
+        "all"
+      ],
+      "badge_table": "reorder_alerts"
+    },
+    {
+      "label": "Add Product",
+      "page_slug": "add_product",
+      "visible_to": [
+        "manager"
+      ],
+      "badge_table": null
+    },
+    {
+      "label": "Overview",
+      "page_slug": "inventory_overview",
+      "visible_to": [
+        "executive"
+      ],
+      "badge_table": null
+    }
+  ],
+  "streams": [
+    {
+      "description": "stock updates and alerts",
+      "path": "/api/v1/stream"
+    }
+  ],
+  "computes": [],
+  "channels": [],
+  "boundaries": [],
+  "error_handlers": []
+}

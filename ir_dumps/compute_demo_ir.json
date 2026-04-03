@@ -1,0 +1,622 @@
+{
+  "name": "Order Processing Demo",
+  "description": "Demonstrates Compute, Channel, and Boundary primitives",
+  "auth": {
+    "provider": "stub",
+    "scopes": [
+      "read orders",
+      "write orders",
+      "admin orders"
+    ],
+    "roles": [
+      {
+        "name": "order clerk",
+        "scopes": [
+          "read orders",
+          "write orders"
+        ]
+      },
+      {
+        "name": "order manager",
+        "scopes": [
+          "read orders",
+          "write orders",
+          "admin orders"
+        ]
+      }
+    ]
+  },
+  "tables": [
+    {
+      "name": {
+        "display": "orders",
+        "snake": "orders",
+        "pascal": "Orders"
+      },
+      "columns": [
+        {
+          "name": "customer",
+          "display_name": "customer",
+          "column_type": "TEXT",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "total",
+          "display_name": "total",
+          "column_type": "REAL",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "priority",
+          "display_name": "priority",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        }
+      ],
+      "has_status_column": true,
+      "initial_status": "pending"
+    },
+    {
+      "name": {
+        "display": "order lines",
+        "snake": "order_lines",
+        "pascal": "OrderLines"
+      },
+      "columns": [
+        {
+          "name": "parent_order",
+          "display_name": "parent order",
+          "column_type": "INTEGER",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": "orders",
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "product_name",
+          "display_name": "product name",
+          "column_type": "TEXT",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "quantity",
+          "display_name": "quantity",
+          "column_type": "INTEGER",
+          "required": false,
+          "unique": false,
+          "minimum": 1,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "unit_price",
+          "display_name": "unit price",
+          "column_type": "REAL",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        }
+      ],
+      "has_status_column": false,
+      "initial_status": null
+    },
+    {
+      "name": {
+        "display": "reports",
+        "snake": "reports",
+        "pascal": "Reports"
+      },
+      "columns": [
+        {
+          "name": "total_count",
+          "display_name": "total count",
+          "column_type": "INTEGER",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "total_revenue",
+          "display_name": "total revenue",
+          "column_type": "REAL",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        }
+      ],
+      "has_status_column": false,
+      "initial_status": null
+    }
+  ],
+  "access_grants": [
+    {
+      "table": "orders",
+      "scope": "read orders",
+      "verbs": [
+        "VIEW"
+      ]
+    },
+    {
+      "table": "orders",
+      "scope": "write orders",
+      "verbs": [
+        "CREATE",
+        "UPDATE"
+      ]
+    },
+    {
+      "table": "orders",
+      "scope": "admin orders",
+      "verbs": [
+        "DELETE"
+      ]
+    },
+    {
+      "table": "order_lines",
+      "scope": "read orders",
+      "verbs": [
+        "VIEW"
+      ]
+    },
+    {
+      "table": "order_lines",
+      "scope": "write orders",
+      "verbs": [
+        "CREATE",
+        "UPDATE"
+      ]
+    },
+    {
+      "table": "reports",
+      "scope": "read orders",
+      "verbs": [
+        "VIEW"
+      ]
+    }
+  ],
+  "state_machines": [
+    {
+      "table": "orders",
+      "machine_name": "order lifecycle",
+      "initial_state": "pending",
+      "states": [
+        "pending",
+        "confirmed",
+        "shipped",
+        "cancelled"
+      ],
+      "transitions": [
+        {
+          "from_state": "pending",
+          "to_state": "confirmed",
+          "required_scope": "write orders"
+        },
+        {
+          "from_state": "confirmed",
+          "to_state": "shipped",
+          "required_scope": "write orders"
+        },
+        {
+          "from_state": "pending",
+          "to_state": "cancelled",
+          "required_scope": "admin orders"
+        }
+      ]
+    }
+  ],
+  "events": [],
+  "routes": [],
+  "pages": [
+    {
+      "name": "Order Dashboard",
+      "slug": "order_dashboard",
+      "role": "order clerk",
+      "display_table": "orders",
+      "table_columns": [
+        {
+          "display": "customer",
+          "key": "customer"
+        },
+        {
+          "display": "total",
+          "key": "total"
+        },
+        {
+          "display": "priority",
+          "key": "priority"
+        },
+        {
+          "display": "status",
+          "key": "status"
+        }
+      ],
+      "filters": [
+        {
+          "key": "priority",
+          "display": "priority",
+          "filter_type": "enum",
+          "options": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        {
+          "key": "status",
+          "display": "status",
+          "filter_type": "status",
+          "options": [
+            "pending",
+            "confirmed",
+            "shipped",
+            "cancelled"
+          ]
+        }
+      ],
+      "search_fields": [],
+      "highlight": null,
+      "subscribe_stream": null,
+      "related": null,
+      "form_fields": [
+        {
+          "key": "customer",
+          "display": "customer",
+          "input_type": "text",
+          "required": true,
+          "minimum": null,
+          "step": null,
+          "enum_values": [],
+          "reference_table": null,
+          "reference_display_col": null,
+          "reference_unique_col": null
+        },
+        {
+          "key": "priority",
+          "display": "priority",
+          "input_type": "enum",
+          "required": false,
+          "minimum": null,
+          "step": null,
+          "enum_values": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "reference_table": null,
+          "reference_display_col": null,
+          "reference_unique_col": null
+        }
+      ],
+      "form_target_table": "orders",
+      "create_as_status": null,
+      "validate_unique_field": null,
+      "after_save_instruction": null,
+      "aggregations": [],
+      "chart": null,
+      "required_scope": "write orders",
+      "static_texts": [],
+      "static_expressions": []
+    },
+    {
+      "name": "Order Analytics",
+      "slug": "order_analytics",
+      "role": "order manager",
+      "display_table": "orders",
+      "table_columns": [
+        {
+          "display": "customer",
+          "key": "customer"
+        },
+        {
+          "display": "total",
+          "key": "total"
+        },
+        {
+          "display": "priority",
+          "key": "priority"
+        },
+        {
+          "display": "status",
+          "key": "status"
+        }
+      ],
+      "filters": [],
+      "search_fields": [],
+      "highlight": null,
+      "subscribe_stream": null,
+      "related": null,
+      "form_fields": [],
+      "form_target_table": null,
+      "create_as_status": null,
+      "validate_unique_field": null,
+      "after_save_instruction": null,
+      "aggregations": [],
+      "chart": null,
+      "required_scope": null,
+      "static_texts": [],
+      "static_expressions": []
+    }
+  ],
+  "nav_items": [
+    {
+      "label": "Orders",
+      "page_slug": "order_dashboard",
+      "visible_to": [
+        "all"
+      ],
+      "badge_table": null
+    },
+    {
+      "label": "Analytics",
+      "page_slug": "order_analytics",
+      "visible_to": [
+        "manager"
+      ],
+      "badge_table": null
+    }
+  ],
+  "streams": [],
+  "computes": [
+    {
+      "name": {
+        "display": "calculate order total",
+        "snake": "calculate_order_total",
+        "pascal": "CalculateOrderTotal"
+      },
+      "shape": "TRANSFORM",
+      "input_tables": [
+        "orders"
+      ],
+      "output_tables": [
+        "orders"
+      ],
+      "body_lines": [
+        "order.total = order.lines.reduce((acc, line) => acc + line.quantity * line.unit_price, 0)"
+      ],
+      "required_scope": "write orders",
+      "required_role": null,
+      "input_params": [],
+      "output_params": []
+    },
+    {
+      "name": {
+        "display": "revenue report",
+        "snake": "revenue_report",
+        "pascal": "RevenueReport"
+      },
+      "shape": "REDUCE",
+      "input_tables": [
+        "orders"
+      ],
+      "output_tables": [
+        "reports"
+      ],
+      "body_lines": [
+        "report.total_count = orders.length; report.total_revenue = orders.reduce((acc, o) => acc + o.total, 0)"
+      ],
+      "required_scope": "read orders",
+      "required_role": null,
+      "input_params": [],
+      "output_params": []
+    },
+    {
+      "name": {
+        "display": "split order into lines",
+        "snake": "split_order_into_lines",
+        "pascal": "SplitOrderIntoLines"
+      },
+      "shape": "EXPAND",
+      "input_tables": [
+        "orders"
+      ],
+      "output_tables": [
+        "order_lines"
+      ],
+      "body_lines": [
+        "order.lines.map(line => ({ parent_order: order.id, product_name: line.product_name, quantity: line.quantity, unit_price: line.unit_price }))"
+      ],
+      "required_scope": "write orders",
+      "required_role": null,
+      "input_params": [],
+      "output_params": []
+    },
+    {
+      "name": {
+        "display": "match orders to lines",
+        "snake": "match_orders_to_lines",
+        "pascal": "MatchOrdersToLines"
+      },
+      "shape": "CORRELATE",
+      "input_tables": [
+        "orders",
+        "order_lines"
+      ],
+      "output_tables": [
+        "reports"
+      ],
+      "body_lines": [
+        "orders.join(order_lines, (o, l) => o.id == l.parent_order)"
+      ],
+      "required_scope": "read orders",
+      "required_role": null,
+      "input_params": [],
+      "output_params": []
+    },
+    {
+      "name": {
+        "display": "triage order",
+        "snake": "triage_order",
+        "pascal": "TriageOrder"
+      },
+      "shape": "ROUTE",
+      "input_tables": [
+        "orders"
+      ],
+      "output_tables": [
+        "orders",
+        "reports"
+      ],
+      "body_lines": [
+        "order.priority == \"high\" ? \"orders\" : \"reports\""
+      ],
+      "required_scope": "write orders",
+      "required_role": null,
+      "input_params": [],
+      "output_params": []
+    }
+  ],
+  "channels": [
+    {
+      "name": {
+        "display": "order webhook",
+        "snake": "order_webhook",
+        "pascal": "OrderWebhook"
+      },
+      "carries_table": "orders",
+      "direction": "INBOUND",
+      "delivery": "RELIABLE",
+      "endpoint": "/webhooks/orders",
+      "requirements": [
+        {
+          "scope": "write orders",
+          "direction": "send"
+        }
+      ]
+    },
+    {
+      "name": {
+        "display": "order updates stream",
+        "snake": "order_updates_stream",
+        "pascal": "OrderUpdatesStream"
+      },
+      "carries_table": "orders",
+      "direction": "OUTBOUND",
+      "delivery": "REALTIME",
+      "endpoint": null,
+      "requirements": [
+        {
+          "scope": "read orders",
+          "direction": "receive"
+        }
+      ]
+    },
+    {
+      "name": {
+        "display": "order notifications",
+        "snake": "order_notifications",
+        "pascal": "OrderNotifications"
+      },
+      "carries_table": "orders",
+      "direction": "BIDIRECTIONAL",
+      "delivery": "REALTIME",
+      "endpoint": "/ws/orders",
+      "requirements": [
+        {
+          "scope": "read orders",
+          "direction": "receive"
+        }
+      ]
+    },
+    {
+      "name": {
+        "display": "internal order bus",
+        "snake": "internal_order_bus",
+        "pascal": "InternalOrderBus"
+      },
+      "carries_table": "orders",
+      "direction": "INTERNAL",
+      "delivery": "AUTO",
+      "endpoint": null,
+      "requirements": []
+    }
+  ],
+  "boundaries": [
+    {
+      "name": {
+        "display": "order processing",
+        "snake": "order_processing",
+        "pascal": "OrderProcessing"
+      },
+      "contains_tables": [
+        "orders",
+        "order_lines",
+        "reports"
+      ],
+      "contains_boundaries": [],
+      "identity_mode": "inherit",
+      "identity_scopes": [],
+      "properties": []
+    },
+    {
+      "name": {
+        "display": "order reporting",
+        "snake": "order_reporting",
+        "pascal": "OrderReporting"
+      },
+      "contains_tables": [
+        "reports"
+      ],
+      "contains_boundaries": [],
+      "identity_mode": "restrict",
+      "identity_scopes": [
+        "read orders"
+      ],
+      "properties": []
+    }
+  ],
+  "error_handlers": []
+}

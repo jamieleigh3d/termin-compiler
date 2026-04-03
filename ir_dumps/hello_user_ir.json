@@ -1,0 +1,117 @@
+{
+  "name": "Hello User",
+  "description": "A slightly personalized Hello World.",
+  "auth": {
+    "provider": "stub",
+    "scopes": [
+      "view app"
+    ],
+    "roles": [
+      {
+        "name": "Anonymous",
+        "scopes": [
+          "view app"
+        ]
+      },
+      {
+        "name": "LoggedInUser",
+        "scopes": [
+          "view app"
+        ]
+      }
+    ]
+  },
+  "tables": [],
+  "access_grants": [],
+  "state_machines": [],
+  "events": [],
+  "routes": [],
+  "pages": [
+    {
+      "name": "Hello",
+      "slug": "hello",
+      "role": "Anonymous",
+      "display_table": null,
+      "table_columns": [],
+      "filters": [],
+      "search_fields": [],
+      "highlight": null,
+      "subscribe_stream": null,
+      "related": null,
+      "form_fields": [],
+      "form_target_table": null,
+      "create_as_status": null,
+      "validate_unique_field": null,
+      "after_save_instruction": null,
+      "aggregations": [],
+      "chart": null,
+      "required_scope": null,
+      "static_texts": [
+        "Anon, Hello!"
+      ],
+      "static_expressions": []
+    },
+    {
+      "name": "Hello",
+      "slug": "hello",
+      "role": "LoggedInUser",
+      "display_table": null,
+      "table_columns": [],
+      "filters": [],
+      "search_fields": [],
+      "highlight": null,
+      "subscribe_stream": null,
+      "related": null,
+      "form_fields": [],
+      "form_target_table": null,
+      "create_as_status": null,
+      "validate_unique_field": null,
+      "after_save_instruction": null,
+      "aggregations": [],
+      "chart": null,
+      "required_scope": null,
+      "static_texts": [],
+      "static_expressions": [
+        "SayHelloTo(LoggedInUser.CurrentUser)"
+      ]
+    }
+  ],
+  "nav_items": [],
+  "streams": [],
+  "computes": [
+    {
+      "name": {
+        "display": "SayHelloTo",
+        "snake": "sayhelloto",
+        "pascal": "Sayhelloto"
+      },
+      "shape": "TRANSFORM",
+      "input_tables": [
+        "userprofile"
+      ],
+      "output_tables": [
+        "text"
+      ],
+      "body_lines": [
+        "greeting = \"Hello, \" + u.FirstName + \"!\""
+      ],
+      "required_scope": null,
+      "required_role": "LoggedInUser",
+      "input_params": [
+        {
+          "name": "u",
+          "type_name": "UserProfile"
+        }
+      ],
+      "output_params": [
+        {
+          "name": "greeting",
+          "type_name": "Text"
+        }
+      ]
+    }
+  ],
+  "channels": [],
+  "boundaries": [],
+  "error_handlers": []
+}

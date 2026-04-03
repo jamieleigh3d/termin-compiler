@@ -22,9 +22,9 @@ class QualifiedName:
     pascal: str    # "StockLevels"
 
 
-# ── Column / Schema ──
+# ── Field / Schema ──
 
-class ColumnType(Enum):
+class FieldType(Enum):
     TEXT = auto()
     INTEGER = auto()
     REAL = auto()
@@ -34,11 +34,15 @@ class ColumnType(Enum):
     JSON = auto()       # for list types
 
 
+# Backward-compatible alias
+ColumnType = FieldType
+
+
 @dataclass(frozen=True)
-class Column:
+class FieldSpec:
     name: str                          # snake_case
     display_name: str                  # original: "unit cost"
-    column_type: ColumnType
+    column_type: FieldType
     required: bool = False
     unique: bool = False
     minimum: Optional[int] = None
@@ -49,12 +53,21 @@ class Column:
     list_type: Optional[str] = None    # inner type for JSON list columns
 
 
+# Backward-compatible alias
+Column = FieldSpec
+
+
 @dataclass(frozen=True)
-class Table:
+class ContentSchema:
     name: QualifiedName
-    columns: tuple[Column, ...]
-    has_status_column: bool = False
-    initial_status: Optional[str] = None
+    fields: tuple[FieldSpec, ...]
+    storage_intent: str = "auto"
+    has_state_machine: bool = False
+    initial_state: Optional[str] = None
+
+
+# Backward-compatible alias
+Table = ContentSchema
 
 
 # ── Access Control ──
@@ -68,7 +81,7 @@ class Verb(Enum):
 
 @dataclass(frozen=True)
 class AccessGrant:
-    table: str              # snake_case table name
+    content: str              # snake_case table name
     scope: str              # scope string
     verbs: frozenset[Verb]
 
@@ -99,7 +112,7 @@ class TransitionSpec:
 
 @dataclass(frozen=True)
 class StateMachineSpec:
-    table: str                           # snake_case table name
+    content_ref: str                           # snake_case table name
     machine_name: str
     initial_state: str
     states: tuple[str, ...]
@@ -117,13 +130,13 @@ class EventConditionSpec:
 
 @dataclass(frozen=True)
 class EventActionSpec:
-    target_table: str                                  # resolved snake_case
+    target_content: str                                  # resolved snake_case
     column_mapping: tuple[tuple[str, str], ...]        # (target_col, source_col) pairs
 
 
 @dataclass(frozen=True)
 class EventSpec:
-    source_table: str                     # resolved snake_case
+    source_content: str                     # resolved snake_case
     trigger: str                          # "created", "updated", "deleted", "jexl"
     condition: Optional[EventConditionSpec] = None
     action: Optional[EventActionSpec] = None
@@ -155,7 +168,7 @@ class RouteSpec:
     method: HttpMethod
     path: str                           # e.g. "/api/v1/products"
     kind: RouteKind
-    table: str                          # snake_case target table
+    content_ref: str                          # snake_case target table
     required_scope: Optional[str] = None
     lookup_column: str = "id"           # column for {param} routes
     target_state: Optional[str] = None  # for TRANSITION routes
@@ -186,7 +199,7 @@ class FormField:
     minimum: Optional[int] = None
     step: Optional[str] = None      # e.g. "0.01" for currency
     enum_values: tuple[str, ...] = ()
-    reference_table: Optional[str] = None       # resolved snake_case
+    reference_content: Optional[str] = None       # resolved snake_case
     reference_display_col: Optional[str] = None
     reference_unique_col: Optional[str] = None
 
@@ -200,7 +213,7 @@ class HighlightRule:
 
 @dataclass(frozen=True)
 class RelatedDataSpec:
-    related_table: str       # snake_case
+    related_content: str       # snake_case
     join_column: str         # column in related table referencing this table
     display_columns: tuple[str, ...]
 
@@ -210,15 +223,15 @@ class AggregationSpec:
     key: str                # slug for template variable
     description: str        # display text
     agg_type: str           # "count", "count_by_status", "sum_join"
-    table: str              # target table snake_case
-    join_table: Optional[str] = None
+    content_ref: str              # target table snake_case
+    join_content: Optional[str] = None
     join_column: Optional[str] = None
     sum_expression: Optional[str] = None
 
 
 @dataclass(frozen=True)
 class ChartSpec:
-    table: str              # snake_case
+    content_ref: str              # snake_case
     days: int = 30
     chart_type: str = "line"
 
@@ -228,7 +241,7 @@ class PageSpec:
     name: str                                       # "Inventory Dashboard"
     slug: str                                       # "inventory_dashboard"
     role: str                                       # which role this story belongs to
-    display_table: Optional[str] = None             # table snake_case
+    display_content: Optional[str] = None             # table snake_case
     table_columns: tuple[TableColumn, ...] = ()
     filters: tuple[FilterField, ...] = ()
     search_fields: tuple[str, ...] = ()             # snake_case column names
@@ -236,7 +249,7 @@ class PageSpec:
     subscribe_stream: Optional[str] = None          # content name for SSE
     related: Optional[RelatedDataSpec] = None
     form_fields: tuple[FormField, ...] = ()         # empty = no form
-    form_target_table: Optional[str] = None
+    form_target_content: Optional[str] = None
     create_as_status: Optional[str] = None
     validate_unique_field: Optional[str] = None
     after_save_instruction: Optional[str] = None
@@ -254,7 +267,7 @@ class NavItemSpec:
     label: str
     page_slug: str
     visible_to: tuple[str, ...]        # role names or ("all",)
-    badge_table: Optional[str] = None  # table to COUNT(*) for badge
+    badge_content: Optional[str] = None  # table to COUNT(*) for badge
 
 
 # ── Streams ──
@@ -285,8 +298,8 @@ class ComputeParamSpec:
 class ComputeSpec:
     name: QualifiedName
     shape: ComputeShape
-    input_tables: tuple[str, ...]    # resolved snake_case table names
-    output_tables: tuple[str, ...]   # resolved snake_case table names
+    input_content: tuple[str, ...]    # resolved snake_case table names
+    output_content: tuple[str, ...]   # resolved snake_case table names
     body_lines: tuple[str, ...] = ()
     required_scope: Optional[str] = None
     required_role: Optional[str] = None   # alternative to scope
@@ -319,7 +332,7 @@ class ChannelRequirementSpec:
 @dataclass(frozen=True)
 class ChannelSpec:
     name: QualifiedName
-    carries_table: str                               # resolved snake_case table name
+    carries_content: str                               # resolved snake_case table name
     direction: ChannelDirection = ChannelDirection.INBOUND
     delivery: ChannelDelivery = ChannelDelivery.AUTO
     endpoint: Optional[str] = None
@@ -338,7 +351,7 @@ class BoundaryPropertySpec:
 @dataclass(frozen=True)
 class BoundarySpec:
     name: QualifiedName
-    contains_tables: tuple[str, ...] = ()            # resolved snake_case table names
+    contains_content: tuple[str, ...] = ()            # resolved snake_case table names
     contains_boundaries: tuple[str, ...] = ()        # snake_case boundary names
     identity_mode: str = "inherit"                   # "inherit" or "restrict"
     identity_scopes: tuple[str, ...] = ()            # for restrict mode
@@ -371,17 +384,18 @@ class ErrorHandlerSpec:
 @dataclass(frozen=True)
 class AppSpec:
     """The complete intermediate representation of a Termin application."""
-    name: str
-    description: str
-    auth: AuthSpec
-    tables: tuple[Table, ...]
-    access_grants: tuple[AccessGrant, ...]
-    state_machines: tuple[StateMachineSpec, ...]
-    events: tuple[EventSpec, ...]
-    routes: tuple[RouteSpec, ...]
-    pages: tuple[PageSpec, ...]
-    nav_items: tuple[NavItemSpec, ...]
-    streams: tuple[StreamSpec, ...]
+    ir_version: str = "0.2.0"
+    name: str = ""
+    description: str = ""
+    auth: AuthSpec = None
+    content: tuple[ContentSchema, ...] = ()
+    access_grants: tuple[AccessGrant, ...] = ()
+    state_machines: tuple[StateMachineSpec, ...] = ()
+    events: tuple[EventSpec, ...] = ()
+    routes: tuple[RouteSpec, ...] = ()
+    pages: tuple[PageSpec, ...] = ()
+    nav_items: tuple[NavItemSpec, ...] = ()
+    streams: tuple[StreamSpec, ...] = ()
     computes: tuple[ComputeSpec, ...] = ()
     channels: tuple[ChannelSpec, ...] = ()
     boundaries: tuple[BoundarySpec, ...] = ()

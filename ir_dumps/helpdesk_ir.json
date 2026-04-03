@@ -1,0 +1,666 @@
+{
+  "name": "Help Desk Ticket Tracker",
+  "description": "Track support tickets from submission to resolution",
+  "auth": {
+    "provider": "stub",
+    "scopes": [
+      "view tickets",
+      "create tickets",
+      "manage tickets",
+      "admin tickets"
+    ],
+    "roles": [
+      {
+        "name": "customer",
+        "scopes": [
+          "view tickets",
+          "create tickets"
+        ]
+      },
+      {
+        "name": "support agent",
+        "scopes": [
+          "view tickets",
+          "create tickets",
+          "manage tickets"
+        ]
+      },
+      {
+        "name": "support manager",
+        "scopes": [
+          "view tickets",
+          "create tickets",
+          "manage tickets",
+          "admin tickets"
+        ]
+      }
+    ]
+  },
+  "tables": [
+    {
+      "name": {
+        "display": "tickets",
+        "snake": "tickets",
+        "pascal": "Tickets"
+      },
+      "columns": [
+        {
+          "name": "title",
+          "display_name": "title",
+          "column_type": "TEXT",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "description",
+          "display_name": "description",
+          "column_type": "TEXT",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "priority",
+          "display_name": "priority",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "category",
+          "display_name": "category",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [
+            "bug",
+            "feature request",
+            "question",
+            "account issue"
+          ],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "submitted_by",
+          "display_name": "submitted by",
+          "column_type": "TEXT",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "assigned_to",
+          "display_name": "assigned to",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "created_at",
+          "display_name": "created at",
+          "column_type": "TIMESTAMP",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": true,
+          "list_type": null
+        }
+      ],
+      "has_status_column": true,
+      "initial_status": "open"
+    },
+    {
+      "name": {
+        "display": "comments",
+        "snake": "comments",
+        "pascal": "Comments"
+      },
+      "columns": [
+        {
+          "name": "ticket",
+          "display_name": "ticket",
+          "column_type": "INTEGER",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": "tickets",
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "author",
+          "display_name": "author",
+          "column_type": "TEXT",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "body",
+          "display_name": "body",
+          "column_type": "TEXT",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null
+        },
+        {
+          "name": "posted_at",
+          "display_name": "posted at",
+          "column_type": "TIMESTAMP",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": true,
+          "list_type": null
+        }
+      ],
+      "has_status_column": false,
+      "initial_status": null
+    }
+  ],
+  "access_grants": [
+    {
+      "table": "tickets",
+      "scope": "view tickets",
+      "verbs": [
+        "VIEW"
+      ]
+    },
+    {
+      "table": "tickets",
+      "scope": "create tickets",
+      "verbs": [
+        "CREATE"
+      ]
+    },
+    {
+      "table": "tickets",
+      "scope": "manage tickets",
+      "verbs": [
+        "UPDATE"
+      ]
+    },
+    {
+      "table": "tickets",
+      "scope": "admin tickets",
+      "verbs": [
+        "DELETE"
+      ]
+    },
+    {
+      "table": "comments",
+      "scope": "view tickets",
+      "verbs": [
+        "VIEW"
+      ]
+    },
+    {
+      "table": "comments",
+      "scope": "create tickets",
+      "verbs": [
+        "CREATE"
+      ]
+    }
+  ],
+  "state_machines": [
+    {
+      "table": "tickets",
+      "machine_name": "ticket lifecycle",
+      "initial_state": "open",
+      "states": [
+        "open",
+        "in progress",
+        "waiting on customer",
+        "resolved",
+        "closed"
+      ],
+      "transitions": [
+        {
+          "from_state": "open",
+          "to_state": "in progress",
+          "required_scope": "manage tickets"
+        },
+        {
+          "from_state": "in progress",
+          "to_state": "waiting on customer",
+          "required_scope": "manage tickets"
+        },
+        {
+          "from_state": "waiting on customer",
+          "to_state": "in progress",
+          "required_scope": "create tickets"
+        },
+        {
+          "from_state": "in progress",
+          "to_state": "resolved",
+          "required_scope": "manage tickets"
+        },
+        {
+          "from_state": "resolved",
+          "to_state": "closed",
+          "required_scope": "admin tickets"
+        },
+        {
+          "from_state": "resolved",
+          "to_state": "in progress",
+          "required_scope": "create tickets"
+        }
+      ]
+    }
+  ],
+  "events": [],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/v1/tickets",
+      "kind": "LIST",
+      "table": "tickets",
+      "required_scope": "view tickets",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tickets",
+      "kind": "CREATE",
+      "table": "tickets",
+      "required_scope": "create tickets",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tickets/{id}",
+      "kind": "GET_ONE",
+      "table": "tickets",
+      "required_scope": "view tickets",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/tickets/{id}",
+      "kind": "UPDATE",
+      "table": "tickets",
+      "required_scope": "manage tickets",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/tickets/{id}",
+      "kind": "DELETE",
+      "table": "tickets",
+      "required_scope": "admin tickets",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tickets/{id}/start",
+      "kind": "TRANSITION",
+      "table": "tickets",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": "in progress"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tickets/{id}/wait",
+      "kind": "TRANSITION",
+      "table": "tickets",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": "waiting on customer"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tickets/{id}/resolve",
+      "kind": "TRANSITION",
+      "table": "tickets",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": "resolved"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tickets/{id}/close",
+      "kind": "TRANSITION",
+      "table": "tickets",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": "closed"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tickets/{id}/reopen",
+      "kind": "TRANSITION",
+      "table": "tickets",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": "in progress"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/comments",
+      "kind": "LIST",
+      "table": "comments",
+      "required_scope": "view tickets",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/comments",
+      "kind": "CREATE",
+      "table": "comments",
+      "required_scope": "create tickets",
+      "lookup_column": "id",
+      "target_state": null
+    }
+  ],
+  "pages": [
+    {
+      "name": "Submit Ticket",
+      "slug": "submit_ticket",
+      "role": "customer",
+      "display_table": null,
+      "table_columns": [],
+      "filters": [],
+      "search_fields": [],
+      "highlight": null,
+      "subscribe_stream": null,
+      "related": null,
+      "form_fields": [
+        {
+          "key": "title",
+          "display": "title",
+          "input_type": "text",
+          "required": true,
+          "minimum": null,
+          "step": null,
+          "enum_values": [],
+          "reference_table": null,
+          "reference_display_col": null,
+          "reference_unique_col": null
+        },
+        {
+          "key": "description",
+          "display": "description",
+          "input_type": "text",
+          "required": true,
+          "minimum": null,
+          "step": null,
+          "enum_values": [],
+          "reference_table": null,
+          "reference_display_col": null,
+          "reference_unique_col": null
+        },
+        {
+          "key": "priority",
+          "display": "priority",
+          "input_type": "enum",
+          "required": false,
+          "minimum": null,
+          "step": null,
+          "enum_values": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ],
+          "reference_table": null,
+          "reference_display_col": null,
+          "reference_unique_col": null
+        },
+        {
+          "key": "category",
+          "display": "category",
+          "input_type": "enum",
+          "required": false,
+          "minimum": null,
+          "step": null,
+          "enum_values": [
+            "bug",
+            "feature request",
+            "question",
+            "account issue"
+          ],
+          "reference_table": null,
+          "reference_display_col": null,
+          "reference_unique_col": null
+        }
+      ],
+      "form_target_table": "tickets",
+      "create_as_status": "open",
+      "validate_unique_field": null,
+      "after_save_instruction": null,
+      "aggregations": [],
+      "chart": null,
+      "required_scope": "create tickets",
+      "static_texts": [],
+      "static_expressions": []
+    },
+    {
+      "name": "Ticket Queue",
+      "slug": "ticket_queue",
+      "role": "support agent",
+      "display_table": "tickets",
+      "table_columns": [
+        {
+          "display": "title",
+          "key": "title"
+        },
+        {
+          "display": "priority",
+          "key": "priority"
+        },
+        {
+          "display": "category",
+          "key": "category"
+        },
+        {
+          "display": "status",
+          "key": "status"
+        },
+        {
+          "display": "assigned to",
+          "key": "assigned_to"
+        },
+        {
+          "display": "created at",
+          "key": "created_at"
+        }
+      ],
+      "filters": [
+        {
+          "key": "status",
+          "display": "status",
+          "filter_type": "status",
+          "options": [
+            "open",
+            "in progress",
+            "waiting on customer",
+            "resolved",
+            "closed"
+          ]
+        },
+        {
+          "key": "priority",
+          "display": "priority",
+          "filter_type": "enum",
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        {
+          "key": "category",
+          "display": "category",
+          "filter_type": "enum",
+          "options": [
+            "bug",
+            "feature request",
+            "question",
+            "account issue"
+          ]
+        }
+      ],
+      "search_fields": [
+        "title_or_description"
+      ],
+      "highlight": {
+        "field": "",
+        "operator": "lte",
+        "threshold_field": ""
+      },
+      "subscribe_stream": "tickets",
+      "related": null,
+      "form_fields": [],
+      "form_target_table": null,
+      "create_as_status": null,
+      "validate_unique_field": null,
+      "after_save_instruction": null,
+      "aggregations": [],
+      "chart": null,
+      "required_scope": null,
+      "static_texts": [],
+      "static_expressions": []
+    },
+    {
+      "name": "Support Dashboard",
+      "slug": "support_dashboard",
+      "role": "support manager",
+      "display_table": null,
+      "table_columns": [],
+      "filters": [],
+      "search_fields": [],
+      "highlight": null,
+      "subscribe_stream": null,
+      "related": null,
+      "form_fields": [],
+      "form_target_table": null,
+      "create_as_status": null,
+      "validate_unique_field": null,
+      "after_save_instruction": null,
+      "aggregations": [
+        {
+          "key": "total_ticket_count_with_open_v",
+          "description": "total ticket count with open vs resolved breakdown",
+          "agg_type": "count_by_status",
+          "table": "tickets",
+          "join_table": null,
+          "join_column": null,
+          "sum_expression": null
+        },
+        {
+          "key": "total_comment_count",
+          "description": "total comment count",
+          "agg_type": "count",
+          "table": "comments",
+          "join_table": null,
+          "join_column": null,
+          "sum_expression": null
+        }
+      ],
+      "chart": null,
+      "required_scope": null,
+      "static_texts": [],
+      "static_expressions": []
+    }
+  ],
+  "nav_items": [
+    {
+      "label": "Queue",
+      "page_slug": "ticket_queue",
+      "visible_to": [
+        "agent",
+        "manager"
+      ],
+      "badge_table": null
+    },
+    {
+      "label": "Submit",
+      "page_slug": "submit_ticket",
+      "visible_to": [
+        "all"
+      ],
+      "badge_table": null
+    },
+    {
+      "label": "Dashboard",
+      "page_slug": "support_dashboard",
+      "visible_to": [
+        "manager"
+      ],
+      "badge_table": null
+    }
+  ],
+  "streams": [
+    {
+      "description": "ticket updates",
+      "path": "/api/v1/stream"
+    }
+  ],
+  "computes": [],
+  "channels": [],
+  "boundaries": [],
+  "error_handlers": []
+}

@@ -315,7 +315,7 @@ class TestReflectionEndpoint:
             assert response.status_code == 200
             data = response.json()
             assert data["name"] == "Phase D Test"
-            assert "tables" in data
+            assert "content" in data
             assert "auth" in data
         finally:
             os.unlink(tmp_path)

@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from ..ir import (
-    AppSpec, Table, Column, ColumnType, AccessGrant, Verb,
+    AppSpec, ContentSchema, FieldSpec, FieldType, AccessGrant, Verb,
     StateMachineSpec, TransitionSpec,
     EventSpec, EventConditionSpec, EventActionSpec,
     HttpMethod, RouteKind, RouteSpec,
@@ -45,15 +45,15 @@ class FastApiBackend:
         self.lines: list[str] = []
 
         # Build lookup helpers from the IR
-        self._table_by_snake: dict[str, Table] = {
-            t.name.snake: t for t in spec.tables
+        self._content_by_snake: dict[str, ContentSchema] = {
+            t.name.snake: t for t in spec.content
         }
-        self._sm_by_table: dict[str, StateMachineSpec] = {
-            sm.table: sm for sm in spec.state_machines
+        self._sm_by_content: dict[str, StateMachineSpec] = {
+            sm.content_ref: sm for sm in spec.state_machines
         }
-        self._grants_by_table: dict[str, list[AccessGrant]] = {}
+        self._grants_by_content: dict[str, list[AccessGrant]] = {}
         for g in spec.access_grants:
-            self._grants_by_table.setdefault(g.table, []).append(g)
+            self._grants_by_content.setdefault(g.content, []).append(g)
 
         self._emit_header(source_file)
         self._emit_imports()
@@ -101,8 +101,8 @@ class FastApiBackend:
     def _wblock(self, text: str) -> None:
         self.lines.append(textwrap.dedent(text))
 
-    def _scope_for_verb(self, table: str, verb: Verb) -> Optional[str]:
-        for g in self._grants_by_table.get(table, []):
+    def _scope_for_verb(self, content_ref: str, verb: Verb) -> Optional[str]:
+        for g in self._grants_by_content.get(content_ref, []):
             if verb in g.verbs:
                 return g.scope
         return None
@@ -286,21 +286,21 @@ class FastApiBackend:
                 try:
         ''')
 
-        for table in self.spec.tables:
+        for table in self.spec.content:
             tname = table.name.snake
             cols = ["id INTEGER PRIMARY KEY AUTOINCREMENT"]
 
             # Status column from state machine
-            if table.has_status_column and table.initial_status:
-                cols.append(f"status TEXT NOT NULL DEFAULT '{table.initial_status}'")
+            if table.has_state_machine and table.initial_state:
+                cols.append(f"status TEXT NOT NULL DEFAULT '{table.initial_state}'")
 
-            for col in table.columns:
+            for col in table.fields:
                 col_def = self._sql_column_def(col)
                 cols.append(col_def)
 
             # Foreign key clauses
             fk_clauses = []
-            for col in table.columns:
+            for col in table.fields:
                 if col.foreign_key:
                     fk_clauses.append(
                         f"FOREIGN KEY ({col.name}) REFERENCES {col.foreign_key}(id)"
@@ -320,8 +320,8 @@ class FastApiBackend:
         self._w("        await db.close()")
         self._w()
 
-    def _sql_column_def(self, col: Column) -> str:
-        """Build a SQL column definition from an IR Column."""
+    def _sql_column_def(self, col: FieldSpec) -> str:
+        """Build a SQL column definition from an IR FieldSpec."""
         parts: list[str] = []
 
         if col.is_auto:
@@ -329,19 +329,19 @@ class FastApiBackend:
         elif col.enum_values:
             vals = ", ".join(f"'{v}'" for v in col.enum_values)
             parts.append(f"TEXT CHECK({col.name} IN ({vals}))")
-        elif col.column_type == ColumnType.TEXT:
+        elif col.column_type == FieldType.TEXT:
             parts.append("TEXT")
-        elif col.column_type == ColumnType.INTEGER:
+        elif col.column_type == FieldType.INTEGER:
             parts.append("INTEGER")
-        elif col.column_type == ColumnType.REAL:
+        elif col.column_type == FieldType.REAL:
             parts.append("REAL")
-        elif col.column_type == ColumnType.BOOLEAN:
+        elif col.column_type == FieldType.BOOLEAN:
             parts.append("INTEGER")  # SQLite: 0/1
-        elif col.column_type == ColumnType.DATE:
+        elif col.column_type == FieldType.DATE:
             parts.append("TEXT")     # ISO date string
-        elif col.column_type == ColumnType.TIMESTAMP:
+        elif col.column_type == FieldType.TIMESTAMP:
             parts.append("TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-        elif col.column_type == ColumnType.JSON:
+        elif col.column_type == FieldType.JSON:
             parts.append("TEXT")     # JSON string
         else:
             parts.append("TEXT")
@@ -408,7 +408,7 @@ class FastApiBackend:
         self._w()
         self._w("BOUNDARIES = {")
         for bnd in self.spec.boundaries:
-            tables = ", ".join(f'"{t}"' for t in bnd.contains_tables)
+            tables = ", ".join(f'"{t}"' for t in bnd.contains_content)
             sub = ", ".join(f'"{b}"' for b in bnd.contains_boundaries)
             self._w(f'    "{bnd.name.snake}": {{')
             self._w(f'        "tables": [{tables}],')
@@ -470,11 +470,11 @@ class FastApiBackend:
     # ── Pydantic Models ──
 
     def _emit_models(self) -> None:
-        for table in self.spec.tables:
+        for table in self.spec.content:
             class_name = table.name.pascal
             self._w(f"class {class_name}Create(BaseModel):")
             has_fields = False
-            for col in table.columns:
+            for col in table.fields:
                 if col.is_auto:
                     continue
                 ptype = self._pydantic_type(col)
@@ -485,7 +485,7 @@ class FastApiBackend:
                 self._w("    pass")
 
             # Validators for enum fields
-            for col in table.columns:
+            for col in table.fields:
                 if col.enum_values:
                     vals = repr(col.enum_values)
                     self._w()
@@ -501,7 +501,7 @@ class FastApiBackend:
             # Update model (all optional)
             self._w(f"class {class_name}Update(BaseModel):")
             has_upd_fields = False
-            for col in table.columns:
+            for col in table.fields:
                 if col.is_auto:
                     continue
                 ptype = self._pydantic_type_optional(col)
@@ -511,10 +511,10 @@ class FastApiBackend:
                 self._w("    pass")
             self._w()
 
-    def _pydantic_type(self, col: Column) -> str:
-        if col.column_type == ColumnType.INTEGER:
+    def _pydantic_type(self, col: FieldSpec) -> str:
+        if col.column_type == FieldType.INTEGER:
             base = "int"
-        elif col.column_type == ColumnType.REAL:
+        elif col.column_type == FieldType.REAL:
             base = "float"
         else:
             base = "str"
@@ -522,7 +522,7 @@ class FastApiBackend:
             return f"Optional[{base}]"
         return base
 
-    def _pydantic_type_optional(self, col: Column) -> str:
+    def _pydantic_type_optional(self, col: FieldSpec) -> str:
         base = self._pydantic_type(col)
         if base.startswith("Optional["):
             return base
@@ -538,7 +538,7 @@ class FastApiBackend:
         self._w()
         self._w("STATE_MACHINES = {")
         for sm in self.spec.state_machines:
-            self._w(f'    "{sm.table}": {{')
+            self._w(f'    "{sm.content_ref}": {{')
             self._w(f'        "initial": "{sm.initial_state}",')
             self._w(f'        "transitions": {{')
             for tr in sm.transitions:
@@ -611,12 +611,12 @@ class FastApiBackend:
                 jexl_expr = ev.jexl_condition.replace("'", "\\'")
                 # Build context: record fields directly + prefixed by source name
                 # so both "quantity" and "stockLevel.quantity" resolve
-                source = ev.source_table
+                source = ev.source_content
                 snake_singular = source.rstrip("s") if source.endswith("s") else source
                 # camelCase version for JEXL: stock_levels -> stockLevel
                 parts = snake_singular.split("_")
                 camel = parts[0] + "".join(w.capitalize() for w in parts[1:])
-                self._w(f'    if content_name == "{ev.source_table}":')
+                self._w(f'    if content_name == "{ev.source_content}":')
                 self._w(f'        # Build JEXL context with camelCase aliases')
                 self._w(f'        _ctx = dict(record)')
                 self._w(f'        # Add camelCase key aliases for JEXL property access')
@@ -630,7 +630,7 @@ class FastApiBackend:
                 self._w(f'        _ctx["{camel}"] = _prefixed')
                 self._w(f"        if expr_eval.evaluate('{jexl_expr}', _ctx):")
             elif ev.condition:
-                self._w(f'    if content_name == "{ev.source_table}" and trigger == "{ev.trigger}":')
+                self._w(f'    if content_name == "{ev.source_content}" and trigger == "{ev.trigger}":')
                 left = ev.condition.left_column
                 right = ev.condition.right_column
                 if ev.condition.operator == "lte":
@@ -638,11 +638,11 @@ class FastApiBackend:
                 else:
                     self._w(f'        if True:  # condition: {ev.condition.operator}')
             else:
-                self._w(f'    if content_name == "{ev.source_table}" and trigger == "{ev.trigger}":')
+                self._w(f'    if content_name == "{ev.source_content}" and trigger == "{ev.trigger}":')
 
             log_level = ev.log_level
             if ev.action and ev.action.column_mapping:
-                target_table = ev.action.target_table
+                target_table = ev.action.target_content
                 target_cols = [pair[0] for pair in ev.action.column_mapping]
                 source_keys = [pair[1] for pair in ev.action.column_mapping]
 
@@ -658,7 +658,7 @@ class FastApiBackend:
                 self._w(f'            await event_bus.publish({{"type": "{target_table}_created", "log_level": "{log_level}"}})')
             elif ev.action:
                 # Action with no column mapping — emit event only
-                self._w(f'            await event_bus.publish({{"type": "{ev.action.target_table}_created", "data": record, "log_level": "{log_level}"}})')
+                self._w(f'            await event_bus.publish({{"type": "{ev.action.target_content}_created", "data": record, "log_level": "{log_level}"}})')
             else:
                 self._w(f'        pass  # No action defined for this event')
 
@@ -674,7 +674,7 @@ class FastApiBackend:
             if route.kind == RouteKind.STREAM:
                 continue  # handled separately in _emit_sse_stream
 
-            table = route.table
+            table = route.content_ref
             method = route.method.value.lower()
             path = route.path
 
@@ -694,7 +694,7 @@ class FastApiBackend:
     def _emit_list_route(self, route: RouteSpec) -> None:
         scope = route.required_scope
         scope_dep = f', user=Depends(require_scope("{scope}"))' if scope else ""
-        table = route.table
+        table = route.content_ref
         self._w(f'@app.get("{route.path}")')
         self._w(f"async def list_{table}(request: Request{scope_dep}):")
         self._w(f'    db = await get_db()')
@@ -709,7 +709,7 @@ class FastApiBackend:
     def _emit_get_route(self, route: RouteSpec) -> None:
         scope = route.required_scope
         scope_dep = f', user=Depends(require_scope("{scope}"))' if scope else ""
-        table = route.table
+        table = route.content_ref
         param = re.search(r'\{(\w+)\}', route.path)
         param_name = param.group(1) if param else "id"
         lookup_col = route.lookup_column
@@ -730,8 +730,8 @@ class FastApiBackend:
     def _emit_create_route(self, route: RouteSpec) -> None:
         scope = route.required_scope
         scope_dep = f', user=Depends(require_scope("{scope}"))' if scope else ""
-        table_obj = self._table_by_snake.get(route.table)
-        table = route.table
+        table_obj = self._content_by_snake.get(route.content_ref)
+        table = route.content_ref
         model_name = table_obj.name.pascal + "Create" if table_obj else _snake(table).title().replace("_", "") + "Create"
 
         self._w(f'@app.post("{route.path}", status_code=201)')
@@ -741,7 +741,7 @@ class FastApiBackend:
         self._w(f'        d = data.model_dump(exclude_none=True)')
 
         # Add initial state if state machine exists
-        sm = self._sm_by_table.get(table)
+        sm = self._sm_by_content.get(table)
         if sm:
             self._w(f'        d.setdefault("status", "{sm.initial_state}")')
 
@@ -775,8 +775,8 @@ class FastApiBackend:
     def _emit_update_route(self, route: RouteSpec) -> None:
         scope = route.required_scope
         scope_dep = f', user=Depends(require_scope("{scope}"))' if scope else ""
-        table_obj = self._table_by_snake.get(route.table)
-        table = route.table
+        table_obj = self._content_by_snake.get(route.content_ref)
+        table = route.content_ref
         model_name = table_obj.name.pascal + "Update" if table_obj else _snake(table).title().replace("_", "") + "Update"
         param = re.search(r'\{(\w+)\}', route.path)
         param_name = param.group(1) if param else "id"
@@ -815,7 +815,7 @@ class FastApiBackend:
     def _emit_delete_route(self, route: RouteSpec) -> None:
         scope = route.required_scope
         scope_dep = f', user=Depends(require_scope("{scope}"))' if scope else ""
-        table = route.table
+        table = route.content_ref
         param = re.search(r'\{(\w+)\}', route.path)
         param_name = param.group(1) if param else "id"
         lookup_col = route.lookup_column
@@ -837,7 +837,7 @@ class FastApiBackend:
         self._w()
 
     def _emit_transition_route(self, route: RouteSpec) -> None:
-        table = route.table
+        table = route.content_ref
         method = route.method.value.lower()
         path = route.path
         target_state = route.target_state or ""
@@ -890,7 +890,7 @@ class FastApiBackend:
                 self._emit_compute_route(comp, snake, scope_dep)
 
     def _emit_compute_transform(self, comp: ComputeSpec, snake: str, scope_dep: str) -> None:
-        input_table = comp.input_tables[0] if comp.input_tables else "unknown"
+        input_table = comp.input_content[0] if comp.input_content else "unknown"
         self._w(f'@app.post("/compute/{snake}")')
         self._w(f"async def compute_{snake}(request: Request{scope_dep}):")
         self._w(f"    body = await request.json()")
@@ -915,7 +915,7 @@ class FastApiBackend:
         self._w()
 
     def _emit_compute_reduce(self, comp: ComputeSpec, snake: str, scope_dep: str) -> None:
-        input_table = comp.input_tables[0] if comp.input_tables else "unknown"
+        input_table = comp.input_content[0] if comp.input_content else "unknown"
         self._w(f'@app.post("/compute/{snake}")')
         self._w(f"async def compute_{snake}(request: Request{scope_dep}):")
         self._w(f'    # Reduce: {" / ".join(comp.body_lines) if comp.body_lines else "N records in, 1 summary out"}')
@@ -941,7 +941,7 @@ class FastApiBackend:
         self._w()
 
     def _emit_compute_correlate(self, comp: ComputeSpec, snake: str, scope_dep: str) -> None:
-        tables = comp.input_tables
+        tables = comp.input_content
         t1 = tables[0] if len(tables) > 0 else "table_a"
         t2 = tables[1] if len(tables) > 1 else "table_b"
         self._w(f'@app.post("/compute/{snake}")')
@@ -963,7 +963,7 @@ class FastApiBackend:
         self._w()
 
     def _emit_compute_route(self, comp: ComputeSpec, snake: str, scope_dep: str) -> None:
-        outputs = comp.output_tables
+        outputs = comp.output_content
         self._w(f'@app.post("/compute/{snake}")')
         self._w(f"async def compute_{snake}(request: Request{scope_dep}):")
         self._w(f"    body = await request.json()")
@@ -1020,7 +1020,7 @@ class FastApiBackend:
     def _emit_webhook_channel(self, ch: ChannelSpec) -> None:
         snake = ch.name.snake
         endpoint = ch.endpoint or f"/webhooks/{snake}"
-        table = ch.carries_table
+        table = ch.carries_content
 
         # Find send scope
         scope = None
@@ -1035,9 +1035,9 @@ class FastApiBackend:
         self._w(f"    body = await request.json()")
         self._w(f"    db = await get_db()")
         self._w(f"    try:")
-        table_obj = self._table_by_snake.get(table)
+        table_obj = self._content_by_snake.get(table)
         if table_obj:
-            cols = [c.name for c in table_obj.columns if not c.is_auto]
+            cols = [c.name for c in table_obj.fields if not c.is_auto]
             placeholders = ", ".join("?" for _ in cols)
             col_names = ", ".join(cols)
             vals = ", ".join(f'body.get("{c}", "")' for c in cols)
@@ -1109,21 +1109,21 @@ class FastApiBackend:
                     self._state_history = {}    # primitive_name -> [{from, to, at, by}]
 
                 def content_schemas(self):
-                    return [t['name']['display'] for t in self._spec.get('tables', [])]
+                    return [t['name']['display'] for t in self._spec.get('content', [])]
 
                 def content_count(self, name, db):
                     # Returns count from DB (async, must be called with await)
-                    for t in self._spec.get('tables', []):
+                    for t in self._spec.get('content', []):
                         if t['name']['display'] == name or t['name']['snake'] == name:
                             return t['name']['snake']
                     return None
 
                 def content_schema(self, name):
-                    for t in self._spec.get('tables', []):
+                    for t in self._spec.get('content', []):
                         if t['name']['display'] == name or t['name']['snake'] == name:
-                            fields = [c['display_name'] for c in t['columns']]
+                            fields = [c['display_name'] for c in t['fields']]
                             field_details = {}
-                            for c in t['columns']:
+                            for c in t['fields']:
                                 constraints = []
                                 if c.get('required'):
                                     constraints.append('required')
@@ -1518,7 +1518,7 @@ class FastApiBackend:
                 vis = f'{{% if {role_checks} %}}'
 
             badge_html = ""
-            if item.badge_table:
+            if item.badge_content:
                 badge_html = (
                     f' <span class="ml-1 bg-red-500 text-white text-xs rounded-full px-2 py-0.5">'
                     f'{{{{ badge_{_snake(item.label)} }}}}</span>'
@@ -1548,7 +1548,7 @@ class FastApiBackend:
             )
 
         # Display table
-        if page.display_table and page.table_columns:
+        if page.display_content and page.table_columns:
             template_parts.append(self._gen_table_html(page))
 
         # Form
@@ -1569,7 +1569,7 @@ class FastApiBackend:
         self._w()
 
     def _gen_table_html(self, page: PageSpec) -> str:
-        table = page.display_table
+        table = page.display_content
         cols = page.table_columns
 
         parts = []
@@ -1644,7 +1644,7 @@ class FastApiBackend:
             parts.append(f'      <th class="px-4 py-2 text-left text-sm font-medium text-gray-600">{tc.display}</th>')
         if page.related:
             # Use the related table name for the header (convert snake to display)
-            related_display = page.related.related_table.replace("_", " ")
+            related_display = page.related.related_content.replace("_", " ")
             parts.append(f'      <th class="px-4 py-2 text-left text-sm font-medium text-gray-600">{related_display}</th>')
         parts.append('    </tr>')
         parts.append('  </thead>')
@@ -1677,7 +1677,7 @@ class FastApiBackend:
         return "\n".join(parts)
 
     def _gen_form_html(self, page: PageSpec) -> str:
-        form_table = page.form_target_table
+        form_table = page.form_target_content
         if not form_table:
             return '<p>Form configuration error</p>'
 
@@ -1702,7 +1702,7 @@ class FastApiBackend:
                 continue
 
             if ff.input_type == "reference":
-                ref_table = ff.reference_table
+                ref_table = ff.reference_content
                 ref_display = ff.reference_display_col or "id"
                 ref_unique = ff.reference_unique_col
 
@@ -1718,7 +1718,7 @@ class FastApiBackend:
                 # Find the display name of the referenced content
                 ref_display_name = ref_table.replace("_", " ")
                 # Try to find the actual content display name from tables
-                ref_table_obj = self._table_by_snake.get(ref_table)
+                ref_table_obj = self._content_by_snake.get(ref_table)
                 if ref_table_obj:
                     ref_display_name = ref_table_obj.name.display
 
@@ -1757,15 +1757,15 @@ class FastApiBackend:
         parts.append(f'</form>')
 
         # Auto-generate CRUD table if page has no explicit display table
-        if not page.display_table:
-            table_obj = self._table_by_snake.get(form_table)
+        if not page.display_content:
+            table_obj = self._content_by_snake.get(form_table)
             if table_obj:
                 display_cols = ["id"] + [ff.key for ff in page.form_fields]
-                if table_obj.has_status_column and "status" not in display_cols:
+                if table_obj.has_state_machine and "status" not in display_cols:
                     display_cols.append("status")
 
                 # Add automatic timestamp columns
-                for col_def in table_obj.columns:
+                for col_def in table_obj.fields:
                     if col_def.is_auto and col_def.name not in display_cols:
                         display_cols.append(col_def.name)
 
@@ -1815,16 +1815,16 @@ class FastApiBackend:
         )
 
     def _gen_chart_html(self, chart: ChartSpec) -> str:
-        chart_id = chart.table + "_chart"
+        chart_id = chart.content_ref + "_chart"
         return (
             f'<div class="bg-white shadow rounded p-4 mb-4">'
             f'  <canvas id="{chart_id}" height="200"></canvas>'
             f'</div>'
             f'<script>'
-            f'fetch("/api/chart-data/{chart.table}")'
+            f'fetch("/api/chart-data/{chart.content_ref}")'
             f'.then(r=>r.json()).then(data=>{{'
             f'new Chart(document.getElementById("{chart_id}"),{{'
-            f'type:"line",data:{{labels:data.labels,datasets:[{{label:"{chart.table}",data:data.values,borderColor:"rgb(79,70,229)",tension:0.1}}]}}'
+            f'type:"line",data:{{labels:data.labels,datasets:[{{label:"{chart.content_ref}",data:data.values,borderColor:"rgb(79,70,229)",tension:0.1}}]}}'
             f'}});}});'
             f'</script>'
         )
@@ -1842,7 +1842,7 @@ class FastApiBackend:
                 parts.append(f'<div class="text-lg text-gray-800 mb-4">{text}</div>')
             for expr in page.static_expressions:
                 parts.append(f'<div class="text-lg text-gray-800 mb-4" data-termin-expr="{expr}">...</div>')
-            if page.display_table and page.table_columns:
+            if page.display_content and page.table_columns:
                 parts.append(self._gen_table_html(page))
             if page.form_fields:
                 parts.append(self._gen_form_html(page))
@@ -1911,16 +1911,16 @@ class FastApiBackend:
         self._w(f'            "q": q,')
         self._w(f'        }}')
 
-        if page.display_table:
-            table = page.display_table
+        if page.display_content:
+            table = page.display_content
             self._w(f'        query = "SELECT * FROM {table}"')
             self._w(f'        params = []')
             self._w(f'        conditions = []')
 
             # Filter support — only apply filters for columns on the display table
-            table_obj = next((t for t in self.spec.tables if t.name.snake == table), None)
-            table_cols = {c.name for c in table_obj.columns} if table_obj else set()
-            if table_obj and table_obj.has_status_column:
+            table_obj = next((t for t in self.spec.content if t.name.snake == table), None)
+            table_cols = {c.name for c in table_obj.fields} if table_obj else set()
+            if table_obj and table_obj.has_state_machine:
                 table_cols.add("status")
             if page.filters:
                 for ff in page.filters:
@@ -1952,8 +1952,8 @@ class FastApiBackend:
                 if ff.filter_type == "distinct":
                     # Find which table has this column (may be a related table, not the display table)
                     distinct_table = table
-                    for t in self.spec.tables:
-                        if any(c.name == ff.key for c in t.columns) and t.name.snake != table:
+                    for t in self.spec.content:
+                        if any(c.name == ff.key for c in t.fields) and t.name.snake != table:
                             distinct_table = t.name.snake
                             break
                     self._w(f'        wh_cursor = await db.execute("SELECT DISTINCT {ff.key} FROM {distinct_table} ORDER BY {ff.key}")')
@@ -1961,7 +1961,7 @@ class FastApiBackend:
 
             # Show related
             if page.related:
-                related_table = page.related.related_table
+                related_table = page.related.related_content
                 join_column = page.related.join_column
                 display_cols = page.related.display_columns
                 group_col = display_cols[0] if display_cols else "product"
@@ -1974,7 +1974,7 @@ class FastApiBackend:
         for agg in page.aggregations:
             slug_agg = agg.key
             if agg.agg_type == "count_by_status":
-                tbl = agg.table
+                tbl = agg.content_ref
                 self._w(f'        cursor_agg = await db.execute("SELECT COUNT(*) as total, status FROM {tbl} GROUP BY status")')
                 self._w(f'        agg_rows = await cursor_agg.fetchall()')
                 self._w("        agg_rows = [dict(r) for r in agg_rows]")
@@ -1983,11 +1983,11 @@ class FastApiBackend:
                 self._w("        total = sum(r['total'] for r in agg_rows)")
                 self._w('        context["' + slug_agg + '"] = str(total) + " (" + breakdown + ")"')
             elif agg.agg_type == "count":
-                tbl = agg.table
+                tbl = agg.content_ref
                 self._w(f'        cursor_agg = await db.execute("SELECT COUNT(*) as cnt FROM {tbl}")')
                 self._w(f'        context["{slug_agg}"] = (await cursor_agg.fetchone())["cnt"]')
             elif agg.agg_type == "sum_join":
-                tbl = agg.table
+                tbl = agg.content_ref
                 # Use sum_expression if available, otherwise sum first numeric column
                 if agg.sum_expression:
                     expr = agg.sum_expression
@@ -1999,9 +1999,9 @@ class FastApiBackend:
 
         # Nav badges
         for nav_item in self.spec.nav_items:
-            if nav_item.badge_table:
+            if nav_item.badge_content:
                 badge_slug = _snake(nav_item.label)
-                badge_table = nav_item.badge_table
+                badge_table = nav_item.badge_content
                 self._w(f'        cursor_badge = await db.execute("SELECT COUNT(*) as cnt FROM {badge_table}")')
                 self._w(f'        context["badge_{badge_slug}"] = (await cursor_badge.fetchone())["cnt"]')
 
@@ -2011,16 +2011,16 @@ class FastApiBackend:
 
         # Fetch reference lists for form dropdowns + existing records for CRUD table
         if page.form_fields:
-            form_table = page.form_target_table
+            form_table = page.form_target_content
             if form_table:
                 for ff in page.form_fields:
-                    if ff.input_type == "reference" and ff.reference_table:
-                        ref_table = ff.reference_table
+                    if ff.input_type == "reference" and ff.reference_content:
+                        ref_table = ff.reference_content
                         self._w(f'        ref_cursor = await db.execute("SELECT * FROM {ref_table}")')
                         self._w(f'        context["{ref_table}_list"] = [dict(r) for r in await ref_cursor.fetchall()]')
 
                 # Fetch existing records for the auto-generated CRUD table
-                if not page.display_table:
+                if not page.display_content:
                     self._w(f'        rows_cursor = await db.execute("SELECT * FROM {form_table} ORDER BY id DESC")')
                     self._w(f'        context["{form_table}_rows"] = [dict(r) for r in await rows_cursor.fetchall()]')
 
@@ -2042,13 +2042,13 @@ class FastApiBackend:
         self._w()
 
         # POST route for form pages
-        if page.form_fields and page.form_target_table:
+        if page.form_fields and page.form_target_content:
             self._emit_form_post_route(page)
 
     def _emit_form_post_route(self, page: PageSpec) -> None:
         slug = page.slug
-        form_table = page.form_target_table
-        table_obj = self._table_by_snake.get(form_table)
+        form_table = page.form_target_content
+        table_obj = self._content_by_snake.get(form_table)
 
         scope = page.required_scope
         scope_dep = f', user=Depends(require_scope("{scope}"))' if scope else ""
@@ -2122,7 +2122,7 @@ class FastApiBackend:
         self._w()
 
         # DELETE route for CRUD table (only when page has no explicit display table)
-        if not page.display_table:
+        if not page.display_content:
             del_scope = (
                 self._scope_for_verb(form_table, Verb.DELETE) or
                 self._scope_for_verb(form_table, Verb.UPDATE) or
@@ -2145,7 +2145,7 @@ class FastApiBackend:
     def _emit_chart_data_routes(self) -> None:
         for page in self.spec.pages:
             if page.chart:
-                table = page.chart.table
+                table = page.chart.content_ref
                 days = page.chart.days
                 self._w(f'@app.get("/api/chart-data/{table}")')
                 self._w(f"async def chart_data_{table}():")
@@ -2210,7 +2210,7 @@ class FastApiBackend:
 
         # Register state machines
         for sm in self.spec.state_machines:
-            self._w(f'    # State machine: {sm.machine_name} for {sm.table}')
+            self._w(f'    # State machine: {sm.machine_name} for {sm.content_ref}')
 
         # Register channels
         for ch in self.spec.channels:
@@ -2222,7 +2222,7 @@ class FastApiBackend:
 
         # Register events
         for ev in self.spec.events:
-            self._w(f'    # Event: {ev.source_table} {ev.trigger}')
+            self._w(f'    # Event: {ev.source_content} {ev.trigger}')
 
         # Register error handlers
         for eh in self.spec.error_handlers:
