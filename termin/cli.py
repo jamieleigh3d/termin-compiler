@@ -8,7 +8,7 @@ from pathlib import Path
 
 import click
 
-from .parser import parse
+from .lark_parser import parse_lark as parse
 from .analyzer import analyze
 from .lower import lower
 from .backends.fastapi import FastApiBackend

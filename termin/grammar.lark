@@ -11,77 +11,38 @@
 // A lightweight preprocessor in lark_parser.py normalises the source before
 // Lark sees it.
 
-start: (_toplevel NEWLINE)* _toplevel?
+start: (_section NEWLINE)* _section?
 
-_toplevel: application
-         | description
-         | identity
-         | scopes
-         | role_alias
-         | role_decl
-         | content_decl
-         | field_decl
-         | access_rule
-         | state_decl
-         | state_starts
-         | state_also
-         | state_transition
-         | event_when_jexl
-         | event_when_v1
-         | event_action
-         | event_log_level
-         | error_handler
-         | error_catch_all
-         | error_retry
-         | error_then
-         | story_header
-         | story_so_that
-         | show_page
-         | display_table
-         | show_related
-         | highlight_rows
-         | allow_filtering
-         | allow_searching
-         | subscribes_to
-         | accept_input
-         | validate_unique
-         | create_as
-         | after_saving
-         | show_chart
-         | display_text
-         | display_aggregation
-         | nav_bar
-         | nav_item
-         | api_section
-         | api_endpoint
-         | stream_decl
-         | compute_decl
-         | compute_shape
-         | compute_body_jexl
-         | compute_body_text
-         | channel_decl
-         | channel_carries
-         | channel_direction
-         | channel_delivery
-         | channel_requires
-         | channel_endpoint
-         | boundary_decl
-         | boundary_contains
-         | boundary_identity
-         | boundary_exposes
+_section: application_block
+        | identity_line
+        | scopes_line
+        | role_alias
+        | role_decl
+        | content_block
+        | state_block
+        | event_block
+        | story_block
+        | nav_block
+        | api_block
+        | stream_decl
+        | compute_block
+        | channel_block
+        | boundary_block
+        | error_block
 
 
 // -------------------------------------------------------------------
-// APPLICATION
+// APPLICATION (block: header + optional description)
 // -------------------------------------------------------------------
+application_block: application (NEWLINE description)?
 application: "Application:" REST_OF_LINE
 description: "Description:" REST_OF_LINE
 
 // -------------------------------------------------------------------
 // IDENTITY
 // -------------------------------------------------------------------
-identity: "Users authenticate with" REST_OF_LINE
-scopes: "Scopes are" REST_OF_LINE
+identity_line: "Users authenticate with" REST_OF_LINE
+scopes_line: "Scopes are" REST_OF_LINE
 
 // -------------------------------------------------------------------
 // ROLES
@@ -94,33 +55,37 @@ role_decl: ARTICLE QUOTED "has" REST_OF_LINE       -> role_standard
 role_alias: QUOTED "is alias for" QUOTED
 
 // -------------------------------------------------------------------
-// CONTENT
+// CONTENT (block: header + field/access children)
 // -------------------------------------------------------------------
+content_block: content_decl (NEWLINE (field_decl | access_rule))*
 content_decl: "Content called" QUOTED ":"
 field_decl: "Each" REST_OF_LINE
 access_rule: "Anyone with" QUOTED "can" REST_OF_LINE
 
 // -------------------------------------------------------------------
-// STATE
+// STATE (block: header + starts/also/transition children)
 // -------------------------------------------------------------------
+state_block: state_decl (NEWLINE (state_starts | state_also | state_transition))*
 // State for products called "lifecycle":
 // State for channel "order webhook" called "lifecycle":
-state_decl: "State for" REST_OF_LINE "called" QUOTED ":"
-state_starts: ARTICLE REST_OF_LINE "starts as" QUOTED
-state_also: ARTICLE REST_OF_LINE "can also be" REST_OF_LINE
-state_transition: ARTICLE REST_OF_LINE "can become" REST_OF_LINE
+state_decl: "State for" WORDS_BEFORE_CALLED "called" QUOTED ":"
+state_starts: ARTICLE WORDS_BEFORE_STARTS "starts as" QUOTED
+state_also: ARTICLE WORDS_BEFORE_CAN "can also be" REST_OF_LINE
+state_transition: ARTICLE WORDS_BEFORE_CAN "can become" REST_OF_LINE
 
 // -------------------------------------------------------------------
-// EVENTS
+// EVENTS (block: header + action/log-level children)
 // -------------------------------------------------------------------
+event_block: (event_when_jexl | event_when_v1) (NEWLINE (event_action | event_log_level))*
 event_when_jexl: "When" JEXL_EXPR ":"
 event_when_v1: "When" ARTICLE REST_OF_LINE
 event_action: "Create" ARTICLE REST_OF_LINE
 event_log_level: "Log level:" REST_OF_LINE
 
 // -------------------------------------------------------------------
-// ERROR HANDLING
+// ERROR HANDLING (block: header + retry/then/log children)
 // -------------------------------------------------------------------
+error_block: (error_handler | error_catch_all) (NEWLINE (error_retry | error_then | event_log_level))*
 // On error from "primitive" where [condition]:
 // On error from "primitive":
 error_handler: "On error from" QUOTED ("where" JEXL_EXPR)? ":"
@@ -132,15 +97,30 @@ error_retry: "Retry" REST_OF_LINE
 error_then: "Then" REST_OF_LINE
 
 // -------------------------------------------------------------------
-// USER STORIES
+// USER STORIES (block: header + so_that + directives)
 // -------------------------------------------------------------------
-// Supports both "As a role" and "As anonymous"
+story_block: story_header (NEWLINE story_so_that)? (NEWLINE _directive)*
 story_header: "As" REST_OF_LINE
 story_so_that: "so that" REST_OF_LINE
 
 // -------------------------------------------------------------------
 // DIRECTIVES (inside user stories)
 // -------------------------------------------------------------------
+_directive: show_page
+          | display_table
+          | show_related
+          | highlight_rows
+          | allow_filtering
+          | allow_searching
+          | subscribes_to
+          | accept_input
+          | validate_unique
+          | create_as
+          | after_saving
+          | show_chart
+          | display_text
+          | display_aggregation
+
 show_page: "Show a page called" QUOTED
 display_table: "Display a table of" REST_OF_LINE
 show_related: "For each" REST_OF_LINE
@@ -157,14 +137,16 @@ display_text: "Display text" REST_OF_LINE
 display_aggregation: "Display" REST_OF_LINE
 
 // -------------------------------------------------------------------
-// NAVIGATION
+// NAVIGATION (block: header + nav items)
 // -------------------------------------------------------------------
+nav_block: nav_bar (NEWLINE nav_item)*
 nav_bar: "Navigation bar:"
 nav_item: QUOTED "links to" QUOTED REST_OF_LINE?
 
 // -------------------------------------------------------------------
-// API
+// API (block: header + endpoints)
 // -------------------------------------------------------------------
+api_block: api_section (NEWLINE api_endpoint)*
 api_section: "Expose a REST API at" REST_OF_LINE ":"?
 api_endpoint: HTTP_METHOD API_PATH REST_OF_LINE
 
@@ -174,16 +156,18 @@ api_endpoint: HTTP_METHOD API_PATH REST_OF_LINE
 stream_decl: "Stream" REST_OF_LINE
 
 // -------------------------------------------------------------------
-// COMPUTE
+// COMPUTE (block: header + shape + body/access children)
 // -------------------------------------------------------------------
+compute_block: compute_decl (NEWLINE (compute_shape | compute_body_jexl | compute_body_text | access_rule))*
 compute_decl: "Compute called" QUOTED ":"
 compute_shape: SHAPE_KW ":" REST_OF_LINE
 compute_body_jexl: JEXL_EXPR
 compute_body_text: BODY_LINE
 
 // -------------------------------------------------------------------
-// CHANNELS (v2: intent-based vocabulary)
+// CHANNELS (block: header + property children)
 // -------------------------------------------------------------------
+channel_block: channel_decl (NEWLINE (channel_carries | channel_direction | channel_delivery | channel_requires | channel_endpoint))*
 channel_decl: "Channel called" QUOTED ":"
 channel_carries: "Carries" REST_OF_LINE
 channel_direction: "Direction:" REST_OF_LINE
@@ -192,8 +176,9 @@ channel_requires: "Requires" QUOTED "to" REST_OF_LINE
 channel_endpoint: "Endpoint:" REST_OF_LINE
 
 // -------------------------------------------------------------------
-// BOUNDARIES
+// BOUNDARIES (block: header + property children)
 // -------------------------------------------------------------------
+boundary_block: boundary_decl (NEWLINE (boundary_contains | boundary_identity | boundary_exposes))*
 boundary_decl: "Boundary called" QUOTED ":"
 boundary_contains: "Contains" REST_OF_LINE
 boundary_identity: "Identity" REST_OF_LINE
@@ -228,8 +213,13 @@ HTTP_METHOD: "GET" | "POST" | "PUT" | "DELETE" | "PATCH"
 // API path: starts with /
 API_PATH: /\/\S+/
 
-// A compute body line (non-empty, not starting with [ or a known keyword)
-BODY_LINE: /(?![\[\]]).+/
+// A compute body line (not starting with [ and not a section header or access rule)
+BODY_LINE: /(?![\[\]]|Compute called|Channel called|Boundary called|When |As |Navigation|Expose|Stream |Content called|State for|On error|On any|Anyone with).+/
+
+// Non-greedy word sequences for rules with embedded keywords
+WORDS_BEFORE_CALLED: /(?:(?!called)[^\n])+/
+WORDS_BEFORE_STARTS: /(?:(?!starts)[^\n])+/
+WORDS_BEFORE_CAN: /(?:(?!can )[^\n])+/
 
 // Everything else on the line after the keyword prefix
 REST_OF_LINE: /[^\n]+/
