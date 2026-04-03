@@ -310,6 +310,7 @@ def lower(program: Program) -> AppSpec:
             condition=cond,
             action=action,
             jexl_condition=ev.jexl_condition,
+            log_level=ev.log_level or "INFO",
         ))
 
     # ── Lower API routes ──

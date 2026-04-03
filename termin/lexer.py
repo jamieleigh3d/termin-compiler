@@ -38,6 +38,7 @@ class TokenType(Enum):
     # Events
     EVENT_WHEN = auto()       # When a X is Y and Z: / When [jexl]:
     EVENT_ACTION = auto()     # Create a X with ...
+    EVENT_LOG_LEVEL = auto()  # Log level: WARN
 
     # JEXL
     JEXL_BLOCK = auto()       # [expression] standalone line
@@ -120,6 +121,7 @@ _PATTERNS: list[tuple[re.Pattern, TokenType]] = [
     (re.compile(r'^When\s+\['), TokenType.EVENT_WHEN),  # v2: When [jexl]:
     (re.compile(r'^When\s+(?:a|an)\s+'), TokenType.EVENT_WHEN),  # v1: When a X is Y
     (re.compile(r'^\s*Create\s+(?:a|an)\s+'), TokenType.EVENT_ACTION),
+    (re.compile(r'^\s*Log level:\s+'), TokenType.EVENT_LOG_LEVEL),
     (re.compile(r'^As\s+(?:(?:a|an)\s+)?\w'), TokenType.STORY_HEADER),
     (re.compile(r'^\s*so\s+that\s+'), TokenType.STORY_SO_THAT),
     (re.compile(r'^\s*Show a page called\s+"[^"]+"'), TokenType.SHOW_PAGE),

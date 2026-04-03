@@ -58,6 +58,7 @@ class FastApiBackend:
         self._emit_header(source_file)
         self._emit_imports()
         self._emit_expression_evaluator()
+        self._emit_error_router()
         self._emit_app_setup()
         self._emit_database()
         self._emit_identity()
@@ -71,6 +72,8 @@ class FastApiBackend:
         self._emit_compute_registrations()
         self._emit_channel_endpoints()
         self._emit_reflection_endpoint()
+        self._emit_error_log_endpoint()
+        self._emit_events_endpoint()
         self._emit_sse_stream()
         self._emit_templates()
         self._emit_page_routes()
@@ -161,21 +164,52 @@ class FastApiBackend:
             expr_eval = ExpressionEvaluator()
         ''')
 
+    # ── Error Router (TerminAtor) ──
+
+    def _emit_error_router(self) -> None:
+        self._wblock('''\
+            class TerminError:
+                def __init__(self, source, kind, message, context=None, boundary_path=None):
+                    self.source = source
+                    self.kind = kind  # validation, authorization, state, timeout, schema, internal, external
+                    self.message = message
+                    self.timestamp = datetime.now().isoformat()
+                    self.context = context or ""
+                    self.boundary_path = boundary_path or []
+
+            class TerminAtor:
+                def __init__(self):
+                    self._handlers = {}
+                    self._error_log = []
+
+                def route(self, error: TerminError):
+                    self._error_log.append(error.__dict__)
+                    # Try boundary-specific handler
+                    for boundary in error.boundary_path:
+                        if boundary in self._handlers:
+                            self._handlers[boundary](error)
+                            return
+                    # Global fallback
+                    print(f"[TerminAtor] {error.kind}: {error.message} (from {error.source})")
+
+                def register_handler(self, boundary, handler):
+                    self._handlers[boundary] = handler
+
+                def get_error_log(self):
+                    return self._error_log
+
+            terminator = TerminAtor()
+        ''')
+
     # ── App Setup ──
 
     def _emit_app_setup(self) -> None:
         name = self.spec.name
         desc = self.spec.description
-        self._wblock(f'''\
-            DB_PATH = "app.db"
-
-            @asynccontextmanager
-            async def lifespan(app):
-                await init_db()
-                yield
-
-            app = FastAPI(title="{name}", description="{desc}", lifespan=lifespan)
-        ''')
+        self._w(f'DB_PATH = "app.db"')
+        self._w()
+        self._w(f'app = FastAPI(title="{name}", description="{desc}")')
+        self._w()
 
     # ── Database ──
 
@@ -347,6 +381,7 @@ class FastApiBackend:
             class EventBus:
                 def __init__(self):
                     self._subscribers: list[asyncio.Queue] = []
+                    self._event_log: list[dict] = []
 
                 def subscribe(self) -> asyncio.Queue:
                     q: asyncio.Queue = asyncio.Queue()
@@ -357,8 +392,17 @@ class FastApiBackend:
                     self._subscribers.remove(q)
 
                 async def publish(self, event: dict):
+                    event.setdefault("log_level", "INFO")
+                    event.setdefault("timestamp", datetime.now().isoformat())
+                    self._event_log.append(event)
+                    # Keep only last 1000 events
+                    if len(self._event_log) > 1000:
+                        self._event_log = self._event_log[-1000:]
                     for q in self._subscribers:
                         await q.put(event)
+
+                def get_event_log(self):
+                    return list(self._event_log)
 
             event_bus = EventBus()
         ''')
@@ -459,6 +503,12 @@ class FastApiBackend:
                 current = row["status"]
                 key = (current, target_state)
                 if key not in sm["transitions"]:
+                    terminator.route(TerminError(
+                        source=f"state:{table}",
+                        kind="state",
+                        message=f"Cannot transition from '{current}' to '{target_state}'",
+                        context=f"record_id={record_id}",
+                    ))
                     raise HTTPException(
                         status_code=409,
                         detail=f"Cannot transition from '{current}' to '{target_state}'"
@@ -466,6 +516,12 @@ class FastApiBackend:
 
                 required_scope = sm["transitions"][key]
                 if required_scope not in user["scopes"]:
+                    terminator.route(TerminError(
+                        source=f"state:{table}",
+                        kind="authorization",
+                        message=f"Transition requires scope: {required_scope}",
+                        context=f"record_id={record_id}, user_role={user.get('role', '')}",
+                    ))
                     raise HTTPException(
                         status_code=403,
                         detail=f"Transition requires scope: {required_scope}"
@@ -506,6 +562,7 @@ class FastApiBackend:
             else:
                 self._w(f'    if content_name == "{ev.source_table}" and trigger == "{ev.trigger}":')
 
+            log_level = ev.log_level
             if ev.action and ev.action.column_mapping:
                 target_table = ev.action.target_table
                 target_cols = [pair[0] for pair in ev.action.column_mapping]
@@ -520,10 +577,10 @@ class FastApiBackend:
                 self._w(f'                ({values},)')
                 self._w(f'            )')
                 self._w(f'            await db.commit()')
-                self._w(f'            await event_bus.publish({{"type": "{target_table}_created"}})')
+                self._w(f'            await event_bus.publish({{"type": "{target_table}_created", "log_level": "{log_level}"}})')
             elif ev.action:
                 # Action with no column mapping — emit event only
-                self._w(f'            await event_bus.publish({{"type": "{ev.action.target_table}_created", "data": record}})')
+                self._w(f'            await event_bus.publish({{"type": "{ev.action.target_table}_created", "data": record, "log_level": "{log_level}"}})')
             else:
                 self._w(f'        pass  # No action defined for this event')
 
@@ -617,6 +674,12 @@ class FastApiBackend:
         self._w(f'        try:')
         self._w(f'            cursor = await db.execute(f"INSERT INTO {table} ({{col_str}}) VALUES ({{placeholders}})", values)')
         self._w(f'        except sqlite3.IntegrityError as e:')
+        self._w(f'            terminator.route(TerminError(')
+        self._w(f'                source="content:{table}",')
+        self._w(f'                kind="validation",')
+        self._w(f'                message=str(e),')
+        self._w(f'                context=f"create {{d}}",')
+        self._w(f'            ))')
         self._w(f'            raise HTTPException(status_code=409, detail=str(e))')
         self._w(f'        await db.commit()')
         self._w(f'        record_id = cursor.lastrowid')
@@ -647,6 +710,11 @@ class FastApiBackend:
         self._w(f'    try:')
         self._w(f'        d = data.model_dump(exclude_unset=True)')
         self._w(f'        if not d:')
+        self._w(f'            terminator.route(TerminError(')
+        self._w(f'                source="content:{table}",')
+        self._w(f'                kind="validation",')
+        self._w(f'                message="No fields to update",')
+        self._w(f'            ))')
         self._w(f'            raise HTTPException(status_code=422, detail="No fields to update")')
         self._w(f'        set_clause = ", ".join(f"{{k}} = ?" for k in d.keys())')
         self._w(f'        values = list(d.values()) + [{param_name}]')
@@ -756,7 +824,12 @@ class FastApiBackend:
             self._w(f"    try:")
             self._w(f"        result = expr_eval.evaluate('{expr}', {{'input': body}})")
             self._w(f"        return result")
-            self._w(f"    except Exception:")
+            self._w(f"    except Exception as e:")
+            self._w(f"        terminator.route(TerminError(")
+            self._w(f'            source="compute:{snake}",')
+            self._w(f'            kind="internal",')
+            self._w(f"            message=str(e),")
+            self._w(f"        ))")
             self._w(f"        return body  # Expression evaluation failed, return input")
         else:
             self._w(f"    # Input from: {input_table}")
@@ -897,6 +970,13 @@ class FastApiBackend:
             self._w(f'        await db.commit()')
         self._w(f'        await event_bus.publish({{"type": "webhook_{snake}", "data": body}})')
         self._w(f'        return {{"status": "accepted"}}')
+        self._w(f"    except Exception as e:")
+        self._w(f"        terminator.route(TerminError(")
+        self._w(f'            source="channel:{snake}",')
+        self._w(f'            kind="external",')
+        self._w(f"            message=str(e),")
+        self._w(f"        ))")
+        self._w(f"        raise")
         self._w(f"    finally:")
         self._w(f"        await db.close()")
         self._w()
@@ -973,6 +1053,37 @@ class FastApiBackend:
             raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
         return json.dumps(dc.asdict(self.spec), default=_default)
+
+    # ── SSE Stream ──
+
+    # ── Error Log Endpoint ──
+
+    def _emit_error_log_endpoint(self) -> None:
+        self._w()
+        self._w("# ── Error Log Endpoint ──")
+        self._w()
+        self._w('@app.get("/api/errors")')
+        self._w("async def api_errors():")
+        self._w('    """Return the TerminAtor error log as JSON."""')
+        self._w("    return terminator.get_error_log()")
+        self._w()
+
+    # ── Events Endpoint ──
+
+    def _emit_events_endpoint(self) -> None:
+        self._w()
+        self._w("# ── Events Endpoint ──")
+        self._w()
+        self._w('@app.get("/api/events")')
+        self._w("async def api_events(level: str = Query(default=None)):")
+        self._w('    """Return recent events with optional level filtering."""')
+        self._w("    log = event_bus.get_event_log()")
+        self._w("    if level:")
+        self._w('        level_order = {"TRACE": 0, "DEBUG": 1, "INFO": 2, "WARN": 3, "ERROR": 4}')
+        self._w("        min_level = level_order.get(level.upper(), 0)")
+        self._w('        log = [e for e in log if level_order.get(e.get("log_level", "INFO"), 2) >= min_level]')
+        self._w("    return log")
+        self._w()
 
     # ── SSE Stream ──
 
@@ -1749,6 +1860,78 @@ class FastApiBackend:
 
     def _emit_startup(self) -> None:
         self._emit_chart_data_routes()
+        self._emit_lifespan()
+
+    # ── Lifespan ──
+
+    def _emit_lifespan(self) -> None:
+        self._w()
+        self._w("# ── Runtime Startup Lifecycle ──")
+        self._w()
+        self._w("@asynccontextmanager")
+        self._w("async def lifespan(app):")
+
+        # Phase 0: Bootstrap
+        self._w('    # Phase 0: Bootstrap')
+        self._w('    print("[Termin] Phase 0: Bootstrap")')
+        self._w()
+
+        # Phase 1: Error Infrastructure
+        self._w('    # Phase 1: Error Infrastructure')
+        self._w('    print("[Termin] Phase 1: TerminAtor initialized")')
+        self._w()
+
+        # Phase 2: Expression Evaluator
+        self._w('    # Phase 2: Expression Evaluator')
+        self._w('    print("[Termin] Phase 2: Expression evaluator ready")')
+
+        # Register compute functions
+        for comp in self.spec.computes:
+            snake = comp.name.snake
+            display = comp.name.display
+            self._w(f'    # Registered compute: {display}')
+        self._w()
+
+        # Phase 3: Data Layer
+        self._w('    # Phase 3: Data Layer')
+        self._w('    print("[Termin] Phase 3: Initializing storage")')
+        self._w('    await init_db()')
+        self._w()
+
+        # Phase 4: Primitives
+        self._w('    # Phase 4: Primitives')
+        self._w('    print("[Termin] Phase 4: Registering primitives")')
+
+        # Register state machines
+        for sm in self.spec.state_machines:
+            self._w(f'    # State machine: {sm.machine_name} for {sm.table}')
+
+        # Register channels
+        for ch in self.spec.channels:
+            self._w(f'    # Channel: {ch.name.display}')
+
+        # Register boundaries
+        for bnd in self.spec.boundaries:
+            self._w(f'    # Boundary: {bnd.name.display}')
+
+        # Register events
+        for ev in self.spec.events:
+            self._w(f'    # Event: {ev.source_table} {ev.trigger}')
+        self._w()
+
+        # Phase 5: Serve
+        self._w('    # Phase 5: Serve')
+        self._w('    print("[Termin] Phase 5: Ready to serve")')
+        self._w('    yield')
+        self._w()
+
+        # Shutdown
+        self._w('    # Shutdown')
+        self._w('    print("[Termin] Shutting down...")')
+        self._w()
+
+        self._w("app.router.lifespan_context = lifespan")
+        self._w()
 
     # ── Main ──
 

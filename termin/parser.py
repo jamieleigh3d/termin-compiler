@@ -447,6 +447,13 @@ class Parser:
                     line=at.line,
                 )
 
+        # Parse optional log level
+        if self.check(TokenType.EVENT_LOG_LEVEL):
+            lt = self.advance()
+            # "Log level: WARN"
+            level_text = lt.value.split(":", 1)[1].strip()
+            event.log_level = level_text.upper()
+
         return event
 
     # ── User Stories ──

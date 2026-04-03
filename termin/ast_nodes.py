@@ -116,6 +116,7 @@ class EventRule:
     condition: Optional[EventCondition] = None
     action: Optional[EventAction] = None
     jexl_condition: Optional[str] = None  # v2: When [jexl]:
+    log_level: Optional[str] = None  # v2: Log level: WARN
     line: int = 0
 
 

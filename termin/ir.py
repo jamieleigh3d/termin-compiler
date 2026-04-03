@@ -128,6 +128,7 @@ class EventSpec:
     condition: Optional[EventConditionSpec] = None
     action: Optional[EventActionSpec] = None
     jexl_condition: Optional[str] = None  # v2: JEXL expression for trigger
+    log_level: str = "INFO"               # v2: TRACE, DEBUG, INFO, WARN, ERROR
 
 
 # ── API Routes ──
