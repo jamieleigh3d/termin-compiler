@@ -35,8 +35,11 @@ class TokenType(Enum):
     STATE_TRANSITION = auto() # A X Y can become Z if ...
 
     # Events
-    EVENT_WHEN = auto()       # When a X is Y and Z:
+    EVENT_WHEN = auto()       # When a X is Y and Z: / When [jexl]:
     EVENT_ACTION = auto()     # Create a X with ...
+
+    # JEXL
+    JEXL_BLOCK = auto()       # [expression] standalone line
 
     # User Stories
     STORY_HEADER = auto()     # As a X, I want to Y / As anonymous, I want to Y
@@ -111,7 +114,8 @@ _PATTERNS: list[tuple[re.Pattern, TokenType]] = [
     (re.compile(r'^\s*(?:A|An)\s+\w+\s+starts\s+as\s+"[^"]+"'), TokenType.STATE_STARTS),
     (re.compile(r'^\s*(?:A|An)\s+\w+\s+can\s+also\s+be\s+'), TokenType.STATE_ALSO),
     (re.compile(r'^\s*(?:A|An)\s+.+?\s+can\s+become\s+'), TokenType.STATE_TRANSITION),
-    (re.compile(r'^When\s+(?:a|an)\s+'), TokenType.EVENT_WHEN),
+    (re.compile(r'^When\s+\['), TokenType.EVENT_WHEN),  # v2: When [jexl]:
+    (re.compile(r'^When\s+(?:a|an)\s+'), TokenType.EVENT_WHEN),  # v1: When a X is Y
     (re.compile(r'^\s*Create\s+(?:a|an)\s+'), TokenType.EVENT_ACTION),
     (re.compile(r'^As\s+(?:(?:a|an)\s+)?\w'), TokenType.STORY_HEADER),
     (re.compile(r'^\s*so\s+that\s+'), TokenType.STORY_SO_THAT),
@@ -148,6 +152,8 @@ _PATTERNS: list[tuple[re.Pattern, TokenType]] = [
     (re.compile(r'^Boundary called\s+"[^"]+"'), TokenType.BOUNDARY_DECL),
     (re.compile(r'^\s*Contains\s+'), TokenType.BOUNDARY_CONTAINS),
     (re.compile(r'^\s*Identity\s+(?:inherits|restricts)'), TokenType.BOUNDARY_IDENTITY),
+    # JEXL blocks — standalone [expression] lines (in Compute bodies etc.)
+    (re.compile(r'^\s*\[.+\]\s*$'), TokenType.JEXL_BLOCK),
 ]
 
 

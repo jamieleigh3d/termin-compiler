@@ -105,6 +105,7 @@ class EventRule:
     trigger: str  # "created", "updated", "deleted"
     condition: Optional[EventCondition] = None
     action: Optional[EventAction] = None
+    jexl_condition: Optional[str] = None  # v2: When [jexl]:
     line: int = 0
 
 
@@ -139,6 +140,7 @@ class HighlightRows(Directive):
     field: str = ""
     operator: str = ""
     threshold_field: str = ""
+    jexl_condition: Optional[str] = None  # v2: Highlight rows where [jexl]
 
 
 @dataclass
@@ -164,6 +166,7 @@ class AcceptInput(Directive):
 @dataclass
 class ValidateUnique(Directive):
     field: str = ""
+    jexl_condition: Optional[str] = None  # v2: Validate that [jexl] before saving
 
 
 @dataclass

@@ -1340,14 +1340,15 @@ class FastApiBackend:
 
     def _compile_compute_to_js(self, comp: 'ComputeSpec') -> str:
         """Compile a compute body to a JavaScript function body."""
-        # Simple expression compiler: "greeting = expr" -> "return expr;"
-        # Handles: string concatenation with +, property access with .
+        # Body lines may be raw or bracket-stripped JEXL: "greeting = expr"
         for line in comp.body_lines:
-            m = re.match(r'(\w+)\s*=\s*(.*)', line)
+            # Strip any remaining brackets (belt and suspenders)
+            clean = line.strip()
+            if clean.startswith('[') and clean.endswith(']'):
+                clean = clean[1:-1].strip()
+            m = re.match(r'(\w+)\s*=\s*(.*)', clean)
             if m:
-                var_name = m.group(1)
                 expr = m.group(2).strip()
-                # Convert Python-style string concat to JS (already valid JS)
                 return f'return {expr};'
         return 'return "TODO: implement";'
 

@@ -119,9 +119,10 @@ class EventActionSpec:
 @dataclass(frozen=True)
 class EventSpec:
     source_table: str                     # resolved snake_case
-    trigger: str                          # "created", "updated", "deleted"
+    trigger: str                          # "created", "updated", "deleted", "jexl"
     condition: Optional[EventConditionSpec] = None
     action: Optional[EventActionSpec] = None
+    jexl_condition: Optional[str] = None  # v2: JEXL expression for trigger
 
 
 # ── API Routes ──

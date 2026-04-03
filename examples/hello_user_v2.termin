@@ -1,0 +1,20 @@
+Application: Hello User
+  Description: A slightly personalized Hello World.
+
+(This is a comment.)
+
+Users authenticate with stub (Defines CurrentUser. Anonymous is built-in.)
+Scopes are "view app"
+Anonymous has "view app"
+A "LoggedInUser" has "view app"
+
+As Anonymous, I want to see a page "Hello" so that I can be greeted:
+  Display text "Anon, Hello!"
+
+As LoggedInUser, I want to see a page "Hello" so that I can be greeted:
+  Display text [SayHelloTo(LoggedInUser.CurrentUser)]
+
+Compute called "SayHelloTo":
+  Transform: takes u : UserProfile, produces "greeting" : Text
+  [greeting = "Hello, " + u.FirstName + "!"]
+  "LoggedInUser" can execute this

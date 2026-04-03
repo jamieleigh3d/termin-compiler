@@ -371,6 +371,56 @@ def test_parse_compute_typed_params():
     assert 'msg = "Hello " + u.Name' in c.body_lines
 
 
+# ── JEXL bracket syntax (v2) ──
+
+def test_parse_display_text_jexl_brackets():
+    program, errors = parse('''As anonymous, I want to see a page "Hello" so that I can test:
+  Display text [SayHello(user.name)]''')
+    assert errors.ok, errors.format()
+    dt = [d for d in program.stories[0].directives if isinstance(d, DisplayText)]
+    assert dt[0].is_expression is True
+    assert dt[0].text == "SayHello(user.name)"
+
+
+def test_parse_event_jexl():
+    program, errors = parse('''When [stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold]:
+  Create a reorder alert with the product, warehouse''')
+    assert errors.ok, errors.format()
+    ev = program.events[0]
+    assert ev.trigger == "jexl"
+    assert ev.jexl_condition == "stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold"
+
+
+def test_parse_compute_jexl_body():
+    program, errors = parse('''Compute called "greet":
+  Transform: takes u : UserProfile, produces greeting : Text
+  [greeting = "Hello, " + u.FirstName + "!"]
+  "Admin" can execute this''')
+    assert errors.ok, errors.format()
+    c = program.computes[0]
+    assert 'greeting = "Hello, " + u.FirstName + "!"' in c.body_lines
+    assert c.access_role == "Admin"
+
+
+def test_parse_highlight_jexl():
+    program, errors = parse('''As a user, I want to see items
+  so that I can browse:
+    Show a page called "Items"
+    Display a table of items with columns: name, quantity
+    Highlight rows where [quantity <= threshold]''')
+    assert errors.ok, errors.format()
+    hl = [d for d in program.stories[0].directives if isinstance(d, HighlightRows)]
+    assert hl[0].jexl_condition == "quantity <= threshold"
+
+
+def test_parse_all_v2_examples():
+    from pathlib import Path
+    for name in ["hello_v2", "hello_user_v2", "warehouse_v2", "helpdesk_v2", "projectboard_v2", "compute_demo_v2"]:
+        source = Path(f"examples/{name}.termin").read_text()
+        program, errors = parse(source)
+        assert errors.ok, f"{name}: {errors.format()}"
+
+
 def test_parse_hello_user_example():
     from pathlib import Path
     source = Path("examples/hello_user.termin").read_text()

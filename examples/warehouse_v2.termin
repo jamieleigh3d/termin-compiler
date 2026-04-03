@@ -1,0 +1,125 @@
+Application: Warehouse Inventory Manager
+  Description: Track products and stock levels across warehouses
+
+--- Identity ---
+
+Users authenticate with stub
+Scopes are "read inventory", "write inventory", and "admin inventory"
+
+--- Roles ---
+
+A "warehouse clerk" has "read inventory" and "write inventory"
+A "warehouse manager" has "read inventory", "write inventory", and "admin inventory"
+An "executive" has "read inventory"
+
+--- Content ---
+
+Content called "products":
+  Each product has a SKU which is unique text, required
+  Each product has a name which is text, required
+  Each product has a description which is text
+  Each product has a unit cost which is currency
+  Each product has a category which is one of: "raw material", "finished good", "packaging"
+  Anyone with "read inventory" can view products
+  Anyone with "write inventory" can create or update products
+  Anyone with "admin inventory" can delete products
+
+Content called "stock levels":
+  Each stock level has a product which references products, required
+  Each stock level has a warehouse which is text, required
+  Each stock level has a quantity which is a whole number, minimum 0
+  Each stock level has a reorder threshold which is a whole number, minimum 0
+  Anyone with "read inventory" can view stock levels
+  Anyone with "write inventory" can create or update stock levels
+
+Content called "reorder alerts":
+  Each reorder alert has a product which references products, required
+  Each reorder alert has a warehouse which is text, required
+  Each reorder alert has a current quantity which is a whole number
+  Each reorder alert has a threshold which is a whole number
+  Each reorder alert has a created at which is automatic
+  Anyone with "read inventory" can view reorder alerts
+  Anyone with "write inventory" can create reorder alerts
+  Anyone with "admin inventory" can update reorder alerts
+
+--- State ---
+
+State for products called "product lifecycle":
+  A product starts as "draft"
+  A product can also be "active" or "discontinued"
+  A draft product can become active if the user has "write inventory"
+  An active product can become discontinued if the user has "admin inventory"
+  A discontinued product can become active again if the user has "admin inventory"
+
+--- Events ---
+
+When [stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold]:
+  Create a "reorder alert" with the product, warehouse, current quantity, and threshold
+
+--- User Stories ---
+
+As a warehouse clerk, I want to see all products and their current stock levels
+  so that I know what we have on hand:
+    Show a page called "Inventory Dashboard"
+    Display a table of products with columns: SKU, name, category, status
+    For each product, show stock levels grouped by warehouse
+    Highlight rows where [quantity <= reorder_threshold]
+    Allow filtering by category, warehouse, and status
+    Allow searching by SKU or name
+    This table subscribes to stock level changes
+
+As a warehouse clerk, I want to receive stock into the warehouse
+  so that inventory levels stay accurate:
+    Show a page called "Receive Stock"
+    Accept input for product, warehouse, quantity, and reorder threshold
+    Create the stock level as a new record
+    After saving, return to the Inventory Dashboard
+
+As a warehouse clerk, I want to see all reorder alerts
+  so that I can act on low-stock items:
+    Show a page called "Reorder Alerts"
+    Display a table of reorder alerts with columns: product, warehouse, current quantity, threshold, created at
+    Allow filtering by warehouse
+    This table subscribes to reorder alerts changes
+
+As a warehouse manager, I want to add new products to the catalog
+  so that we can track their inventory:
+    Show a page called "Add Product"
+    Accept input for SKU, name, description, unit cost, and category
+    Validate that [SKU != ""] before saving
+    Create the product as draft
+    After saving, offer to set initial stock levels per warehouse
+
+As an executive, I want to see an overview of inventory health
+  so that I can make purchasing decisions:
+    Show a page called "Inventory Overview"
+    Display total product count with active vs discontinued breakdown
+    Display total stock value [sum(quantity * unit_cost)]
+    Show a chart of reorder alerts over the past 30 days
+
+--- Navigation ---
+
+Navigation bar:
+  "Dashboard" links to "Inventory Dashboard" visible to all
+  "Receive Stock" links to "Receive Stock" visible to clerk, manager
+  "Alerts" links to "Reorder Alerts" visible to all, badge: open alert count
+  "Add Product" links to "Add Product" visible to manager
+  "Overview" links to "Inventory Overview" visible to executive
+
+--- API ---
+
+Expose a REST API at /api/v1:
+  GET    /products                lists products
+  POST   /products                creates a product
+  GET    /products/{sku}          gets a product by SKU
+  PUT    /products/{sku}          updates a product by SKU
+  DELETE /products/{sku}          deletes a product by SKU
+  POST   /products/{sku}/activate       transitions to active
+  POST   /products/{sku}/discontinue    transitions to discontinued
+  GET    /stock-levels            lists stock levels
+  POST   /stock-levels            creates a stock level
+  PUT    /stock-levels/{id}       updates a stock level
+  GET    /alerts                  lists reorder alerts
+  POST   /alerts/{id}/acknowledge acknowledges an alert
+
+Stream stock updates and alerts at /api/v1/stream

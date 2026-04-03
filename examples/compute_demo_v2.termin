@@ -1,0 +1,131 @@
+Application: Order Processing Demo
+  Description: Demonstrates Compute, Channel, and Boundary primitives
+
+--- Identity ---
+
+Users authenticate with stub
+Scopes are "read orders", "write orders", and "admin orders"
+
+--- Roles ---
+
+An "order clerk" has "read orders" and "write orders"
+An "order manager" has "read orders", "write orders", and "admin orders"
+
+--- Content ---
+
+Content called "orders":
+  Each order has a customer which is text, required
+  Each order has a total which is currency
+  Each order has a priority which is one of: "low", "medium", "high"
+  Anyone with "read orders" can view orders
+  Anyone with "write orders" can create or update orders
+  Anyone with "admin orders" can delete orders
+
+Content called "order lines":
+  Each order line has a parent order which references orders, required
+  Each order line has a product name which is text, required
+  Each order line has a quantity which is a whole number, minimum 1
+  Each order line has a unit price which is currency
+  Anyone with "read orders" can view order lines
+  Anyone with "write orders" can create or update order lines
+
+Content called "reports":
+  Each report has a total count which is a whole number
+  Each report has a total revenue which is currency
+  Anyone with "read orders" can view reports
+
+--- State ---
+
+State for orders called "order lifecycle":
+  An order starts as "pending"
+  An order can also be "confirmed" or "shipped" or "cancelled"
+  A pending order can become confirmed if the user has "write orders"
+  A confirmed order can become shipped if the user has "write orders"
+  A pending order can become cancelled if the user has "admin orders"
+
+--- Compute ---
+
+Compute called "calculate order total":
+  Transform: takes an order, produces an order
+  [order.total = order.lines.reduce((acc, line) => acc + line.quantity * line.unit_price, 0)]
+  Anyone with "write orders" can execute this
+
+Compute called "revenue report":
+  Reduce: takes orders, produces a report
+  [report.total_count = orders.length; report.total_revenue = orders.reduce((acc, o) => acc + o.total, 0)]
+  Anyone with "read orders" can execute this
+
+Compute called "split order into lines":
+  Expand: takes an order, produces order lines
+  [order.lines.map(line => ({ parent_order: order.id, product_name: line.product_name, quantity: line.quantity, unit_price: line.unit_price }))]
+  Anyone with "write orders" can execute this
+
+Compute called "match orders to lines":
+  Correlate: takes orders and order lines, produces reports
+  [orders.join(order_lines, (o, l) => o.id == l.parent_order)]
+  Anyone with "read orders" can execute this
+
+Compute called "triage order":
+  Route: takes an order, produces one of orders or reports
+  [order.priority == "high" ? "orders" : "reports"]
+  Anyone with "write orders" can execute this
+
+Compute called "process order":
+  Chain: calculate order total then revenue report
+  Anyone with "write orders" can execute this
+
+--- Channels ---
+
+Channel called "order webhook":
+  Carries orders
+  Protocol: webhook
+  From external to application
+  Endpoint: /webhooks/orders
+  Requires "write orders" to send
+
+Channel called "order updates stream":
+  Carries orders
+  Protocol: SSE
+  From application to external
+  Requires "read orders" to receive
+
+Channel called "order notifications":
+  Carries orders
+  Protocol: websocket
+  From application to external
+  Endpoint: /ws/orders
+  Requires "read orders" to receive
+
+Channel called "internal order bus":
+  Carries orders
+  Protocol: internal
+
+--- Boundaries ---
+
+Boundary called "order processing":
+  Contains orders, order lines, and reports
+  Identity inherits from application
+
+Boundary called "order reporting":
+  Contains reports
+  Identity restricts to "read orders"
+
+--- User Stories ---
+
+As an order clerk, I want to see and create orders
+  so that I can process incoming requests:
+    Show a page called "Order Dashboard"
+    Display a table of orders with columns: customer, total, priority, status
+    Accept input for customer, priority
+    Allow filtering by priority, status
+
+As an order manager, I want to see order analytics
+  so that I can track business performance:
+    Show a page called "Order Analytics"
+    Display a table of orders with columns: customer, total, priority, status
+
+--- Navigation ---
+
+Navigation bar:
+  "Orders" links to "Order Dashboard" visible to all
+  "Analytics" links to "Order Analytics" visible to manager

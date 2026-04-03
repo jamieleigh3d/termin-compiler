@@ -350,6 +350,16 @@ def test_hello_user_example_passes():
     assert result.ok, result.format()
 
 
+def test_all_v2_examples_pass():
+    from pathlib import Path
+    for name in ["hello_v2", "hello_user_v2", "warehouse_v2", "helpdesk_v2", "projectboard_v2", "compute_demo_v2"]:
+        source = Path(f"examples/{name}.termin").read_text()
+        program, parse_errors = parse(source)
+        assert parse_errors.ok, f"{name} parse: {parse_errors.format()}"
+        result = analyze(program)
+        assert result.ok, f"{name} analyze: {result.format()}"
+
+
 def test_compute_demo_passes():
     from pathlib import Path
     source = Path("examples/compute_demo.termin").read_text()

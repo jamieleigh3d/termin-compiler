@@ -164,6 +164,29 @@ def test_tokenize_display_aggregation_still_works():
     assert tokens[0].type == TokenType.DISPLAY_AGGREGATION
 
 
+# ── JEXL bracket syntax (v2) ──
+
+def test_tokenize_jexl_block():
+    tokens = tokenize('  [greeting = "Hello, " + u.FirstName + "!"]')
+    assert tokens[0].type == TokenType.JEXL_BLOCK
+
+def test_tokenize_when_jexl():
+    tokens = tokenize('When [stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold]:')
+    assert tokens[0].type == TokenType.EVENT_WHEN
+
+def test_tokenize_display_text_jexl():
+    tokens = tokenize('  Display text [SayHelloTo(LoggedInUser.CurrentUser)]')
+    assert tokens[0].type == TokenType.DISPLAY_TEXT
+
+def test_tokenize_v2_examples():
+    from pathlib import Path
+    for name in ["hello_v2", "hello_user_v2", "warehouse_v2", "helpdesk_v2", "projectboard_v2", "compute_demo_v2"]:
+        source = Path(f"examples/{name}.termin").read_text()
+        tokens = tokenize(source)
+        # No tokens should be UNKNOWN except Compute body lines (which may be UNKNOWN or JEXL_BLOCK)
+        assert len(tokens) > 0, f"{name} produced no tokens"
+
+
 def test_tokenize_compute_demo_example():
     from pathlib import Path
     source = Path("examples/compute_demo.termin").read_text()

@@ -297,6 +297,7 @@ def lower(program: Program) -> AppSpec:
             trigger=ev.trigger,
             condition=cond,
             action=action,
+            jexl_condition=ev.jexl_condition,
         ))
 
     # ── Lower API routes ──

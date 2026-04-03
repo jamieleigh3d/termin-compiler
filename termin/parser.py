@@ -25,6 +25,12 @@ def _extract_quoted(text: str) -> list[str]:
     return re.findall(r'"([^"]*)"', text)
 
 
+def _extract_jexl(text: str) -> Optional[str]:
+    """Extract JEXL expression from [expr] brackets. Returns None if no brackets."""
+    m = re.search(r'\[([^\]]+)\]', text)
+    return m.group(1).strip() if m else None
+
+
 def _parse_comma_list(text: str) -> list[str]:
     """Parse a comma-and-'and'-separated list of words/phrases.
 
@@ -339,29 +345,40 @@ class Parser:
 
     def parse_event(self) -> EventRule:
         t = self.expect(TokenType.EVENT_WHEN)
-        # "When a stock level is updated and its quantity is at or below its reorder threshold:"
-        m = re.match(
-            r'When\s+(?:a|an)\s+(.+?)\s+is\s+(created|updated|deleted)'
-            r'(?:\s+and\s+its\s+(\w[\w\s]*?)\s+is\s+(at or below)\s+its\s+(\w[\w\s]*?))?:?$',
-            t.value
-        )
-        if not m:
-            raise ParseError(message="Cannot parse event rule", line=t.line,
-                             source_line=self._source_line(t.line))
 
-        event = EventRule(
-            content_name=m.group(1),
-            trigger=m.group(2),
-            line=t.line,
-        )
-
-        if m.group(3):
-            event.condition = EventCondition(
-                field1=m.group(3).strip(),
-                operator=m.group(4),
-                field2=m.group(5).strip(),
+        # v2: "When [jexl-condition]:"
+        jexl = _extract_jexl(t.value)
+        if jexl:
+            event = EventRule(
+                content_name="",
+                trigger="jexl",
+                jexl_condition=jexl,
                 line=t.line,
             )
+        else:
+            # v1: "When a stock level is updated and its quantity is at or below its reorder threshold:"
+            m = re.match(
+                r'When\s+(?:a|an)\s+(.+?)\s+is\s+(created|updated|deleted)'
+                r'(?:\s+and\s+its\s+(\w[\w\s]*?)\s+is\s+(at or below)\s+its\s+(\w[\w\s]*?))?:?$',
+                t.value
+            )
+            if not m:
+                raise ParseError(message="Cannot parse event rule", line=t.line,
+                                 source_line=self._source_line(t.line))
+
+            event = EventRule(
+                content_name=m.group(1),
+                trigger=m.group(2),
+                line=t.line,
+            )
+
+            if m.group(3):
+                event.condition = EventCondition(
+                    field1=m.group(3).strip(),
+                    operator=m.group(4),
+                    field2=m.group(5).strip(),
+                    line=t.line,
+                )
 
         # Parse action
         if self.check(TokenType.EVENT_ACTION):
@@ -369,7 +386,7 @@ class Parser:
             # "Create a reorder alert with the product, warehouse, current quantity, and threshold"
             m2 = re.match(r'Create\s+(?:a|an)\s+(.+?)\s+with\s+(?:the\s+)?(.+)', at.value)
             if m2:
-                create_content = m2.group(1)
+                create_content = m2.group(1).strip('"')  # Strip v2 quotes
                 fields_text = m2.group(2)
                 fields = _parse_comma_list(fields_text)
                 event.action = EventAction(
@@ -457,7 +474,11 @@ class Parser:
 
         elif t.type == TokenType.HIGHLIGHT_ROWS:
             self.advance()
-            # "Highlight rows where quantity is at or below reorder threshold"
+            # v2: "Highlight rows where [quantity <= reorderThreshold]"
+            jexl = _extract_jexl(t.value)
+            if jexl:
+                return HighlightRows(jexl_condition=jexl, line=t.line)
+            # v1: "Highlight rows where quantity is at or below reorder threshold"
             m = re.match(r'Highlight rows where\s+(\w[\w\s]*?)\s+is\s+(at or below|above|below|equal to)\s+(\w[\w\s]*?)$', t.value.strip())
             if m:
                 return HighlightRows(
@@ -496,7 +517,11 @@ class Parser:
 
         elif t.type == TokenType.VALIDATE_UNIQUE:
             self.advance()
-            # "Validate that SKU is unique before saving"
+            # v2: "Validate that [SKU != ""] before saving"
+            jexl = _extract_jexl(t.value)
+            if jexl:
+                return ValidateUnique(jexl_condition=jexl, line=t.line)
+            # v1: "Validate that SKU is unique before saving"
             m = re.match(r'Validate that\s+(\w[\w\s]*?)\s+is\s+unique', t.value.strip())
             field_name = m.group(1).strip() if m else ""
             return ValidateUnique(field=field_name, line=t.line)
@@ -525,14 +550,17 @@ class Parser:
 
         elif t.type == TokenType.DISPLAY_TEXT:
             self.advance()
-            # 'Display text "Hello, World"' or 'Display text SayHelloTo(...)'
+            # v2: 'Display text [SayHelloTo(user)]' (JEXL in brackets)
+            jexl = _extract_jexl(t.value)
+            if jexl:
+                return DisplayText(text=jexl, is_expression=True, line=t.line)
+            # v1: 'Display text "Hello, World"' (quoted literal)
             quoted = _extract_quoted(t.value)
             if quoted:
                 return DisplayText(text=quoted[0], line=t.line)
-            else:
-                # Unquoted expression
-                expr = re.sub(r'^\s*Display\s+text\s+', '', t.value).strip()
-                return DisplayText(text=expr, is_expression=True, line=t.line)
+            # v1 fallback: unquoted expression (backward compat)
+            expr = re.sub(r'^\s*Display\s+text\s+', '', t.value).strip()
+            return DisplayText(text=expr, is_expression=True, line=t.line)
 
         elif t.type == TokenType.DISPLAY_AGGREGATION:
             self.advance()
@@ -661,22 +689,31 @@ class Parser:
                         else:
                             node.outputs = [o.strip() for o in re.split(r'\s+and\s+', outputs_text)]
 
-        # Consume body lines (UNKNOWN tokens) and access rules
-        while self.check(TokenType.UNKNOWN, TokenType.ACCESS_RULE):
+        # Consume body lines (UNKNOWN/JEXL_BLOCK tokens) and access rules
+        while self.check(TokenType.UNKNOWN, TokenType.ACCESS_RULE, TokenType.JEXL_BLOCK):
             if self.check(TokenType.ACCESS_RULE):
                 at = self.advance()
                 scope = _extract_quoted(at.value)[0]
                 node.access_scope = scope
+            elif self.check(TokenType.JEXL_BLOCK):
+                bt = self.advance()
+                # Strip brackets: "[expr]" -> "expr"
+                jexl = _extract_jexl(bt.value)
+                if jexl:
+                    node.body_lines.append(jexl)
+                else:
+                    node.body_lines.append(bt.value)
             else:
                 bt = self.advance()
                 node.body_lines.append(bt.value)
 
         # Check body lines for role-as-subject access: "RoleName can execute this"
+        # or v2 quoted form: '"RoleName" can execute this'
         remaining = []
         for line in node.body_lines:
-            m = re.match(r'(\w+)\s+can\s+execute\s+this', line)
+            m = re.match(r'(?:"([^"]+)"|(\w+))\s+can\s+execute\s+this', line)
             if m and not node.access_scope:
-                node.access_role = m.group(1)
+                node.access_role = m.group(1) or m.group(2)
             else:
                 remaining.append(line)
         node.body_lines = remaining
