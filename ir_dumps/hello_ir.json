@@ -1,4 +1,6 @@
 {
+  "ir_version": "0.2.0",
+  "reflection_enabled": true,
   "name": "Hello World",
   "description": "The simplest possible Termin application",
   "auth": {
@@ -6,7 +8,7 @@
     "scopes": [],
     "roles": []
   },
-  "tables": [],
+  "content": [],
   "access_grants": [],
   "state_machines": [],
   "events": [],
@@ -16,7 +18,7 @@
       "name": "Hello",
       "slug": "hello",
       "role": "anonymous",
-      "display_table": null,
+      "display_content": null,
       "table_columns": [],
       "filters": [],
       "search_fields": [],
@@ -24,7 +26,7 @@
       "subscribe_stream": null,
       "related": null,
       "form_fields": [],
-      "form_target_table": null,
+      "form_target_content": null,
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": null,

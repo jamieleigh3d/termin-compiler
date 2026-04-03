@@ -58,6 +58,13 @@ class TestWarehouseIR:
         assert cols["unit_cost"].column_type == FieldType.REAL
         assert cols["category"].enum_values == ("raw material", "finished good", "packaging")
 
+    def test_products_business_types(self):
+        products = next(t for t in self.spec.content if t.name.snake == "products")
+        cols = {c.name: c for c in products.fields}
+        assert cols["sku"].business_type == "text"
+        assert cols["unit_cost"].business_type == "currency"
+        assert cols["category"].business_type == "enum"
+
     def test_products_state_machine(self):
         products = next(t for t in self.spec.content if t.name.snake == "products")
         assert products.has_state_machine is True
@@ -89,6 +96,13 @@ class TestWarehouseIR:
         trans = {(t.from_state, t.to_state): t.required_scope for t in sm.transitions}
         assert trans[("draft", "active")] == "write inventory"
         assert trans[("active", "discontinued")] == "admin inventory"
+
+    def test_state_machine_primitive_type(self):
+        sm = next(s for s in self.spec.state_machines if s.content_ref == "products")
+        assert sm.primitive_type == "content"
+
+    def test_reflection_enabled(self):
+        assert self.spec.reflection_enabled is True
 
     def test_events(self):
         assert len(self.spec.events) == 1
@@ -192,6 +206,19 @@ class TestHelpdeskIR:
         comments = next(t for t in self.spec.content if t.name.snake == "comments")
         ticket_col = next(c for c in comments.fields if c.name == "ticket")
         assert ticket_col.foreign_key == "tickets"
+
+    def test_business_types(self):
+        tickets = next(t for t in self.spec.content if t.name.snake == "tickets")
+        cols = {c.name: c for c in tickets.fields}
+        assert cols["priority"].business_type == "enum"
+        assert cols["title"].business_type == "text"
+
+    def test_state_machine_primitive_type(self):
+        sm = next(s for s in self.spec.state_machines if s.content_ref == "tickets")
+        assert sm.primitive_type == "content"
+
+    def test_reflection_enabled(self):
+        assert self.spec.reflection_enabled is True
 
 
 # ============================================================
@@ -402,3 +429,17 @@ class TestComputeDemoIR:
         assert "reports" in b.contains_content
         assert b.identity_mode == "restrict"
         assert "read orders" in b.identity_scopes
+
+    def test_business_types(self):
+        orders = next(t for t in self.spec.content if t.name.snake == "orders")
+        cols = {c.name: c for c in orders.fields}
+        assert cols["total"].business_type == "currency"
+
+    def test_reflection_enabled(self):
+        assert self.spec.reflection_enabled is True
+
+    def test_error_handler_source_type(self):
+        if self.spec.error_handlers:
+            for eh in self.spec.error_handlers:
+                if eh.source:
+                    assert eh.source_type in ("content", "channel", "compute", "boundary")

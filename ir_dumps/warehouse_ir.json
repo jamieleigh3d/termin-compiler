@@ -1,4 +1,6 @@
 {
+  "ir_version": "0.2.0",
+  "reflection_enabled": true,
   "name": "Warehouse Inventory Manager",
   "description": "Track products and stock levels across warehouses",
   "auth": {
@@ -32,17 +34,18 @@
       }
     ]
   },
-  "tables": [
+  "content": [
     {
       "name": {
         "display": "products",
         "snake": "products",
         "pascal": "Products"
       },
-      "columns": [
+      "fields": [
         {
           "name": "sku",
           "display_name": "SKU",
+          "business_type": "text",
           "column_type": "TEXT",
           "required": true,
           "unique": true,
@@ -56,6 +59,7 @@
         {
           "name": "name",
           "display_name": "name",
+          "business_type": "text",
           "column_type": "TEXT",
           "required": true,
           "unique": false,
@@ -69,6 +73,7 @@
         {
           "name": "description",
           "display_name": "description",
+          "business_type": "text",
           "column_type": "TEXT",
           "required": false,
           "unique": false,
@@ -82,6 +87,7 @@
         {
           "name": "unit_cost",
           "display_name": "unit cost",
+          "business_type": "currency",
           "column_type": "REAL",
           "required": false,
           "unique": false,
@@ -95,6 +101,7 @@
         {
           "name": "category",
           "display_name": "category",
+          "business_type": "enum",
           "column_type": "TEXT",
           "required": false,
           "unique": false,
@@ -110,8 +117,9 @@
           "list_type": null
         }
       ],
-      "has_status_column": true,
-      "initial_status": "draft"
+      "storage_intent": "auto",
+      "has_state_machine": true,
+      "initial_state": "draft"
     },
     {
       "name": {
@@ -119,10 +127,11 @@
         "snake": "stock_levels",
         "pascal": "StockLevels"
       },
-      "columns": [
+      "fields": [
         {
           "name": "product",
           "display_name": "product",
+          "business_type": "reference",
           "column_type": "INTEGER",
           "required": true,
           "unique": false,
@@ -136,6 +145,7 @@
         {
           "name": "warehouse",
           "display_name": "warehouse",
+          "business_type": "text",
           "column_type": "TEXT",
           "required": true,
           "unique": false,
@@ -149,6 +159,7 @@
         {
           "name": "quantity",
           "display_name": "quantity",
+          "business_type": "whole_number",
           "column_type": "INTEGER",
           "required": false,
           "unique": false,
@@ -162,6 +173,7 @@
         {
           "name": "reorder_threshold",
           "display_name": "reorder threshold",
+          "business_type": "whole_number",
           "column_type": "INTEGER",
           "required": false,
           "unique": false,
@@ -173,8 +185,9 @@
           "list_type": null
         }
       ],
-      "has_status_column": false,
-      "initial_status": null
+      "storage_intent": "auto",
+      "has_state_machine": false,
+      "initial_state": null
     },
     {
       "name": {
@@ -182,10 +195,11 @@
         "snake": "reorder_alerts",
         "pascal": "ReorderAlerts"
       },
-      "columns": [
+      "fields": [
         {
           "name": "product",
           "display_name": "product",
+          "business_type": "reference",
           "column_type": "INTEGER",
           "required": true,
           "unique": false,
@@ -199,6 +213,7 @@
         {
           "name": "warehouse",
           "display_name": "warehouse",
+          "business_type": "text",
           "column_type": "TEXT",
           "required": true,
           "unique": false,
@@ -212,6 +227,7 @@
         {
           "name": "current_quantity",
           "display_name": "current quantity",
+          "business_type": "whole_number",
           "column_type": "INTEGER",
           "required": false,
           "unique": false,
@@ -225,6 +241,7 @@
         {
           "name": "threshold",
           "display_name": "threshold",
+          "business_type": "whole_number",
           "column_type": "INTEGER",
           "required": false,
           "unique": false,
@@ -238,6 +255,7 @@
         {
           "name": "created_at",
           "display_name": "created at",
+          "business_type": "automatic",
           "column_type": "TIMESTAMP",
           "required": false,
           "unique": false,
@@ -249,73 +267,63 @@
           "list_type": null
         }
       ],
-      "has_status_column": false,
-      "initial_status": null
+      "storage_intent": "auto",
+      "has_state_machine": false,
+      "initial_state": null
     }
   ],
   "access_grants": [
     {
-      "table": "products",
+      "content": "products",
       "scope": "read inventory",
       "verbs": [
-        "VIEW"
+        "view"
       ]
     },
     {
-      "table": "products",
+      "content": "products",
       "scope": "write inventory",
       "verbs": [
-        "CREATE",
-        "UPDATE"
+        "create",
+        "update"
       ]
     },
     {
-      "table": "products",
+      "content": "products",
       "scope": "admin inventory",
       "verbs": [
-        "DELETE"
+        "delete"
       ]
     },
     {
-      "table": "stock_levels",
+      "content": "stock_levels",
       "scope": "read inventory",
-      "verbs": [
-        "VIEW"
-      ]
+      "verbs": []
     },
     {
-      "table": "stock_levels",
+      "content": "stock_levels",
       "scope": "write inventory",
-      "verbs": [
-        "CREATE",
-        "UPDATE"
-      ]
+      "verbs": []
     },
     {
-      "table": "reorder_alerts",
+      "content": "reorder_alerts",
       "scope": "read inventory",
-      "verbs": [
-        "VIEW"
-      ]
+      "verbs": []
     },
     {
-      "table": "reorder_alerts",
+      "content": "reorder_alerts",
       "scope": "write inventory",
-      "verbs": [
-        "CREATE"
-      ]
+      "verbs": []
     },
     {
-      "table": "reorder_alerts",
+      "content": "reorder_alerts",
       "scope": "admin inventory",
-      "verbs": [
-        "UPDATE"
-      ]
+      "verbs": []
     }
   ],
   "state_machines": [
     {
-      "table": "products",
+      "content_ref": "products",
       "machine_name": "product lifecycle",
       "initial_state": "draft",
       "states": [
@@ -339,16 +347,17 @@
           "to_state": "active",
           "required_scope": "admin inventory"
         }
-      ]
+      ],
+      "primitive_type": "content"
     }
   ],
   "events": [
     {
-      "source_table": "stock_levels",
+      "source_content": "stock_levels",
       "trigger": "jexl",
       "condition": null,
       "action": {
-        "target_table": "reorder_alerts",
+        "target_content": "reorder_alerts",
         "column_mapping": [
           [
             "product",
@@ -377,7 +386,7 @@
       "method": "GET",
       "path": "/api/v1/products",
       "kind": "LIST",
-      "table": "products",
+      "content_ref": "products",
       "required_scope": "read inventory",
       "lookup_column": "id",
       "target_state": null
@@ -386,7 +395,7 @@
       "method": "POST",
       "path": "/api/v1/products",
       "kind": "CREATE",
-      "table": "products",
+      "content_ref": "products",
       "required_scope": "write inventory",
       "lookup_column": "id",
       "target_state": null
@@ -395,7 +404,7 @@
       "method": "GET",
       "path": "/api/v1/products/{sku}",
       "kind": "GET_ONE",
-      "table": "products",
+      "content_ref": "products",
       "required_scope": "read inventory",
       "lookup_column": "sku",
       "target_state": null
@@ -404,7 +413,7 @@
       "method": "PUT",
       "path": "/api/v1/products/{sku}",
       "kind": "UPDATE",
-      "table": "products",
+      "content_ref": "products",
       "required_scope": "write inventory",
       "lookup_column": "sku",
       "target_state": null
@@ -413,7 +422,7 @@
       "method": "DELETE",
       "path": "/api/v1/products/{sku}",
       "kind": "DELETE",
-      "table": "products",
+      "content_ref": "products",
       "required_scope": "admin inventory",
       "lookup_column": "sku",
       "target_state": null
@@ -422,7 +431,7 @@
       "method": "POST",
       "path": "/api/v1/products/{sku}/activate",
       "kind": "TRANSITION",
-      "table": "products",
+      "content_ref": "products",
       "required_scope": null,
       "lookup_column": "sku",
       "target_state": "active"
@@ -431,7 +440,7 @@
       "method": "POST",
       "path": "/api/v1/products/{sku}/discontinue",
       "kind": "TRANSITION",
-      "table": "products",
+      "content_ref": "products",
       "required_scope": null,
       "lookup_column": "sku",
       "target_state": "discontinued"
@@ -440,8 +449,8 @@
       "method": "GET",
       "path": "/api/v1/stock-levels",
       "kind": "LIST",
-      "table": "stock_levels",
-      "required_scope": "read inventory",
+      "content_ref": "stock_levels",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     },
@@ -449,8 +458,8 @@
       "method": "POST",
       "path": "/api/v1/stock-levels",
       "kind": "CREATE",
-      "table": "stock_levels",
-      "required_scope": "write inventory",
+      "content_ref": "stock_levels",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     },
@@ -458,8 +467,8 @@
       "method": "PUT",
       "path": "/api/v1/stock-levels/{id}",
       "kind": "UPDATE",
-      "table": "stock_levels",
-      "required_scope": "write inventory",
+      "content_ref": "stock_levels",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     },
@@ -467,8 +476,8 @@
       "method": "GET",
       "path": "/api/v1/alerts",
       "kind": "LIST",
-      "table": "reorder_alerts",
-      "required_scope": "read inventory",
+      "content_ref": "reorder_alerts",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     },
@@ -476,8 +485,8 @@
       "method": "POST",
       "path": "/api/v1/alerts/{id}/acknowledge",
       "kind": "LIST",
-      "table": "reorder_alerts",
-      "required_scope": "read inventory",
+      "content_ref": "reorder_alerts",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     }
@@ -487,7 +496,7 @@
       "name": "Inventory Dashboard",
       "slug": "inventory_dashboard",
       "role": "warehouse clerk",
-      "display_table": "products",
+      "display_content": "products",
       "table_columns": [
         {
           "display": "SKU",
@@ -535,7 +544,8 @@
         }
       ],
       "search_fields": [
-        "sku_or_name"
+        "sku",
+        "name"
       ],
       "highlight": {
         "field": "",
@@ -544,14 +554,14 @@
       },
       "subscribe_stream": "stock level",
       "related": {
-        "related_table": "stock_levels",
+        "related_content": "stock_levels",
         "join_column": "product",
         "display_columns": [
           "warehouse"
         ]
       },
       "form_fields": [],
-      "form_target_table": null,
+      "form_target_content": null,
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": null,
@@ -565,7 +575,7 @@
       "name": "Receive Stock",
       "slug": "receive_stock",
       "role": "warehouse clerk",
-      "display_table": null,
+      "display_content": null,
       "table_columns": [],
       "filters": [],
       "search_fields": [],
@@ -581,7 +591,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": "products",
+          "reference_content": "products",
           "reference_display_col": "name",
           "reference_unique_col": "sku"
         },
@@ -593,7 +603,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -605,7 +615,7 @@
           "minimum": 0,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -617,18 +627,18 @@
           "minimum": 0,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         }
       ],
-      "form_target_table": "stock_levels",
+      "form_target_content": "stock_levels",
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": "return to the Inventory Dashboard",
       "aggregations": [],
       "chart": null,
-      "required_scope": "write inventory",
+      "required_scope": null,
       "static_texts": [],
       "static_expressions": []
     },
@@ -636,7 +646,7 @@
       "name": "Reorder Alerts",
       "slug": "reorder_alerts",
       "role": "warehouse clerk",
-      "display_table": "reorder_alerts",
+      "display_content": "reorder_alerts",
       "table_columns": [
         {
           "display": "product",
@@ -672,7 +682,7 @@
       "subscribe_stream": "reorder alerts",
       "related": null,
       "form_fields": [],
-      "form_target_table": null,
+      "form_target_content": null,
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": null,
@@ -686,7 +696,7 @@
       "name": "Add Product",
       "slug": "add_product",
       "role": "warehouse manager",
-      "display_table": null,
+      "display_content": null,
       "table_columns": [],
       "filters": [],
       "search_fields": [],
@@ -702,7 +712,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -714,7 +724,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -726,7 +736,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -738,7 +748,7 @@
           "minimum": null,
           "step": "0.01",
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -754,12 +764,12 @@
             "finished good",
             "packaging"
           ],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         }
       ],
-      "form_target_table": "products",
+      "form_target_content": "products",
       "create_as_status": "draft",
       "validate_unique_field": "",
       "after_save_instruction": "offer to set initial stock levels per warehouse",
@@ -773,7 +783,7 @@
       "name": "Inventory Overview",
       "slug": "inventory_overview",
       "role": "executive",
-      "display_table": null,
+      "display_content": null,
       "table_columns": [],
       "filters": [],
       "search_fields": [],
@@ -781,7 +791,7 @@
       "subscribe_stream": null,
       "related": null,
       "form_fields": [],
-      "form_target_table": null,
+      "form_target_content": null,
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": null,
@@ -790,14 +800,14 @@
           "key": "total_product_count_with_activ",
           "description": "total product count with active vs discontinued breakdown",
           "agg_type": "count_by_status",
-          "table": "products",
-          "join_table": null,
+          "content_ref": "products",
+          "join_content": null,
           "join_column": null,
           "sum_expression": null
         }
       ],
       "chart": {
-        "table": "reorder_alerts",
+        "content_ref": "reorder_alerts",
         "days": 30,
         "chart_type": "line"
       },
@@ -813,7 +823,7 @@
       "visible_to": [
         "all"
       ],
-      "badge_table": null
+      "badge_content": null
     },
     {
       "label": "Receive Stock",
@@ -822,7 +832,7 @@
         "clerk",
         "manager"
       ],
-      "badge_table": null
+      "badge_content": null
     },
     {
       "label": "Alerts",
@@ -830,7 +840,7 @@
       "visible_to": [
         "all"
       ],
-      "badge_table": "reorder_alerts"
+      "badge_content": "reorder_alerts"
     },
     {
       "label": "Add Product",
@@ -838,7 +848,7 @@
       "visible_to": [
         "manager"
       ],
-      "badge_table": null
+      "badge_content": null
     },
     {
       "label": "Overview",
@@ -846,7 +856,7 @@
       "visible_to": [
         "executive"
       ],
-      "badge_table": null
+      "badge_content": null
     }
   ],
   "streams": [

@@ -1,4 +1,6 @@
 {
+  "ir_version": "0.2.0",
+  "reflection_enabled": true,
   "name": "Project Management Board",
   "description": "Track projects, sprints, and tasks from backlog to done",
   "auth": {
@@ -34,17 +36,18 @@
       }
     ]
   },
-  "tables": [
+  "content": [
     {
       "name": {
         "display": "projects",
         "snake": "projects",
         "pascal": "Projects"
       },
-      "columns": [
+      "fields": [
         {
           "name": "name",
           "display_name": "name",
+          "business_type": "text",
           "column_type": "TEXT",
           "required": true,
           "unique": true,
@@ -58,6 +61,7 @@
         {
           "name": "description",
           "display_name": "description",
+          "business_type": "text",
           "column_type": "TEXT",
           "required": false,
           "unique": false,
@@ -71,6 +75,7 @@
         {
           "name": "status",
           "display_name": "status",
+          "business_type": "enum",
           "column_type": "TEXT",
           "required": false,
           "unique": false,
@@ -86,8 +91,9 @@
           "list_type": null
         }
       ],
-      "has_status_column": false,
-      "initial_status": null
+      "storage_intent": "auto",
+      "has_state_machine": false,
+      "initial_state": null
     },
     {
       "name": {
@@ -95,10 +101,11 @@
         "snake": "team_members",
         "pascal": "TeamMembers"
       },
-      "columns": [
+      "fields": [
         {
           "name": "name",
           "display_name": "name",
+          "business_type": "text",
           "column_type": "TEXT",
           "required": true,
           "unique": false,
@@ -112,6 +119,7 @@
         {
           "name": "email",
           "display_name": "email",
+          "business_type": "text",
           "column_type": "TEXT",
           "required": true,
           "unique": true,
@@ -125,6 +133,7 @@
         {
           "name": "role",
           "display_name": "role",
+          "business_type": "enum",
           "column_type": "TEXT",
           "required": false,
           "unique": false,
@@ -143,6 +152,7 @@
         {
           "name": "project",
           "display_name": "project",
+          "business_type": "reference",
           "column_type": "INTEGER",
           "required": true,
           "unique": false,
@@ -154,8 +164,9 @@
           "list_type": null
         }
       ],
-      "has_status_column": false,
-      "initial_status": null
+      "storage_intent": "auto",
+      "has_state_machine": false,
+      "initial_state": null
     },
     {
       "name": {
@@ -163,10 +174,11 @@
         "snake": "sprints",
         "pascal": "Sprints"
       },
-      "columns": [
+      "fields": [
         {
           "name": "name",
           "display_name": "name",
+          "business_type": "text",
           "column_type": "TEXT",
           "required": true,
           "unique": false,
@@ -180,6 +192,7 @@
         {
           "name": "project",
           "display_name": "project",
+          "business_type": "reference",
           "column_type": "INTEGER",
           "required": true,
           "unique": false,
@@ -193,6 +206,7 @@
         {
           "name": "goal",
           "display_name": "goal",
+          "business_type": "text",
           "column_type": "TEXT",
           "required": false,
           "unique": false,
@@ -206,6 +220,7 @@
         {
           "name": "capacity",
           "display_name": "capacity",
+          "business_type": "whole_number",
           "column_type": "INTEGER",
           "required": false,
           "unique": false,
@@ -217,8 +232,9 @@
           "list_type": null
         }
       ],
-      "has_status_column": false,
-      "initial_status": null
+      "storage_intent": "auto",
+      "has_state_machine": false,
+      "initial_state": null
     },
     {
       "name": {
@@ -226,10 +242,11 @@
         "snake": "tasks",
         "pascal": "Tasks"
       },
-      "columns": [
+      "fields": [
         {
           "name": "title",
           "display_name": "title",
+          "business_type": "text",
           "column_type": "TEXT",
           "required": true,
           "unique": false,
@@ -243,6 +260,7 @@
         {
           "name": "description",
           "display_name": "description",
+          "business_type": "text",
           "column_type": "TEXT",
           "required": false,
           "unique": false,
@@ -256,6 +274,7 @@
         {
           "name": "project",
           "display_name": "project",
+          "business_type": "reference",
           "column_type": "INTEGER",
           "required": true,
           "unique": false,
@@ -269,6 +288,7 @@
         {
           "name": "sprint",
           "display_name": "sprint",
+          "business_type": "reference",
           "column_type": "INTEGER",
           "required": false,
           "unique": false,
@@ -282,6 +302,7 @@
         {
           "name": "assignee",
           "display_name": "assignee",
+          "business_type": "reference",
           "column_type": "INTEGER",
           "required": false,
           "unique": false,
@@ -295,6 +316,7 @@
         {
           "name": "points",
           "display_name": "points",
+          "business_type": "whole_number",
           "column_type": "INTEGER",
           "required": false,
           "unique": false,
@@ -308,6 +330,7 @@
         {
           "name": "priority",
           "display_name": "priority",
+          "business_type": "enum",
           "column_type": "TEXT",
           "required": false,
           "unique": false,
@@ -324,8 +347,9 @@
           "list_type": null
         }
       ],
-      "has_status_column": true,
-      "initial_status": "backlog"
+      "storage_intent": "auto",
+      "has_state_machine": true,
+      "initial_state": "backlog"
     },
     {
       "name": {
@@ -333,10 +357,11 @@
         "snake": "time_logs",
         "pascal": "TimeLogs"
       },
-      "columns": [
+      "fields": [
         {
           "name": "task",
           "display_name": "task",
+          "business_type": "reference",
           "column_type": "INTEGER",
           "required": true,
           "unique": false,
@@ -350,6 +375,7 @@
         {
           "name": "team_member",
           "display_name": "team member",
+          "business_type": "reference",
           "column_type": "INTEGER",
           "required": true,
           "unique": false,
@@ -363,6 +389,7 @@
         {
           "name": "hours",
           "display_name": "hours",
+          "business_type": "currency",
           "column_type": "REAL",
           "required": false,
           "unique": false,
@@ -376,6 +403,7 @@
         {
           "name": "logged_at",
           "display_name": "logged at",
+          "business_type": "automatic",
           "column_type": "TIMESTAMP",
           "required": false,
           "unique": false,
@@ -387,103 +415,95 @@
           "list_type": null
         }
       ],
-      "has_status_column": false,
-      "initial_status": null
+      "storage_intent": "auto",
+      "has_state_machine": false,
+      "initial_state": null
     }
   ],
   "access_grants": [
     {
-      "table": "projects",
+      "content": "projects",
       "scope": "view projects",
       "verbs": [
-        "VIEW"
+        "view"
       ]
     },
     {
-      "table": "projects",
+      "content": "projects",
       "scope": "admin projects",
       "verbs": [
-        "CREATE",
-        "UPDATE"
+        "create",
+        "update"
       ]
     },
     {
-      "table": "projects",
+      "content": "projects",
       "scope": "admin projects",
       "verbs": [
-        "DELETE"
+        "delete"
       ]
     },
     {
-      "table": "team_members",
+      "content": "team_members",
+      "scope": "view projects",
+      "verbs": []
+    },
+    {
+      "content": "team_members",
+      "scope": "admin projects",
+      "verbs": []
+    },
+    {
+      "content": "sprints",
       "scope": "view projects",
       "verbs": [
-        "VIEW"
+        "view"
       ]
     },
     {
-      "table": "team_members",
-      "scope": "admin projects",
-      "verbs": [
-        "CREATE",
-        "UPDATE"
-      ]
-    },
-    {
-      "table": "sprints",
-      "scope": "view projects",
-      "verbs": [
-        "VIEW"
-      ]
-    },
-    {
-      "table": "sprints",
+      "content": "sprints",
       "scope": "manage sprints",
       "verbs": [
-        "CREATE",
-        "UPDATE"
+        "create",
+        "update"
       ]
     },
     {
-      "table": "tasks",
+      "content": "tasks",
       "scope": "view projects",
       "verbs": [
-        "VIEW"
+        "view"
       ]
     },
     {
-      "table": "tasks",
+      "content": "tasks",
       "scope": "manage tasks",
       "verbs": [
-        "CREATE",
-        "UPDATE"
+        "create",
+        "update"
       ]
     },
     {
-      "table": "tasks",
+      "content": "tasks",
       "scope": "admin projects",
       "verbs": [
-        "DELETE"
+        "delete"
       ]
     },
     {
-      "table": "time_logs",
+      "content": "time_logs",
       "scope": "view projects",
-      "verbs": [
-        "VIEW"
-      ]
+      "verbs": []
     },
     {
-      "table": "time_logs",
+      "content": "time_logs",
       "scope": "manage tasks",
-      "verbs": [
-        "CREATE"
-      ]
+      "verbs": []
     }
   ],
   "state_machines": [
     {
-      "table": "tasks",
+      "content_ref": "tasks",
       "machine_name": "task lifecycle",
       "initial_state": "backlog",
       "states": [
@@ -524,7 +544,8 @@
           "to_state": "in progress",
           "required_scope": "manage tasks"
         }
-      ]
+      ],
+      "primitive_type": "content"
     }
   ],
   "events": [],
@@ -533,7 +554,7 @@
       "method": "GET",
       "path": "/api/v1/projects",
       "kind": "LIST",
-      "table": "projects",
+      "content_ref": "projects",
       "required_scope": "view projects",
       "lookup_column": "id",
       "target_state": null
@@ -542,7 +563,7 @@
       "method": "POST",
       "path": "/api/v1/projects",
       "kind": "CREATE",
-      "table": "projects",
+      "content_ref": "projects",
       "required_scope": "admin projects",
       "lookup_column": "id",
       "target_state": null
@@ -551,7 +572,7 @@
       "method": "GET",
       "path": "/api/v1/projects/{id}",
       "kind": "GET_ONE",
-      "table": "projects",
+      "content_ref": "projects",
       "required_scope": "view projects",
       "lookup_column": "name",
       "target_state": null
@@ -560,7 +581,7 @@
       "method": "PUT",
       "path": "/api/v1/projects/{id}",
       "kind": "UPDATE",
-      "table": "projects",
+      "content_ref": "projects",
       "required_scope": "admin projects",
       "lookup_column": "name",
       "target_state": null
@@ -569,7 +590,7 @@
       "method": "DELETE",
       "path": "/api/v1/projects/{id}",
       "kind": "DELETE",
-      "table": "projects",
+      "content_ref": "projects",
       "required_scope": "admin projects",
       "lookup_column": "name",
       "target_state": null
@@ -578,8 +599,8 @@
       "method": "GET",
       "path": "/api/v1/team-members",
       "kind": "LIST",
-      "table": "team_members",
-      "required_scope": "view projects",
+      "content_ref": "team_members",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     },
@@ -587,8 +608,8 @@
       "method": "POST",
       "path": "/api/v1/team-members",
       "kind": "CREATE",
-      "table": "team_members",
-      "required_scope": "admin projects",
+      "content_ref": "team_members",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     },
@@ -596,7 +617,7 @@
       "method": "GET",
       "path": "/api/v1/sprints",
       "kind": "LIST",
-      "table": "sprints",
+      "content_ref": "sprints",
       "required_scope": "view projects",
       "lookup_column": "id",
       "target_state": null
@@ -605,7 +626,7 @@
       "method": "POST",
       "path": "/api/v1/sprints",
       "kind": "CREATE",
-      "table": "sprints",
+      "content_ref": "sprints",
       "required_scope": "manage sprints",
       "lookup_column": "id",
       "target_state": null
@@ -614,7 +635,7 @@
       "method": "PUT",
       "path": "/api/v1/sprints/{id}",
       "kind": "UPDATE",
-      "table": "sprints",
+      "content_ref": "sprints",
       "required_scope": "manage sprints",
       "lookup_column": "id",
       "target_state": null
@@ -623,7 +644,7 @@
       "method": "GET",
       "path": "/api/v1/tasks",
       "kind": "LIST",
-      "table": "tasks",
+      "content_ref": "tasks",
       "required_scope": "view projects",
       "lookup_column": "id",
       "target_state": null
@@ -632,7 +653,7 @@
       "method": "POST",
       "path": "/api/v1/tasks",
       "kind": "CREATE",
-      "table": "tasks",
+      "content_ref": "tasks",
       "required_scope": "manage tasks",
       "lookup_column": "id",
       "target_state": null
@@ -641,7 +662,7 @@
       "method": "GET",
       "path": "/api/v1/tasks/{id}",
       "kind": "GET_ONE",
-      "table": "tasks",
+      "content_ref": "tasks",
       "required_scope": "view projects",
       "lookup_column": "id",
       "target_state": null
@@ -650,7 +671,7 @@
       "method": "PUT",
       "path": "/api/v1/tasks/{id}",
       "kind": "UPDATE",
-      "table": "tasks",
+      "content_ref": "tasks",
       "required_scope": "manage tasks",
       "lookup_column": "id",
       "target_state": null
@@ -659,7 +680,7 @@
       "method": "DELETE",
       "path": "/api/v1/tasks/{id}",
       "kind": "DELETE",
-      "table": "tasks",
+      "content_ref": "tasks",
       "required_scope": "admin projects",
       "lookup_column": "id",
       "target_state": null
@@ -668,7 +689,7 @@
       "method": "POST",
       "path": "/api/v1/tasks/{id}/plan",
       "kind": "TRANSITION",
-      "table": "tasks",
+      "content_ref": "tasks",
       "required_scope": null,
       "lookup_column": "id",
       "target_state": "in sprint"
@@ -677,7 +698,7 @@
       "method": "POST",
       "path": "/api/v1/tasks/{id}/start",
       "kind": "TRANSITION",
-      "table": "tasks",
+      "content_ref": "tasks",
       "required_scope": null,
       "lookup_column": "id",
       "target_state": "in progress"
@@ -686,7 +707,7 @@
       "method": "POST",
       "path": "/api/v1/tasks/{id}/review",
       "kind": "TRANSITION",
-      "table": "tasks",
+      "content_ref": "tasks",
       "required_scope": null,
       "lookup_column": "id",
       "target_state": "in review"
@@ -695,7 +716,7 @@
       "method": "POST",
       "path": "/api/v1/tasks/{id}/complete",
       "kind": "TRANSITION",
-      "table": "tasks",
+      "content_ref": "tasks",
       "required_scope": null,
       "lookup_column": "id",
       "target_state": "done"
@@ -704,7 +725,7 @@
       "method": "POST",
       "path": "/api/v1/tasks/{id}/rework",
       "kind": "TRANSITION",
-      "table": "tasks",
+      "content_ref": "tasks",
       "required_scope": null,
       "lookup_column": "id",
       "target_state": "in progress"
@@ -713,8 +734,8 @@
       "method": "GET",
       "path": "/api/v1/time-logs",
       "kind": "LIST",
-      "table": "time_logs",
-      "required_scope": "view projects",
+      "content_ref": "time_logs",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     },
@@ -722,8 +743,8 @@
       "method": "POST",
       "path": "/api/v1/time-logs",
       "kind": "CREATE",
-      "table": "time_logs",
-      "required_scope": "manage tasks",
+      "content_ref": "time_logs",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     }
@@ -733,7 +754,7 @@
       "name": "Sprint Board",
       "slug": "sprint_board",
       "role": "developer",
-      "display_table": "tasks",
+      "display_content": "tasks",
       "table_columns": [
         {
           "display": "title",
@@ -794,7 +815,7 @@
       "subscribe_stream": "tasks",
       "related": null,
       "form_fields": [],
-      "form_target_table": null,
+      "form_target_content": null,
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": null,
@@ -808,7 +829,7 @@
       "name": "Log Time",
       "slug": "log_time",
       "role": "developer",
-      "display_table": null,
+      "display_content": null,
       "table_columns": [],
       "filters": [],
       "search_fields": [],
@@ -824,7 +845,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": "tasks",
+          "reference_content": "tasks",
           "reference_display_col": "title",
           "reference_unique_col": null
         },
@@ -836,7 +857,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": "team_members",
+          "reference_content": "team_members",
           "reference_display_col": "name",
           "reference_unique_col": "email"
         },
@@ -848,18 +869,18 @@
           "minimum": null,
           "step": "0.01",
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         }
       ],
-      "form_target_table": "time_logs",
+      "form_target_content": "time_logs",
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": null,
       "aggregations": [],
       "chart": null,
-      "required_scope": "manage tasks",
+      "required_scope": null,
       "static_texts": [],
       "static_expressions": []
     },
@@ -867,7 +888,7 @@
       "name": "Create Task",
       "slug": "create_task",
       "role": "project manager",
-      "display_table": null,
+      "display_content": null,
       "table_columns": [],
       "filters": [],
       "search_fields": [],
@@ -883,7 +904,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -895,7 +916,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -907,7 +928,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": "projects",
+          "reference_content": "projects",
           "reference_display_col": "name",
           "reference_unique_col": "name"
         },
@@ -919,7 +940,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": "sprints",
+          "reference_content": "sprints",
           "reference_display_col": "name",
           "reference_unique_col": null
         },
@@ -931,7 +952,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": "team_members",
+          "reference_content": "team_members",
           "reference_display_col": "name",
           "reference_unique_col": "email"
         },
@@ -943,7 +964,7 @@
           "minimum": 0,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -960,12 +981,12 @@
             "high",
             "critical"
           ],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         }
       ],
-      "form_target_table": "tasks",
+      "form_target_content": "tasks",
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": null,
@@ -979,7 +1000,7 @@
       "name": "Project Dashboard",
       "slug": "project_dashboard",
       "role": "project manager",
-      "display_table": null,
+      "display_content": null,
       "table_columns": [],
       "filters": [],
       "search_fields": [],
@@ -987,7 +1008,7 @@
       "subscribe_stream": null,
       "related": null,
       "form_fields": [],
-      "form_target_table": null,
+      "form_target_content": null,
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": null,
@@ -996,8 +1017,8 @@
           "key": "total_task_count_with_backlog_",
           "description": "total task count with backlog vs done breakdown",
           "agg_type": "count_by_status",
-          "table": "tasks",
-          "join_table": null,
+          "content_ref": "tasks",
+          "join_content": null,
           "join_column": null,
           "sum_expression": null
         },
@@ -1005,8 +1026,8 @@
           "key": "total_time_logged_sum_hours",
           "description": "total time logged [sum(hours)]",
           "agg_type": "sum_join",
-          "table": "time_logs",
-          "join_table": null,
+          "content_ref": "time_logs",
+          "join_content": null,
           "join_column": null,
           "sum_expression": null
         }
@@ -1020,7 +1041,7 @@
       "name": "New Project",
       "slug": "new_project",
       "role": "project manager",
-      "display_table": null,
+      "display_content": null,
       "table_columns": [],
       "filters": [],
       "search_fields": [],
@@ -1036,7 +1057,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -1048,7 +1069,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -1064,12 +1085,12 @@
             "on hold",
             "completed"
           ],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         }
       ],
-      "form_target_table": "projects",
+      "form_target_content": "projects",
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": null,
@@ -1083,7 +1104,7 @@
       "name": "Sprint Planning",
       "slug": "sprint_planning",
       "role": "project manager",
-      "display_table": null,
+      "display_content": null,
       "table_columns": [],
       "filters": [],
       "search_fields": [],
@@ -1099,7 +1120,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -1111,7 +1132,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": "projects",
+          "reference_content": "projects",
           "reference_display_col": "name",
           "reference_unique_col": "name"
         },
@@ -1123,7 +1144,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -1135,12 +1156,12 @@
           "minimum": 0,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         }
       ],
-      "form_target_table": "sprints",
+      "form_target_content": "sprints",
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": null,
@@ -1154,7 +1175,7 @@
       "name": "Team Management",
       "slug": "team_management",
       "role": "project manager",
-      "display_table": null,
+      "display_content": null,
       "table_columns": [],
       "filters": [],
       "search_fields": [],
@@ -1170,7 +1191,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -1182,7 +1203,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -1199,7 +1220,7 @@
             "qa",
             "devops"
           ],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -1211,18 +1232,18 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": "projects",
+          "reference_content": "projects",
           "reference_display_col": "name",
           "reference_unique_col": "name"
         }
       ],
-      "form_target_table": "team_members",
+      "form_target_content": "team_members",
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": null,
       "aggregations": [],
       "chart": null,
-      "required_scope": "admin projects",
+      "required_scope": null,
       "static_texts": [],
       "static_expressions": []
     }
@@ -1234,7 +1255,7 @@
       "visible_to": [
         "all"
       ],
-      "badge_table": null
+      "badge_content": null
     },
     {
       "label": "New Project",
@@ -1242,7 +1263,7 @@
       "visible_to": [
         "project manager"
       ],
-      "badge_table": null
+      "badge_content": null
     },
     {
       "label": "Create Task",
@@ -1251,7 +1272,7 @@
         "developer",
         "project manager"
       ],
-      "badge_table": null
+      "badge_content": null
     },
     {
       "label": "Log Time",
@@ -1259,7 +1280,7 @@
       "visible_to": [
         "developer"
       ],
-      "badge_table": null
+      "badge_content": null
     },
     {
       "label": "Sprint Planning",
@@ -1267,7 +1288,7 @@
       "visible_to": [
         "project manager"
       ],
-      "badge_table": null
+      "badge_content": null
     },
     {
       "label": "Team",
@@ -1275,7 +1296,7 @@
       "visible_to": [
         "project manager"
       ],
-      "badge_table": null
+      "badge_content": null
     },
     {
       "label": "Dashboard",
@@ -1284,7 +1305,7 @@
         "project manager",
         "stakeholder"
       ],
-      "badge_table": null
+      "badge_content": null
     }
   ],
   "streams": [

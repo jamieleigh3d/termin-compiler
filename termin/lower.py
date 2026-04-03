@@ -198,6 +198,7 @@ def lower(program: Program) -> AppSpec:
             fields.append(FieldSpec(
                 name=_snake(f.name),
                 display_name=f.name,
+                business_type=f.type_expr.base_type,
                 column_type=_field_type(f.type_expr),
                 required=f.type_expr.required,
                 unique=f.type_expr.unique,
@@ -247,8 +248,21 @@ def lower(program: Program) -> AppSpec:
             ))
 
     # ── Lower state machines ──
+    channel_names = {ch.name for ch in program.channels}
+    compute_names = {c.name for c in program.computes}
+    boundary_names = {b.name for b in program.boundaries}
     state_machines = []
     for sm in program.state_machines:
+        # Infer primitive_type from what the state machine attaches to
+        sm_ref = sm.content_name
+        if sm_ref in channel_names:
+            prim_type = "channel"
+        elif sm_ref in compute_names:
+            prim_type = "compute"
+        elif sm_ref in boundary_names:
+            prim_type = "boundary"
+        else:
+            prim_type = "content"
         state_machines.append(StateMachineSpec(
             content_ref=_snake(sm.content_name),
             machine_name=sm.machine_name,
@@ -261,6 +275,7 @@ def lower(program: Program) -> AppSpec:
                     required_scope=t.required_scope,
                 ) for t in sm.transitions
             ),
+            primitive_type=prim_type,
         ))
 
     # ── Lower events ──
@@ -687,6 +702,11 @@ def lower(program: Program) -> AppSpec:
         ))
 
     # ── Lower error handlers ──
+    # Build lookup sets for source_type inference
+    content_snake_names = {_snake(c.name) for c in program.contents}
+    channel_snake_names = {_snake(ch.name) for ch in program.channels}
+    compute_snake_names = {_snake(c.name) for c in program.computes}
+    boundary_snake_names = {_snake(b.name) for b in program.boundaries}
     error_handlers = []
     for eh in program.error_handlers:
         actions = []
@@ -700,14 +720,28 @@ def lower(program: Program) -> AppSpec:
                 jexl_expr=a.jexl_expr,
                 log_level=a.log_level,
             ))
+        # Infer source_type from source name
+        src_snake = _snake(eh.source) if eh.source else ""
+        if src_snake in channel_snake_names:
+            src_type = "channel"
+        elif src_snake in compute_snake_names:
+            src_type = "compute"
+        elif src_snake in content_snake_names:
+            src_type = "content"
+        elif src_snake in boundary_snake_names:
+            src_type = "boundary"
+        else:
+            src_type = ""
         error_handlers.append(ErrorHandlerSpec(
             source=eh.source,
+            source_type=src_type,
             condition_jexl=eh.condition_jexl,
             actions=tuple(actions),
             is_catch_all=eh.is_catch_all,
         ))
 
     return AppSpec(
+        reflection_enabled=True,
         name=program.application.name if program.application else "App",
         description=program.application.description if program.application else "",
         auth=auth,

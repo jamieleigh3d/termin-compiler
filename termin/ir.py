@@ -42,7 +42,8 @@ ColumnType = FieldType
 class FieldSpec:
     name: str                          # snake_case
     display_name: str                  # original: "unit cost"
-    column_type: FieldType
+    business_type: str = "text"        # semantic type from DSL: "text", "currency", "number", etc.
+    column_type: FieldType = FieldType.TEXT  # storage type for backend SQL mapping
     required: bool = False
     unique: bool = False
     minimum: Optional[int] = None
@@ -117,6 +118,7 @@ class StateMachineSpec:
     initial_state: str
     states: tuple[str, ...]
     transitions: tuple[TransitionSpec, ...]
+    primitive_type: str = "content"             # "content", "channel", "boundary", "compute"
 
 
 # ── Events ──
@@ -374,6 +376,8 @@ class ErrorActionSpec:
 @dataclass(frozen=True)
 class ErrorHandlerSpec:
     source: str  # primitive name, or "" for catch-all
+    source_type: str = ""              # "content", "channel", "compute", "boundary", or ""
+    boundary: Optional[str] = None     # which boundary this handler belongs to
     condition_jexl: Optional[str] = None
     actions: tuple['ErrorActionSpec', ...] = ()
     is_catch_all: bool = False
@@ -385,6 +389,7 @@ class ErrorHandlerSpec:
 class AppSpec:
     """The complete intermediate representation of a Termin application."""
     ir_version: str = "0.2.0"
+    reflection_enabled: bool = True
     name: str = ""
     description: str = ""
     auth: AuthSpec = None

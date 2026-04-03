@@ -1,4 +1,6 @@
 {
+  "ir_version": "0.2.0",
+  "reflection_enabled": true,
   "name": "Hello User",
   "description": "A slightly personalized Hello World.",
   "auth": {
@@ -21,7 +23,7 @@
       }
     ]
   },
-  "tables": [],
+  "content": [],
   "access_grants": [],
   "state_machines": [],
   "events": [],
@@ -31,7 +33,7 @@
       "name": "Hello",
       "slug": "hello",
       "role": "Anonymous",
-      "display_table": null,
+      "display_content": null,
       "table_columns": [],
       "filters": [],
       "search_fields": [],
@@ -39,7 +41,7 @@
       "subscribe_stream": null,
       "related": null,
       "form_fields": [],
-      "form_target_table": null,
+      "form_target_content": null,
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": null,
@@ -55,7 +57,7 @@
       "name": "Hello",
       "slug": "hello",
       "role": "LoggedInUser",
-      "display_table": null,
+      "display_content": null,
       "table_columns": [],
       "filters": [],
       "search_fields": [],
@@ -63,7 +65,7 @@
       "subscribe_stream": null,
       "related": null,
       "form_fields": [],
-      "form_target_table": null,
+      "form_target_content": null,
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": null,
@@ -86,10 +88,10 @@
         "pascal": "Sayhelloto"
       },
       "shape": "TRANSFORM",
-      "input_tables": [
+      "input_content": [
         "userprofile"
       ],
-      "output_tables": [
+      "output_content": [
         "text"
       ],
       "body_lines": [

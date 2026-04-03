@@ -1,4 +1,6 @@
 {
+  "ir_version": "0.2.0",
+  "reflection_enabled": true,
   "name": "Order Processing Demo",
   "description": "Demonstrates Compute, Channel, and Boundary primitives",
   "auth": {
@@ -26,17 +28,18 @@
       }
     ]
   },
-  "tables": [
+  "content": [
     {
       "name": {
         "display": "orders",
         "snake": "orders",
         "pascal": "Orders"
       },
-      "columns": [
+      "fields": [
         {
           "name": "customer",
           "display_name": "customer",
+          "business_type": "text",
           "column_type": "TEXT",
           "required": true,
           "unique": false,
@@ -50,6 +53,7 @@
         {
           "name": "total",
           "display_name": "total",
+          "business_type": "currency",
           "column_type": "REAL",
           "required": false,
           "unique": false,
@@ -63,6 +67,7 @@
         {
           "name": "priority",
           "display_name": "priority",
+          "business_type": "enum",
           "column_type": "TEXT",
           "required": false,
           "unique": false,
@@ -78,8 +83,9 @@
           "list_type": null
         }
       ],
-      "has_status_column": true,
-      "initial_status": "pending"
+      "storage_intent": "auto",
+      "has_state_machine": true,
+      "initial_state": "pending"
     },
     {
       "name": {
@@ -87,10 +93,11 @@
         "snake": "order_lines",
         "pascal": "OrderLines"
       },
-      "columns": [
+      "fields": [
         {
           "name": "parent_order",
           "display_name": "parent order",
+          "business_type": "reference",
           "column_type": "INTEGER",
           "required": true,
           "unique": false,
@@ -104,6 +111,7 @@
         {
           "name": "product_name",
           "display_name": "product name",
+          "business_type": "text",
           "column_type": "TEXT",
           "required": true,
           "unique": false,
@@ -117,6 +125,7 @@
         {
           "name": "quantity",
           "display_name": "quantity",
+          "business_type": "whole_number",
           "column_type": "INTEGER",
           "required": false,
           "unique": false,
@@ -130,6 +139,7 @@
         {
           "name": "unit_price",
           "display_name": "unit price",
+          "business_type": "currency",
           "column_type": "REAL",
           "required": false,
           "unique": false,
@@ -141,8 +151,9 @@
           "list_type": null
         }
       ],
-      "has_status_column": false,
-      "initial_status": null
+      "storage_intent": "auto",
+      "has_state_machine": false,
+      "initial_state": null
     },
     {
       "name": {
@@ -150,10 +161,11 @@
         "snake": "reports",
         "pascal": "Reports"
       },
-      "columns": [
+      "fields": [
         {
           "name": "total_count",
           "display_name": "total count",
+          "business_type": "whole_number",
           "column_type": "INTEGER",
           "required": false,
           "unique": false,
@@ -167,6 +179,7 @@
         {
           "name": "total_revenue",
           "display_name": "total revenue",
+          "business_type": "currency",
           "column_type": "REAL",
           "required": false,
           "unique": false,
@@ -178,59 +191,55 @@
           "list_type": null
         }
       ],
-      "has_status_column": false,
-      "initial_status": null
+      "storage_intent": "auto",
+      "has_state_machine": false,
+      "initial_state": null
     }
   ],
   "access_grants": [
     {
-      "table": "orders",
+      "content": "orders",
       "scope": "read orders",
       "verbs": [
-        "VIEW"
+        "view"
       ]
     },
     {
-      "table": "orders",
+      "content": "orders",
       "scope": "write orders",
       "verbs": [
-        "CREATE",
-        "UPDATE"
+        "create",
+        "update"
       ]
     },
     {
-      "table": "orders",
+      "content": "orders",
       "scope": "admin orders",
       "verbs": [
-        "DELETE"
+        "delete"
       ]
     },
     {
-      "table": "order_lines",
+      "content": "order_lines",
       "scope": "read orders",
-      "verbs": [
-        "VIEW"
-      ]
+      "verbs": []
     },
     {
-      "table": "order_lines",
+      "content": "order_lines",
       "scope": "write orders",
-      "verbs": [
-        "CREATE",
-        "UPDATE"
-      ]
+      "verbs": []
     },
     {
-      "table": "reports",
+      "content": "reports",
       "scope": "read orders",
       "verbs": [
-        "VIEW"
+        "view"
       ]
     }
   ],
   "state_machines": [
     {
-      "table": "orders",
+      "content_ref": "orders",
       "machine_name": "order lifecycle",
       "initial_state": "pending",
       "states": [
@@ -255,7 +264,8 @@
           "to_state": "cancelled",
           "required_scope": "admin orders"
         }
-      ]
+      ],
+      "primitive_type": "content"
     }
   ],
   "events": [],
@@ -265,7 +275,7 @@
       "name": "Order Dashboard",
       "slug": "order_dashboard",
       "role": "order clerk",
-      "display_table": "orders",
+      "display_content": "orders",
       "table_columns": [
         {
           "display": "customer",
@@ -320,7 +330,7 @@
           "minimum": null,
           "step": null,
           "enum_values": [],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         },
@@ -336,12 +346,12 @@
             "medium",
             "high"
           ],
-          "reference_table": null,
+          "reference_content": null,
           "reference_display_col": null,
           "reference_unique_col": null
         }
       ],
-      "form_target_table": "orders",
+      "form_target_content": "orders",
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": null,
@@ -355,7 +365,7 @@
       "name": "Order Analytics",
       "slug": "order_analytics",
       "role": "order manager",
-      "display_table": "orders",
+      "display_content": "orders",
       "table_columns": [
         {
           "display": "customer",
@@ -380,7 +390,7 @@
       "subscribe_stream": null,
       "related": null,
       "form_fields": [],
-      "form_target_table": null,
+      "form_target_content": null,
       "create_as_status": null,
       "validate_unique_field": null,
       "after_save_instruction": null,
@@ -398,7 +408,7 @@
       "visible_to": [
         "all"
       ],
-      "badge_table": null
+      "badge_content": null
     },
     {
       "label": "Analytics",
@@ -406,7 +416,7 @@
       "visible_to": [
         "manager"
       ],
-      "badge_table": null
+      "badge_content": null
     }
   ],
   "streams": [],
@@ -418,10 +428,10 @@
         "pascal": "CalculateOrderTotal"
       },
       "shape": "TRANSFORM",
-      "input_tables": [
+      "input_content": [
         "orders"
       ],
-      "output_tables": [
+      "output_content": [
         "orders"
       ],
       "body_lines": [
@@ -439,10 +449,10 @@
         "pascal": "RevenueReport"
       },
       "shape": "REDUCE",
-      "input_tables": [
+      "input_content": [
         "orders"
       ],
-      "output_tables": [
+      "output_content": [
         "reports"
       ],
       "body_lines": [
@@ -460,10 +470,10 @@
         "pascal": "SplitOrderIntoLines"
       },
       "shape": "EXPAND",
-      "input_tables": [
+      "input_content": [
         "orders"
       ],
-      "output_tables": [
+      "output_content": [
         "order_lines"
       ],
       "body_lines": [
@@ -481,11 +491,11 @@
         "pascal": "MatchOrdersToLines"
       },
       "shape": "CORRELATE",
-      "input_tables": [
+      "input_content": [
         "orders",
         "order_lines"
       ],
-      "output_tables": [
+      "output_content": [
         "reports"
       ],
       "body_lines": [
@@ -503,10 +513,10 @@
         "pascal": "TriageOrder"
       },
       "shape": "ROUTE",
-      "input_tables": [
+      "input_content": [
         "orders"
       ],
-      "output_tables": [
+      "output_content": [
         "orders",
         "reports"
       ],
@@ -526,7 +536,7 @@
         "snake": "order_webhook",
         "pascal": "OrderWebhook"
       },
-      "carries_table": "orders",
+      "carries_content": "orders",
       "direction": "INBOUND",
       "delivery": "RELIABLE",
       "endpoint": "/webhooks/orders",
@@ -543,7 +553,7 @@
         "snake": "order_updates_stream",
         "pascal": "OrderUpdatesStream"
       },
-      "carries_table": "orders",
+      "carries_content": "orders",
       "direction": "OUTBOUND",
       "delivery": "REALTIME",
       "endpoint": null,
@@ -560,7 +570,7 @@
         "snake": "order_notifications",
         "pascal": "OrderNotifications"
       },
-      "carries_table": "orders",
+      "carries_content": "orders",
       "direction": "BIDIRECTIONAL",
       "delivery": "REALTIME",
       "endpoint": "/ws/orders",
@@ -577,7 +587,7 @@
         "snake": "internal_order_bus",
         "pascal": "InternalOrderBus"
       },
-      "carries_table": "orders",
+      "carries_content": "orders",
       "direction": "INTERNAL",
       "delivery": "AUTO",
       "endpoint": null,
@@ -591,7 +601,7 @@
         "snake": "order_processing",
         "pascal": "OrderProcessing"
       },
-      "contains_tables": [
+      "contains_content": [
         "orders",
         "order_lines",
         "reports"
@@ -607,7 +617,7 @@
         "snake": "order_reporting",
         "pascal": "OrderReporting"
       },
-      "contains_tables": [
+      "contains_content": [
         "reports"
       ],
       "contains_boundaries": [],
