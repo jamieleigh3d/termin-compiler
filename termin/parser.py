@@ -234,30 +234,58 @@ class Parser:
             expr.required = True
             text = re.sub(r',\s*required$', '', text).strip()
 
-        # Check for 'unique' modifier
+        # Check for 'unique' modifier (prefix or suffix)
         if text.startswith("unique "):
             expr.unique = True
             text = text[7:].strip()
+        elif ", unique" in text:
+            expr.unique = True
+            text = re.sub(r',\s*unique', '', text).strip()
+
+        # Check for constraints: minimum N, maximum N
+        m_min = re.search(r',?\s*minimum\s+(\d+)', text)
+        if m_min:
+            expr.minimum = int(m_min.group(1))
+            text = text[:m_min.start()] + text[m_min.end():]
+            text = text.strip().rstrip(',').strip()
+
+        m_max = re.search(r',?\s*maximum\s+(\d+)', text)
+        if m_max:
+            expr.maximum = int(m_max.group(1))
+            text = text[:m_max.start()] + text[m_max.end():]
+            text = text.strip().rstrip(',').strip()
 
         # Now determine base type
         if text == "text":
             expr.base_type = "text"
         elif text == "currency":
             expr.base_type = "currency"
+        elif text == "number":
+            expr.base_type = "number"
+        elif text == "percentage":
+            expr.base_type = "percentage"
+        elif text in ("true/false", "boolean"):
+            expr.base_type = "boolean"
+        elif text == "date":
+            expr.base_type = "date"
+        elif text in ("date and time", "datetime"):
+            expr.base_type = "datetime"
         elif text == "automatic":
             expr.base_type = "automatic"
-        elif text.startswith("a whole number"):
+        elif text.startswith("a whole number") or text == "whole number":
             expr.base_type = "whole_number"
-            m = re.search(r'minimum\s+(\d+)', text)
-            if m:
-                expr.minimum = int(m.group(1))
         elif text.startswith("one of:"):
             expr.base_type = "enum"
             vals = text.split(":", 1)[1].strip()
-            expr.enum_values = _parse_comma_list(vals)
+            # Strip quotes from enum values (v2 uses quoted enums)
+            raw_vals = _parse_comma_list(vals)
+            expr.enum_values = [v.strip('"') for v in raw_vals]
+        elif text.startswith("list of "):
+            expr.base_type = "list"
+            expr.list_type = text[8:].strip().strip('"')
         elif text.startswith("references "):
             expr.base_type = "reference"
-            expr.references = text.split("references", 1)[1].strip()
+            expr.references = text.split("references", 1)[1].strip().strip('"')
         else:
             self._error(f"Unknown type expression: {text}", line)
 

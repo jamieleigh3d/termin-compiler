@@ -11,12 +11,15 @@ from typing import Optional
 
 @dataclass
 class TypeExpr:
-    base_type: str  # "text", "whole_number", "currency", "enum", "reference", "automatic"
+    base_type: str  # "text", "whole_number", "number", "currency", "percentage",
+                    # "boolean", "date", "datetime", "enum", "reference", "automatic", "list"
     required: bool = False
     unique: bool = False
     minimum: Optional[int] = None
+    maximum: Optional[int] = None
     enum_values: list[str] = field(default_factory=list)
     references: Optional[str] = None  # name of referenced Content
+    list_type: Optional[str] = None   # inner type for "list of <type>"
     line: int = 0
 
 

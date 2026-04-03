@@ -413,6 +413,31 @@ def test_parse_highlight_jexl():
     assert hl[0].jexl_condition == "quantity <= threshold"
 
 
+def test_parse_new_types():
+    program, errors = parse('''Content called "items":
+  Each item has a price which is number
+  Each item has a margin which is percentage
+  Each item has a active which is true/false
+  Each item has a created which is date
+  Each item has a updated which is date and time
+  Each item has a tags which is list of text
+  Each item has a count which is whole number, minimum 0, maximum 9999
+  Anyone with "read" can view items''')
+    assert errors.ok, errors.format()
+    c = program.contents[0]
+    types = {f.name: f.type_expr for f in c.fields}
+    assert types["price"].base_type == "number"
+    assert types["margin"].base_type == "percentage"
+    assert types["active"].base_type == "boolean"
+    assert types["created"].base_type == "date"
+    assert types["updated"].base_type == "datetime"
+    assert types["tags"].base_type == "list"
+    assert types["tags"].list_type == "text"
+    assert types["count"].base_type == "whole_number"
+    assert types["count"].minimum == 0
+    assert types["count"].maximum == 9999
+
+
 def test_parse_all_v2_examples():
     from pathlib import Path
     for name in ["hello_v2", "hello_user_v2", "warehouse_v2", "helpdesk_v2", "projectboard_v2", "compute_demo_v2"]:

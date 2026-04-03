@@ -28,7 +28,10 @@ class ColumnType(Enum):
     TEXT = auto()
     INTEGER = auto()
     REAL = auto()
+    BOOLEAN = auto()
+    DATE = auto()
     TIMESTAMP = auto()
+    JSON = auto()       # for list types
 
 
 @dataclass(frozen=True)
@@ -39,9 +42,11 @@ class Column:
     required: bool = False
     unique: bool = False
     minimum: Optional[int] = None
+    maximum: Optional[int] = None
     enum_values: tuple[str, ...] = ()  # non-empty for enum columns
     foreign_key: Optional[str] = None  # target table snake name
     is_auto: bool = False              # automatic timestamp
+    list_type: Optional[str] = None    # inner type for JSON list columns
 
 
 @dataclass(frozen=True)

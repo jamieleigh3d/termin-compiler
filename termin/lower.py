@@ -47,10 +47,18 @@ def _column_type(te: TypeExpr) -> ColumnType:
         return ColumnType.TEXT
     if te.base_type in ("whole_number", "reference"):
         return ColumnType.INTEGER
-    if te.base_type == "currency":
+    if te.base_type in ("currency", "number", "percentage"):
         return ColumnType.REAL
+    if te.base_type == "boolean":
+        return ColumnType.INTEGER  # SQLite: 0/1
+    if te.base_type == "date":
+        return ColumnType.TEXT     # SQLite: ISO date string
+    if te.base_type == "datetime":
+        return ColumnType.TIMESTAMP
     if te.base_type == "automatic":
         return ColumnType.TIMESTAMP
+    if te.base_type == "list":
+        return ColumnType.JSON
     return ColumnType.TEXT
 
 
@@ -192,9 +200,11 @@ def lower(program: Program) -> AppSpec:
                 required=f.type_expr.required,
                 unique=f.type_expr.unique,
                 minimum=f.type_expr.minimum,
+                maximum=f.type_expr.maximum,
                 enum_values=tuple(f.type_expr.enum_values),
                 foreign_key=_snake(f.type_expr.references) if f.type_expr.references else None,
                 is_auto=f.type_expr.base_type == "automatic",
+                list_type=f.type_expr.list_type,
             ))
         has_sm = c.name in sm_by_content
         tables.append(Table(

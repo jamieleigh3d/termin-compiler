@@ -212,8 +212,14 @@ class FastApiBackend:
             parts.append("INTEGER")
         elif col.column_type == ColumnType.REAL:
             parts.append("REAL")
+        elif col.column_type == ColumnType.BOOLEAN:
+            parts.append("INTEGER")  # SQLite: 0/1
+        elif col.column_type == ColumnType.DATE:
+            parts.append("TEXT")     # ISO date string
         elif col.column_type == ColumnType.TIMESTAMP:
             parts.append("TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        elif col.column_type == ColumnType.JSON:
+            parts.append("TEXT")     # JSON string
         else:
             parts.append("TEXT")
 
@@ -221,8 +227,12 @@ class FastApiBackend:
             parts.append("NOT NULL")
         if col.unique:
             parts.append("UNIQUE")
-        if col.minimum is not None:
+        if col.minimum is not None and col.maximum is not None:
+            parts.append(f"CHECK({col.name} >= {col.minimum} AND {col.name} <= {col.maximum})")
+        elif col.minimum is not None:
             parts.append(f"CHECK({col.name} >= {col.minimum})")
+        elif col.maximum is not None:
+            parts.append(f"CHECK({col.name} <= {col.maximum})")
 
         return f"{col.name} {' '.join(parts)}"
 
