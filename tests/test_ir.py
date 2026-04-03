@@ -11,6 +11,7 @@ from termin.analyzer import analyze
 from termin.lower import lower
 from termin.ir import (
     ColumnType, Verb, RouteKind, HttpMethod,
+    ComputeShape, ChannelProtocol, ComputeParamSpec,
 )
 
 
@@ -247,3 +248,161 @@ class TestProjectBoardIR:
         assert "Board" in labels
         assert "New Project" in labels
         assert "Dashboard" in labels
+
+
+# ============================================================
+# Backward compatibility
+# ============================================================
+
+class TestBackwardCompatibility:
+    """Existing examples produce empty new primitive collections."""
+
+    def test_warehouse_no_new_primitives(self):
+        spec = _load_and_lower("warehouse.termin")
+        assert spec.computes == ()
+        assert spec.channels == ()
+        assert spec.boundaries == ()
+
+    def test_helpdesk_no_new_primitives(self):
+        spec = _load_and_lower("helpdesk.termin")
+        assert spec.computes == ()
+        assert spec.channels == ()
+        assert spec.boundaries == ()
+
+    def test_projectboard_no_new_primitives(self):
+        spec = _load_and_lower("projectboard.termin")
+        assert spec.computes == ()
+        assert spec.channels == ()
+        assert spec.boundaries == ()
+
+    def test_hello_no_new_primitives(self):
+        spec = _load_and_lower("hello.termin")
+        assert spec.computes == ()
+        assert spec.channels == ()
+        assert spec.boundaries == ()
+
+    def test_hello_has_static_text(self):
+        spec = _load_and_lower("hello.termin")
+        assert len(spec.pages) == 1
+        page = spec.pages[0]
+        assert page.name == "Hello"
+        assert page.role == "anonymous"
+        assert "Hello, World" in page.static_texts
+
+
+# ============================================================
+# Compute demo example
+# ============================================================
+
+class TestComputeDemoIR:
+    def setup_method(self):
+        self.spec = _load_and_lower("compute_demo.termin")
+
+    def test_app_name(self):
+        assert self.spec.name == "Order Processing Demo"
+
+    def test_tables(self):
+        names = [t.name.snake for t in self.spec.tables]
+        assert "orders" in names
+        assert "order_lines" in names
+        assert "reports" in names
+
+    # Compute
+
+    def test_six_computes(self):
+        assert len(self.spec.computes) == 6
+
+    def test_compute_transform(self):
+        c = next(c for c in self.spec.computes if c.name.snake == "calculate_order_total")
+        assert c.shape == ComputeShape.TRANSFORM
+        assert "orders" in c.input_tables
+        assert "orders" in c.output_tables
+        assert c.required_scope == "write orders"
+
+    def test_compute_reduce(self):
+        c = next(c for c in self.spec.computes if c.name.snake == "revenue_report")
+        assert c.shape == ComputeShape.REDUCE
+        assert "orders" in c.input_tables
+
+    def test_compute_expand(self):
+        c = next(c for c in self.spec.computes if c.name.snake == "split_order_into_lines")
+        assert c.shape == ComputeShape.EXPAND
+
+    def test_compute_correlate(self):
+        c = next(c for c in self.spec.computes if c.name.snake == "match_orders_to_lines")
+        assert c.shape == ComputeShape.CORRELATE
+        assert "orders" in c.input_tables
+        assert "order_lines" in c.input_tables
+
+    def test_compute_route(self):
+        c = next(c for c in self.spec.computes if c.name.snake == "triage_order")
+        assert c.shape == ComputeShape.ROUTE
+
+    def test_compute_chain(self):
+        c = next(c for c in self.spec.computes if c.name.snake == "process_order")
+        assert c.shape == ComputeShape.CHAIN
+        assert len(c.chain_steps) == 2
+
+    # Channels
+
+    def test_four_channels(self):
+        assert len(self.spec.channels) == 4
+
+    def test_webhook_channel(self):
+        ch = next(c for c in self.spec.channels if c.name.snake == "order_webhook")
+        assert ch.protocol == ChannelProtocol.WEBHOOK
+        assert ch.carries_table == "orders"
+        assert ch.endpoint == "/webhooks/orders"
+
+    def test_sse_channel(self):
+        ch = next(c for c in self.spec.channels if c.name.snake == "order_updates_stream")
+        assert ch.protocol == ChannelProtocol.SSE
+
+    def test_websocket_channel(self):
+        ch = next(c for c in self.spec.channels if c.name.snake == "order_notifications")
+        assert ch.protocol == ChannelProtocol.WEBSOCKET
+        assert ch.endpoint == "/ws/orders"
+
+    def test_internal_channel(self):
+        ch = next(c for c in self.spec.channels if c.name.snake == "internal_order_bus")
+        assert ch.protocol == ChannelProtocol.INTERNAL
+
+    # Boundaries
+
+    def test_two_boundaries(self):
+        assert len(self.spec.boundaries) == 2
+
+    def test_order_processing_boundary(self):
+        b = next(b for b in self.spec.boundaries if b.name.snake == "order_processing")
+        assert "orders" in b.contains_tables
+        assert "order_lines" in b.contains_tables
+        assert b.identity_mode == "inherit"
+
+    def test_hello_user_no_tables(self):
+        spec = _load_and_lower("hello_user.termin")
+        assert spec.tables == ()
+
+    def test_hello_user_compute_typed_params(self):
+        spec = _load_and_lower("hello_user.termin")
+        assert len(spec.computes) == 1
+        c = spec.computes[0]
+        assert c.name.display == "SayHelloTo"
+        assert c.shape == ComputeShape.TRANSFORM
+        assert len(c.input_params) == 1
+        assert c.input_params[0].name == "u"
+        assert c.input_params[0].type_name == "UserProfile"
+        assert c.required_role == "LoggedInUser"
+
+    def test_hello_user_merged_pages(self):
+        spec = _load_and_lower("hello_user.termin")
+        assert len(spec.pages) == 2
+        anon_page = next(p for p in spec.pages if p.role == "Anonymous")
+        assert "Anon, Hello!" in anon_page.static_texts
+        logged_page = next(p for p in spec.pages if p.role == "LoggedInUser")
+        assert "SayHelloTo(LoggedInUser.CurrentUser)" in logged_page.static_expressions
+
+    def test_order_reporting_boundary(self):
+        b = next(b for b in self.spec.boundaries if b.name.snake == "order_reporting")
+        assert "reports" in b.contains_tables
+        assert b.identity_mode == "restrict"
+        assert "read orders" in b.identity_scopes

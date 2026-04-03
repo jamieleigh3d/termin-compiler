@@ -1,0 +1,5 @@
+Application: Hello World
+  Description: The simplest possible Termin application
+
+As anonymous, I want to see a page "Hello" so that I can be greeted:
+  Display text "Hello, World"

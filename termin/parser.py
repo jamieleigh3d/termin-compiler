@@ -14,6 +14,8 @@ from .ast_nodes import (
     HighlightRows, AllowFilter, AllowSearch, SubscribeTo, AcceptInput,
     ValidateUnique, CreateAs, AfterSave, ShowChart, DisplayAggregation,
     NavBar, NavItem, ApiSection, ApiEndpoint, Stream, Directive,
+    ComputeNode, ComputeParam, ChannelDecl, ChannelRequirement, BoundaryDecl,
+    DisplayText,
 )
 from .errors import ParseError, CompileResult
 
@@ -115,6 +117,12 @@ class Parser:
                     program.api = self.parse_api()
                 elif t.type == TokenType.STREAM_DECL:
                     program.streams.append(self.parse_stream())
+                elif t.type == TokenType.COMPUTE_DECL:
+                    program.computes.append(self.parse_compute())
+                elif t.type == TokenType.CHANNEL_DECL:
+                    program.channels.append(self.parse_channel())
+                elif t.type == TokenType.BOUNDARY_DECL:
+                    program.boundaries.append(self.parse_boundary())
                 else:
                     self._error(f"Unexpected line: {t.value}", t.line)
                     self.advance()
@@ -156,12 +164,19 @@ class Parser:
 
     def parse_role(self) -> Role:
         t = self.expect(TokenType.ROLE_DECL)
-        quoted = _extract_quoted(t.value)
-        if not quoted:
-            raise ParseError(message="Role declaration missing name", line=t.line,
-                             source_line=self._source_line(t.line))
-        name = quoted[0]
-        scopes = quoted[1:]
+        # Check for standard form: A "role" has "scope1" and "scope2"
+        m_standard = re.match(r'^(?:A|An)\s+"([^"]+)"\s+has\s+', t.value)
+        if m_standard:
+            name = m_standard.group(1)
+            scopes = _extract_quoted(t.value[m_standard.end():])
+        else:
+            # Bare form: Anonymous has "scope1" and "scope2"
+            m = re.match(r'(\w+)\s+has\s+(.*)', t.value)
+            if not m:
+                raise ParseError(message="Role declaration missing name", line=t.line,
+                                 source_line=self._source_line(t.line))
+            name = m.group(1)
+            scopes = _extract_quoted(m.group(2))
         return Role(name=name, scopes=scopes, line=t.line)
 
     # ── Content ──
@@ -370,7 +385,8 @@ class Parser:
     def parse_story(self) -> UserStory:
         t = self.expect(TokenType.STORY_HEADER)
         # "As a warehouse clerk, I want to see all products and their current stock levels"
-        m = re.match(r'As\s+(?:a|an)\s+(.+?),\s+I\s+want\s+to\s+(.*)', t.value)
+        # "As anonymous, I want to see a page "Hello" so that I can be greeted:"
+        m = re.match(r'As\s+(?:(?:a|an)\s+)?(.+?),\s+I\s+want\s+to\s+(.*)', t.value)
         if not m:
             raise ParseError(message="Cannot parse user story header", line=t.line,
                              source_line=self._source_line(t.line))
@@ -380,8 +396,19 @@ class Parser:
 
         story = UserStory(role=role, action=action, objective="", line=t.line)
 
-        # Parse "so that" line
-        if self.check(TokenType.STORY_SO_THAT):
+        # Handle inline "so that" on the same line
+        so_that_inline = re.match(r'(.+?)\s+so\s+that\s+(.*?):?$', action)
+        if so_that_inline:
+            story.action = so_that_inline.group(1).strip()
+            story.objective = so_that_inline.group(2).strip()
+
+        # Extract inline page name from action: 'see a page "Hello"'
+        page_match = re.search(r'(?:see\s+)?a\s+page\s+"([^"]+)"', story.action)
+        if page_match:
+            story.directives.append(ShowPage(page_name=page_match.group(1), line=t.line))
+
+        # Parse "so that" line (if not already inline)
+        if not story.objective and self.check(TokenType.STORY_SO_THAT):
             st = self.advance()
             obj = re.match(r'so\s+that\s+(.*?):?$', st.value)
             if obj:
@@ -393,7 +420,7 @@ class Parser:
             TokenType.HIGHLIGHT_ROWS, TokenType.ALLOW_FILTERING, TokenType.ALLOW_SEARCHING,
             TokenType.SUBSCRIBES_TO, TokenType.ACCEPT_INPUT, TokenType.VALIDATE_UNIQUE,
             TokenType.CREATE_AS, TokenType.AFTER_SAVING, TokenType.SHOW_CHART,
-            TokenType.DISPLAY_AGGREGATION,
+            TokenType.DISPLAY_TEXT, TokenType.DISPLAY_AGGREGATION,
         ):
             story.directives.append(self.parse_directive())
 
@@ -496,6 +523,17 @@ class Parser:
             days = int(m.group(2)) if m else 30
             return ShowChart(content_name=content, days=days, line=t.line)
 
+        elif t.type == TokenType.DISPLAY_TEXT:
+            self.advance()
+            # 'Display text "Hello, World"' or 'Display text SayHelloTo(...)'
+            quoted = _extract_quoted(t.value)
+            if quoted:
+                return DisplayText(text=quoted[0], line=t.line)
+            else:
+                # Unquoted expression
+                expr = re.sub(r'^\s*Display\s+text\s+', '', t.value).strip()
+                return DisplayText(text=expr, is_expression=True, line=t.line)
+
         elif t.type == TokenType.DISPLAY_AGGREGATION:
             self.advance()
             # "Display total product count with active vs discontinued breakdown"
@@ -577,6 +615,149 @@ class Parser:
             return Stream(description=m.group(1), path=m.group(2), line=t.line)
         raise ParseError(message="Cannot parse stream declaration", line=t.line,
                          source_line=self._source_line(t.line))
+
+
+    # ── Compute ──
+
+    def parse_compute(self) -> ComputeNode:
+        t = self.expect(TokenType.COMPUTE_DECL)
+        name = _extract_quoted(t.value)[0]
+        node = ComputeNode(name=name, line=t.line)
+
+        # Parse shape line: "Transform: takes X, produces Y" or "Chain: X then Y"
+        if self.check(TokenType.COMPUTE_SHAPE):
+            st = self.advance()
+            m = re.match(r'\s*(\w+):\s+(.*)', st.value)
+            if m:
+                node.shape = m.group(1).lower()
+                rest = m.group(2).strip()
+                if node.shape == "chain":
+                    # "calculate reorder quantity then inventory valuation"
+                    node.chain_steps = [s.strip() for s in re.split(r'\s+then\s+', rest)]
+                else:
+                    # "takes a stock level, produces a stock level"
+                    # "takes u : UserProfile, produces "greeting" : Text"
+                    io_match = re.match(r'takes\s+(?:a\s+|an\s+)?(.+?),\s*produces\s+(?:a\s+|an\s+)?(.+)', rest)
+                    if io_match:
+                        inputs_text = io_match.group(1).strip()
+                        outputs_text = io_match.group(2).strip()
+
+                        # Check for typed parameters: "u : UserProfile"
+                        node.input_params = self._parse_typed_params(inputs_text, st.line)
+                        node.output_params = self._parse_typed_params(outputs_text, st.line)
+
+                        # Also populate plain inputs/outputs for backward compat
+                        if node.input_params:
+                            node.inputs = [p.type_name for p in node.input_params]
+                        else:
+                            node.inputs = [i.strip() for i in re.split(r'\s+and\s+', inputs_text)]
+
+                        # Handle "one of X, Y, or Z" for Route shape
+                        if outputs_text.startswith("one of "):
+                            outputs_text = outputs_text[7:]
+                            node.outputs = [o.strip() for o in re.split(r',\s*(?:or\s+)?|\s+or\s+', outputs_text)]
+                        elif node.output_params:
+                            node.outputs = [p.type_name for p in node.output_params]
+                        else:
+                            node.outputs = [o.strip() for o in re.split(r'\s+and\s+', outputs_text)]
+
+        # Consume body lines (UNKNOWN tokens) and access rules
+        while self.check(TokenType.UNKNOWN, TokenType.ACCESS_RULE):
+            if self.check(TokenType.ACCESS_RULE):
+                at = self.advance()
+                scope = _extract_quoted(at.value)[0]
+                node.access_scope = scope
+            else:
+                bt = self.advance()
+                node.body_lines.append(bt.value)
+
+        # Check body lines for role-as-subject access: "RoleName can execute this"
+        remaining = []
+        for line in node.body_lines:
+            m = re.match(r'(\w+)\s+can\s+execute\s+this', line)
+            if m and not node.access_scope:
+                node.access_role = m.group(1)
+            else:
+                remaining.append(line)
+        node.body_lines = remaining
+
+        return node
+
+    def _parse_typed_params(self, text: str, line: int) -> list[ComputeParam]:
+        """Parse typed parameters like 'u : UserProfile' or '"greeting" : Text'."""
+        params = []
+        # Match patterns like: identifier : Type, or "name" : Type
+        for m in re.finditer(r'(?:"([^"]+)"|(\w+))\s*:\s*(\w+)', text):
+            name = m.group(1) or m.group(2)
+            type_name = m.group(3)
+            params.append(ComputeParam(name=name, type_name=type_name, line=line))
+        return params
+
+    # ── Channel ──
+
+    def parse_channel(self) -> ChannelDecl:
+        t = self.expect(TokenType.CHANNEL_DECL)
+        name = _extract_quoted(t.value)[0]
+        channel = ChannelDecl(name=name, line=t.line)
+
+        while self.check(
+            TokenType.CHANNEL_CARRIES, TokenType.CHANNEL_PROTOCOL,
+            TokenType.CHANNEL_DIRECTION, TokenType.CHANNEL_REQUIRES,
+            TokenType.CHANNEL_ENDPOINT,
+        ):
+            ct = self.advance()
+            if ct.type == TokenType.CHANNEL_CARRIES:
+                # "Carries products"
+                channel.carries = ct.value.split("Carries", 1)[1].strip()
+            elif ct.type == TokenType.CHANNEL_PROTOCOL:
+                # "Protocol: SSE"
+                channel.protocol = ct.value.split(":", 1)[1].strip().lower()
+            elif ct.type == TokenType.CHANNEL_DIRECTION:
+                # "From application to external"
+                m = re.match(r'\s*From\s+(.+?)\s+to\s+(.+)', ct.value)
+                if m:
+                    channel.source = m.group(1).strip().lower()
+                    channel.destination = m.group(2).strip().lower()
+            elif ct.type == TokenType.CHANNEL_REQUIRES:
+                # 'Requires "read inventory" to receive'
+                scope = _extract_quoted(ct.value)[0]
+                m = re.search(r'to\s+(send|receive)\s*$', ct.value)
+                direction = m.group(1) if m else "receive"
+                channel.requirements.append(ChannelRequirement(
+                    scope=scope, direction=direction, line=ct.line,
+                ))
+            elif ct.type == TokenType.CHANNEL_ENDPOINT:
+                # "Endpoint: /webhooks/orders"
+                channel.endpoint = ct.value.split(":", 1)[1].strip()
+
+        return channel
+
+    # ── Boundary ──
+
+    def parse_boundary(self) -> BoundaryDecl:
+        t = self.expect(TokenType.BOUNDARY_DECL)
+        name = _extract_quoted(t.value)[0]
+        boundary = BoundaryDecl(name=name, line=t.line)
+
+        while self.check(TokenType.BOUNDARY_CONTAINS, TokenType.BOUNDARY_IDENTITY):
+            ct = self.advance()
+            if ct.type == TokenType.BOUNDARY_CONTAINS:
+                # "Contains products, stock levels, and reorder alerts"
+                text = ct.value.split("Contains", 1)[1].strip()
+                boundary.contains = _parse_comma_list(text)
+            elif ct.type == TokenType.BOUNDARY_IDENTITY:
+                # "Identity inherits from application"
+                # "Identity restricts to "read inventory""
+                if "inherits" in ct.value:
+                    boundary.identity_mode = "inherit"
+                    m = re.search(r'from\s+(.+)', ct.value)
+                    if m:
+                        boundary.identity_parent = m.group(1).strip()
+                elif "restricts" in ct.value:
+                    boundary.identity_mode = "restrict"
+                    boundary.identity_scopes = _extract_quoted(ct.value)
+
+        return boundary
 
 
 def parse(source: str) -> tuple[Program, CompileResult]:

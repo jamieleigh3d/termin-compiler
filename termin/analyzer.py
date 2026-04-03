@@ -9,6 +9,7 @@ from .ast_nodes import (
     Program, Content, StateMachine, EventRule, UserStory, ShowPage,
     DisplayTable, AcceptInput, SubscribeTo, ShowRelated, AllowFilter,
     AllowSearch, ShowChart, DisplayAggregation,
+    ComputeNode, ChannelDecl, BoundaryDecl,
 )
 from .errors import SemanticError, SecurityError, CompileResult
 
@@ -20,10 +21,13 @@ class Analyzer:
 
         # Symbol tables built during analysis
         self.content_names: set[str] = set()
+        self.content_singulars: set[str] = set()
         self.scope_names: set[str] = set()
         self.role_names: set[str] = set()
         self.page_names: set[str] = set()
         self.content_field_names: dict[str, set[str]] = {}  # content_name -> {field_names}
+        self.compute_names: set[str] = set()
+        self.boundary_names: set[str] = set()
 
     def analyze(self) -> CompileResult:
         self._build_symbol_tables()
@@ -44,7 +48,14 @@ class Analyzer:
 
         for content in p.contents:
             self.content_names.add(content.name)
+            self.content_singulars.add(content.singular)
             self.content_field_names[content.name] = {f.name for f in content.fields}
+
+        for compute in p.computes:
+            self.compute_names.add(compute.name)
+
+        for boundary in p.boundaries:
+            self.boundary_names.add(boundary.name)
 
         for story in p.stories:
             for d in story.directives:
@@ -52,6 +63,22 @@ class Analyzer:
                     self.page_names.add(d.page_name)
 
     # ── Semantic Checks ──
+
+    # Built-in type names that don't require Content declarations
+    BUILTIN_TYPES = {"text", "userprofile", "role", "integer", "real", "timestamp"}
+
+    def _resolve_content_name(self, name: str) -> bool:
+        """Check if a name matches a content name, singular form, or built-in type."""
+        if name.lower() in self.BUILTIN_TYPES:
+            return True
+        if name in self.content_names:
+            return True
+        if name in self.content_singulars:
+            return True
+        # Try plural form
+        if name + "s" in self.content_names:
+            return True
+        return False
 
     def _check_semantics(self) -> None:
         self._check_role_scopes()
@@ -61,6 +88,9 @@ class Analyzer:
         self._check_stories()
         self._check_navigation()
         self._check_api()
+        self._check_computes()
+        self._check_channels()
+        self._check_boundaries()
 
     def _check_role_scopes(self) -> None:
         for role in self.program.roles:
@@ -139,11 +169,16 @@ class Analyzer:
                     ))
 
     def _check_stories(self) -> None:
+        role_names_lower = {r.lower() for r in self.role_names}
         for story in self.program.stories:
-            # Check role exists
-            if story.role not in self.role_names:
+            # "anonymous" is a built-in role — no definition required
+            if story.role.lower() == "anonymous":
+                continue
+            # Check role exists (case-insensitive)
+            if story.role.lower() not in role_names_lower:
                 # Check partial match (e.g., "warehouse clerk" in roles)
-                found = any(story.role in r or r in story.role for r in self.role_names)
+                found = any(story.role.lower() in r.lower() or r.lower() in story.role.lower()
+                            for r in self.role_names)
                 if not found:
                     self.errors.add(SemanticError(
                         message=f'User story references undefined role "{story.role}"',
@@ -172,6 +207,9 @@ class Analyzer:
         self._check_content_has_access_rules()
         self._check_transitions_have_scopes()
         self._check_no_orphan_states()
+        self._check_compute_has_access()
+        self._check_channel_has_auth()
+        self._check_boundary_scope_restriction()
 
     def _check_content_has_access_rules(self) -> None:
         """Every Content must have at least one access rule."""
@@ -225,6 +263,126 @@ class Analyzer:
                             f'All states must be reachable from the initial state.',
                     line=sm.line,
                 ))
+
+
+    # ── Compute Checks ──
+
+    def _check_computes(self) -> None:
+        valid_shapes = {"transform", "reduce", "expand", "correlate", "route", "chain"}
+        for compute in self.program.computes:
+            if not compute.shape or compute.shape not in valid_shapes:
+                self.errors.add(SemanticError(
+                    message=f'Compute "{compute.name}" has invalid shape "{compute.shape}". '
+                            f'Valid shapes: {", ".join(sorted(valid_shapes))}',
+                    line=compute.line,
+                ))
+            for inp in compute.inputs:
+                if not self._resolve_content_name(inp):
+                    self.errors.add(SemanticError(
+                        message=f'Compute "{compute.name}" references undefined '
+                                f'input content "{inp}"',
+                        line=compute.line,
+                    ))
+            for out in compute.outputs:
+                if not self._resolve_content_name(out):
+                    self.errors.add(SemanticError(
+                        message=f'Compute "{compute.name}" references undefined '
+                                f'output content "{out}"',
+                        line=compute.line,
+                    ))
+            if compute.shape == "chain":
+                for step in compute.chain_steps:
+                    if step not in self.compute_names:
+                        self.errors.add(SemanticError(
+                            message=f'Chain "{compute.name}" references undefined '
+                                    f'compute step "{step}"',
+                            line=compute.line,
+                        ))
+            if compute.access_scope and compute.access_scope not in self.scope_names:
+                self.errors.add(SemanticError(
+                    message=f'Compute "{compute.name}" references undefined '
+                            f'scope "{compute.access_scope}"',
+                    line=compute.line,
+                ))
+
+    def _check_compute_has_access(self) -> None:
+        """Every Compute must have an access rule."""
+        role_names_lower = {r.lower() for r in self.role_names}
+        for compute in self.program.computes:
+            if not compute.access_scope and not compute.access_role:
+                self.errors.add(SecurityError(
+                    message=f'Compute "{compute.name}" has no access rule. '
+                            f'Every Compute must declare who can execute it.',
+                    line=compute.line,
+                ))
+            if compute.access_role:
+                if (compute.access_role.lower() not in role_names_lower
+                        and compute.access_role.lower() != "anonymous"):
+                    self.errors.add(SemanticError(
+                        message=f'Compute "{compute.name}" references undefined '
+                                f'role "{compute.access_role}"',
+                        line=compute.line,
+                    ))
+
+    # ── Channel Checks ──
+
+    VALID_PROTOCOLS = {"rest", "sse", "websocket", "webhook", "pubsub", "internal"}
+
+    def _check_channels(self) -> None:
+        for channel in self.program.channels:
+            if channel.carries and not self._resolve_content_name(channel.carries):
+                self.errors.add(SemanticError(
+                    message=f'Channel "{channel.name}" carries undefined '
+                            f'content "{channel.carries}"',
+                    line=channel.line,
+                ))
+            if channel.protocol and channel.protocol not in self.VALID_PROTOCOLS:
+                self.errors.add(SemanticError(
+                    message=f'Channel "{channel.name}" has invalid protocol "{channel.protocol}". '
+                            f'Valid protocols: {", ".join(sorted(self.VALID_PROTOCOLS))}',
+                    line=channel.line,
+                ))
+            for req in channel.requirements:
+                if req.scope not in self.scope_names:
+                    self.errors.add(SemanticError(
+                        message=f'Channel "{channel.name}" references undefined '
+                                f'scope "{req.scope}"',
+                        line=req.line,
+                    ))
+
+    def _check_channel_has_auth(self) -> None:
+        """Every non-internal Channel must have auth requirements."""
+        for channel in self.program.channels:
+            if channel.protocol != "internal" and not channel.requirements:
+                self.errors.add(SecurityError(
+                    message=f'Channel "{channel.name}" has no authentication requirements. '
+                            f'Every external Channel must declare required scopes.',
+                    line=channel.line,
+                ))
+
+    # ── Boundary Checks ──
+
+    def _check_boundaries(self) -> None:
+        for boundary in self.program.boundaries:
+            for item in boundary.contains:
+                if not self._resolve_content_name(item) and item not in self.boundary_names:
+                    self.errors.add(SemanticError(
+                        message=f'Boundary "{boundary.name}" contains undefined '
+                                f'item "{item}"',
+                        line=boundary.line,
+                    ))
+
+    def _check_boundary_scope_restriction(self) -> None:
+        """Boundary scope restrictions must use valid scopes."""
+        for boundary in self.program.boundaries:
+            if boundary.identity_mode == "restrict":
+                for scope in boundary.identity_scopes:
+                    if scope not in self.scope_names:
+                        self.errors.add(SecurityError(
+                            message=f'Boundary "{boundary.name}" restricts to undefined '
+                                    f'scope "{scope}"',
+                            line=boundary.line,
+                        ))
 
 
 def analyze(program: Program) -> CompileResult:

@@ -172,3 +172,232 @@ def test_parse_warehouse_example():
 def test_parse_error_unknown_line():
     program, errors = parse('This is garbage')
     assert not errors.ok
+
+
+# ── Compute parsing ──
+
+def test_parse_compute_transform():
+    program, errors = parse('''Compute called "enrich order":
+  Transform: takes an order, produces an order
+  Add tax calculation
+  Anyone with "write" can execute this''')
+    assert errors.ok
+    c = program.computes[0]
+    assert c.name == "enrich order"
+    assert c.shape == "transform"
+    assert c.inputs == ["order"]
+    assert c.outputs == ["order"]
+    assert c.body_lines == ["Add tax calculation"]
+    assert c.access_scope == "write"
+
+
+def test_parse_compute_reduce():
+    program, errors = parse('''Compute called "summarize":
+  Reduce: takes orders, produces a report
+  Anyone with "read" can execute this''')
+    assert errors.ok
+    c = program.computes[0]
+    assert c.shape == "reduce"
+    assert c.inputs == ["orders"]
+    assert c.outputs == ["report"]
+
+
+def test_parse_compute_correlate():
+    program, errors = parse('''Compute called "match":
+  Correlate: takes invoices and payments, produces reports
+  Anyone with "read" can execute this''')
+    assert errors.ok
+    c = program.computes[0]
+    assert c.shape == "correlate"
+    assert c.inputs == ["invoices", "payments"]
+    assert c.outputs == ["reports"]
+
+
+def test_parse_compute_route():
+    program, errors = parse('''Compute called "classify":
+  Route: takes a ticket, produces one of bugs or features
+  Anyone with "write" can execute this''')
+    assert errors.ok
+    c = program.computes[0]
+    assert c.shape == "route"
+    assert c.inputs == ["ticket"]
+    assert c.outputs == ["bugs", "features"]
+
+
+def test_parse_compute_chain():
+    program, errors = parse('''Compute called "pipeline":
+  Chain: step one then step two then step three
+  Anyone with "admin" can execute this''')
+    assert errors.ok
+    c = program.computes[0]
+    assert c.shape == "chain"
+    assert c.chain_steps == ["step one", "step two", "step three"]
+
+
+# ── Channel parsing ──
+
+def test_parse_channel_webhook():
+    program, errors = parse('''Channel called "order hook":
+  Carries orders
+  Protocol: webhook
+  From external to application
+  Endpoint: /webhooks/orders
+  Requires "write" to send''')
+    assert errors.ok
+    ch = program.channels[0]
+    assert ch.name == "order hook"
+    assert ch.carries == "orders"
+    assert ch.protocol == "webhook"
+    assert ch.source == "external"
+    assert ch.destination == "application"
+    assert ch.endpoint == "/webhooks/orders"
+    assert len(ch.requirements) == 1
+    assert ch.requirements[0].scope == "write"
+    assert ch.requirements[0].direction == "send"
+
+
+def test_parse_channel_sse():
+    program, errors = parse('''Channel called "updates":
+  Carries items
+  Protocol: SSE
+  From application to external
+  Requires "read" to receive''')
+    assert errors.ok
+    ch = program.channels[0]
+    assert ch.protocol == "sse"
+    assert ch.requirements[0].direction == "receive"
+
+
+def test_parse_channel_internal():
+    program, errors = parse('''Channel called "bus":
+  Carries items
+  Protocol: internal''')
+    assert errors.ok
+    ch = program.channels[0]
+    assert ch.protocol == "internal"
+    assert len(ch.requirements) == 0
+
+
+# ── Boundary parsing ──
+
+def test_parse_boundary_inherit():
+    program, errors = parse('''Boundary called "inventory":
+  Contains products, stock levels, and alerts
+  Identity inherits from application''')
+    assert errors.ok
+    b = program.boundaries[0]
+    assert b.name == "inventory"
+    assert b.contains == ["products", "stock levels", "alerts"]
+    assert b.identity_mode == "inherit"
+    assert b.identity_parent == "application"
+
+
+def test_parse_boundary_restrict():
+    program, errors = parse('''Boundary called "reporting":
+  Contains reports
+  Identity restricts to "read only"''')
+    assert errors.ok
+    b = program.boundaries[0]
+    assert b.name == "reporting"
+    assert b.contains == ["reports"]
+    assert b.identity_mode == "restrict"
+    assert b.identity_scopes == ["read only"]
+
+
+def test_parse_anonymous_story():
+    program, errors = parse('''As anonymous, I want to see a page "Hello" so that I can be greeted:
+  Display text "Hello, World"''')
+    assert errors.ok, errors.format()
+    story = program.stories[0]
+    assert story.role == "anonymous"
+    assert story.objective == "I can be greeted"
+    # ShowPage auto-extracted from action
+    assert any(isinstance(d, ShowPage) and d.page_name == "Hello" for d in story.directives)
+    # DisplayText parsed
+    assert any(isinstance(d, DisplayText) and d.text == "Hello, World" for d in story.directives)
+
+
+def test_parse_inline_so_that():
+    program, errors = parse('''As a user, I want to see things so that I can browse:
+  Display text "Welcome"''')
+    assert errors.ok, errors.format()
+    story = program.stories[0]
+    assert story.role == "user"
+    assert story.objective == "I can browse"
+
+
+def test_parse_inline_page():
+    program, errors = parse('''As a user, I want to see a page "Dashboard"
+  so that I can view data:
+    Display text "Welcome to the dashboard"''')
+    assert errors.ok, errors.format()
+    story = program.stories[0]
+    # ShowPage should be auto-created from action text
+    show_pages = [d for d in story.directives if isinstance(d, ShowPage)]
+    assert len(show_pages) >= 1
+    assert show_pages[0].page_name == "Dashboard"
+
+
+def test_parse_bare_role():
+    program, errors = parse('Anonymous has "view" and "write"')
+    assert errors.ok, errors.format()
+    assert program.roles[0].name == "Anonymous"
+    assert program.roles[0].scopes == ["view", "write"]
+
+
+def test_parse_display_text_expression():
+    program, errors = parse('''As anonymous, I want to see a page "Hello" so that I can test:
+  Display text SayHello(User.Name)''')
+    assert errors.ok, errors.format()
+    dt = [d for d in program.stories[0].directives if isinstance(d, DisplayText)]
+    assert len(dt) == 1
+    assert dt[0].is_expression is True
+    assert dt[0].text == "SayHello(User.Name)"
+
+
+def test_parse_compute_typed_params():
+    program, errors = parse('''Compute called "greet":
+  Transform: takes u : UserProfile, produces "msg" : Text
+  msg = "Hello " + u.Name
+  Admin can execute this''')
+    assert errors.ok, errors.format()
+    c = program.computes[0]
+    assert c.input_params[0].name == "u"
+    assert c.input_params[0].type_name == "UserProfile"
+    assert c.output_params[0].name == "msg"
+    assert c.output_params[0].type_name == "Text"
+    assert c.access_role == "Admin"
+    assert c.access_scope is None
+    assert 'msg = "Hello " + u.Name' in c.body_lines
+
+
+def test_parse_hello_user_example():
+    from pathlib import Path
+    source = Path("examples/hello_user.termin").read_text()
+    program, errors = parse(source)
+    assert errors.ok, errors.format()
+    assert program.application.name == "Hello User"
+    assert len(program.roles) == 2
+    assert len(program.stories) == 2
+    assert len(program.computes) == 1
+    assert program.computes[0].access_role == "LoggedInUser"
+
+
+def test_parse_hello_example():
+    from pathlib import Path
+    source = Path("examples/hello.termin").read_text()
+    program, errors = parse(source)
+    assert errors.ok, errors.format()
+    assert program.application.name == "Hello World"
+    assert len(program.stories) == 1
+    assert program.stories[0].role == "anonymous"
+
+
+def test_parse_compute_demo():
+    from pathlib import Path
+    source = Path("examples/compute_demo.termin").read_text()
+    program, errors = parse(source)
+    assert errors.ok, errors.format()
+    assert len(program.computes) == 6
+    assert len(program.channels) == 4
+    assert len(program.boundaries) == 2

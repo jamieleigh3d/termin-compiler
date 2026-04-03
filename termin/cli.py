@@ -1,6 +1,9 @@
 """Termin CLI: termin compile <file.termin> [-o output.py] [--backend fastapi]"""
 
+import json
 import sys
+from dataclasses import asdict
+from enum import Enum
 from pathlib import Path
 
 import click
@@ -23,12 +26,23 @@ def main():
     pass
 
 
+def _ir_json_default(obj):
+    """JSON serializer for IR dataclasses (Enums, frozensets)."""
+    if isinstance(obj, Enum):
+        return obj.name
+    if isinstance(obj, (frozenset, set)):
+        return sorted((o.name if isinstance(o, Enum) else o) for o in obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 @main.command()
 @click.argument("source", type=click.Path(exists=True))
 @click.option("-o", "--output", default="app.py", help="Output file path")
 @click.option("-b", "--backend", "backend_name", default="fastapi",
               help="Backend to use for code generation (default: fastapi)")
-def compile(source: str, output: str, backend_name: str):
+@click.option("--emit-ir", "ir_output", default=None, type=click.Path(),
+              help="Dump the AppSpec IR as JSON to this file")
+def compile(source: str, output: str, backend_name: str, ir_output: str | None):
     """Compile a .termin file into an application."""
     source_path = Path(source)
     source_text = source_path.read_text(encoding="utf-8")
@@ -47,6 +61,13 @@ def compile(source: str, output: str, backend_name: str):
 
     # Lower to IR
     spec = lower(program)
+
+    # Optionally dump IR
+    if ir_output:
+        ir_path = Path(ir_output)
+        ir_json = json.dumps(asdict(spec), indent=2, default=_ir_json_default)
+        ir_path.write_text(ir_json, encoding="utf-8")
+        click.echo(f"IR dumped to {ir_path.name}")
 
     # Get backend
     if backend_name in BACKENDS:

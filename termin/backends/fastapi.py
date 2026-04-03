@@ -20,6 +20,8 @@ from ..ir import (
     PageSpec, TableColumn, FilterField, FormField, HighlightRule,
     RelatedDataSpec, AggregationSpec, ChartSpec,
     NavItemSpec, StreamSpec, RoleSpec, AuthSpec,
+    ComputeSpec, ComputeShape, ChannelSpec, ChannelProtocol,
+    ChannelRequirementSpec, BoundarySpec,
 )
 
 
@@ -56,11 +58,14 @@ class FastApiBackend:
         self._emit_app_setup()
         self._emit_database()
         self._emit_identity()
+        self._emit_boundaries()
         self._emit_event_bus()
         self._emit_models()
         self._emit_state_machines()
         self._emit_event_handlers()
         self._emit_api_routes()
+        self._emit_compute_routes()
+        self._emit_channel_endpoints()
         self._emit_sse_stream()
         self._emit_templates()
         self._emit_page_routes()
@@ -121,7 +126,7 @@ class FastApiBackend:
 
             import aiosqlite
             import uvicorn
-            from fastapi import FastAPI, Request, Response, HTTPException, Depends, Form, Query
+            from fastapi import FastAPI, Request, Response, HTTPException, Depends, Form, Query, WebSocket
             from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
             from jinja2 import Environment, BaseLoader
             from pydantic import BaseModel, field_validator
@@ -227,6 +232,8 @@ class FastApiBackend:
         roles_dict = {}
         for role in self.spec.auth.roles:
             roles_dict[role.name] = list(role.scopes)
+        # Anonymous is always available as a built-in role (listed last so real roles are default)
+        roles_dict["anonymous"] = []
 
         self._w(f"ROLES = {repr(roles_dict)}")
         self._w()
@@ -241,7 +248,11 @@ class FastApiBackend:
                 role = request.cookies.get("termin_role", list(ROLES.keys())[0])
                 if role not in ROLES:
                     role = list(ROLES.keys())[0]
-                return {"role": role, "scopes": ROLES[role]}
+                display_name = request.cookies.get("termin_user_name", "User")
+                profile = {"FirstName": display_name, "DisplayName": display_name}
+                if role == "anonymous":
+                    profile = {"FirstName": "Anonymous", "DisplayName": "Anonymous"}
+                return {"role": role, "scopes": ROLES[role], "profile": profile}
 
             def require_scope(scope: str):
                 """FastAPI dependency that checks the user has a required scope."""
@@ -252,6 +263,42 @@ class FastApiBackend:
                     return user
                 return checker
         ''')
+
+    # ── Boundaries ──
+
+    def _emit_boundaries(self) -> None:
+        if not self.spec.boundaries:
+            return
+        self._w()
+        self._w("# ── Boundary Definitions ──")
+        self._w()
+        self._w("BOUNDARIES = {")
+        for bnd in self.spec.boundaries:
+            tables = ", ".join(f'"{t}"' for t in bnd.contains_tables)
+            sub = ", ".join(f'"{b}"' for b in bnd.contains_boundaries)
+            self._w(f'    "{bnd.name.snake}": {{')
+            self._w(f'        "tables": [{tables}],')
+            self._w(f'        "sub_boundaries": [{sub}],')
+            self._w(f'        "identity_mode": "{bnd.identity_mode}",')
+            if bnd.identity_scopes:
+                scopes = ", ".join(f'"{s}"' for s in bnd.identity_scopes)
+                self._w(f'        "restrict_scopes": [{scopes}],')
+            self._w(f'    }},')
+        self._w("}")
+        self._w()
+
+        # Generate scope enforcement for restricted boundaries
+        for bnd in self.spec.boundaries:
+            if bnd.identity_mode == "restrict" and bnd.identity_scopes:
+                snake = bnd.name.snake
+                scopes = bnd.identity_scopes
+                self._w(f'def require_boundary_{snake}(user=Depends(get_current_user)):')
+                self._w(f'    """Enforce scope restriction for boundary: {bnd.name.display}"""')
+                for scope in scopes:
+                    self._w(f'    if "{scope}" not in user["scopes"]:')
+                    self._w(f'        raise HTTPException(status_code=403, detail="Boundary {bnd.name.display} requires scope: {scope}")')
+                self._w(f'    return user')
+                self._w()
 
     # ── Event Bus ──
 
@@ -622,6 +669,200 @@ class FastApiBackend:
         self._w(f'        await db.close()')
         self._w()
 
+    # ── Compute Routes ──
+
+    def _emit_compute_routes(self) -> None:
+        if not self.spec.computes:
+            return
+
+        self._w()
+        self._w("# ── Compute Endpoints ──")
+        self._w()
+
+        for comp in self.spec.computes:
+            snake = comp.name.snake
+            scope = comp.required_scope
+            scope_dep = f', user=Depends(require_scope("{scope}"))' if scope else ""
+
+            if comp.shape == ComputeShape.TRANSFORM:
+                self._emit_compute_transform(comp, snake, scope_dep)
+            elif comp.shape == ComputeShape.REDUCE:
+                self._emit_compute_reduce(comp, snake, scope_dep)
+            elif comp.shape == ComputeShape.EXPAND:
+                self._emit_compute_expand(comp, snake, scope_dep)
+            elif comp.shape == ComputeShape.CORRELATE:
+                self._emit_compute_correlate(comp, snake, scope_dep)
+            elif comp.shape == ComputeShape.ROUTE:
+                self._emit_compute_route(comp, snake, scope_dep)
+            elif comp.shape == ComputeShape.CHAIN:
+                self._emit_compute_chain(comp, snake, scope_dep)
+
+    def _emit_compute_transform(self, comp: ComputeSpec, snake: str, scope_dep: str) -> None:
+        input_table = comp.input_tables[0] if comp.input_tables else "unknown"
+        self._w(f'@app.post("/compute/{snake}")')
+        self._w(f"async def compute_{snake}(request: Request{scope_dep}):")
+        self._w(f"    body = await request.json()")
+        for line in comp.body_lines:
+            self._w(f"    # {line}")
+        self._w(f"    # Input from: {input_table}")
+        self._w(f"    return body  # TODO: apply transformation logic")
+        self._w()
+
+    def _emit_compute_reduce(self, comp: ComputeSpec, snake: str, scope_dep: str) -> None:
+        input_table = comp.input_tables[0] if comp.input_tables else "unknown"
+        self._w(f'@app.post("/compute/{snake}")')
+        self._w(f"async def compute_{snake}(request: Request{scope_dep}):")
+        self._w(f'    # Reduce: {" / ".join(comp.body_lines) if comp.body_lines else "N records in, 1 summary out"}')
+        self._w(f"    db = await get_db()")
+        self._w(f"    try:")
+        self._w(f'        cursor = await db.execute("SELECT * FROM {input_table}")')
+        self._w(f"        rows = await cursor.fetchall()")
+        self._w(f"        result = {{")
+        self._w(f'            "count": len(rows),')
+        self._w(f'            "source_table": "{input_table}",')
+        self._w(f"        }}")
+        self._w(f"        return result")
+        self._w(f"    finally:")
+        self._w(f"        await db.close()")
+        self._w()
+
+    def _emit_compute_expand(self, comp: ComputeSpec, snake: str, scope_dep: str) -> None:
+        self._w(f'@app.post("/compute/{snake}")')
+        self._w(f"async def compute_{snake}(request: Request{scope_dep}):")
+        self._w(f"    body = await request.json()")
+        self._w(f'    # Expand: {" / ".join(comp.body_lines) if comp.body_lines else "1 record in, N records out"}')
+        self._w(f"    return [body]  # TODO: expand into multiple records")
+        self._w()
+
+    def _emit_compute_correlate(self, comp: ComputeSpec, snake: str, scope_dep: str) -> None:
+        tables = comp.input_tables
+        t1 = tables[0] if len(tables) > 0 else "table_a"
+        t2 = tables[1] if len(tables) > 1 else "table_b"
+        self._w(f'@app.post("/compute/{snake}")')
+        self._w(f"async def compute_{snake}(request: Request{scope_dep}):")
+        self._w(f'    # Correlate: {" / ".join(comp.body_lines) if comp.body_lines else f"join {t1} and {t2}"}')
+        self._w(f"    db = await get_db()")
+        self._w(f"    try:")
+        self._w(f'        c1 = await db.execute("SELECT * FROM {t1}")')
+        self._w(f"        rows1 = await c1.fetchall()")
+        self._w(f'        c2 = await db.execute("SELECT * FROM {t2}")')
+        self._w(f"        rows2 = await c2.fetchall()")
+        self._w(f"        return {{")
+        self._w(f'            "{t1}": [dict(r) for r in rows1],')
+        self._w(f'            "{t2}": [dict(r) for r in rows2],')
+        self._w(f'            "matched": [],  # TODO: apply correlation logic')
+        self._w(f"        }}")
+        self._w(f"    finally:")
+        self._w(f"        await db.close()")
+        self._w()
+
+    def _emit_compute_route(self, comp: ComputeSpec, snake: str, scope_dep: str) -> None:
+        outputs = comp.output_tables
+        self._w(f'@app.post("/compute/{snake}")')
+        self._w(f"async def compute_{snake}(request: Request{scope_dep}):")
+        self._w(f"    body = await request.json()")
+        self._w(f'    # Route: classify input into one of {outputs}')
+        self._w(f'    return {{"input": body, "routed_to": "{outputs[0] if outputs else "unknown"}"}}  # TODO: apply routing logic')
+        self._w()
+
+    def _emit_compute_chain(self, comp: ComputeSpec, snake: str, scope_dep: str) -> None:
+        steps = comp.chain_steps
+        self._w(f'@app.post("/compute/{snake}")')
+        self._w(f"async def compute_{snake}(request: Request{scope_dep}):")
+        self._w(f"    body = await request.json()")
+        self._w(f'    # Chain: {" -> ".join(steps)}')
+        self._w(f"    result = body")
+        for step in steps:
+            self._w(f"    # Step: {step}")
+            self._w(f"    # result = await compute_{step}(result)  # TODO: wire chain steps")
+        self._w(f"    return result")
+        self._w()
+
+    # ── Channel Endpoints ──
+
+    def _emit_channel_endpoints(self) -> None:
+        if not self.spec.channels:
+            return
+
+        self._w()
+        self._w("# ── Channel Endpoints ──")
+        self._w()
+
+        for ch in self.spec.channels:
+            if ch.protocol == ChannelProtocol.WEBHOOK:
+                self._emit_webhook_channel(ch)
+            elif ch.protocol == ChannelProtocol.WEBSOCKET:
+                self._emit_websocket_channel(ch)
+            elif ch.protocol == ChannelProtocol.SSE:
+                self._emit_sse_channel(ch)
+            # REST and internal channels are handled by existing API/event mechanisms
+
+    def _emit_webhook_channel(self, ch: ChannelSpec) -> None:
+        snake = ch.name.snake
+        endpoint = ch.endpoint or f"/webhooks/{snake}"
+        table = ch.carries_table
+
+        # Find send scope
+        scope = None
+        for req in ch.requirements:
+            if req.direction == "send":
+                scope = req.scope
+                break
+
+        scope_dep = f', user=Depends(require_scope("{scope}"))' if scope else ""
+        self._w(f'@app.post("{endpoint}")')
+        self._w(f"async def webhook_{snake}(request: Request{scope_dep}):")
+        self._w(f"    body = await request.json()")
+        self._w(f"    db = await get_db()")
+        self._w(f"    try:")
+        table_obj = self._table_by_snake.get(table)
+        if table_obj:
+            cols = [c.name for c in table_obj.columns if not c.is_auto]
+            placeholders = ", ".join("?" for _ in cols)
+            col_names = ", ".join(cols)
+            vals = ", ".join(f'body.get("{c}", "")' for c in cols)
+            self._w(f'        await db.execute(')
+            self._w(f'            "INSERT INTO {table} ({col_names}) VALUES ({placeholders})",')
+            self._w(f'            ({vals},)')
+            self._w(f'        )')
+            self._w(f'        await db.commit()')
+        self._w(f'        await event_bus.publish({{"type": "webhook_{snake}", "data": body}})')
+        self._w(f'        return {{"status": "accepted"}}')
+        self._w(f"    finally:")
+        self._w(f"        await db.close()")
+        self._w()
+
+    def _emit_websocket_channel(self, ch: ChannelSpec) -> None:
+        snake = ch.name.snake
+        endpoint = ch.endpoint or f"/ws/{snake}"
+        self._w(f'@app.websocket("{endpoint}")')
+        self._w(f"async def ws_{snake}(websocket: WebSocket):")
+        self._w(f"    await websocket.accept()")
+        self._w(f"    q = event_bus.subscribe()")
+        self._w(f"    try:")
+        self._w(f"        while True:")
+        self._w(f"            event = await q.get()")
+        self._w(f"            await websocket.send_json(event)")
+        self._w(f"    except Exception:")
+        self._w(f"        event_bus.unsubscribe(q)")
+        self._w()
+
+    def _emit_sse_channel(self, ch: ChannelSpec) -> None:
+        snake = ch.name.snake
+        endpoint = ch.endpoint or f"/channels/{snake}/stream"
+        self._w(f'@app.get("{endpoint}")')
+        self._w(f"async def channel_sse_{snake}(request: Request):")
+        self._w(f"    async def generate():")
+        self._w(f"        q = event_bus.subscribe()")
+        self._w(f"        try:")
+        self._w(f"            while True:")
+        self._w(f"                event = await q.get()")
+        self._w(f'                yield f"data: {{json.dumps(event)}}\\n\\n"')
+        self._w(f"        except asyncio.CancelledError:")
+        self._w(f"            event_bus.unsubscribe(q)")
+        self._w(f'    return StreamingResponse(generate(), media_type="text/event-stream")')
+        self._w()
+
     # ── SSE Stream ──
 
     def _emit_sse_stream(self) -> None:
@@ -676,12 +917,35 @@ class FastApiBackend:
                     <option value="{{{{ rname }}}}" {{% if rname == current_role %}}selected{{% endif %}}>{{{{ rname|title }}}}</option>
                     {{% endfor %}}
                 </select>
+                {{% if current_role != "anonymous" %}}
+                <label class="text-sm text-gray-600 ml-2">Name:</label>
+                <input type="text" name="user_name" value="{{{{ current_user_name }}}}"
+                       placeholder="Display name" class="text-sm border rounded px-2 py-1 w-28"
+                       onchange="this.form.submit()">
+                {{% endif %}}
             </form>
         </div>
     </nav>
     <main class="max-w-7xl mx-auto px-4">
         {{{{ content|safe }}}}
     </main>
+    <script id="termin-user-data" type="application/json">{{{{ user_profile_json|safe }}}}</script>
+    <script>
+    // Termin.js Runtime
+    window.__termin_user = JSON.parse(document.getElementById("termin-user-data").textContent);
+    window.__termin_user.role = "{{{{ current_role }}}}";
+    window.__termin_compute = {{}};
+    {{{{ termin_compute_js|safe }}}}
+    document.addEventListener("DOMContentLoaded", function() {{
+        document.querySelectorAll("[data-termin-expr]").forEach(function(el) {{
+            var expr = el.dataset.terminExpr;
+            var m = expr.match(/^(\\w+)\\((.+)\\)$/);
+            if (m && window.__termin_compute[m[1]]) {{
+                el.textContent = window.__termin_compute[m[1]](window.__termin_user);
+            }}
+        }});
+    }});
+    </script>
 </body>
 </html>'''
 
@@ -691,15 +955,24 @@ class FastApiBackend:
         # Role switcher endpoint
         self._wblock('''\
             @app.post("/set-role")
-            async def set_role(role: str = Form(...)):
+            async def set_role(role: str = Form(...), user_name: str = Form("")):
                 response = RedirectResponse(url="/", status_code=303)
                 response.set_cookie("termin_role", role)
+                if user_name:
+                    response.set_cookie("termin_user_name", user_name)
                 return response
         ''')
 
-        # Generate page templates
+        # Generate page templates (merge same-slug pages for role-conditional rendering)
+        pages_by_slug: dict[str, list] = {}
         for page in self.spec.pages:
-            self._emit_page_template(page)
+            pages_by_slug.setdefault(page.slug, []).append(page)
+
+        for slug, pages in pages_by_slug.items():
+            if len(pages) == 1:
+                self._emit_page_template(pages[0])
+            else:
+                self._emit_merged_page_template(slug, pages)
 
     def _build_nav_html(self) -> str:
         if not self.spec.nav_items:
@@ -739,6 +1012,18 @@ class FastApiBackend:
     def _emit_page_template(self, page: PageSpec) -> None:
         slug = page.slug
         template_parts = [f'<h1 class="text-2xl font-bold mb-4">{page.name}</h1>']
+
+        # Static text blocks
+        for text in page.static_texts:
+            template_parts.append(
+                f'<div class="text-lg text-gray-800 mb-4">{text}</div>'
+            )
+
+        # Expression blocks (evaluated client-side by termin.js)
+        for expr in page.static_expressions:
+            template_parts.append(
+                f'<div class="text-lg text-gray-800 mb-4" data-termin-expr="{expr}">...</div>'
+            )
 
         # Display table
         if page.display_table and page.table_columns:
@@ -1022,6 +1307,49 @@ class FastApiBackend:
             f'</script>'
         )
 
+    def _emit_merged_page_template(self, slug: str, pages: list) -> None:
+        """Emit a single template for multiple pages sharing the same slug but different roles."""
+        template_parts = [f'<h1 class="text-2xl font-bold mb-4">{pages[0].name}</h1>']
+
+        for page in pages:
+            role = page.role
+            role_cond = f'{{% if current_role == "{role}" or current_role|lower == "{role.lower()}" %}}'
+            parts = []
+
+            for text in page.static_texts:
+                parts.append(f'<div class="text-lg text-gray-800 mb-4">{text}</div>')
+            for expr in page.static_expressions:
+                parts.append(f'<div class="text-lg text-gray-800 mb-4" data-termin-expr="{expr}">...</div>')
+            if page.display_table and page.table_columns:
+                parts.append(self._gen_table_html(page))
+            if page.form_fields:
+                parts.append(self._gen_form_html(page))
+
+            if parts:
+                template_parts.append(role_cond)
+                template_parts.extend(parts)
+                template_parts.append('{% endif %}')
+
+        template_content = "\n".join(template_parts)
+        var_name = f"TEMPLATE_{slug.upper()}"
+        self._w(f'{var_name} = jinja_env.from_string({repr(template_content)})')
+        self._w()
+
+    # ── Compute-to-JS Compilation ──
+
+    def _compile_compute_to_js(self, comp: 'ComputeSpec') -> str:
+        """Compile a compute body to a JavaScript function body."""
+        # Simple expression compiler: "greeting = expr" -> "return expr;"
+        # Handles: string concatenation with +, property access with .
+        for line in comp.body_lines:
+            m = re.match(r'(\w+)\s*=\s*(.*)', line)
+            if m:
+                var_name = m.group(1)
+                expr = m.group(2).strip()
+                # Convert Python-style string concat to JS (already valid JS)
+                return f'return {expr};'
+        return 'return "TODO: implement";'
+
     # ── Page Routes ──
 
     def _emit_page_routes(self) -> None:
@@ -1033,8 +1361,12 @@ class FastApiBackend:
             self._w(f'    return RedirectResponse(url="/{first_slug}")')
             self._w()
 
+        # Emit one route per unique slug (merged pages share a route)
+        emitted_slugs: set[str] = set()
         for page in self.spec.pages:
-            self._emit_page_route(page)
+            if page.slug not in emitted_slugs:
+                self._emit_page_route(page)
+                emitted_slugs.add(page.slug)
 
     def _emit_page_route(self, page: PageSpec) -> None:
         slug = page.slug
@@ -1050,6 +1382,8 @@ class FastApiBackend:
         self._w(f'        context = {{')
         self._w(f'            "page_title": "{page.name}",')
         self._w(f'            "current_role": user["role"],')
+        self._w(f'            "current_user_name": user["profile"]["DisplayName"],')
+        self._w(f'            "user_profile_json": json.dumps(user["profile"]),')
         self._w(f'            "roles": list(ROLES.keys()),')
         self._w(f'            "q": q,')
         self._w(f'        }}')
@@ -1160,6 +1494,18 @@ class FastApiBackend:
                 if not page.display_table:
                     self._w(f'        rows_cursor = await db.execute("SELECT * FROM {form_table} ORDER BY id DESC")')
                     self._w(f'        context["{form_table}_rows"] = [dict(r) for r in await rows_cursor.fetchall()]')
+
+        # Generate termin.js compute function registrations
+        compute_js_parts = []
+        for comp in self.spec.computes:
+            if comp.body_lines and comp.input_params:
+                param_name = comp.input_params[0].name if comp.input_params else "x"
+                # Convert expression body to JS
+                body_js = self._compile_compute_to_js(comp)
+                compute_js_parts.append(
+                    f'window.__termin_compute["{comp.name.display}"] = function({param_name}) {{ {body_js} }};'
+                )
+        self._w(f'        context["termin_compute_js"] = {repr(chr(10).join(compute_js_parts))}')
 
         self._w(f'        content_html = {var_name}.render(**context)')
         self._w(f'        return BASE_TEMPLATE.render(content=content_html, **context)')

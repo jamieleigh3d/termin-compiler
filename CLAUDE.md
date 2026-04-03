@@ -149,8 +149,29 @@ As a {role}, I want to {action}
   so that {objective}:
     Show a page called "{name}"
     Display a table of {content} with columns: {fields}
+    Display text "{static text}"
     Accept input for {fields}
     ...
+
+As anonymous, I want to see a page "{name}" so that {objective}:
+  Display text "{greeting}"
+
+Compute called "{name}":
+  {Shape}: takes {content}, produces {content}
+  {body description}
+  Anyone with "{scope}" can execute this
+
+Channel called "{name}":
+  Carries {content}
+  Protocol: {REST|SSE|WebSocket|webhook|pubsub|internal}
+  From {source} to {destination}
+  Endpoint: {path}
+  Requires "{scope}" to {send|receive}
+
+Boundary called "{name}":
+  Contains {content1}, {content2}, and {content3}
+  Identity inherits from {parent}
+  Identity restricts to "{scope}"
 
 Navigation bar:
   "{label}" links to "{page}" visible to {roles}

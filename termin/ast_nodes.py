@@ -183,6 +183,12 @@ class ShowChart(Directive):
 
 
 @dataclass
+class DisplayText(Directive):
+    text: str = ""
+    is_expression: bool = False  # True when text is a compute call, not a string literal
+
+
+@dataclass
 class DisplayAggregation(Directive):
     description: str = ""
 
@@ -239,6 +245,63 @@ class Stream:
     line: int = 0
 
 
+# --- Compute ---
+
+@dataclass
+class ComputeParam:
+    name: str
+    type_name: str
+    line: int = 0
+
+
+@dataclass
+class ComputeNode:
+    name: str
+    shape: str = ""  # "transform", "reduce", "expand", "correlate", "route", "chain"
+    inputs: list[str] = field(default_factory=list)   # content names
+    outputs: list[str] = field(default_factory=list)   # content names
+    input_params: list[ComputeParam] = field(default_factory=list)   # typed params
+    output_params: list[ComputeParam] = field(default_factory=list)  # typed params
+    body_lines: list[str] = field(default_factory=list)
+    chain_steps: list[str] = field(default_factory=list)  # compute names for Chain shape
+    access_scope: Optional[str] = None
+    access_role: Optional[str] = None  # alternative: role name instead of scope
+    line: int = 0
+
+
+# --- Channel ---
+
+@dataclass
+class ChannelRequirement:
+    scope: str
+    direction: str  # "send" or "receive"
+    line: int = 0
+
+
+@dataclass
+class ChannelDecl:
+    name: str
+    carries: str = ""           # Content name
+    protocol: str = ""          # "rest", "sse", "websocket", "webhook", "pubsub", "internal"
+    source: str = ""            # Boundary name or "external" / "application"
+    destination: str = ""       # Boundary name or "external" / "application"
+    endpoint: Optional[str] = None
+    requirements: list[ChannelRequirement] = field(default_factory=list)
+    line: int = 0
+
+
+# --- Boundary ---
+
+@dataclass
+class BoundaryDecl:
+    name: str
+    contains: list[str] = field(default_factory=list)  # content or boundary names
+    identity_mode: str = "inherit"  # "inherit" or "restrict"
+    identity_parent: Optional[str] = None
+    identity_scopes: list[str] = field(default_factory=list)  # for restrict mode
+    line: int = 0
+
+
 # --- Application ---
 
 @dataclass
@@ -262,3 +325,6 @@ class Program:
     navigation: Optional[NavBar] = None
     api: Optional[ApiSection] = None
     streams: list[Stream] = field(default_factory=list)
+    computes: list[ComputeNode] = field(default_factory=list)
+    channels: list[ChannelDecl] = field(default_factory=list)
+    boundaries: list[BoundaryDecl] = field(default_factory=list)

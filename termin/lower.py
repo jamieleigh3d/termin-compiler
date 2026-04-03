@@ -12,7 +12,7 @@ from .ast_nodes import (
     Transition, EventRule, UserStory, Directive, ShowPage, DisplayTable,
     ShowRelated, HighlightRows, AllowFilter, AllowSearch, SubscribeTo,
     AcceptInput, ValidateUnique, CreateAs, AfterSave, ShowChart,
-    DisplayAggregation,
+    DisplayAggregation, DisplayText, ComputeNode, ChannelDecl, BoundaryDecl,
 )
 from .ir import (
     QualifiedName, ColumnType, Column, Table, Verb, AccessGrant,
@@ -21,6 +21,8 @@ from .ir import (
     HttpMethod, RouteKind, RouteSpec,
     TableColumn, FilterField, FormField, HighlightRule, RelatedDataSpec,
     AggregationSpec, ChartSpec, PageSpec, NavItemSpec, StreamSpec, AppSpec,
+    ComputeShape, ComputeSpec, ComputeParamSpec, ChannelProtocol,
+    ChannelRequirementSpec, ChannelSpec, BoundarySpec,
 )
 
 
@@ -385,6 +387,8 @@ def lower(program: Program) -> AppSpec:
         after_save = None
         aggregations = []
         chart = None
+        static_texts = []
+        static_expressions = []
 
         for d in story.directives:
             if isinstance(d, ShowPage):
@@ -495,6 +499,11 @@ def lower(program: Program) -> AppSpec:
                     aggregations.append(AggregationSpec(
                         key=slug, description=d.description, agg_type=agg_type, table=tbl,
                     ))
+            elif isinstance(d, DisplayText):
+                if d.is_expression:
+                    static_expressions.append(d.text)
+                else:
+                    static_texts.append(d.text)
             elif isinstance(d, ShowChart):
                 chart = ChartSpec(table=_snake(d.content_name), days=d.days)
 
@@ -526,6 +535,8 @@ def lower(program: Program) -> AppSpec:
                 aggregations=tuple(aggregations),
                 chart=chart,
                 required_scope=req_scope,
+                static_texts=tuple(static_texts),
+                static_expressions=tuple(static_expressions),
             ))
 
     # ── Lower navigation ──
@@ -547,6 +558,91 @@ def lower(program: Program) -> AppSpec:
     for s in program.streams:
         streams.append(StreamSpec(description=s.description, path=s.path))
 
+    # ── Helper: resolve content name to snake table name ──
+    def _resolve_to_table(name: str) -> str:
+        c = content_by_name.get(name) or content_by_singular.get(name)
+        if c:
+            return _snake(c.name)
+        # Try plural
+        c = content_by_name.get(name + "s")
+        if c:
+            return _snake(c.name)
+        return _snake(name)
+
+    # ── Lower computes ──
+    SHAPE_MAP = {
+        "transform": ComputeShape.TRANSFORM,
+        "reduce": ComputeShape.REDUCE,
+        "expand": ComputeShape.EXPAND,
+        "correlate": ComputeShape.CORRELATE,
+        "route": ComputeShape.ROUTE,
+        "chain": ComputeShape.CHAIN,
+    }
+    computes = []
+    compute_by_name: dict[str, ComputeNode] = {c.name: c for c in program.computes}
+    for comp in program.computes:
+        computes.append(ComputeSpec(
+            name=_qname(comp.name),
+            shape=SHAPE_MAP.get(comp.shape, ComputeShape.TRANSFORM),
+            input_tables=tuple(_resolve_to_table(i) for i in comp.inputs),
+            output_tables=tuple(_resolve_to_table(o) for o in comp.outputs),
+            body_lines=tuple(comp.body_lines),
+            chain_steps=tuple(_snake(s) for s in comp.chain_steps),
+            required_scope=comp.access_scope,
+            required_role=comp.access_role,
+            input_params=tuple(
+                ComputeParamSpec(name=p.name, type_name=p.type_name)
+                for p in comp.input_params
+            ),
+            output_params=tuple(
+                ComputeParamSpec(name=p.name, type_name=p.type_name)
+                for p in comp.output_params
+            ),
+        ))
+
+    # ── Lower channels ──
+    PROTOCOL_MAP = {
+        "rest": ChannelProtocol.REST,
+        "sse": ChannelProtocol.SSE,
+        "websocket": ChannelProtocol.WEBSOCKET,
+        "webhook": ChannelProtocol.WEBHOOK,
+        "pubsub": ChannelProtocol.PUBSUB,
+        "internal": ChannelProtocol.INTERNAL,
+    }
+    channels = []
+    for ch in program.channels:
+        channels.append(ChannelSpec(
+            name=_qname(ch.name),
+            carries_table=_resolve_to_table(ch.carries) if ch.carries else "",
+            protocol=PROTOCOL_MAP.get(ch.protocol, ChannelProtocol.REST),
+            source=ch.source,
+            destination=ch.destination,
+            endpoint=ch.endpoint,
+            requirements=tuple(
+                ChannelRequirementSpec(scope=r.scope, direction=r.direction)
+                for r in ch.requirements
+            ),
+        ))
+
+    # ── Lower boundaries ──
+    boundaries = []
+    boundary_names_set = {b.name for b in program.boundaries}
+    for bnd in program.boundaries:
+        bnd_tables = []
+        sub_boundaries = []
+        for item in bnd.contains:
+            if item in boundary_names_set:
+                sub_boundaries.append(_snake(item))
+            else:
+                bnd_tables.append(_resolve_to_table(item))
+        boundaries.append(BoundarySpec(
+            name=_qname(bnd.name),
+            contains_tables=tuple(bnd_tables),
+            contains_boundaries=tuple(sub_boundaries),
+            identity_mode=bnd.identity_mode,
+            identity_scopes=tuple(bnd.identity_scopes),
+        ))
+
     return AppSpec(
         name=program.application.name if program.application else "App",
         description=program.application.description if program.application else "",
@@ -559,4 +655,7 @@ def lower(program: Program) -> AppSpec:
         pages=tuple(pages),
         nav_items=tuple(nav_items),
         streams=tuple(streams),
+        computes=tuple(computes),
+        channels=tuple(channels),
+        boundaries=tuple(boundaries),
     )

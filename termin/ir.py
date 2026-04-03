@@ -236,6 +236,8 @@ class PageSpec:
     aggregations: tuple[AggregationSpec, ...] = ()
     chart: Optional[ChartSpec] = None
     required_scope: Optional[str] = None            # scope for form POST
+    static_texts: tuple[str, ...] = ()              # plain text content blocks
+    static_expressions: tuple[str, ...] = ()        # compute expression calls
 
 
 # ── Navigation ──
@@ -256,6 +258,76 @@ class StreamSpec:
     path: str
 
 
+# ── Compute ──
+
+class ComputeShape(Enum):
+    TRANSFORM = auto()
+    REDUCE = auto()
+    EXPAND = auto()
+    CORRELATE = auto()
+    ROUTE = auto()
+    CHAIN = auto()
+
+
+@dataclass(frozen=True)
+class ComputeParamSpec:
+    name: str
+    type_name: str
+
+
+@dataclass(frozen=True)
+class ComputeSpec:
+    name: QualifiedName
+    shape: ComputeShape
+    input_tables: tuple[str, ...]    # resolved snake_case table names
+    output_tables: tuple[str, ...]   # resolved snake_case table names
+    body_lines: tuple[str, ...] = ()
+    chain_steps: tuple[str, ...] = ()  # snake_case compute names for Chain
+    required_scope: Optional[str] = None
+    required_role: Optional[str] = None   # alternative to scope
+    input_params: tuple[ComputeParamSpec, ...] = ()
+    output_params: tuple[ComputeParamSpec, ...] = ()
+
+
+# ── Channels ──
+
+class ChannelProtocol(Enum):
+    REST = auto()
+    SSE = auto()
+    WEBSOCKET = auto()
+    WEBHOOK = auto()
+    PUBSUB = auto()
+    INTERNAL = auto()
+
+
+@dataclass(frozen=True)
+class ChannelRequirementSpec:
+    scope: str
+    direction: str  # "send" or "receive"
+
+
+@dataclass(frozen=True)
+class ChannelSpec:
+    name: QualifiedName
+    carries_table: str                               # resolved snake_case table name
+    protocol: ChannelProtocol
+    source: str = ""                                 # boundary name or "external"/"application"
+    destination: str = ""
+    endpoint: Optional[str] = None
+    requirements: tuple[ChannelRequirementSpec, ...] = ()
+
+
+# ── Boundaries ──
+
+@dataclass(frozen=True)
+class BoundarySpec:
+    name: QualifiedName
+    contains_tables: tuple[str, ...] = ()            # resolved snake_case table names
+    contains_boundaries: tuple[str, ...] = ()        # snake_case boundary names
+    identity_mode: str = "inherit"                   # "inherit" or "restrict"
+    identity_scopes: tuple[str, ...] = ()            # for restrict mode
+
+
 # ── Top-Level IR ──
 
 @dataclass(frozen=True)
@@ -272,3 +344,6 @@ class AppSpec:
     pages: tuple[PageSpec, ...]
     nav_items: tuple[NavItemSpec, ...]
     streams: tuple[StreamSpec, ...]
+    computes: tuple[ComputeSpec, ...] = ()
+    channels: tuple[ChannelSpec, ...] = ()
+    boundaries: tuple[BoundarySpec, ...] = ()
