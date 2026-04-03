@@ -308,7 +308,6 @@ class TestProjectBoardUI:
         # Team member should be a reference dropdown
         assert '<select name="team_member"' in r.text
 
-    @pytest.mark.xfail(reason="Aggregation query references wrong table — pre-existing issue")
     def test_project_dashboard(self, client, seeded):
         r = client.get("/project_dashboard",
                        cookies={"termin_role": "project manager"})

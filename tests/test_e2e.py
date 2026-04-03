@@ -208,7 +208,6 @@ class TestSpec84_StateTransitions:
 # ============================================================
 
 class TestSpec85_Events:
-    @pytest.mark.xfail(reason="JEXL event backend not yet wired to DB triggers")
     def test_low_stock_creates_alert(self, client):
         r = client.post("/api/v1/products", json={"sku": "EVT-001", "name": "Event Test"})
         pid = r.json()["id"]

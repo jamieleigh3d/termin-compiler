@@ -270,6 +270,23 @@ def lower(program: Program) -> AppSpec:
         resolved_content = content_by_name.get(ev.content_name)
         if not resolved_content:
             resolved_content = content_by_singular.get(ev.content_name)
+
+        # For JEXL events, try to infer source table from expression prefix
+        # e.g., "stockLevel.updated" -> content "stock levels"
+        if not resolved_content and ev.jexl_condition:
+            prefix = ev.jexl_condition.split(".")[0].strip()
+            # Convert camelCase to snake_case: "stockLevel" -> "stock_level"
+            import re as _re
+            camel_to_snake = _re.sub(r'([a-z])([A-Z])', r'\1_\2', prefix).lower()
+            for c in program.contents:
+                c_snake = _snake(c.name)
+                c_singular_snake = _snake(c.singular)
+                if (c_snake == camel_to_snake or c_singular_snake == camel_to_snake
+                        or c_snake == camel_to_snake + "s"
+                        or c_snake.startswith(camel_to_snake)):
+                    resolved_content = c
+                    break
+
         source_table = _snake(resolved_content.name) if resolved_content else _snake(ev.content_name)
 
         cond = None

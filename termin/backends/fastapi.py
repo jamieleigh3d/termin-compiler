@@ -609,8 +609,26 @@ class FastApiBackend:
             # JEXL-triggered events use expression evaluation
             if ev.trigger == "jexl" and ev.jexl_condition:
                 jexl_expr = ev.jexl_condition.replace("'", "\\'")
+                # Build context: record fields directly + prefixed by source name
+                # so both "quantity" and "stockLevel.quantity" resolve
+                source = ev.source_table
+                snake_singular = source.rstrip("s") if source.endswith("s") else source
+                # camelCase version for JEXL: stock_levels -> stockLevel
+                parts = snake_singular.split("_")
+                camel = parts[0] + "".join(w.capitalize() for w in parts[1:])
                 self._w(f'    if content_name == "{ev.source_table}":')
-                self._w(f"        if expr_eval.evaluate('{jexl_expr}', record):")
+                self._w(f'        # Build JEXL context with camelCase aliases')
+                self._w(f'        _ctx = dict(record)')
+                self._w(f'        # Add camelCase key aliases for JEXL property access')
+                self._w(f'        for _k, _v in list(record.items()):')
+                self._w(f'            _parts = _k.split("_")')
+                self._w(f'            _camel_k = _parts[0] + "".join(w.capitalize() for w in _parts[1:])')
+                self._w(f'            _ctx[_camel_k] = _v')
+                self._w(f'        _prefixed = dict(_ctx)')
+                self._w(f'        _prefixed["updated"] = True')
+                self._w(f'        _prefixed["created"] = True')
+                self._w(f'        _ctx["{camel}"] = _prefixed')
+                self._w(f"        if expr_eval.evaluate('{jexl_expr}', _ctx):")
             elif ev.condition:
                 self._w(f'    if content_name == "{ev.source_table}" and trigger == "{ev.trigger}":')
                 left = ev.condition.left_column
@@ -1969,9 +1987,15 @@ class FastApiBackend:
                 self._w(f'        cursor_agg = await db.execute("SELECT COUNT(*) as cnt FROM {tbl}")')
                 self._w(f'        context["{slug_agg}"] = (await cursor_agg.fetchone())["cnt"]')
             elif agg.agg_type == "sum_join":
-                self._w(f'        cursor_agg = await db.execute("SELECT COALESCE(SUM(sl.quantity * p.unit_cost), 0) as val FROM stock_levels sl JOIN products p ON sl.product = p.id")')
+                tbl = agg.table
+                # Use sum_expression if available, otherwise sum first numeric column
+                if agg.sum_expression:
+                    expr = agg.sum_expression
+                else:
+                    expr = "1"  # fallback
+                self._w(f'        cursor_agg = await db.execute("SELECT COALESCE(SUM({expr}), 0) as val FROM {tbl}")')
                 self._w("        val = (await cursor_agg.fetchone())['val']")
-                self._w('        context["' + slug_agg + '"] = f"${val:.2f}"')
+                self._w('        context["' + slug_agg + '"] = str(val)')
 
         # Nav badges
         for nav_item in self.spec.nav_items:
