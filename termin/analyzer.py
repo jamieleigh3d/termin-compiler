@@ -295,7 +295,7 @@ class Analyzer:
     # ── Compute Checks ──
 
     def _check_computes(self) -> None:
-        valid_shapes = {"transform", "reduce", "expand", "correlate", "route", "chain"}
+        valid_shapes = {"transform", "reduce", "expand", "correlate", "route"}
         for compute in self.program.computes:
             if not compute.shape or compute.shape not in valid_shapes:
                 self.errors.add(SemanticError(
@@ -317,14 +317,6 @@ class Analyzer:
                                 f'output content "{out}"',
                         line=compute.line,
                     ))
-            if compute.shape == "chain":
-                for step in compute.chain_steps:
-                    if step not in self.compute_names:
-                        self.errors.add(SemanticError(
-                            message=f'Chain "{compute.name}" references undefined '
-                                    f'compute step "{step}"',
-                            line=compute.line,
-                        ))
             if compute.access_scope and compute.access_scope not in self.scope_names:
                 self.errors.add(SemanticError(
                     message=f'Compute "{compute.name}" references undefined '
@@ -354,6 +346,8 @@ class Analyzer:
     # ── Channel Checks ──
 
     VALID_PROTOCOLS = {"rest", "sse", "websocket", "webhook", "pubsub", "internal"}
+    VALID_DIRECTIONS = {"inbound", "outbound", "bidirectional", "internal"}
+    VALID_DELIVERIES = {"realtime", "reliable", "batch", "auto"}
 
     def _check_channels(self) -> None:
         for channel in self.program.channels:
@@ -363,6 +357,20 @@ class Analyzer:
                             f'content "{channel.carries}"',
                     line=channel.line,
                 ))
+            # v2: validate direction and delivery
+            if channel.direction and channel.direction not in self.VALID_DIRECTIONS:
+                self.errors.add(SemanticError(
+                    message=f'Channel "{channel.name}" has invalid direction "{channel.direction}". '
+                            f'Valid directions: {", ".join(sorted(self.VALID_DIRECTIONS))}',
+                    line=channel.line,
+                ))
+            if channel.delivery and channel.delivery not in self.VALID_DELIVERIES:
+                self.errors.add(SemanticError(
+                    message=f'Channel "{channel.name}" has invalid delivery "{channel.delivery}". '
+                            f'Valid deliveries: {", ".join(sorted(self.VALID_DELIVERIES))}',
+                    line=channel.line,
+                ))
+            # v1 compat: validate protocol
             if channel.protocol and channel.protocol not in self.VALID_PROTOCOLS:
                 self.errors.add(SemanticError(
                     message=f'Channel "{channel.name}" has invalid protocol "{channel.protocol}". '
@@ -377,10 +385,18 @@ class Analyzer:
                         line=req.line,
                     ))
 
+    def _is_channel_internal(self, channel) -> bool:
+        """Check if a channel is internal (either v1 protocol or v2 direction)."""
+        if channel.direction == "internal":
+            return True
+        if channel.protocol == "internal":
+            return True
+        return False
+
     def _check_channel_has_auth(self) -> None:
         """Every non-internal Channel must have auth requirements."""
         for channel in self.program.channels:
-            if channel.protocol != "internal" and not channel.requirements:
+            if not self._is_channel_internal(channel) and not channel.requirements:
                 self.errors.add(SecurityError(
                     message=f'Channel "{channel.name}" has no authentication requirements. '
                             f'Every external Channel must declare required scopes.',

@@ -270,13 +270,12 @@ class ComputeParam:
 @dataclass
 class ComputeNode:
     name: str
-    shape: str = ""  # "transform", "reduce", "expand", "correlate", "route", "chain"
+    shape: str = ""  # "transform", "reduce", "expand", "correlate", "route"
     inputs: list[str] = field(default_factory=list)   # content names
     outputs: list[str] = field(default_factory=list)   # content names
     input_params: list[ComputeParam] = field(default_factory=list)   # typed params
     output_params: list[ComputeParam] = field(default_factory=list)  # typed params
     body_lines: list[str] = field(default_factory=list)
-    chain_steps: list[str] = field(default_factory=list)  # compute names for Chain shape
     access_scope: Optional[str] = None
     access_role: Optional[str] = None  # alternative: role name instead of scope
     line: int = 0
@@ -295,9 +294,11 @@ class ChannelRequirement:
 class ChannelDecl:
     name: str
     carries: str = ""           # Content name
-    protocol: str = ""          # "rest", "sse", "websocket", "webhook", "pubsub", "internal"
-    source: str = ""            # Boundary name or "external" / "application"
-    destination: str = ""       # Boundary name or "external" / "application"
+    protocol: str = ""          # v1 compat: "rest", "sse", "websocket", "webhook", "pubsub", "internal"
+    direction: str = ""         # v2: "inbound", "outbound", "bidirectional", "internal"
+    delivery: str = ""          # v2: "realtime", "reliable", "batch", "auto"
+    source: str = ""            # v1 compat: Boundary name or "external" / "application"
+    destination: str = ""       # v1 compat: Boundary name or "external" / "application"
     endpoint: Optional[str] = None
     requirements: list[ChannelRequirement] = field(default_factory=list)
     line: int = 0

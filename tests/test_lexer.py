@@ -81,7 +81,7 @@ def test_tokenize_compute_shape():
     assert tokens[0].type == TokenType.COMPUTE_SHAPE
 
 def test_tokenize_compute_all_shapes():
-    for shape in ["Transform", "Reduce", "Expand", "Correlate", "Route", "Chain"]:
+    for shape in ["Transform", "Reduce", "Expand", "Correlate", "Route"]:
         tokens = tokenize(f'  {shape}: takes items, produces items')
         assert tokens[0].type == TokenType.COMPUTE_SHAPE, f"{shape} not recognized"
 
@@ -104,9 +104,17 @@ def test_tokenize_channel_protocol():
     tokens = tokenize('  Protocol: webhook')
     assert tokens[0].type == TokenType.CHANNEL_PROTOCOL
 
-def test_tokenize_channel_direction():
+def test_tokenize_channel_direction_v1():
     tokens = tokenize('  From external to application')
     assert tokens[0].type == TokenType.CHANNEL_DIRECTION
+
+def test_tokenize_channel_direction_v2():
+    tokens = tokenize('  Direction: inbound')
+    assert tokens[0].type == TokenType.CHANNEL_DIRECTION
+
+def test_tokenize_channel_delivery():
+    tokens = tokenize('  Delivery: reliable')
+    assert tokens[0].type == TokenType.CHANNEL_DELIVERY
 
 def test_tokenize_channel_requires():
     tokens = tokenize('  Requires "write orders" to send')
@@ -193,7 +201,7 @@ def test_tokenize_compute_demo_example():
     tokens = tokenize(source)
     # Body lines inside compute blocks are UNKNOWN, which is expected
     compute_decls = [t for t in tokens if t.type == TokenType.COMPUTE_DECL]
-    assert len(compute_decls) == 6
+    assert len(compute_decls) == 5
     channel_decls = [t for t in tokens if t.type == TokenType.CHANNEL_DECL]
     assert len(channel_decls) == 4
     boundary_decls = [t for t in tokens if t.type == TokenType.BOUNDARY_DECL]

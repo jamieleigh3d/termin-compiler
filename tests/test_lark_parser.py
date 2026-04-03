@@ -190,7 +190,7 @@ def _assert_compute_eq(a: ComputeNode, b: ComputeNode, label: str):
         assert pa.name == pb.name, f"{label} oparam[{i}]: name"
         assert pa.type_name == pb.type_name, f"{label} oparam[{i}]: type_name"
     assert a.body_lines == b.body_lines, f"{label}: body_lines"
-    assert a.chain_steps == b.chain_steps, f"{label}: chain_steps"
+    # chain_steps removed in Phase R1
     assert a.access_scope == b.access_scope, f"{label}: access_scope"
     assert a.access_role == b.access_role, f"{label}: access_role"
 
@@ -199,6 +199,8 @@ def _assert_channel_eq(a: ChannelDecl, b: ChannelDecl, label: str):
     assert a.name == b.name, f"{label}: name"
     assert a.carries == b.carries, f"{label}: carries"
     assert a.protocol == b.protocol, f"{label}: protocol"
+    assert a.direction == b.direction, f"{label}: direction"
+    assert a.delivery == b.delivery, f"{label}: delivery"
     assert a.source == b.source, f"{label}: source"
     assert a.destination == b.destination, f"{label}: destination"
     assert a.endpoint == b.endpoint, f"{label}: endpoint"
@@ -483,17 +485,6 @@ class TestLarkCompute:
         assert c.output_params[0].type_name == "Text"
         assert c.access_role == "LoggedInUser"
         assert len(c.body_lines) == 1
-
-    def test_compute_chain(self):
-        source = '''Compute called "process order":
-  Chain: calculate order total then revenue report
-  Anyone with "write orders" can execute this'''
-        prog, err = parse_lark(source)
-        assert err.ok
-        c = prog.computes[0]
-        assert c.shape == "chain"
-        assert c.chain_steps == ["calculate order total", "revenue report"]
-        assert c.access_scope == "write orders"
 
     def test_compute_route(self):
         source = '''Compute called "triage order":

@@ -21,8 +21,9 @@ from ..ir import (
     PageSpec, TableColumn, FilterField, FormField, HighlightRule,
     RelatedDataSpec, AggregationSpec, ChartSpec,
     NavItemSpec, StreamSpec, RoleSpec, AuthSpec,
-    ComputeSpec, ComputeShape, ChannelSpec, ChannelProtocol,
-    ChannelRequirementSpec, BoundarySpec, BoundaryPropertySpec,
+    ComputeSpec, ComputeShape, ChannelSpec, ChannelDirection,
+    ChannelDelivery, ChannelRequirementSpec, BoundarySpec,
+    BoundaryPropertySpec,
 )
 
 
@@ -707,8 +708,6 @@ class FastApiBackend:
                 self._emit_compute_correlate(comp, snake, scope_dep)
             elif comp.shape == ComputeShape.ROUTE:
                 self._emit_compute_route(comp, snake, scope_dep)
-            elif comp.shape == ComputeShape.CHAIN:
-                self._emit_compute_chain(comp, snake, scope_dep)
 
     def _emit_compute_transform(self, comp: ComputeSpec, snake: str, scope_dep: str) -> None:
         input_table = comp.input_tables[0] if comp.input_tables else "unknown"
@@ -778,19 +777,6 @@ class FastApiBackend:
         self._w(f'    return {{"input": body, "routed_to": "{outputs[0] if outputs else "unknown"}"}}  # TODO: apply routing logic')
         self._w()
 
-    def _emit_compute_chain(self, comp: ComputeSpec, snake: str, scope_dep: str) -> None:
-        steps = comp.chain_steps
-        self._w(f'@app.post("/compute/{snake}")')
-        self._w(f"async def compute_{snake}(request: Request{scope_dep}):")
-        self._w(f"    body = await request.json()")
-        self._w(f'    # Chain: {" -> ".join(steps)}')
-        self._w(f"    result = body")
-        for step in steps:
-            self._w(f"    # Step: {step}")
-            self._w(f"    # result = await compute_{step}(result)  # TODO: wire chain steps")
-        self._w(f"    return result")
-        self._w()
-
     # ── Channel Endpoints ──
 
     def _emit_channel_endpoints(self) -> None:
@@ -802,13 +788,13 @@ class FastApiBackend:
         self._w()
 
         for ch in self.spec.channels:
-            if ch.protocol == ChannelProtocol.WEBHOOK:
+            if ch.direction == ChannelDirection.INBOUND and ch.delivery == ChannelDelivery.RELIABLE:
                 self._emit_webhook_channel(ch)
-            elif ch.protocol == ChannelProtocol.WEBSOCKET:
+            elif ch.direction == ChannelDirection.BIDIRECTIONAL and ch.delivery == ChannelDelivery.REALTIME:
                 self._emit_websocket_channel(ch)
-            elif ch.protocol == ChannelProtocol.SSE:
+            elif ch.direction == ChannelDirection.OUTBOUND and ch.delivery == ChannelDelivery.REALTIME:
                 self._emit_sse_channel(ch)
-            # REST and internal channels are handled by existing API/event mechanisms
+            # Internal channels are handled by existing event mechanisms
 
     def _emit_webhook_channel(self, ch: ChannelSpec) -> None:
         snake = ch.name.snake

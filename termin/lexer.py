@@ -78,8 +78,9 @@ class TokenType(Enum):
     # Channel
     CHANNEL_DECL = auto()    # Channel called "name":
     CHANNEL_CARRIES = auto() # Carries <content>
-    CHANNEL_PROTOCOL = auto()  # Protocol: REST | SSE | ...
-    CHANNEL_DIRECTION = auto() # From X to Y
+    CHANNEL_PROTOCOL = auto()  # v1: Protocol: REST | SSE | ...
+    CHANNEL_DIRECTION = auto() # v1: From X to Y / v2: Direction: inbound | outbound | ...
+    CHANNEL_DELIVERY = auto()  # v2: Delivery: realtime | reliable | batch | auto
     CHANNEL_REQUIRES = auto()  # Requires "scope" to send/receive
     CHANNEL_ENDPOINT = auto()  # Endpoint: /path
 
@@ -143,12 +144,14 @@ _PATTERNS: list[tuple[re.Pattern, TokenType]] = [
     (re.compile(r'^Stream\s+'), TokenType.STREAM_DECL),
     # Compute
     (re.compile(r'^Compute called\s+"[^"]+"'), TokenType.COMPUTE_DECL),
-    (re.compile(r'^\s*(?:Transform|Reduce|Expand|Correlate|Route|Chain):\s+'), TokenType.COMPUTE_SHAPE),
+    (re.compile(r'^\s*(?:Transform|Reduce|Expand|Correlate|Route):\s+'), TokenType.COMPUTE_SHAPE),
     # Channel
     (re.compile(r'^Channel called\s+"[^"]+"'), TokenType.CHANNEL_DECL),
     (re.compile(r'^\s*Carries\s+'), TokenType.CHANNEL_CARRIES),
     (re.compile(r'^\s*Protocol:\s+'), TokenType.CHANNEL_PROTOCOL),
+    (re.compile(r'^\s*Direction:\s+'), TokenType.CHANNEL_DIRECTION),
     (re.compile(r'^\s*From\s+.+\s+to\s+'), TokenType.CHANNEL_DIRECTION),
+    (re.compile(r'^\s*Delivery:\s+'), TokenType.CHANNEL_DELIVERY),
     (re.compile(r'^\s*Requires\s+"[^"]+"\s+to\s+'), TokenType.CHANNEL_REQUIRES),
     (re.compile(r'^\s*Endpoint:\s+'), TokenType.CHANNEL_ENDPOINT),
     # Boundary

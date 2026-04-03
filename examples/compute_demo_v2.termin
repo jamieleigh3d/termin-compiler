@@ -70,35 +70,32 @@ Compute called "triage order":
   [order.priority == "high" ? "orders" : "reports"]
   Anyone with "write orders" can execute this
 
-Compute called "process order":
-  Chain: calculate order total then revenue report
-  Anyone with "write orders" can execute this
-
 --- Channels ---
 
 Channel called "order webhook":
   Carries orders
-  Protocol: webhook
-  From external to application
+  Direction: inbound
+  Delivery: reliable
   Endpoint: /webhooks/orders
   Requires "write orders" to send
 
 Channel called "order updates stream":
   Carries orders
-  Protocol: SSE
-  From application to external
+  Direction: outbound
+  Delivery: realtime
   Requires "read orders" to receive
 
 Channel called "order notifications":
   Carries orders
-  Protocol: websocket
-  From application to external
+  Direction: bidirectional
+  Delivery: realtime
   Endpoint: /ws/orders
   Requires "read orders" to receive
 
 Channel called "internal order bus":
   Carries orders
-  Protocol: internal
+  Direction: internal
+  Delivery: auto
 
 --- Boundaries ---
 

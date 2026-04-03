@@ -166,18 +166,19 @@ Compute called "bad":
     assert not result.ok
 
 
-def test_compute_chain_undefined_step():
+def test_channel_direction_delivery_valid():
     result = _analyze(VALID_BASE + '''
 Content called "items":
   Each item has a name which is text
   Anyone with "read" can view items
 
-Compute called "pipeline":
-  Chain: nonexistent_step then another_missing
-  Anyone with "read" can execute this
+Channel called "hook":
+  Carries items
+  Direction: inbound
+  Delivery: reliable
+  Requires "read" to send
 ''')
-    assert not result.ok
-    assert any("undefined" in str(e).lower() and "step" in str(e).lower() for e in result.errors)
+    assert result.ok, result.format()
 
 
 def test_compute_valid():
@@ -251,6 +252,51 @@ Channel called "bus":
   Protocol: internal
 ''')
     assert result.ok, result.format()
+
+
+def test_channel_internal_v2_no_auth_ok():
+    result = _analyze(VALID_BASE + '''
+Content called "items":
+  Each item has a name which is text
+  Anyone with "read" can view items
+
+Channel called "bus":
+  Carries items
+  Direction: internal
+  Delivery: auto
+''')
+    assert result.ok, result.format()
+
+
+def test_channel_invalid_direction():
+    result = _analyze(VALID_BASE + '''
+Content called "items":
+  Each item has a name which is text
+  Anyone with "read" can view items
+
+Channel called "hook":
+  Carries items
+  Direction: sideways
+  Requires "read" to send
+''')
+    assert not result.ok
+    assert any("invalid direction" in str(e).lower() for e in result.errors)
+
+
+def test_channel_invalid_delivery():
+    result = _analyze(VALID_BASE + '''
+Content called "items":
+  Each item has a name which is text
+  Anyone with "read" can view items
+
+Channel called "hook":
+  Carries items
+  Direction: inbound
+  Delivery: express
+  Requires "read" to send
+''')
+    assert not result.ok
+    assert any("invalid delivery" in str(e).lower() for e in result.errors)
 
 
 # ── Boundary checks ──

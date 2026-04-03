@@ -272,7 +272,6 @@ class ComputeShape(Enum):
     EXPAND = auto()
     CORRELATE = auto()
     ROUTE = auto()
-    CHAIN = auto()
 
 
 @dataclass(frozen=True)
@@ -288,7 +287,6 @@ class ComputeSpec:
     input_tables: tuple[str, ...]    # resolved snake_case table names
     output_tables: tuple[str, ...]   # resolved snake_case table names
     body_lines: tuple[str, ...] = ()
-    chain_steps: tuple[str, ...] = ()  # snake_case compute names for Chain
     required_scope: Optional[str] = None
     required_role: Optional[str] = None   # alternative to scope
     input_params: tuple[ComputeParamSpec, ...] = ()
@@ -297,13 +295,18 @@ class ComputeSpec:
 
 # ── Channels ──
 
-class ChannelProtocol(Enum):
-    REST = auto()
-    SSE = auto()
-    WEBSOCKET = auto()
-    WEBHOOK = auto()
-    PUBSUB = auto()
+class ChannelDirection(Enum):
+    INBOUND = auto()
+    OUTBOUND = auto()
+    BIDIRECTIONAL = auto()
     INTERNAL = auto()
+
+
+class ChannelDelivery(Enum):
+    REALTIME = auto()
+    RELIABLE = auto()
+    BATCH = auto()
+    AUTO = auto()
 
 
 @dataclass(frozen=True)
@@ -316,9 +319,8 @@ class ChannelRequirementSpec:
 class ChannelSpec:
     name: QualifiedName
     carries_table: str                               # resolved snake_case table name
-    protocol: ChannelProtocol
-    source: str = ""                                 # boundary name or "external"/"application"
-    destination: str = ""
+    direction: ChannelDirection = ChannelDirection.INBOUND
+    delivery: ChannelDelivery = ChannelDelivery.AUTO
     endpoint: Optional[str] = None
     requirements: tuple[ChannelRequirementSpec, ...] = ()
 

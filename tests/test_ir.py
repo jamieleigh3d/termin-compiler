@@ -11,7 +11,7 @@ from termin.analyzer import analyze
 from termin.lower import lower
 from termin.ir import (
     ColumnType, Verb, RouteKind, HttpMethod,
-    ComputeShape, ChannelProtocol, ComputeParamSpec,
+    ComputeShape, ChannelDirection, ChannelDelivery, ComputeParamSpec,
 )
 
 
@@ -309,8 +309,8 @@ class TestComputeDemoIR:
 
     # Compute
 
-    def test_six_computes(self):
-        assert len(self.spec.computes) == 6
+    def test_five_computes(self):
+        assert len(self.spec.computes) == 5
 
     def test_compute_transform(self):
         c = next(c for c in self.spec.computes if c.name.snake == "calculate_order_total")
@@ -338,11 +338,6 @@ class TestComputeDemoIR:
         c = next(c for c in self.spec.computes if c.name.snake == "triage_order")
         assert c.shape == ComputeShape.ROUTE
 
-    def test_compute_chain(self):
-        c = next(c for c in self.spec.computes if c.name.snake == "process_order")
-        assert c.shape == ComputeShape.CHAIN
-        assert len(c.chain_steps) == 2
-
     # Channels
 
     def test_four_channels(self):
@@ -350,22 +345,25 @@ class TestComputeDemoIR:
 
     def test_webhook_channel(self):
         ch = next(c for c in self.spec.channels if c.name.snake == "order_webhook")
-        assert ch.protocol == ChannelProtocol.WEBHOOK
+        assert ch.direction == ChannelDirection.INBOUND
+        assert ch.delivery == ChannelDelivery.RELIABLE
         assert ch.carries_table == "orders"
         assert ch.endpoint == "/webhooks/orders"
 
     def test_sse_channel(self):
         ch = next(c for c in self.spec.channels if c.name.snake == "order_updates_stream")
-        assert ch.protocol == ChannelProtocol.SSE
+        assert ch.direction == ChannelDirection.OUTBOUND
+        assert ch.delivery == ChannelDelivery.REALTIME
 
     def test_websocket_channel(self):
         ch = next(c for c in self.spec.channels if c.name.snake == "order_notifications")
-        assert ch.protocol == ChannelProtocol.WEBSOCKET
+        assert ch.direction == ChannelDirection.BIDIRECTIONAL
+        assert ch.delivery == ChannelDelivery.REALTIME
         assert ch.endpoint == "/ws/orders"
 
     def test_internal_channel(self):
         ch = next(c for c in self.spec.channels if c.name.snake == "internal_order_bus")
-        assert ch.protocol == ChannelProtocol.INTERNAL
+        assert ch.direction == ChannelDirection.INTERNAL
 
     # Boundaries
 

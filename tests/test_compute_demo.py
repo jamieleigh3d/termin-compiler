@@ -80,11 +80,6 @@ class TestComputeEndpoints:
         assert r.status_code == 200
         assert "routed_to" in r.json()
 
-    def test_chain(self, client):
-        r = client.post("/compute/process_order",
-                        json={"customer": "Test"}, headers=CLERK)
-        assert r.status_code == 200
-
 
 # ── Channel Endpoints ──
 

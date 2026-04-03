@@ -100,11 +100,13 @@ _LINE_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r'^\s*(?:GET|POST|PUT|DELETE|PATCH)\s+/'),      'API_ENDPOINT'),
     (re.compile(r'^Stream\s+'),                                 'STREAM_DECL'),
     (re.compile(r'^Compute called\s+"[^"]+"'),                  'COMPUTE_DECL'),
-    (re.compile(r'^\s*(?:Transform|Reduce|Expand|Correlate|Route|Chain):\s+'), 'COMPUTE_SHAPE'),
+    (re.compile(r'^\s*(?:Transform|Reduce|Expand|Correlate|Route):\s+'), 'COMPUTE_SHAPE'),
     (re.compile(r'^Channel called\s+"[^"]+"'),                  'CHANNEL_DECL'),
     (re.compile(r'^\s*Carries\s+'),                             'CHANNEL_CARRIES'),
     (re.compile(r'^\s*Protocol:\s+'),                           'CHANNEL_PROTOCOL'),
+    (re.compile(r'^\s*Direction:\s+'),                          'CHANNEL_DIR'),
     (re.compile(r'^\s*From\s+.+\s+to\s+'),                     'CHANNEL_DIR'),
+    (re.compile(r'^\s*Delivery:\s+'),                          'CHANNEL_DELIVERY'),
     (re.compile(r'^\s*Requires\s+"[^"]+"\s+to\s+'),             'CHANNEL_REQ'),
     (re.compile(r'^\s*Endpoint:\s+'),                           'CHANNEL_EP'),
     (re.compile(r'^Boundary called\s+"[^"]+"'),                 'BOUNDARY_DECL'),
@@ -239,6 +241,7 @@ channel_block: CHANNEL_DECL_LINE channel_child*
 ?channel_child: CHANNEL_CARRIES_LINE
               | CHANNEL_PROTOCOL_LINE
               | CHANNEL_DIR_LINE
+              | CHANNEL_DELIVERY_LINE
               | CHANNEL_REQ_LINE
               | CHANNEL_EP_LINE
 
@@ -352,6 +355,7 @@ _TAG_TO_TERMINAL: dict[str, str] = {
     "CHANNEL_CARRIES":   "CHANNEL_CARRIES_LINE",
     "CHANNEL_PROTOCOL":  "CHANNEL_PROTOCOL_LINE",
     "CHANNEL_DIR":       "CHANNEL_DIR_LINE",
+    "CHANNEL_DELIVERY":  "CHANNEL_DELIVERY_LINE",
     "CHANNEL_REQ":       "CHANNEL_REQ_LINE",
     "CHANNEL_EP":        "CHANNEL_EP_LINE",
     "BOUNDARY_DECL":     "BOUNDARY_DECL_LINE",
@@ -1044,7 +1048,6 @@ class _TerminTransformer(Transformer):
                     node.outputs = child[3]
                     node.input_params = child[4]
                     node.output_params = child[5]
-                    node.chain_steps = child[6]
                 elif tag == "jexl":
                     body_lines.append(child[1])
                 elif tag == "body_text":
@@ -1081,35 +1084,31 @@ class _TerminTransformer(Transformer):
         outputs: list[str] = []
         input_params: list[ComputeParam] = []
         output_params: list[ComputeParam] = []
-        chain_steps: list[str] = []
 
-        if shape == "chain":
-            chain_steps = [s.strip() for s in re.split(r'\s+then\s+', rest)]
-        else:
-            io_match = re.match(
-                r'takes\s+(?:a\s+|an\s+)?(.+?),\s*produces\s+(?:a\s+|an\s+)?(.+)', rest
-            )
-            if io_match:
-                inputs_text = io_match.group(1).strip()
-                outputs_text = io_match.group(2).strip()
+        io_match = re.match(
+            r'takes\s+(?:a\s+|an\s+)?(.+?),\s*produces\s+(?:a\s+|an\s+)?(.+)', rest
+        )
+        if io_match:
+            inputs_text = io_match.group(1).strip()
+            outputs_text = io_match.group(2).strip()
 
-                input_params = self._parse_typed_params(inputs_text, line)
-                output_params = self._parse_typed_params(outputs_text, line)
+            input_params = self._parse_typed_params(inputs_text, line)
+            output_params = self._parse_typed_params(outputs_text, line)
 
-                if input_params:
-                    inputs = [p.type_name for p in input_params]
-                else:
-                    inputs = [i.strip() for i in re.split(r'\s+and\s+', inputs_text)]
+            if input_params:
+                inputs = [p.type_name for p in input_params]
+            else:
+                inputs = [i.strip() for i in re.split(r'\s+and\s+', inputs_text)]
 
-                if outputs_text.startswith("one of "):
-                    outputs_text = outputs_text[7:]
-                    outputs = [o.strip() for o in re.split(r',\s*(?:or\s+)?|\s+or\s+', outputs_text)]
-                elif output_params:
-                    outputs = [p.type_name for p in output_params]
-                else:
-                    outputs = [o.strip() for o in re.split(r'\s+and\s+', outputs_text)]
+            if outputs_text.startswith("one of "):
+                outputs_text = outputs_text[7:]
+                outputs = [o.strip() for o in re.split(r',\s*(?:or\s+)?|\s+or\s+', outputs_text)]
+            elif output_params:
+                outputs = [p.type_name for p in output_params]
+            else:
+                outputs = [o.strip() for o in re.split(r'\s+and\s+', outputs_text)]
 
-        return ("shape", shape, inputs, outputs, input_params, output_params, chain_steps)
+        return ("shape", shape, inputs, outputs, input_params, output_params)
 
     def _parse_typed_params(self, text: str, line: int) -> list[ComputeParam]:
         params = []
@@ -1151,9 +1150,13 @@ class _TerminTransformer(Transformer):
                     channel.carries = child[1]
                 elif tag == "protocol":
                     channel.protocol = child[1]
-                elif tag == "direction":
+                elif tag == "direction_v2":
+                    channel.direction = child[1]
+                elif tag == "direction_v1":
                     channel.source = child[1]
                     channel.destination = child[2]
+                elif tag == "delivery":
+                    channel.delivery = child[1]
                 elif tag == "requirement":
                     channel.requirements.append(child[1])
                 elif tag == "endpoint":
@@ -1173,10 +1176,20 @@ class _TerminTransformer(Transformer):
 
     def CHANNEL_DIR_LINE(self, token):
         val = _strip_prefix(str(token))
+        # v2: "Direction: inbound"
+        if val.strip().startswith("Direction:"):
+            direction = val.split(":", 1)[1].strip().lower()
+            return ("direction_v2", direction)
+        # v1: "From application to external"
         m = re.match(r'\s*From\s+(.+?)\s+to\s+(.+)', val)
         if m:
-            return ("direction", m.group(1).strip().lower(), m.group(2).strip().lower())
+            return ("direction_v1", m.group(1).strip().lower(), m.group(2).strip().lower())
         return None
+
+    def CHANNEL_DELIVERY_LINE(self, token):
+        val = _strip_prefix(str(token))
+        delivery = val.split(":", 1)[1].strip().lower()
+        return ("delivery", delivery)
 
     def CHANNEL_REQ_LINE(self, token):
         val = _strip_prefix(str(token))
@@ -1454,7 +1467,7 @@ def _build_tree_from_lines(lines: list[_PreprocessedLine]) -> tuple[Tree, _LineM
             children = [make_token("CHANNEL_DECL_LINE", ln)]
             i += 1
             channel_tags = {"CHANNEL_CARRIES", "CHANNEL_PROTOCOL", "CHANNEL_DIR",
-                            "CHANNEL_REQ", "CHANNEL_EP"}
+                            "CHANNEL_DELIVERY", "CHANNEL_REQ", "CHANNEL_EP"}
             while i < len(lines) and lines[i].tag in channel_tags:
                 cl = lines[i]
                 terminal = _TAG_TO_TERMINAL[cl.tag]

@@ -224,19 +224,9 @@ def test_parse_compute_route():
     assert c.outputs == ["bugs", "features"]
 
 
-def test_parse_compute_chain():
-    program, errors = parse('''Compute called "pipeline":
-  Chain: step one then step two then step three
-  Anyone with "admin" can execute this''')
-    assert errors.ok
-    c = program.computes[0]
-    assert c.shape == "chain"
-    assert c.chain_steps == ["step one", "step two", "step three"]
+# ── Channel parsing (v1 - Protocol/From-To) ──
 
-
-# ── Channel parsing ──
-
-def test_parse_channel_webhook():
+def test_parse_channel_webhook_v1():
     program, errors = parse('''Channel called "order hook":
   Carries orders
   Protocol: webhook
@@ -256,7 +246,7 @@ def test_parse_channel_webhook():
     assert ch.requirements[0].direction == "send"
 
 
-def test_parse_channel_sse():
+def test_parse_channel_sse_v1():
     program, errors = parse('''Channel called "updates":
   Carries items
   Protocol: SSE
@@ -268,13 +258,59 @@ def test_parse_channel_sse():
     assert ch.requirements[0].direction == "receive"
 
 
-def test_parse_channel_internal():
+def test_parse_channel_internal_v1():
     program, errors = parse('''Channel called "bus":
   Carries items
   Protocol: internal''')
     assert errors.ok
     ch = program.channels[0]
     assert ch.protocol == "internal"
+    assert len(ch.requirements) == 0
+
+
+# ── Channel parsing (v2 - Direction/Delivery) ──
+
+def test_parse_channel_inbound_reliable():
+    program, errors = parse('''Channel called "order hook":
+  Carries orders
+  Direction: inbound
+  Delivery: reliable
+  Endpoint: /webhooks/orders
+  Requires "write" to send''')
+    assert errors.ok
+    ch = program.channels[0]
+    assert ch.name == "order hook"
+    assert ch.carries == "orders"
+    assert ch.direction == "inbound"
+    assert ch.delivery == "reliable"
+    assert ch.endpoint == "/webhooks/orders"
+    assert len(ch.requirements) == 1
+    assert ch.requirements[0].scope == "write"
+    assert ch.requirements[0].direction == "send"
+
+
+def test_parse_channel_outbound_realtime():
+    program, errors = parse('''Channel called "updates":
+  Carries items
+  Direction: outbound
+  Delivery: realtime
+  Requires "read" to receive''')
+    assert errors.ok
+    ch = program.channels[0]
+    assert ch.direction == "outbound"
+    assert ch.delivery == "realtime"
+    assert ch.requirements[0].direction == "receive"
+
+
+def test_parse_channel_internal_v2():
+    program, errors = parse('''Channel called "bus":
+  Carries items
+  Direction: internal
+  Delivery: auto''')
+    assert errors.ok
+    ch = program.channels[0]
+    assert ch.direction == "internal"
+    assert ch.delivery == "auto"
     assert len(ch.requirements) == 0
 
 
@@ -473,6 +509,6 @@ def test_parse_compute_demo():
     source = Path("examples/compute_demo.termin").read_text()
     program, errors = parse(source)
     assert errors.ok, errors.format()
-    assert len(program.computes) == 6
+    assert len(program.computes) == 5
     assert len(program.channels) == 4
     assert len(program.boundaries) == 2

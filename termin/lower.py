@@ -22,8 +22,9 @@ from .ir import (
     HttpMethod, RouteKind, RouteSpec,
     TableColumn, FilterField, FormField, HighlightRule, RelatedDataSpec,
     AggregationSpec, ChartSpec, PageSpec, NavItemSpec, StreamSpec, AppSpec,
-    ComputeShape, ComputeSpec, ComputeParamSpec, ChannelProtocol,
-    ChannelRequirementSpec, ChannelSpec, BoundarySpec, BoundaryPropertySpec,
+    ComputeShape, ComputeSpec, ComputeParamSpec, ChannelDirection,
+    ChannelDelivery, ChannelRequirementSpec, ChannelSpec, BoundarySpec,
+    BoundaryPropertySpec,
 )
 
 
@@ -588,7 +589,6 @@ def lower(program: Program) -> AppSpec:
         "expand": ComputeShape.EXPAND,
         "correlate": ComputeShape.CORRELATE,
         "route": ComputeShape.ROUTE,
-        "chain": ComputeShape.CHAIN,
     }
     computes = []
     compute_by_name: dict[str, ComputeNode] = {c.name: c for c in program.computes}
@@ -599,7 +599,6 @@ def lower(program: Program) -> AppSpec:
             input_tables=tuple(_resolve_to_table(i) for i in comp.inputs),
             output_tables=tuple(_resolve_to_table(o) for o in comp.outputs),
             body_lines=tuple(comp.body_lines),
-            chain_steps=tuple(_snake(s) for s in comp.chain_steps),
             required_scope=comp.access_scope,
             required_role=comp.access_role,
             input_params=tuple(
@@ -613,22 +612,52 @@ def lower(program: Program) -> AppSpec:
         ))
 
     # ── Lower channels ──
-    PROTOCOL_MAP = {
-        "rest": ChannelProtocol.REST,
-        "sse": ChannelProtocol.SSE,
-        "websocket": ChannelProtocol.WEBSOCKET,
-        "webhook": ChannelProtocol.WEBHOOK,
-        "pubsub": ChannelProtocol.PUBSUB,
-        "internal": ChannelProtocol.INTERNAL,
+    # v1 Protocol -> (Direction, Delivery) mapping for backward compat
+    PROTOCOL_TO_DIRECTION: dict[str, ChannelDirection] = {
+        "webhook": ChannelDirection.INBOUND,
+        "rest": ChannelDirection.INBOUND,
+        "sse": ChannelDirection.OUTBOUND,
+        "websocket": ChannelDirection.BIDIRECTIONAL,
+        "pubsub": ChannelDirection.BIDIRECTIONAL,
+        "internal": ChannelDirection.INTERNAL,
+    }
+    PROTOCOL_TO_DELIVERY: dict[str, ChannelDelivery] = {
+        "webhook": ChannelDelivery.RELIABLE,
+        "rest": ChannelDelivery.RELIABLE,
+        "sse": ChannelDelivery.REALTIME,
+        "websocket": ChannelDelivery.REALTIME,
+        "pubsub": ChannelDelivery.REALTIME,
+        "internal": ChannelDelivery.AUTO,
+    }
+    DIRECTION_MAP = {
+        "inbound": ChannelDirection.INBOUND,
+        "outbound": ChannelDirection.OUTBOUND,
+        "bidirectional": ChannelDirection.BIDIRECTIONAL,
+        "internal": ChannelDirection.INTERNAL,
+    }
+    DELIVERY_MAP = {
+        "realtime": ChannelDelivery.REALTIME,
+        "reliable": ChannelDelivery.RELIABLE,
+        "batch": ChannelDelivery.BATCH,
+        "auto": ChannelDelivery.AUTO,
     }
     channels = []
     for ch in program.channels:
+        # Determine direction and delivery from v2 fields or v1 protocol
+        if ch.direction:
+            direction = DIRECTION_MAP.get(ch.direction, ChannelDirection.INBOUND)
+            delivery = DELIVERY_MAP.get(ch.delivery, ChannelDelivery.AUTO)
+        elif ch.protocol:
+            direction = PROTOCOL_TO_DIRECTION.get(ch.protocol, ChannelDirection.INBOUND)
+            delivery = PROTOCOL_TO_DELIVERY.get(ch.protocol, ChannelDelivery.AUTO)
+        else:
+            direction = ChannelDirection.INBOUND
+            delivery = ChannelDelivery.AUTO
         channels.append(ChannelSpec(
             name=_qname(ch.name),
             carries_table=_resolve_to_table(ch.carries) if ch.carries else "",
-            protocol=PROTOCOL_MAP.get(ch.protocol, ChannelProtocol.REST),
-            source=ch.source,
-            destination=ch.destination,
+            direction=direction,
+            delivery=delivery,
             endpoint=ch.endpoint,
             requirements=tuple(
                 ChannelRequirementSpec(scope=r.scope, direction=r.direction)

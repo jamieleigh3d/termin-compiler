@@ -704,21 +704,17 @@ class Parser:
         name = _extract_quoted(t.value)[0]
         node = ComputeNode(name=name, line=t.line)
 
-        # Parse shape line: "Transform: takes X, produces Y" or "Chain: X then Y"
+        # Parse shape line: "Transform: takes X, produces Y"
         if self.check(TokenType.COMPUTE_SHAPE):
             st = self.advance()
             m = re.match(r'\s*(\w+):\s+(.*)', st.value)
             if m:
                 node.shape = m.group(1).lower()
                 rest = m.group(2).strip()
-                if node.shape == "chain":
-                    # "calculate reorder quantity then inventory valuation"
-                    node.chain_steps = [s.strip() for s in re.split(r'\s+then\s+', rest)]
-                else:
-                    # "takes a stock level, produces a stock level"
-                    # "takes u : UserProfile, produces "greeting" : Text"
-                    io_match = re.match(r'takes\s+(?:a\s+|an\s+)?(.+?),\s*produces\s+(?:a\s+|an\s+)?(.+)', rest)
-                    if io_match:
+                # "takes a stock level, produces a stock level"
+                # "takes u : UserProfile, produces "greeting" : Text"
+                io_match = re.match(r'takes\s+(?:a\s+|an\s+)?(.+?),\s*produces\s+(?:a\s+|an\s+)?(.+)', rest)
+                if io_match:
                         inputs_text = io_match.group(1).strip()
                         outputs_text = io_match.group(2).strip()
 
@@ -791,22 +787,29 @@ class Parser:
 
         while self.check(
             TokenType.CHANNEL_CARRIES, TokenType.CHANNEL_PROTOCOL,
-            TokenType.CHANNEL_DIRECTION, TokenType.CHANNEL_REQUIRES,
-            TokenType.CHANNEL_ENDPOINT,
+            TokenType.CHANNEL_DIRECTION, TokenType.CHANNEL_DELIVERY,
+            TokenType.CHANNEL_REQUIRES, TokenType.CHANNEL_ENDPOINT,
         ):
             ct = self.advance()
             if ct.type == TokenType.CHANNEL_CARRIES:
                 # "Carries products"
                 channel.carries = ct.value.split("Carries", 1)[1].strip()
             elif ct.type == TokenType.CHANNEL_PROTOCOL:
-                # "Protocol: SSE"
+                # v1: "Protocol: SSE"
                 channel.protocol = ct.value.split(":", 1)[1].strip().lower()
             elif ct.type == TokenType.CHANNEL_DIRECTION:
-                # "From application to external"
-                m = re.match(r'\s*From\s+(.+?)\s+to\s+(.+)', ct.value)
-                if m:
-                    channel.source = m.group(1).strip().lower()
-                    channel.destination = m.group(2).strip().lower()
+                # v2: "Direction: inbound" or v1: "From application to external"
+                if ct.value.strip().startswith("Direction:"):
+                    channel.direction = ct.value.split(":", 1)[1].strip().lower()
+                else:
+                    # v1 compat: "From application to external"
+                    m = re.match(r'\s*From\s+(.+?)\s+to\s+(.+)', ct.value)
+                    if m:
+                        channel.source = m.group(1).strip().lower()
+                        channel.destination = m.group(2).strip().lower()
+            elif ct.type == TokenType.CHANNEL_DELIVERY:
+                # v2: "Delivery: reliable"
+                channel.delivery = ct.value.split(":", 1)[1].strip().lower()
             elif ct.type == TokenType.CHANNEL_REQUIRES:
                 # 'Requires "read inventory" to receive'
                 scope = _extract_quoted(ct.value)[0]

@@ -70,10 +70,6 @@ Compute called "triage order":
   Route based on the priority field
   Anyone with "write orders" can execute this
 
-Compute called "process order":
-  Chain: calculate order total then revenue report
-  Anyone with "write orders" can execute this
-
 --- Channels ---
 
 Channel called "order webhook":
