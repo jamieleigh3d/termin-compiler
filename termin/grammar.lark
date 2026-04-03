@@ -1,4 +1,7 @@
-// Lark EBNF Grammar for the Termin DSL v2 (backward-compatible with v1)
+// Lark EBNF Grammar for the Termin DSL v2
+//
+// This is the AUTHORITATIVE specification of the Termin DSL syntax.
+// The hand-rolled lexer.py and parser.py must conform to this grammar.
 //
 // The Termin DSL is line-oriented.  Pre-processing strips comments, section
 // dividers, and blank lines.  Each logical line is then fed to this grammar.
@@ -14,6 +17,7 @@ _toplevel: application
          | description
          | identity
          | scopes
+         | role_alias
          | role_decl
          | content_decl
          | field_decl
@@ -25,6 +29,11 @@ _toplevel: application
          | event_when_jexl
          | event_when_v1
          | event_action
+         | event_log_level
+         | error_handler
+         | error_catch_all
+         | error_retry
+         | error_then
          | story_header
          | story_so_that
          | show_page
@@ -52,13 +61,14 @@ _toplevel: application
          | compute_body_text
          | channel_decl
          | channel_carries
-         | channel_protocol
          | channel_direction
+         | channel_delivery
          | channel_requires
          | channel_endpoint
          | boundary_decl
          | boundary_contains
          | boundary_identity
+         | boundary_exposes
 
 
 // -------------------------------------------------------------------
@@ -80,6 +90,9 @@ scopes: "Scopes are" REST_OF_LINE
 role_decl: ARTICLE QUOTED "has" REST_OF_LINE       -> role_standard
          | BARE_WORD "has" REST_OF_LINE             -> role_bare
 
+// "clerk" is alias for "warehouse clerk"
+role_alias: QUOTED "is alias for" QUOTED
+
 // -------------------------------------------------------------------
 // CONTENT
 // -------------------------------------------------------------------
@@ -90,10 +103,12 @@ access_rule: "Anyone with" QUOTED "can" REST_OF_LINE
 // -------------------------------------------------------------------
 // STATE
 // -------------------------------------------------------------------
-state_decl: "State for" WORD "called" QUOTED ":"
-state_starts: ARTICLE WORD "starts as" QUOTED
-state_also: ARTICLE WORD "can also be" REST_OF_LINE
-state_transition: ARTICLE REST_OF_LINE
+// State for products called "lifecycle":
+// State for channel "order webhook" called "lifecycle":
+state_decl: "State for" REST_OF_LINE "called" QUOTED ":"
+state_starts: ARTICLE REST_OF_LINE "starts as" QUOTED
+state_also: ARTICLE REST_OF_LINE "can also be" REST_OF_LINE
+state_transition: ARTICLE REST_OF_LINE "can become" REST_OF_LINE
 
 // -------------------------------------------------------------------
 // EVENTS
@@ -101,10 +116,25 @@ state_transition: ARTICLE REST_OF_LINE
 event_when_jexl: "When" JEXL_EXPR ":"
 event_when_v1: "When" ARTICLE REST_OF_LINE
 event_action: "Create" ARTICLE REST_OF_LINE
+event_log_level: "Log level:" REST_OF_LINE
+
+// -------------------------------------------------------------------
+// ERROR HANDLING
+// -------------------------------------------------------------------
+// On error from "primitive" where [condition]:
+// On error from "primitive":
+error_handler: "On error from" QUOTED ("where" JEXL_EXPR)? ":"
+// On any error:
+error_catch_all: "On any error:"
+// Retry N times [with backoff[, maximum delay X]]
+error_retry: "Retry" REST_OF_LINE
+// Then disable/escalate/notify/create/set
+error_then: "Then" REST_OF_LINE
 
 // -------------------------------------------------------------------
 // USER STORIES
 // -------------------------------------------------------------------
+// Supports both "As a role" and "As anonymous"
 story_header: "As" REST_OF_LINE
 story_so_that: "so that" REST_OF_LINE
 
@@ -152,12 +182,12 @@ compute_body_jexl: JEXL_EXPR
 compute_body_text: BODY_LINE
 
 // -------------------------------------------------------------------
-// CHANNELS
+// CHANNELS (v2: intent-based vocabulary)
 // -------------------------------------------------------------------
 channel_decl: "Channel called" QUOTED ":"
 channel_carries: "Carries" REST_OF_LINE
-channel_protocol: "Protocol:" REST_OF_LINE
-channel_direction: "From" REST_OF_LINE
+channel_direction: "Direction:" REST_OF_LINE
+channel_delivery: "Delivery:" REST_OF_LINE
 channel_requires: "Requires" QUOTED "to" REST_OF_LINE
 channel_endpoint: "Endpoint:" REST_OF_LINE
 
@@ -167,6 +197,7 @@ channel_endpoint: "Endpoint:" REST_OF_LINE
 boundary_decl: "Boundary called" QUOTED ":"
 boundary_contains: "Contains" REST_OF_LINE
 boundary_identity: "Identity" REST_OF_LINE
+boundary_exposes: "Exposes property" QUOTED ":" REST_OF_LINE
 
 
 // ===================================================================
@@ -179,8 +210,8 @@ QUOTED: "\"" /[^"]*/ "\""
 // [jexl expression] — preserved as-is
 JEXL_EXPR: "[" /[^\]]+/ "]"
 
-// Article: A, An, a, an
-ARTICLE: /(?:A|An|a|an)\b/
+// Article: A, An, a, an, The, the
+ARTICLE: /(?:A|An|The|a|an|the)\b/
 
 // A single word (used where we need exactly one)
 WORD: /\w+/
@@ -188,8 +219,8 @@ WORD: /\w+/
 // Bare word for role names like Anonymous
 BARE_WORD: /[A-Z]\w*/
 
-// Shape keywords for Compute
-SHAPE_KW: "Transform" | "Reduce" | "Expand" | "Correlate" | "Route" | "Chain"
+// Compute shape keywords (Chain removed in R1)
+SHAPE_KW: "Transform" | "Reduce" | "Expand" | "Correlate" | "Route"
 
 // HTTP methods
 HTTP_METHOD: "GET" | "POST" | "PUT" | "DELETE" | "PATCH"
