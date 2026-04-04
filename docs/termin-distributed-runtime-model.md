@@ -1,7 +1,7 @@
 # Termin Distributed Runtime Model
 
-**Version:** 0.1.0-draft
-**Status:** Formative
+**Version:** 0.2.0-draft
+**Status:** Formative — design decisions resolved for registry, auth, client compute, offline, deployment
 
 ---
 
@@ -273,14 +273,15 @@ The client runtime is a lightweight projection. It renders the Presentation laye
 | Presentation Renderer | Walks the component tree, renders UI |
 | Local Cache | In-memory store of Content received from server |
 | Channel Client | Sends requests, receives pushes through multiplexed connection |
+| Client Compute Registry | Executes client-safe Compute (pure transforms on cached data) |
 | Reflection Accessor | Read-only, populated from server pushes |
-| Identity Context | Received from server after authentication |
+| Identity Context | Received from server during handshake authentication |
 
 The client does NOT run:
 
 - Content Storage (no local database — the cache is ephemeral)
 - State Engine (the client requests transitions, the server decides)
-- Compute Registry for mutations (the client requests Compute execution, the server executes)
+- Mutating Compute (the client requests execution, the server executes)
 - TerminAtor (errors route on the server; the client receives error Events for display)
 - Boundary Isolator (the server enforces; the client trusts what it receives)
 
@@ -436,10 +437,11 @@ Standard Phase 0-5 from the runtime interface spec, plus:
 1. Load the application shell (HTML served by server)
 2. Fetch the registry: `GET /runtime/registry`
 3. Initialize the Expression Evaluator (load JEXL)
-4. Initialize the Channel client (open WebSocket to server)
-5. Authenticate (send Identity through WebSocket, receive resolved IdentityContext)
-6. Load the component tree for the user's role
-7. Begin rendering — implicit Channels open as needed
+4. Initialize the Channel client (open WebSocket with auth token in handshake)
+5. Receive resolved IdentityContext in the handshake response
+6. Load client-safe Compute functions into local Compute Registry
+7. Load the component tree for the user's role
+8. Begin rendering — implicit Channels open as needed
 
 ### Graceful Degradation
 
@@ -462,25 +464,167 @@ The application doesn't crash. It degrades from realtime to request-response and
 | Logical Channel | Typed, identity-scoped message stream between Boundaries |
 | Physical Connection | TCP socket, WebSocket, HTTP, Lambda invoke — the transport |
 | Multiplexing | Many logical Channels over one physical connection |
-| Registry | Maps Boundary names to connection endpoints |
+| Registry | Single shared registry — maps Boundary names to connection endpoints |
 | Implicit Channel | Created automatically by subscription or Property access |
 | Explicit Channel | Declared in DSL for external system connections |
 | Server Runtime | Authoritative — owns storage, state, compute, identity |
-| Client Runtime | Projection — owns presentation, expression evaluation, local cache |
+| Client Runtime | Projection — owns presentation, client-safe compute, local cache |
 | Single Writer | Each Content type has one owning Boundary for mutations |
 | Eventual Consistency | Client caches converge after server pushes |
 | Strong Mutations | Mutation results are synchronous request/response |
+| Handshake Auth | WebSocket connections authenticate during upgrade, not after |
+| No Offline | Graceful degradation on disconnect; no offline mutations |
+| Deployment Manifest | JSON file mapping Boundaries to infrastructure targets |
+
+---
+
+## Design Decisions
+
+### 1. Single Shared Registry (No Federation)
+
+A Termin application is deployed as a unit. Even when Boundaries run in separate processes or containers, they are parts of one application with one compilation. The registry is a **single source of truth** — either a config file generated at deploy time or a simple endpoint on the primary server.
+
+Federation (where each service maintains a local registry that syncs with a central one) is unnecessary complexity for the deployment model. A Termin app is not a microservices mesh with independent release cycles — it's a compiled graph with known topology. If two teams need independent deployment, they are building two Termin applications connected by explicit Channels at the platform boundary, not one federated application.
+
+Future: if genuine multi-team federation becomes necessary, it can be added without changing the application model — the registry API contract stays the same, only the backing implementation changes.
+
+### 2. Handshake Authentication
+
+WebSocket connections authenticate during the **upgrade handshake**, not after connection. The auth token is sent in the connection URL query parameter or upgrade headers.
+
+```
+GET /runtime/ws?token=<jwt_or_session_token> HTTP/1.1
+Upgrade: websocket
+```
+
+Rationale:
+
+- **Resource protection.** Unauthenticated connections are rejected before they consume multiplexer resources. A bad actor cannot open thousands of connections that each need an auth exchange.
+- **Identity binding.** The connection itself is identity-scoped from the first frame. The multiplexer never needs to handle "pre-auth" messages or buffer frames while waiting for authentication.
+- **Alignment with Identity subsystem.** "Bind once, enforce everywhere" — the connection carries the resolved IdentityContext for its entire lifetime. Re-authentication (token refresh) can happen as a control frame without re-establishing the connection.
+- **Development mode.** Stub auth still works — the dev server accepts connections without tokens and assigns the default role from the cookie.
+
+### 3. Client-Side Compute (Narrowly Scoped)
+
+The client runtime supports a **read-only subset** of the Compute Registry for performance-critical operations on cached data.
+
+A Compute function is **client-safe** when:
+
+- Its shape is Transform (one input, one output, no side effects)
+- It operates only on Content already present in the client cache
+- It performs no mutations (no create, update, delete, transition)
+
+The compiler infers client-safety statically at IR generation time. The IR marks client-safe Computes with a `"client_safe": true` flag. The client runtime loads these into its local Compute Registry. The server always retains the authoritative copy.
+
+```json
+{
+  "name": { "display": "FormatCurrency", "snake": "format_currency" },
+  "shape": "TRANSFORM",
+  "client_safe": true,
+  "body_lines": ["result = '$' + amount.toFixed(2)"]
+}
+```
+
+Client-safe Compute enables:
+
+- Client-side sorting and filtering without server round-trips
+- Display formatting (currency, dates, percentages)
+- Derived values for Presentation expressions
+
+Client-safe Compute does NOT enable:
+
+- Mutations of any kind
+- Cross-boundary data access
+- Compute that requires data not in the client cache
+
+### 4. No Offline Support
+
+Offline mutation support is **out of scope**. The single-writer consistency model is a core guarantee that offline mutations would compromise. Conflict resolution strategies (CRDTs, operational transforms, last-writer-wins) add fundamental complexity and introduce classes of bugs that the "secure by construction" thesis is designed to eliminate.
+
+The runtime handles connectivity loss through **graceful degradation** (described in the Graceful Degradation section above): reactive subscriptions pause, property reads fall back to REST, and the UI shows a connection status indicator. When connectivity returns, the client reconnects and catches up. This is sufficient for the vast majority of business applications.
+
+If a specific domain requires offline-capable mutations, it should be modeled as an explicit pattern: a local "draft" Content type that syncs to the server via an explicit Channel with declared conflict strategy. This keeps the complexity visible in the DSL rather than hidden in the runtime.
+
+### 5. Deployment Manifest
+
+The deployment manifest maps Boundaries to infrastructure targets. It is a JSON file read at compile time or deploy time.
+
+**Format:**
+
+```json
+{
+  "version": "0.1.0",
+  "targets": {
+    "order_processing": {
+      "location": "local"
+    },
+    "order_reporting": {
+      "location": "remote",
+      "endpoint": "https://reports-service:8082"
+    },
+    "analytics_compute": {
+      "location": "lambda",
+      "function": "analytics-fn",
+      "region": "us-east-1"
+    },
+    "presentation": {
+      "location": "client"
+    }
+  },
+  "defaults": {
+    "location": "local",
+    "realtime_protocol": "websocket",
+    "reliable_protocol": "rest"
+  }
+}
+```
+
+**Location values:**
+
+| Location | Meaning | Protocol Selection |
+|---|---|---|
+| `local` | Same process as the primary server | Direct function call (zero overhead) |
+| `remote` | Separate process/container at a known endpoint | gRPC, HTTP/2, or WebSocket |
+| `lambda` | Ephemeral function invocation | Lambda invoke API |
+| `client` | Browser/native client | WebSocket (realtime) + REST (reliable) |
+
+**Usage:**
+
+```bash
+# Development (all local, no manifest needed)
+termin compile app.termin -o app.py --backend runtime
+
+# Production (with deployment manifest)
+termin compile app.termin -o app.py --backend runtime --deploy deploy.json
+```
+
+When no manifest is provided, all Boundaries default to `local` and `presentation` defaults to `client`. The registry response is generated from the manifest at startup.
+
+---
+
+## Cross-Boundary Identity Propagation
+
+When a Boundary contains another Boundary and they are deployed to different processes, the containment relationship has security implications. Boundary A's Identity scopes gate Boundary B's access — this is the Boundary Isolator's job.
+
+In the distributed case, Identity context must propagate through the Channel when crossing a containment boundary. The multiplexing layer includes the resolved IdentityContext in each frame (the `identity` field in the frame format). The receiving Boundary's runtime validates that the incoming Identity satisfies the containment scope before processing the request.
+
+```
+Client requests Alice.updateOrder(42)
+  → Client Channel includes IdentityContext { role: "clerk", scopes: ["write orders"] }
+  → Alice's runtime checks: does this Identity satisfy Alice's containment scope?
+  → Alice processes the request
+  → Alice needs to call Bob.generateReport() (Bob is contained within Alice)
+  → Alice's Channel to Bob includes the ORIGINAL client IdentityContext
+  → Bob's runtime checks: does this Identity satisfy Bob's containment scope?
+  → Bob processes the request
+```
+
+Identity context flows **downward** through containment. A child Boundary never sees broader scopes than its parent allows. This is the distributed equivalent of the in-process Boundary Isolator — the Channel Enforcer validates the same invariants, just across a network boundary.
 
 ---
 
 ## Open Questions
 
-1. **Registry federation.** For multi-service deployments, should registries federate (each service has a local registry that syncs with a central one) or should there be a single shared registry?
+1. **Connection pooling.** For `remote` Boundaries with high throughput, should the multiplexing layer maintain a connection pool (multiple physical connections per endpoint pair) rather than a single connection? This trades multiplexing simplicity for throughput. Likely needed for production but not for v1.
 
-2. **Authentication over WebSocket.** The current model sends Identity through the WebSocket after connection. Should we use the WebSocket handshake (auth token in the connection URL or headers) instead? This would let the server reject unauthenticated connections before they enter the multiplexer.
-
-3. **Client-side Compute.** Are there Compute functions that should run on the client for performance? Pure transformations on cached data (sorting, filtering, formatting) could evaluate locally without a server round-trip. Should the client runtime support a subset of the Compute Registry for read-only, cache-local operations?
-
-4. **Offline support.** Should the client runtime support an offline mode where mutations queue locally and sync when connectivity returns? This would require conflict resolution strategies beyond single-writer.
-
-5. **Deployment manifest format.** The mapping from Boundaries to infrastructure (which Boundary runs where, which protocol adapters to use) needs a formal format. Deferred to a future spec.
+2. **Schema evolution.** When the application is recompiled with Content schema changes, how do existing client connections handle the schema mismatch? The server should version its registry and push a "schema changed, reload required" event through all active connections. Clients that receive this event reload the application shell.
