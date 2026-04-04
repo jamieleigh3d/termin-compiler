@@ -91,6 +91,12 @@ def compile(source: str, output: str, backend_name: str, ir_output: str | None):
     output_path.write_text(code, encoding="utf-8")
     click.echo(f"Compiled {source_path.name} -> {output_path.name}")
 
+    # Write companion IR JSON for runtime backend
+    if hasattr(backend, '_ir_json'):
+        ir_companion = output_path.with_suffix(".json")
+        ir_companion.write_text(backend._ir_json, encoding="utf-8")
+        click.echo(f"IR written to {ir_companion.name}")
+
     # Write requirements.txt alongside output
     req_path = output_path.parent / "requirements.txt"
     if not req_path.exists():
