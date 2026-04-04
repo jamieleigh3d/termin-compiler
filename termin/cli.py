@@ -12,11 +12,13 @@ from .peg_parser import parse_peg as parse
 from .analyzer import analyze
 from .lower import lower
 from .backends.fastapi import FastApiBackend
+from .backends.runtime import RuntimeBackend
 
 
 # Built-in backends
 BACKENDS = {
     "fastapi": FastApiBackend,
+    "runtime": RuntimeBackend,
 }
 
 
