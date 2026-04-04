@@ -11,7 +11,11 @@ setup(
         "click>=8.0",
         "jinja2>=3.1.0",
         "pyjexl>=0.3.0",
+        "tatsu>=5.8",
     ],
+    package_data={
+        "termin": ["termin.peg", "grammar.lark"],
+    },
     entry_points={
         "console_scripts": [
             "termin=termin.cli:main",
