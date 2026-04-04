@@ -12,3 +12,4 @@ venv/
 /app.py
 /*_app.py
 /app_*.py
+/*_app.json
