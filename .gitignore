@@ -8,7 +8,7 @@ build/
 .eggs/
 venv/
 
-# Generated application files
-app.py
-*_app.py
-app_*.py
+# Generated application files (root level only)
+/app.py
+/*_app.py
+/app_*.py
