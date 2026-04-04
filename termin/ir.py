@@ -7,6 +7,7 @@ pass. Backends read pre-resolved, immutable data.
 All types are frozen dataclasses with tuples (not lists) for immutability.
 """
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Optional
@@ -392,17 +393,24 @@ def page_entry_to_pagespec(entry: 'PageEntry') -> PageSpec:
                 ))
 
             elif t == "aggregation":
-                agg_key = p.get("label", "agg").lower().replace(" ", "_")[:30]
+                agg_key = re.sub(r'[^a-z0-9]+', '_', p.get("label", "agg").lower()).strip('_')[:30]
+                # Map component agg_type to legacy backend agg_type
+                at = p.get("agg_type", "count")
+                legacy_agg = {"sum": "sum_join", "average": "sum_join", "minimum": "sum_join",
+                              "maximum": "sum_join"}.get(at, at)
+                expr = None
+                if isinstance(p.get("expression"), dict):
+                    expr = p["expression"].get("value")
                 aggregations.append(AggregationSpec(
                     key=agg_key,
                     description=p.get("label", ""),
-                    agg_type=p.get("agg_type", "count"),
+                    agg_type=legacy_agg,
                     content_ref=p.get("source", ""),
-                    sum_expression=p.get("expression", {}).get("value") if isinstance(p.get("expression"), dict) else None,
+                    sum_expression=expr,
                 ))
 
             elif t == "stat_breakdown":
-                agg_key = p.get("label", "breakdown").lower().replace(" ", "_")[:30]
+                agg_key = re.sub(r'[^a-z0-9]+', '_', p.get("label", "breakdown").lower()).strip('_')[:30]
                 aggregations.append(AggregationSpec(
                     key=agg_key,
                     description=p.get("label", ""),

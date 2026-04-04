@@ -565,24 +565,35 @@ def lower(program: Program) -> AppSpec:
             elif isinstance(d, DisplayAggregation):
                 desc_lower = d.description.lower()
                 gc = _guess_content(d.description, program.contents)
+                # Extract bracket expression if present: "total time [sum(hours)]" -> "sum(hours)"
+                import re as _re_agg
+                jexl_match = _re_agg.search(r'\[(.+?)\]', d.description)
+                jexl_expr = jexl_match.group(1) if jexl_match else None
+                # Clean label: strip bracket expression
+                clean_label = _re_agg.sub(r'\[.+?\]', '', d.description).strip()
                 if gc:
                     source = _snake(gc.name)
                     if "count" in desc_lower:
                         if "breakdown" in desc_lower or "active" in desc_lower:
                             children.append(ComponentNode(
                                 type="stat_breakdown",
-                                props={"source": source, "label": d.description, "group_by": "status"},
+                                props={"source": source, "label": clean_label or d.description, "group_by": "status"},
                             ))
                         else:
                             children.append(ComponentNode(
                                 type="aggregation",
-                                props={"source": source, "label": d.description, "agg_type": "count"},
+                                props={"source": source, "label": clean_label or d.description, "agg_type": "count"},
                             ))
                     elif "sum" in desc_lower or "value" in desc_lower:
-                        children.append(ComponentNode(
-                            type="aggregation",
-                            props={"source": source, "label": d.description, "agg_type": "sum"},
-                        ))
+                        props = {"source": source, "label": clean_label or d.description, "agg_type": "sum"}
+                        if jexl_expr:
+                            # Extract the column from expressions like "sum(hours)" -> "hours"
+                            col_match = _re_agg.match(r'sum\((\w+)\)', jexl_expr)
+                            if col_match:
+                                props["expression"] = PropValue(value=col_match.group(1), is_expr=True)
+                            else:
+                                props["expression"] = PropValue(value=jexl_expr, is_expr=True)
+                        children.append(ComponentNode(type="aggregation", props=props))
                     else:
                         children.append(ComponentNode(
                             type="aggregation",
