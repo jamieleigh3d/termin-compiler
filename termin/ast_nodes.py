@@ -208,6 +208,36 @@ class DisplayAggregation(Directive):
 
 
 @dataclass
+class StructuredAggregation(Directive):
+    """Structured aggregation: Display count/sum/average/min/max of ..."""
+    agg_type: str = ""            # "count", "sum", "average", "minimum", "maximum"
+    source_content: str = ""      # content name
+    expression: Optional[str] = None  # JEXL expression (for sum/avg/min/max)
+    group_by: Optional[str] = None    # field name (for count ... grouped by)
+    format: str = "number"        # "number", "currency", etc.
+
+
+@dataclass
+class SectionStart(Directive):
+    """Section "Title": — groups subsequent directives into a section."""
+    title: str = ""
+
+
+@dataclass
+class ActionHeader(Directive):
+    """For each X, show actions: — introduces action button definitions."""
+    singular: str = ""
+
+
+@dataclass
+class ActionButtonDef(Directive):
+    """'Label' transitions to 'state' if available [, hide/disable otherwise]"""
+    label: str = ""
+    target_state: str = ""
+    unavailable_behavior: str = "disable"  # "disable" or "hide"
+
+
+@dataclass
 class UserStory:
     role: str
     action: str

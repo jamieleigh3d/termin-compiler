@@ -17,6 +17,7 @@ from .ast_nodes import (
     EventAction, UserStory, ShowPage, DisplayTable, ShowRelated,
     HighlightRows, AllowFilter, AllowSearch, SubscribeTo, AcceptInput,
     ValidateUnique, CreateAs, AfterSave, ShowChart, DisplayAggregation,
+    StructuredAggregation, SectionStart, ActionHeader, ActionButtonDef,
     NavBar, NavItem, ApiSection, ApiEndpoint, Stream, Directive,
     ComputeNode, ComputeParam, ChannelDecl, ChannelRequirement, BoundaryDecl,
     BoundaryProperty, DisplayText, ErrorHandler, ErrorAction,
@@ -57,12 +58,20 @@ _PREFIXES: list[tuple[str, str]] = [
     ("On any error:", "error_catch_all_line"), ("Retry ", "error_retry_line"),
     ("Then ", "error_then_line"), ("As ", "story_header"), ("so that ", "so_that_line"),
     ("Show a page called", "show_page_line"), ("Display a table of", "display_table_line"),
-    ("For each ", "show_related_line"), ("Highlight rows where", "highlight_rows_line"),
+    ("For each ", "show_related_line"),  # also handles action_header_line — disambiguated in _classify_line
+    ("Highlight rows where", "highlight_rows_line"),
     ("Allow filtering by", "allow_filtering_line"), ("Allow searching by", "allow_searching_line"),
     ("This table subscribes to", "subscribes_to_line"), ("Accept input for", "accept_input_line"),
     ("Validate that", "validate_unique_line"), ("Create the ", "create_as_line"),
     ("After saving,", "after_saving_line"), ("Show a chart of", "show_chart_line"),
-    ("Display text", "display_text_line"), ("Display ", "display_agg_line"),
+    ("Section ", "section_header_line"),
+    ("Display text", "display_text_line"),
+    ("Display count of", "structured_agg_line"),
+    ("Display sum of", "structured_agg_line"),
+    ("Display average of", "structured_agg_line"),
+    ("Display minimum of", "structured_agg_line"),
+    ("Display maximum of", "structured_agg_line"),
+    ("Display ", "display_agg_line"),
     ("Navigation bar:", "nav_bar_line"), ("Expose a REST API at", "api_header_line"),
     ("Stream ", "stream_line"), ("Compute called", "compute_header"),
     ("Channel called", "channel_header"), ("Carries ", "channel_carries_line"),
@@ -85,7 +94,12 @@ def _classify_line(text: str) -> str:
         if " can also be " in text: return "state_also_line"
         if " can become " in text: return "state_transition_line"
     for prefix, rule in _PREFIXES:
-        if text.startswith(prefix): return rule
+        if text.startswith(prefix):
+            # Disambiguate "For each X, show actions:" from "For each X, show Y grouped by Z"
+            if rule == "show_related_line" and "show actions" in text.lower():
+                return "action_header_line"
+            return rule
+    if text.startswith('"') and " transitions to " in text: return "action_button_line"
     if text.startswith('"') and " links to " in text: return "nav_item_line"
     if any(text.startswith(m) or text.lstrip().startswith(m) for m in _HTTP_METHODS): return "api_endpoint_line"
     if any(text.startswith(kw) for kw in _SHAPE_KW): return "compute_shape_line"
@@ -557,6 +571,67 @@ def _parse_line(text: str, rule: str, ln: int):
         q = _fq(rest)
         if q: return ("directive", DisplayText(text=q, line=ln))
         return ("directive", DisplayText(text=rest.strip(), is_expression=True, line=ln))
+    if rule == "structured_agg_line":
+        r = P(text, rule)
+        if r:
+            content = str(r.get("content","")).strip()
+            # Disambiguate by presence of fields rather than rule name
+            if r.get("field"):
+                # count of X grouped by Y
+                return ("directive", StructuredAggregation(agg_type="count", source_content=content,
+                                                            group_by=str(r["field"]).strip(), line=ln))
+            if r.get("func"):
+                # sum/average/min/max of [expr] from X [as format]
+                func = str(r["func"]).strip()
+                expr_val = _qs(r.get("expr","")) if r.get("expr") else None
+                fmt = str(r.get("format","number")).strip() if r.get("format") else "number"
+                return ("directive", StructuredAggregation(agg_type=func, source_content=content, expression=expr_val, format=fmt, line=ln))
+            # count of X (no grouping, no func)
+            return ("directive", StructuredAggregation(agg_type="count", source_content=content, line=ln))
+        # Fallback: parse manually
+        rest = text[8:].strip()
+        if rest.lower().startswith("count of"):
+            content = rest[8:].strip()
+            gi = content.lower().find(" grouped by ")
+            if gi >= 0:
+                return ("directive", StructuredAggregation(agg_type="count", source_content=content[:gi].strip(),
+                                                            group_by=content[gi+12:].strip(), line=ln))
+            return ("directive", StructuredAggregation(agg_type="count", source_content=content, line=ln))
+        return ("directive", DisplayAggregation(description=rest, line=ln))
+    if rule == "section_header_line":
+        r = P(text, rule)
+        title = _qs(r.get("title","")) if r else ""
+        if not title:
+            # Fallback: extract quoted string
+            title = _fq(text[8:].strip().rstrip(":")) or text[8:].strip().rstrip(":")
+        return ("directive", SectionStart(title=title, line=ln))
+    if rule == "action_header_line":
+        r = P(text, rule)
+        singular = str(r.get("singular","")).strip() if r else ""
+        if not singular:
+            # Extract from "For each X, show actions:"
+            rest = text[9:].strip()
+            ci = rest.find(",")
+            singular = rest[:ci].strip() if ci >= 0 else ""
+        return ("directive", ActionHeader(singular=singular, line=ln))
+    if rule == "action_button_line":
+        r = P(text, rule)
+        if r:
+            label = _qs(r.get("label",""))
+            state = _qs(r.get("state",""))
+            rn = _rule(r)
+            behavior = "hide" if rn == "ActionHide" else "disable"
+            return ("directive", ActionButtonDef(label=label, target_state=state, unavailable_behavior=behavior, line=ln))
+        # Fallback: parse quoted strings
+        parts = text.strip()
+        label = _fq(parts) or ""
+        state = ""
+        si = parts.lower().find("transitions to ")
+        if si >= 0:
+            rest = parts[si+15:]
+            state = _fq(rest) or rest.split()[0] if rest else ""
+        behavior = "hide" if "hide otherwise" in parts.lower() else "disable"
+        return ("directive", ActionButtonDef(label=label, target_state=state, unavailable_behavior=behavior, line=ln))
     if rule == "display_agg_line":
         r = P(text, rule); return ("directive", DisplayAggregation(description=str(r.get("text","")).strip() if r else text[8:].strip(), line=ln))
     if rule == "nav_bar_line": return ("nav_bar",)

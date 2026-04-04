@@ -13,6 +13,8 @@ import textwrap
 from datetime import datetime, timezone
 from typing import Optional
 
+import warnings
+
 from ..ir import (
     AppSpec, ContentSchema, FieldSpec, FieldType, AccessGrant, Verb,
     StateMachineSpec, TransitionSpec,
@@ -20,6 +22,7 @@ from ..ir import (
     HttpMethod, RouteKind, RouteSpec,
     PageSpec, TableColumn, FilterField, FormField, HighlightRule,
     RelatedDataSpec, AggregationSpec, ChartSpec,
+    PageEntry, page_entry_to_pagespec,
     NavItemSpec, StreamSpec, RoleSpec, AuthSpec,
     ComputeSpec, ComputeShape, ChannelSpec, ChannelDirection,
     ChannelDelivery, ChannelRequirementSpec, BoundarySpec,
@@ -1486,8 +1489,11 @@ class FastApiBackend:
         ''')
 
         # Generate page templates (merge same-slug pages for role-conditional rendering)
+        # Convert PageEntry component trees to legacy PageSpec for backward compat
+        _legacy_pages = [page_entry_to_pagespec(p) if isinstance(p, PageEntry) else p
+                         for p in self.spec.pages]
         pages_by_slug: dict[str, list] = {}
-        for page in self.spec.pages:
+        for page in _legacy_pages:
             pages_by_slug.setdefault(page.slug, []).append(page)
 
         for slug, pages in pages_by_slug.items():
@@ -1876,9 +1882,11 @@ class FastApiBackend:
     # ── Page Routes ──
 
     def _emit_page_routes(self) -> None:
+        _legacy_pages = [page_entry_to_pagespec(p) if isinstance(p, PageEntry) else p
+                         for p in self.spec.pages]
         # Home route -> redirect to first page
-        if self.spec.pages:
-            first_slug = self.spec.pages[0].slug
+        if _legacy_pages:
+            first_slug = _legacy_pages[0].slug
             self._w(f'@app.get("/", response_class=HTMLResponse)')
             self._w(f"async def home(request: Request):")
             self._w(f'    return RedirectResponse(url="/{first_slug}")')
@@ -1886,7 +1894,7 @@ class FastApiBackend:
 
         # Emit one route per unique slug (merged pages share a route)
         emitted_slugs: set[str] = set()
-        for page in self.spec.pages:
+        for page in _legacy_pages:
             if page.slug not in emitted_slugs:
                 self._emit_page_route(page)
                 emitted_slugs.add(page.slug)
@@ -2143,7 +2151,9 @@ class FastApiBackend:
     # ── Chart data API ──
 
     def _emit_chart_data_routes(self) -> None:
-        for page in self.spec.pages:
+        _legacy_pages = [page_entry_to_pagespec(p) if isinstance(p, PageEntry) else p
+                         for p in self.spec.pages]
+        for page in _legacy_pages:
             if page.chart:
                 table = page.chart.content_ref
                 days = page.chart.days

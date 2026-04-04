@@ -7,9 +7,9 @@ pass. Backends read pre-resolved, immutable data.
 All types are frozen dataclasses with tuples (not lists) for immutability.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional
+from typing import Any, Optional
 
 
 # ── Naming ──
@@ -262,6 +262,190 @@ class PageSpec:
     static_expressions: tuple[str, ...] = ()        # compute expression calls
 
 
+# ── Presentation v2: Component Tree ──
+
+@dataclass(frozen=True)
+class PropValue:
+    """A prop value that may be a literal string or a JEXL expression."""
+    value: str
+    is_expr: bool = False
+
+
+@dataclass
+class ComponentNode:
+    """A composable UI component in the Presentation tree.
+
+    Not frozen because props/style/layout are dicts. Constructed once in
+    lowering, serialized to JSON, never mutated after construction.
+    """
+    type: str                                      # "text", "data_table", "form", etc.
+    props: dict = field(default_factory=dict)       # key → value or PropValue
+    style: dict = field(default_factory=dict)       # CSS-like visual properties
+    layout: dict = field(default_factory=dict)      # visual editor canvas state
+    children: tuple = ()                            # tuple of ComponentNode
+
+
+@dataclass(frozen=True)
+class PageEntry:
+    """A page in the component tree IR — replaces the flat PageSpec."""
+    name: str
+    slug: str
+    role: str
+    required_scope: Optional[str] = None
+    children: tuple = ()   # tuple of ComponentNode
+
+
+def page_entry_to_pagespec(entry: 'PageEntry') -> PageSpec:
+    """Convert a PageEntry component tree back to a flat PageSpec for legacy backends."""
+    display_content = None
+    table_columns = []
+    filters = []
+    search_fields = []
+    highlight = None
+    subscribe_stream = None
+    related = None
+    form_fields = []
+    form_target = None
+    create_as = None
+    validate_unique = None
+    after_save = None
+    aggregations = []
+    chart = None
+    scope = entry.required_scope
+    static_texts = []
+    static_expressions = []
+
+    def _walk(children, parent_type=None):
+        nonlocal display_content, highlight, subscribe_stream, related
+        nonlocal form_target, create_as, validate_unique, after_save, chart, scope
+
+        for node in children:
+            t = node.type
+            p = node.props
+
+            if t == "text":
+                content = p.get("content", "")
+                if isinstance(content, dict) and content.get("is_expr"):
+                    static_expressions.append(content["value"])
+                elif isinstance(content, PropValue) and content.is_expr:
+                    static_expressions.append(content.value)
+                else:
+                    val = content.value if isinstance(content, PropValue) else content
+                    static_texts.append(val)
+
+            elif t == "data_table":
+                display_content = p.get("source")
+                for col in p.get("columns", []):
+                    table_columns.append(TableColumn(
+                        display=col.get("label", col.get("field", "")),
+                        key=col.get("field", ""),
+                    ))
+                _walk(node.children, parent_type="data_table")
+
+            elif t == "filter":
+                filters.append(FilterField(
+                    key=p.get("field", ""),
+                    display=p.get("field", ""),
+                    filter_type={"enum": "enum", "state": "status", "distinct": "distinct",
+                                 "reference": "text"}.get(p.get("mode", "text"), "text"),
+                    options=tuple(p.get("options", [])),
+                ))
+
+            elif t == "search":
+                search_fields.extend(p.get("fields", []))
+
+            elif t == "highlight":
+                cond = p.get("condition")
+                if isinstance(cond, dict) and cond.get("is_expr"):
+                    highlight = HighlightRule(field="", operator="jexl", threshold_field=cond["value"])
+
+            elif t == "subscribe":
+                subscribe_stream = p.get("content")
+
+            elif t == "related":
+                related = RelatedDataSpec(
+                    related_content=p.get("content", ""),
+                    join_column=p.get("join", ""),
+                    display_columns=(),
+                )
+
+            elif t == "form":
+                form_target = p.get("target")
+                create_as = p.get("create_as")
+                after_save = p.get("after_save")
+                if p.get("submit_scope"):
+                    scope = p["submit_scope"]
+                _walk(node.children, parent_type="form")
+
+            elif t == "field_input":
+                form_fields.append(FormField(
+                    key=p.get("field", ""),
+                    display=p.get("label", p.get("field", "")),
+                    input_type=p.get("input_type", "text"),
+                    required=p.get("required", False),
+                    minimum=p.get("minimum"),
+                    step=p.get("step"),
+                    enum_values=tuple(p.get("enum_values", [])),
+                    reference_content=p.get("reference_content"),
+                    reference_display_col=p.get("reference_display_col"),
+                    reference_unique_col=p.get("reference_unique_col"),
+                ))
+
+            elif t == "aggregation":
+                agg_key = p.get("label", "agg").lower().replace(" ", "_")[:30]
+                aggregations.append(AggregationSpec(
+                    key=agg_key,
+                    description=p.get("label", ""),
+                    agg_type=p.get("agg_type", "count"),
+                    content_ref=p.get("source", ""),
+                    sum_expression=p.get("expression", {}).get("value") if isinstance(p.get("expression"), dict) else None,
+                ))
+
+            elif t == "stat_breakdown":
+                agg_key = p.get("label", "breakdown").lower().replace(" ", "_")[:30]
+                aggregations.append(AggregationSpec(
+                    key=agg_key,
+                    description=p.get("label", ""),
+                    agg_type="count_by_status",
+                    content_ref=p.get("source", ""),
+                ))
+
+            elif t == "chart":
+                chart = ChartSpec(
+                    content_ref=p.get("source", ""),
+                    days=p.get("period_days", 30),
+                    chart_type=p.get("chart_type", "line"),
+                )
+
+            elif t == "section":
+                _walk(node.children, parent_type=parent_type)
+
+    _walk(entry.children)
+
+    return PageSpec(
+        name=entry.name,
+        slug=entry.slug,
+        role=entry.role,
+        display_content=display_content,
+        table_columns=tuple(table_columns),
+        filters=tuple(filters),
+        search_fields=tuple(search_fields),
+        highlight=highlight,
+        subscribe_stream=subscribe_stream,
+        related=related,
+        form_fields=tuple(form_fields),
+        form_target_content=form_target,
+        create_as_status=create_as,
+        validate_unique_field=validate_unique,
+        after_save_instruction=after_save,
+        aggregations=tuple(aggregations),
+        chart=chart,
+        required_scope=scope,
+        static_texts=tuple(static_texts),
+        static_expressions=tuple(static_expressions),
+    )
+
+
 # ── Navigation ──
 
 @dataclass(frozen=True)
@@ -398,7 +582,7 @@ class AppSpec:
     state_machines: tuple[StateMachineSpec, ...] = ()
     events: tuple[EventSpec, ...] = ()
     routes: tuple[RouteSpec, ...] = ()
-    pages: tuple[PageSpec, ...] = ()
+    pages: tuple[PageEntry, ...] = ()
     nav_items: tuple[NavItemSpec, ...] = ()
     streams: tuple[StreamSpec, ...] = ()
     computes: tuple[ComputeSpec, ...] = ()

@@ -1,12 +1,283 @@
 """Presentation renderer for the Termin runtime.
 
-Builds Jinja2 templates and page routes dynamically from IR PageSpecs.
+Walks a component tree (Presentation IR v2) and emits Jinja2 template
+fragments. Each component type has a dedicated renderer function.
 """
 
 from jinja2 import Environment, BaseLoader
 
 jinja_env = Environment(loader=BaseLoader(), autoescape=True)
 
+
+# ── Component renderers ──
+
+def _render_text(node: dict) -> str:
+    content = node.get("props", {}).get("content", "")
+    if isinstance(content, dict) and content.get("is_expr"):
+        expr = content["value"]
+        return f'<div class="text-lg text-gray-800 mb-4" data-termin-expr="{expr}">...</div>'
+    return f'<div class="text-lg text-gray-800 mb-4">{content}</div>'
+
+
+def _render_data_table(node: dict) -> str:
+    props = node.get("props", {})
+    cols = props.get("columns", [])
+    children = node.get("children", [])
+
+    parts = ['<table class="w-full bg-white shadow rounded overflow-hidden">']
+    parts.append('  <thead class="bg-gray-100"><tr>')
+    for col in cols:
+        label = col.get("label", col.get("field", ""))
+        parts.append(f'    <th class="px-4 py-2 text-left text-sm font-medium text-gray-600">{label}</th>')
+
+    # Action column header if row_actions exist
+    row_actions = props.get("row_actions", [])
+    if row_actions:
+        parts.append('    <th class="px-4 py-2 text-left text-sm font-medium text-gray-600">Actions</th>')
+
+    parts.append('  </tr></thead><tbody>')
+    parts.append('    {% for item in items %}<tr class="border-t">')
+    for col in cols:
+        key = col.get("field", "")
+        parts.append(f'      <td class="px-4 py-2 text-sm">{{{{ item.{key}|default("") }}}}</td>')
+
+    # Action buttons per row
+    if row_actions:
+        parts.append('      <td class="px-4 py-2 text-sm space-x-1">')
+        for action in row_actions:
+            ap = action.get("props", {})
+            label = ap.get("label", "Action")
+            target = ap.get("target_state", "")
+            source = props.get("source", "")
+            parts.append(
+                f'        <form method="post" action="/api/v1/{source}/{{{{ item.id }}}}/{target.replace(" ", "_")}" '
+                f'style="display:inline">'
+                f'<button type="submit" class="text-indigo-600 hover:text-indigo-800 text-xs">{label}</button></form>'
+            )
+        parts.append('      </td>')
+
+    parts.append('    </tr>{% endfor %}</tbody></table>')
+
+    # Render sub-components (filter UI, search box, etc.) above or below the table
+    sub_parts = []
+    for child in children:
+        rendered = _render_filter(child) if child.get("type") == "filter" else ""
+        if rendered:
+            sub_parts.append(rendered)
+        if child.get("type") == "search":
+            sub_parts.append(_render_search(child))
+    if sub_parts:
+        return '\n'.join(sub_parts) + '\n' + '\n'.join(parts)
+    return '\n'.join(parts)
+
+
+def _render_filter(node: dict) -> str:
+    """Render a filter dropdown (displayed above the table)."""
+    props = node.get("props", {})
+    field = props.get("field", "")
+    mode = props.get("mode", "text")
+    options = props.get("options", [])
+    if not options and mode not in ("enum", "state"):
+        return ""
+    parts = [f'<div class="inline-block mr-4 mb-2">']
+    parts.append(f'  <label class="text-sm text-gray-600">{field}:</label>')
+    parts.append(f'  <select class="text-sm border rounded px-2 py-1" data-filter="{field}">')
+    parts.append(f'    <option value="">All</option>')
+    for opt in options:
+        parts.append(f'    <option value="{opt}">{opt}</option>')
+    parts.append(f'  </select>')
+    parts.append(f'</div>')
+    return '\n'.join(parts)
+
+
+def _render_search(node: dict) -> str:
+    fields = node.get("props", {}).get("fields", [])
+    placeholder = f"Search by {', '.join(fields)}"
+    return (f'<input type="text" placeholder="{placeholder}" '
+            f'class="border rounded px-3 py-1 mb-2 text-sm" data-search="true">')
+
+
+def _render_form(node: dict, content_schemas: dict = None) -> str:
+    props = node.get("props", {})
+    target = props.get("target", "")
+    # Infer slug from context — form posts to the current page slug
+    parts = [f'<form method="post" class="bg-white shadow rounded p-6 max-w-lg">']
+
+    for child in node.get("children", []):
+        if child.get("type") == "field_input":
+            parts.append(_render_field_input(child, content_schemas))
+
+    parts.append('  <input type="hidden" name="edit_id" value="">')
+    parts.append('  <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700">Save</button>')
+    parts.append('</form>')
+    return '\n'.join(parts)
+
+
+def _render_field_input(node: dict, content_schemas: dict = None) -> str:
+    props = node.get("props", {})
+    key = props.get("field", "")
+    label = props.get("label", key)
+    input_type = props.get("input_type", "text")
+    required = ' required' if props.get("required") else ''
+
+    parts = [f'  <div class="mb-4">']
+    parts.append(f'    <label class="block text-sm font-medium text-gray-700 mb-1">{label}</label>')
+
+    if input_type == "enum":
+        parts.append(f'    <select name="{key}" class="w-full border rounded px-3 py-2"{required}>')
+        parts.append(f'      <option value="">Select...</option>')
+        for val in props.get("enum_values", []):
+            parts.append(f'      <option value="{val}">{val}</option>')
+        parts.append(f'    </select>')
+    elif input_type == "reference":
+        ref = props.get("reference_content", "")
+        ref_display = props.get("reference_display_col", "id")
+        parts.append(f'    <select name="{key}" class="w-full border rounded px-3 py-2"{required}>')
+        parts.append(f'      <option value="">Select...</option>')
+        parts.append(f'      {{% for item in {ref}_list %}}')
+        parts.append(f'      <option value="{{{{ item.id }}}}">{{{{ item.{ref_display} }}}}</option>')
+        parts.append(f'      {{% endfor %}}')
+        parts.append(f'    </select>')
+    elif input_type in ("number", "currency", "whole_number"):
+        step = f' step="{props["step"]}"' if props.get("step") else ""
+        min_attr = f' min="{props["minimum"]}"' if props.get("minimum") is not None else ""
+        parts.append(f'    <input type="number" name="{key}" class="w-full border rounded px-3 py-2"{step}{min_attr}{required}>')
+    else:
+        parts.append(f'    <input type="text" name="{key}" class="w-full border rounded px-3 py-2"{required}>')
+
+    parts.append(f'  </div>')
+    return '\n'.join(parts)
+
+
+def _render_aggregation(node: dict) -> str:
+    props = node.get("props", {})
+    label = props.get("label", "Metric")
+    agg_type = props.get("agg_type", "count")
+    source = props.get("source", "")
+    key = label.lower().replace(" ", "_")[:30]
+    return (f'<div class="bg-white shadow rounded p-4 mb-4">\n'
+            f'  <div class="text-sm text-gray-600">{label}</div>\n'
+            f'  <div class="text-2xl font-bold mt-1" data-termin-agg="{agg_type}" data-source="{source}">...</div>\n'
+            f'</div>')
+
+
+def _render_stat_breakdown(node: dict) -> str:
+    props = node.get("props", {})
+    label = props.get("label", "Breakdown")
+    source = props.get("source", "")
+    group_by = props.get("group_by", "status")
+    return (f'<div class="bg-white shadow rounded p-4 mb-4">\n'
+            f'  <div class="text-sm text-gray-600">{label}</div>\n'
+            f'  <div class="text-2xl font-bold mt-1" data-termin-agg="count_by" '
+            f'data-source="{source}" data-group="{group_by}">...</div>\n'
+            f'</div>')
+
+
+def _render_chart(node: dict) -> str:
+    props = node.get("props", {})
+    source = props.get("source", "")
+    chart_type = props.get("chart_type", "line")
+    days = props.get("period_days", 30)
+    label = props.get("label", f"{source} chart")
+    return (f'<div class="bg-white shadow rounded p-4 mb-4">\n'
+            f'  <div class="text-sm text-gray-600 mb-2">{label}</div>\n'
+            f'  <canvas id="chart_{source}" data-chart-type="{chart_type}" '
+            f'data-source="{source}" data-days="{days}" height="200"></canvas>\n'
+            f'</div>')
+
+
+def _render_section(node: dict) -> str:
+    props = node.get("props", {})
+    title = props.get("title", "")
+    parts = [f'<div class="mb-6">']
+    if title:
+        parts.append(f'  <h2 class="text-xl font-semibold text-gray-800 mb-3">{title}</h2>')
+    for child in node.get("children", []):
+        parts.append(f'  {render_component(child)}')
+    parts.append('</div>')
+    return '\n'.join(parts)
+
+
+def _render_action_button(node: dict) -> str:
+    props = node.get("props", {})
+    label = props.get("label", "Action")
+    return f'<button class="bg-indigo-600 text-white px-4 py-2 rounded text-sm hover:bg-indigo-700">{label}</button>'
+
+
+def _render_unknown(node: dict) -> str:
+    comp_type = node.get("type", "unknown")
+    return f'<div class="text-gray-400 text-sm">[{comp_type} component]</div>'
+
+
+# ── Renderer dispatch ──
+
+RENDERERS = {
+    "text": _render_text,
+    "data_table": _render_data_table,
+    "form": _render_form,
+    "field_input": _render_field_input,
+    "aggregation": _render_aggregation,
+    "stat_breakdown": _render_stat_breakdown,
+    "chart": _render_chart,
+    "section": _render_section,
+    "action_button": _render_action_button,
+    # Sub-components rendered inline by their parent:
+    # "filter", "search", "highlight", "subscribe", "related"
+}
+
+
+def render_component(node: dict) -> str:
+    """Render a single component node to a Jinja2 template fragment."""
+    renderer = RENDERERS.get(node.get("type", ""), _render_unknown)
+    return renderer(node)
+
+
+# ── Page template builders ──
+
+def build_page_template(page: dict) -> object:
+    """Build a Jinja2 template for a page from its component tree."""
+    parts = [f'<h1 class="text-2xl font-bold mb-4">{page["name"]}</h1>']
+    for child in page.get("children", []):
+        parts.append(render_component(child))
+    return jinja_env.from_string("\n".join(parts))
+
+
+def build_merged_page_template(pages: list) -> object:
+    """Build a role-conditional template for multiple pages sharing a slug."""
+    parts = [f'<h1 class="text-2xl font-bold mb-4">{pages[0]["name"]}</h1>']
+    for page in pages:
+        role = page["role"]
+        cond = f'{{% if current_role == "{role}" or current_role|lower == "{role.lower()}" %}}'
+        page_content = []
+        for child in page.get("children", []):
+            page_content.append(render_component(child))
+        if page_content:
+            parts.append(cond)
+            parts.extend(page_content)
+            parts.append('{% endif %}')
+    return jinja_env.from_string("\n".join(parts))
+
+
+# ── Navigation ──
+
+def build_nav_html(nav_items: list, roles: list) -> str:
+    """Build navigation HTML from IR nav items."""
+    parts = []
+    for item in nav_items:
+        slug = item.get("page_slug", "")
+        label = item.get("label", "")
+        visible = item.get("visible_to", [])
+
+        if "all" in visible:
+            parts.append(f'<a href="/{slug}" class="text-gray-700 hover:text-indigo-600">{label}</a>')
+        elif visible:
+            checks = " or ".join(f'"{r}" in current_role' for r in visible)
+            parts.append(f'{{% if {checks} %}}<a href="/{slug}" class="text-gray-700 hover:text-indigo-600">{label}</a>{{% endif %}}')
+
+    return "\n                ".join(parts)
+
+
+# ── Base template ──
 
 def build_base_template(app_name: str, nav_html: str) -> object:
     """Build the base HTML template with nav bar and termin.js runtime."""
@@ -65,141 +336,3 @@ def build_base_template(app_name: str, nav_html: str) -> object:
 </body>
 </html>'''
     return jinja_env.from_string(template)
-
-
-def build_nav_html(nav_items: list, roles: list) -> str:
-    """Build navigation HTML from IR nav items."""
-    parts = []
-    for item in nav_items:
-        slug = item.get("page_slug", "")
-        label = item.get("label", "")
-        visible = item.get("visible_to", [])
-
-        if "all" in visible:
-            parts.append(f'<a href="/{slug}" class="text-gray-700 hover:text-indigo-600">{label}</a>')
-        elif visible:
-            checks = " or ".join(f'"{r}" in current_role' for r in visible)
-            parts.append(f'{{% if {checks} %}}<a href="/{slug}" class="text-gray-700 hover:text-indigo-600">{label}</a>{{% endif %}}')
-
-    return "\n                ".join(parts)
-
-
-def build_merged_page_template(pages: list) -> object:
-    """Build a role-conditional template for multiple pages sharing a slug."""
-    parts = [f'<h1 class="text-2xl font-bold mb-4">{pages[0]["name"]}</h1>']
-
-    for page in pages:
-        role = page["role"]
-        cond = f'{{% if current_role == "{role}" or current_role|lower == "{role.lower()}" %}}'
-        page_parts = _build_page_content_parts(page)
-        if page_parts:
-            parts.append(cond)
-            parts.extend(page_parts)
-            parts.append('{% endif %}')
-
-    return jinja_env.from_string("\n".join(parts))
-
-
-def _build_page_content_parts(page: dict) -> list:
-    """Build the content parts for a single page (no heading)."""
-    parts = []
-    for text in page.get("static_texts", []):
-        parts.append(f'<div class="text-lg text-gray-800 mb-4">{text}</div>')
-    for expr in page.get("static_expressions", []):
-        parts.append(f'<div class="text-lg text-gray-800 mb-4" data-termin-expr="{expr}">...</div>')
-    # Add table/form/agg parts here if needed
-    if page.get("display_content") and page.get("table_columns"):
-        cols = page["table_columns"]
-        parts.append('<table class="w-full bg-white shadow rounded overflow-hidden">')
-        parts.append('  <thead class="bg-gray-100"><tr>')
-        for col in cols:
-            parts.append(f'    <th class="px-4 py-2 text-left text-sm font-medium text-gray-600">{col["display"]}</th>')
-        parts.append('  </tr></thead><tbody>')
-        parts.append('    {% for item in items %}<tr class="border-t">')
-        for col in cols:
-            parts.append(f'      <td class="px-4 py-2 text-sm">{{{{ item.{col["key"]}|default("") }}}}</td>')
-        parts.append('    </tr>{% endfor %}</tbody></table>')
-    return parts
-
-
-def build_page_template(page: dict) -> object:
-    """Build a Jinja2 template for a single page from IR PageSpec."""
-    parts = [f'<h1 class="text-2xl font-bold mb-4">{page["name"]}</h1>']
-
-    # Static text
-    for text in page.get("static_texts", []):
-        parts.append(f'<div class="text-lg text-gray-800 mb-4">{text}</div>')
-
-    # Static expressions (client-side jexl)
-    for expr in page.get("static_expressions", []):
-        parts.append(f'<div class="text-lg text-gray-800 mb-4" data-termin-expr="{expr}">...</div>')
-
-    # Display table
-    if page.get("display_content") and page.get("table_columns"):
-        cols = page["table_columns"]
-        parts.append('<table class="w-full bg-white shadow rounded overflow-hidden">')
-        parts.append('  <thead class="bg-gray-100"><tr>')
-        for col in cols:
-            parts.append(f'    <th class="px-4 py-2 text-left text-sm font-medium text-gray-600">{col["display"]}</th>')
-        parts.append('  </tr></thead>')
-        parts.append('  <tbody>')
-        parts.append('    {% for item in items %}')
-        parts.append('    <tr class="border-t">')
-        for col in cols:
-            parts.append(f'      <td class="px-4 py-2 text-sm">{{{{ item.{col["key"]}|default("") }}}}</td>')
-        parts.append('    </tr>')
-        parts.append('    {% endfor %}')
-        parts.append('  </tbody>')
-        parts.append('</table>')
-
-    # Form
-    if page.get("form_fields"):
-        slug = page.get("slug", "")
-        parts.append(f'<form method="post" action="/{slug}" class="bg-white shadow rounded p-6 max-w-lg">')
-        for field in page["form_fields"]:
-            key = field["key"]
-            display = field["display"]
-            input_type = field.get("input_type", "text")
-            required = " required" if field.get("required") else ""
-
-            parts.append(f'  <div class="mb-4">')
-            parts.append(f'    <label class="block text-sm font-medium text-gray-700 mb-1">{display}</label>')
-
-            if input_type == "enum":
-                parts.append(f'    <select name="{key}" class="w-full border rounded px-3 py-2">')
-                parts.append(f'      <option value="">Select...</option>')
-                for val in field.get("enum_values", []):
-                    parts.append(f'      <option value="{val}">{val}</option>')
-                parts.append(f'    </select>')
-            elif input_type == "reference":
-                ref = field.get("reference_content", "")
-                ref_display = field.get("reference_display_col", "id")
-                parts.append(f'    <select name="{key}" class="w-full border rounded px-3 py-2"{required}>')
-                parts.append(f'      <option value="">Select...</option>')
-                parts.append(f'      {{% for item in {ref}_list %}}')
-                parts.append(f'      <option value="{{{{ item.id }}}}">{{{{ item.{ref_display} }}}}</option>')
-                parts.append(f'      {{% endfor %}}')
-                parts.append(f'    </select>')
-            elif input_type in ("number", "currency"):
-                step = f' step="{field["step"]}"' if field.get("step") else ""
-                min_attr = f' min="{field["minimum"]}"' if field.get("minimum") is not None else ""
-                parts.append(f'    <input type="number" name="{key}" class="w-full border rounded px-3 py-2"{step}{min_attr}{required}>')
-            else:
-                parts.append(f'    <input type="text" name="{key}" class="w-full border rounded px-3 py-2"{required}>')
-
-            parts.append(f'  </div>')
-
-        parts.append('  <input type="hidden" name="edit_id" value="">')
-        parts.append('  <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700">Save</button>')
-        parts.append('</form>')
-
-    # Aggregations
-    for agg in page.get("aggregations", []):
-        key = agg["key"]
-        desc = agg["description"]
-        parts.append(f'<div class="bg-white shadow rounded p-4 mb-4">')
-        parts.append(f'  <div class="text-sm text-gray-600">{desc}</div>')
-        parts.append(f'  <div class="text-2xl font-bold mt-1">{{{{ {key} }}}}</div>')
-        parts.append(f'</div>')
-
-    return jinja_env.from_string("\n".join(parts))

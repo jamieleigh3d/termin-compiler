@@ -12,7 +12,24 @@ from termin.lower import lower
 from termin.ir import (
     FieldType, Verb, RouteKind, HttpMethod,
     ComputeShape, ChannelDirection, ChannelDelivery, ComputeParamSpec,
+    PageEntry, ComponentNode, PropValue,
 )
+
+
+def _find_child(page_or_node, comp_type, **prop_filters):
+    """Find first child component of given type, optionally matching prop values."""
+    children = page_or_node.children if hasattr(page_or_node, 'children') else []
+    for ch in children:
+        if ch.type == comp_type:
+            if all(ch.props.get(k) == v for k, v in prop_filters.items()):
+                return ch
+    return None
+
+
+def _find_children(page_or_node, comp_type):
+    """Find all children of given type."""
+    children = page_or_node.children if hasattr(page_or_node, 'children') else []
+    return [ch for ch in children if ch.type == comp_type]
 
 
 def _load_and_lower(example: str):
@@ -136,36 +153,42 @@ class TestWarehouseIR:
 
     def test_dashboard_page(self):
         dash = next(p for p in self.spec.pages if p.slug == "inventory_dashboard")
-        assert dash.display_content == "products"
-        assert len(dash.table_columns) >= 4
-        assert len(dash.filters) == 3
-        # Category filter should be enum
-        cat_filter = next(f for f in dash.filters if f.key == "category")
-        assert cat_filter.filter_type == "enum"
-        assert "raw material" in cat_filter.options
-        # Status filter should be status
-        status_filter = next(f for f in dash.filters if f.key == "status")
-        assert status_filter.filter_type == "status"
-        assert "draft" in status_filter.options
+        dt = _find_child(dash, "data_table")
+        assert dt is not None
+        assert dt.props["source"] == "products"
+        assert len(dt.props["columns"]) >= 4
+        filters = _find_children(dt, "filter")
+        assert len(filters) == 3
+        cat_filter = next(f for f in filters if f.props["field"] == "category")
+        assert cat_filter.props["mode"] == "enum"
+        assert "raw material" in cat_filter.props["options"]
+        status_filter = next(f for f in filters if f.props["field"] == "status")
+        assert status_filter.props["mode"] == "state"
+        assert "draft" in status_filter.props["options"]
 
     def test_add_product_form(self):
         add = next(p for p in self.spec.pages if p.slug == "add_product")
-        assert add.form_target_content == "products"
-        assert len(add.form_fields) >= 5
-        sku_field = next(f for f in add.form_fields if f.key == "sku")
-        assert sku_field.input_type == "text"
-        assert sku_field.required is True
-        cat_field = next(f for f in add.form_fields if f.key == "category")
-        assert cat_field.input_type == "enum"
-        assert "packaging" in cat_field.enum_values
+        form = _find_child(add, "form")
+        assert form is not None
+        assert form.props["target"] == "products"
+        field_inputs = _find_children(form, "field_input")
+        assert len(field_inputs) >= 5
+        sku = next(f for f in field_inputs if f.props["field"] == "sku")
+        assert sku.props["input_type"] == "text"
+        assert sku.props.get("required") is True
+        cat = next(f for f in field_inputs if f.props["field"] == "category")
+        assert cat.props["input_type"] == "enum"
+        assert "packaging" in cat.props["enum_values"]
 
     def test_receive_stock_form_has_reference(self):
         rs = next(p for p in self.spec.pages if p.slug == "receive_stock")
-        product_field = next(f for f in rs.form_fields if f.key == "product")
-        assert product_field.input_type == "reference"
-        assert product_field.reference_content == "products"
-        assert product_field.reference_display_col == "name"
-        assert product_field.reference_unique_col == "sku"
+        form = _find_child(rs, "form")
+        field_inputs = _find_children(form, "field_input")
+        product = next(f for f in field_inputs if f.props["field"] == "product")
+        assert product.props["input_type"] == "reference"
+        assert product.props["reference_content"] == "products"
+        assert product.props["reference_display_col"] == "name"
+        assert product.props["reference_unique_col"] == "sku"
 
     def test_nav_items(self):
         labels = [n.label for n in self.spec.nav_items]
@@ -258,12 +281,14 @@ class TestProjectBoardIR:
 
     def test_create_task_form_fields(self):
         ct = next(p for p in self.spec.pages if p.slug == "create_task")
-        assert ct.form_target_content == "tasks"
-        project_field = next(f for f in ct.form_fields if f.key == "project")
-        assert project_field.input_type == "reference"
-        assert project_field.reference_content == "projects"
-        priority_field = next(f for f in ct.form_fields if f.key == "priority")
-        assert priority_field.input_type == "enum"
+        form = _find_child(ct, "form")
+        assert form.props["target"] == "tasks"
+        field_inputs = _find_children(form, "field_input")
+        project = next(f for f in field_inputs if f.props["field"] == "project")
+        assert project.props["input_type"] == "reference"
+        assert project.props["reference_content"] == "projects"
+        priority = next(f for f in field_inputs if f.props["field"] == "priority")
+        assert priority.props["input_type"] == "enum"
 
     def test_seven_pages(self):
         assert len(self.spec.pages) == 7
@@ -312,7 +337,8 @@ class TestBackwardCompatibility:
         page = spec.pages[0]
         assert page.name == "Hello"
         assert page.role == "anonymous"
-        assert "Hello, World" in page.static_texts
+        text_nodes = _find_children(page, "text")
+        assert any("Hello, World" == t.props.get("content") for t in text_nodes)
 
 
 # ============================================================
@@ -420,9 +446,16 @@ class TestComputeDemoIR:
         spec = _load_and_lower("hello_user.termin")
         assert len(spec.pages) == 2
         anon_page = next(p for p in spec.pages if p.role == "Anonymous")
-        assert "Anon, Hello!" in anon_page.static_texts
+        anon_texts = _find_children(anon_page, "text")
+        assert any("Anon, Hello!" == t.props.get("content") for t in anon_texts)
         logged_page = next(p for p in spec.pages if p.role == "LoggedInUser")
-        assert "SayHelloTo(LoggedInUser.CurrentUser)" in logged_page.static_expressions
+        logged_texts = _find_children(logged_page, "text")
+        assert any(
+            isinstance(t.props.get("content"), PropValue)
+            and t.props["content"].is_expr
+            and "SayHelloTo" in t.props["content"].value
+            for t in logged_texts
+        )
 
     def test_order_reporting_boundary(self):
         b = next(b for b in self.spec.boundaries if b.name.snake == "order_reporting")
@@ -443,3 +476,124 @@ class TestComputeDemoIR:
             for eh in self.spec.error_handlers:
                 if eh.source:
                     assert eh.source_type in ("content", "channel", "compute", "boundary")
+
+
+# ============================================================
+# Presentation v2: Component tree tests
+# ============================================================
+
+class TestComponentTree:
+    """Tests for the component tree IR structure."""
+
+    def test_page_entry_has_children(self):
+        """Pages should have children array instead of flat fields."""
+        spec = _load_and_lower("warehouse.termin")
+        dash = next(p for p in spec.pages if p.slug == "inventory_dashboard")
+        assert isinstance(dash, PageEntry)
+        assert len(dash.children) > 0
+
+    def test_data_table_component(self):
+        """DisplayTable should produce a data_table component."""
+        spec = _load_and_lower("warehouse.termin")
+        dash = next(p for p in spec.pages if p.slug == "inventory_dashboard")
+        dt = _find_child(dash, "data_table")
+        assert dt is not None
+        assert dt.props["source"] == "products"
+        assert isinstance(dt.props["columns"], list)
+
+    def test_form_component(self):
+        """AcceptInput should produce a form with field_input children."""
+        spec = _load_and_lower("warehouse.termin")
+        add = next(p for p in spec.pages if p.slug == "add_product")
+        form = _find_child(add, "form")
+        assert form is not None
+        assert form.props["target"] == "products"
+        inputs = _find_children(form, "field_input")
+        assert len(inputs) >= 3
+
+    def test_text_literal_component(self):
+        """Display text 'literal' -> text component with string content."""
+        spec = _load_and_lower("hello.termin")
+        page = spec.pages[0]
+        text = _find_child(page, "text")
+        assert text is not None
+        assert text.props["content"] == "Hello, World"
+
+    def test_text_expression_component(self):
+        """Display text [expr] -> text component with PropValue content."""
+        spec = _load_and_lower("hello_user.termin")
+        logged = next(p for p in spec.pages if p.role == "LoggedInUser")
+        texts = _find_children(logged, "text")
+        expr_text = next((t for t in texts if isinstance(t.props.get("content"), PropValue)
+                          and t.props["content"].is_expr), None)
+        assert expr_text is not None
+        assert "SayHelloTo" in expr_text.props["content"].value
+
+    def test_filter_children_of_data_table(self):
+        """Filters should be children of data_table, not siblings."""
+        spec = _load_and_lower("warehouse.termin")
+        dash = next(p for p in spec.pages if p.slug == "inventory_dashboard")
+        dt = _find_child(dash, "data_table")
+        filters = _find_children(dt, "filter")
+        assert len(filters) >= 2
+
+    def test_chart_component(self):
+        """ShowChart should produce a chart component."""
+        spec = _load_and_lower("warehouse.termin")
+        overview = next(p for p in spec.pages if p.slug == "inventory_overview")
+        chart = _find_child(overview, "chart")
+        assert chart is not None
+        assert chart.props["source"] == "reorder_alerts"
+
+    def test_aggregation_component(self):
+        """DisplayAggregation should produce aggregation/stat_breakdown components."""
+        spec = _load_and_lower("warehouse.termin")
+        overview = next(p for p in spec.pages if p.slug == "inventory_overview")
+        # Should have at least one aggregation or stat_breakdown
+        aggs = _find_children(overview, "aggregation") + _find_children(overview, "stat_breakdown")
+        assert len(aggs) >= 1
+
+
+class TestStructuredAggregationParsing:
+    """Tests for the new structured aggregation DSL syntax."""
+
+    def _parse_and_lower(self, source):
+        from termin.peg_parser import parse_peg
+        prog, errs = parse_peg(source)
+        assert errs.ok, errs.format()
+        from termin.analyzer import analyze
+        aerrs = analyze(prog)
+        # Analyzer may warn about missing content for inline examples
+        spec = lower(prog)
+        return spec
+
+    def test_count_grouped_by(self):
+        source = '''Application: Test
+Content called "tasks":
+  Each task has a title which is text
+  Each task has a status which is text
+
+As anonymous, I want to see a page "Board" so that I can see tasks:
+  Display count of tasks grouped by status
+'''
+        spec = self._parse_and_lower(source)
+        page = spec.pages[0]
+        sb = _find_child(page, "stat_breakdown")
+        assert sb is not None
+        assert sb.props["source"] == "tasks"
+        assert sb.props["group_by"] == "status"
+
+    def test_count_simple(self):
+        source = '''Application: Test
+Content called "tasks":
+  Each task has a title which is text
+
+As anonymous, I want to see a page "Board" so that I can see tasks:
+  Display count of tasks
+'''
+        spec = self._parse_and_lower(source)
+        page = spec.pages[0]
+        agg = _find_child(page, "aggregation")
+        assert agg is not None
+        assert agg.props["agg_type"] == "count"
+        assert agg.props["source"] == "tasks"

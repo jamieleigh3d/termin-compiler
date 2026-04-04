@@ -20,6 +20,24 @@ def _ir_json_default(obj):
     raise TypeError(f"{type(obj).__name__} not serializable")
 
 
+def _simplify_props(obj):
+    """Simplify PropValue dicts: {value: x, is_expr: false} → bare x."""
+    if isinstance(obj, dict):
+        for k, v in list(obj.items()):
+            if isinstance(v, dict) and set(v.keys()) == {"value", "is_expr"}:
+                if not v["is_expr"]:
+                    obj[k] = v["value"]
+            elif isinstance(v, (dict, list)):
+                _simplify_props(v)
+    elif isinstance(obj, list):
+        for i, item in enumerate(obj):
+            if isinstance(item, dict) and set(item.keys()) == {"value", "is_expr"}:
+                if not item["is_expr"]:
+                    obj[i] = item["value"]
+            elif isinstance(item, (dict, list)):
+                _simplify_props(item)
+
+
 class RuntimeBackend:
     """Slim backend that generates a termin_runtime-based app."""
 
@@ -27,7 +45,9 @@ class RuntimeBackend:
 
     def generate(self, spec, source_file: str = "") -> str:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        ir_json = json.dumps(asdict(spec), indent=2, default=_ir_json_default)
+        ir_dict = asdict(spec)
+        _simplify_props(ir_dict)
+        ir_json = json.dumps(ir_dict, indent=2, default=_ir_json_default)
         # Store IR and app code separately — the generate() return is the .py,
         # but we stash the IR JSON for the CLI to write as a companion file
         self._ir_json = ir_json

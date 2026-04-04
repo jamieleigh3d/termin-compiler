@@ -33,48 +33,37 @@
       "name": "Hello",
       "slug": "hello",
       "role": "Anonymous",
-      "display_content": null,
-      "table_columns": [],
-      "filters": [],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": null,
-      "related": null,
-      "form_fields": [],
-      "form_target_content": null,
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [],
-      "chart": null,
       "required_scope": null,
-      "static_texts": [
-        "Anon, Hello!"
-      ],
-      "static_expressions": []
+      "children": [
+        {
+          "type": "text",
+          "props": {
+            "content": "Anon, Hello!"
+          },
+          "style": {},
+          "layout": {},
+          "children": []
+        }
+      ]
     },
     {
       "name": "Hello",
       "slug": "hello",
       "role": "LoggedInUser",
-      "display_content": null,
-      "table_columns": [],
-      "filters": [],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": null,
-      "related": null,
-      "form_fields": [],
-      "form_target_content": null,
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [],
-      "chart": null,
       "required_scope": null,
-      "static_texts": [],
-      "static_expressions": [
-        "SayHelloTo(LoggedInUser.CurrentUser)"
+      "children": [
+        {
+          "type": "text",
+          "props": {
+            "content": {
+              "value": "SayHelloTo(LoggedInUser.CurrentUser)",
+              "is_expr": true
+            }
+          },
+          "style": {},
+          "layout": {},
+          "children": []
+        }
       ]
     }
   ],

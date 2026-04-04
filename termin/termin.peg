@@ -321,6 +321,36 @@ display_text_line
     | 'Display' 'text' expr:rest_of_line $        #DisplayTextExpr
     ;
 
+structured_agg_line
+    = 'Display' 'count' 'of' content:words_before_grouped
+      'grouped' 'by' field:word $                         #AggCountGrouped
+    | 'Display' 'count' 'of' content:words $              #AggCount
+    | 'Display' func:agg_func 'of' expr:jexl_expr
+      'from' content:words_before_as 'as' format:word $   #AggExprFormat
+    | 'Display' func:agg_func 'of' expr:jexl_expr
+      'from' content:words $                               #AggExpr
+    ;
+
+agg_func
+    = 'sum' | 'average' | 'minimum' | 'maximum'
+    ;
+
+section_header_line
+    = 'Section' title:quoted_string ':' $
+    ;
+
+action_header_line
+    = 'For' 'each' singular:word ',' 'show' 'actions' ':' $
+    | 'For' 'each' singular:word ',' 'show' 'actions:' $
+    ;
+
+action_button_line
+    = label:quoted_string 'transitions' 'to' state:quoted_string
+      'if' 'available' ',' 'hide' 'otherwise' $           #ActionHide
+    | label:quoted_string 'transitions' 'to' state:quoted_string
+      'if' 'available' [',' 'disable' 'otherwise'] $      #ActionDisable
+    ;
+
 display_agg_line
     = 'Display' text:rest_of_line $
     ;

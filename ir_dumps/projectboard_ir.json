@@ -425,80 +425,89 @@
       "content": "projects",
       "scope": "view projects",
       "verbs": [
-        "view"
+        "VIEW"
       ]
     },
     {
       "content": "projects",
       "scope": "admin projects",
       "verbs": [
-        "create",
-        "update"
+        "CREATE",
+        "UPDATE"
       ]
     },
     {
       "content": "projects",
       "scope": "admin projects",
       "verbs": [
-        "delete"
+        "DELETE"
       ]
     },
     {
       "content": "team_members",
       "scope": "view projects",
-      "verbs": []
+      "verbs": [
+        "VIEW"
+      ]
     },
     {
       "content": "team_members",
       "scope": "admin projects",
-      "verbs": []
+      "verbs": [
+        "CREATE",
+        "UPDATE"
+      ]
     },
     {
       "content": "sprints",
       "scope": "view projects",
       "verbs": [
-        "view"
+        "VIEW"
       ]
     },
     {
       "content": "sprints",
       "scope": "manage sprints",
       "verbs": [
-        "create",
-        "update"
+        "CREATE",
+        "UPDATE"
       ]
     },
     {
       "content": "tasks",
       "scope": "view projects",
       "verbs": [
-        "view"
+        "VIEW"
       ]
     },
     {
       "content": "tasks",
       "scope": "manage tasks",
       "verbs": [
-        "create",
-        "update"
+        "CREATE",
+        "UPDATE"
       ]
     },
     {
       "content": "tasks",
       "scope": "admin projects",
       "verbs": [
-        "delete"
+        "DELETE"
       ]
     },
     {
       "content": "time_logs",
       "scope": "view projects",
-      "verbs": []
+      "verbs": [
+        "VIEW"
+      ]
     },
     {
       "content": "time_logs",
       "scope": "manage tasks",
-      "verbs": []
+      "verbs": [
+        "CREATE"
+      ]
     }
   ],
   "state_machines": [
@@ -600,7 +609,7 @@
       "path": "/api/v1/team-members",
       "kind": "LIST",
       "content_ref": "team_members",
-      "required_scope": null,
+      "required_scope": "view projects",
       "lookup_column": "id",
       "target_state": null
     },
@@ -609,7 +618,7 @@
       "path": "/api/v1/team-members",
       "kind": "CREATE",
       "content_ref": "team_members",
-      "required_scope": null,
+      "required_scope": "admin projects",
       "lookup_column": "id",
       "target_state": null
     },
@@ -735,7 +744,7 @@
       "path": "/api/v1/time-logs",
       "kind": "LIST",
       "content_ref": "time_logs",
-      "required_scope": null,
+      "required_scope": "view projects",
       "lookup_column": "id",
       "target_state": null
     },
@@ -744,7 +753,7 @@
       "path": "/api/v1/time-logs",
       "kind": "CREATE",
       "content_ref": "time_logs",
-      "required_scope": null,
+      "required_scope": "manage tasks",
       "lookup_column": "id",
       "target_state": null
     }
@@ -754,498 +763,509 @@
       "name": "Sprint Board",
       "slug": "sprint_board",
       "role": "developer",
-      "display_content": "tasks",
-      "table_columns": [
-        {
-          "display": "title",
-          "key": "title"
-        },
-        {
-          "display": "priority",
-          "key": "priority"
-        },
-        {
-          "display": "status",
-          "key": "status"
-        },
-        {
-          "display": "assignee",
-          "key": "assignee"
-        },
-        {
-          "display": "points",
-          "key": "points"
-        }
-      ],
-      "filters": [
-        {
-          "key": "status",
-          "display": "status",
-          "filter_type": "status",
-          "options": [
-            "backlog",
-            "in sprint",
-            "in progress",
-            "in review",
-            "done"
-          ]
-        },
-        {
-          "key": "priority",
-          "display": "priority",
-          "filter_type": "enum",
-          "options": [
-            "low",
-            "medium",
-            "high",
-            "critical"
-          ]
-        },
-        {
-          "key": "sprint",
-          "display": "sprint",
-          "filter_type": "text",
-          "options": []
-        }
-      ],
-      "search_fields": [
-        "title"
-      ],
-      "highlight": null,
-      "subscribe_stream": "tasks",
-      "related": null,
-      "form_fields": [],
-      "form_target_content": null,
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [],
-      "chart": null,
       "required_scope": null,
-      "static_texts": [],
-      "static_expressions": []
+      "children": [
+        {
+          "type": "data_table",
+          "props": {
+            "source": "tasks",
+            "columns": [
+              {
+                "field": "title",
+                "label": "title"
+              },
+              {
+                "field": "priority",
+                "label": "priority"
+              },
+              {
+                "field": "status",
+                "label": "status"
+              },
+              {
+                "field": "assignee",
+                "label": "assignee"
+              },
+              {
+                "field": "points",
+                "label": "points"
+              }
+            ]
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "filter",
+              "props": {
+                "field": "status",
+                "mode": "state",
+                "options": [
+                  "backlog",
+                  "in sprint",
+                  "in progress",
+                  "in review",
+                  "done"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "filter",
+              "props": {
+                "field": "priority",
+                "mode": "enum",
+                "options": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "filter",
+              "props": {
+                "field": "sprint",
+                "mode": "text"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "search",
+              "props": {
+                "fields": [
+                  "title"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "subscribe",
+              "props": {
+                "content": "tasks"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "Log Time",
       "slug": "log_time",
       "role": "developer",
-      "display_content": null,
-      "table_columns": [],
-      "filters": [],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": null,
-      "related": null,
-      "form_fields": [
+      "required_scope": "manage tasks",
+      "children": [
         {
-          "key": "task",
-          "display": "task",
-          "input_type": "reference",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": "tasks",
-          "reference_display_col": "title",
-          "reference_unique_col": null
-        },
-        {
-          "key": "team_member",
-          "display": "team member",
-          "input_type": "reference",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": "team_members",
-          "reference_display_col": "name",
-          "reference_unique_col": "email"
-        },
-        {
-          "key": "hours",
-          "display": "hours",
-          "input_type": "currency",
-          "required": false,
-          "minimum": null,
-          "step": "0.01",
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
+          "type": "form",
+          "props": {
+            "target": "time_logs",
+            "submit_scope": "manage tasks"
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "field_input",
+              "props": {
+                "field": "task",
+                "label": "task",
+                "input_type": "reference",
+                "required": true,
+                "reference_content": "tasks",
+                "reference_display_col": "title"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "team_member",
+                "label": "team member",
+                "input_type": "reference",
+                "required": true,
+                "reference_content": "team_members",
+                "reference_display_col": "name",
+                "reference_unique_col": "email"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "hours",
+                "label": "hours",
+                "input_type": "currency",
+                "step": "0.01"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
         }
-      ],
-      "form_target_content": "time_logs",
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [],
-      "chart": null,
-      "required_scope": null,
-      "static_texts": [],
-      "static_expressions": []
+      ]
     },
     {
       "name": "Create Task",
       "slug": "create_task",
       "role": "project manager",
-      "display_content": null,
-      "table_columns": [],
-      "filters": [],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": null,
-      "related": null,
-      "form_fields": [
-        {
-          "key": "title",
-          "display": "title",
-          "input_type": "text",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "description",
-          "display": "description",
-          "input_type": "text",
-          "required": false,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "project",
-          "display": "project",
-          "input_type": "reference",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": "projects",
-          "reference_display_col": "name",
-          "reference_unique_col": "name"
-        },
-        {
-          "key": "sprint",
-          "display": "sprint",
-          "input_type": "reference",
-          "required": false,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": "sprints",
-          "reference_display_col": "name",
-          "reference_unique_col": null
-        },
-        {
-          "key": "assignee",
-          "display": "assignee",
-          "input_type": "reference",
-          "required": false,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": "team_members",
-          "reference_display_col": "name",
-          "reference_unique_col": "email"
-        },
-        {
-          "key": "points",
-          "display": "points",
-          "input_type": "number",
-          "required": false,
-          "minimum": 0,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "priority",
-          "display": "priority",
-          "input_type": "enum",
-          "required": false,
-          "minimum": null,
-          "step": null,
-          "enum_values": [
-            "low",
-            "medium",
-            "high",
-            "critical"
-          ],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        }
-      ],
-      "form_target_content": "tasks",
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [],
-      "chart": null,
       "required_scope": "manage tasks",
-      "static_texts": [],
-      "static_expressions": []
+      "children": [
+        {
+          "type": "form",
+          "props": {
+            "target": "tasks",
+            "submit_scope": "manage tasks"
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "field_input",
+              "props": {
+                "field": "title",
+                "label": "title",
+                "input_type": "text",
+                "required": true
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "description",
+                "label": "description",
+                "input_type": "text"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "project",
+                "label": "project",
+                "input_type": "reference",
+                "required": true,
+                "reference_content": "projects",
+                "reference_display_col": "name",
+                "reference_unique_col": "name"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "sprint",
+                "label": "sprint",
+                "input_type": "reference",
+                "reference_content": "sprints",
+                "reference_display_col": "name"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "assignee",
+                "label": "assignee",
+                "input_type": "reference",
+                "reference_content": "team_members",
+                "reference_display_col": "name",
+                "reference_unique_col": "email"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "points",
+                "label": "points",
+                "input_type": "number",
+                "minimum": 0
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "priority",
+                "label": "priority",
+                "input_type": "enum",
+                "enum_values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "Project Dashboard",
       "slug": "project_dashboard",
       "role": "project manager",
-      "display_content": null,
-      "table_columns": [],
-      "filters": [],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": null,
-      "related": null,
-      "form_fields": [],
-      "form_target_content": null,
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [
+      "required_scope": null,
+      "children": [
         {
-          "key": "total_task_count_with_backlog_",
-          "description": "total task count with backlog vs done breakdown",
-          "agg_type": "count_by_status",
-          "content_ref": "tasks",
-          "join_content": null,
-          "join_column": null,
-          "sum_expression": null
+          "type": "stat_breakdown",
+          "props": {
+            "source": "tasks",
+            "label": "total task count with backlog vs done breakdown",
+            "group_by": "status"
+          },
+          "style": {},
+          "layout": {},
+          "children": []
         },
         {
-          "key": "total_time_logged_sum_hours",
-          "description": "total time logged [sum(hours)]",
-          "agg_type": "sum_join",
-          "content_ref": "time_logs",
-          "join_content": null,
-          "join_column": null,
-          "sum_expression": null
+          "type": "aggregation",
+          "props": {
+            "source": "time_logs",
+            "label": "total time logged [sum(hours)]",
+            "agg_type": "sum"
+          },
+          "style": {},
+          "layout": {},
+          "children": []
         }
-      ],
-      "chart": null,
-      "required_scope": null,
-      "static_texts": [],
-      "static_expressions": []
+      ]
     },
     {
       "name": "New Project",
       "slug": "new_project",
       "role": "project manager",
-      "display_content": null,
-      "table_columns": [],
-      "filters": [],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": null,
-      "related": null,
-      "form_fields": [
-        {
-          "key": "name",
-          "display": "name",
-          "input_type": "text",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "description",
-          "display": "description",
-          "input_type": "text",
-          "required": false,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "status",
-          "display": "status",
-          "input_type": "enum",
-          "required": false,
-          "minimum": null,
-          "step": null,
-          "enum_values": [
-            "active",
-            "on hold",
-            "completed"
-          ],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        }
-      ],
-      "form_target_content": "projects",
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [],
-      "chart": null,
       "required_scope": "admin projects",
-      "static_texts": [],
-      "static_expressions": []
+      "children": [
+        {
+          "type": "form",
+          "props": {
+            "target": "projects",
+            "submit_scope": "admin projects"
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "field_input",
+              "props": {
+                "field": "name",
+                "label": "name",
+                "input_type": "text",
+                "required": true
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "description",
+                "label": "description",
+                "input_type": "text"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "status",
+                "label": "status",
+                "input_type": "enum",
+                "enum_values": [
+                  "active",
+                  "on hold",
+                  "completed"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "Sprint Planning",
       "slug": "sprint_planning",
       "role": "project manager",
-      "display_content": null,
-      "table_columns": [],
-      "filters": [],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": null,
-      "related": null,
-      "form_fields": [
-        {
-          "key": "name",
-          "display": "name",
-          "input_type": "text",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "project",
-          "display": "project",
-          "input_type": "reference",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": "projects",
-          "reference_display_col": "name",
-          "reference_unique_col": "name"
-        },
-        {
-          "key": "goal",
-          "display": "goal",
-          "input_type": "text",
-          "required": false,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "capacity",
-          "display": "capacity",
-          "input_type": "number",
-          "required": false,
-          "minimum": 0,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        }
-      ],
-      "form_target_content": "sprints",
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [],
-      "chart": null,
       "required_scope": "manage sprints",
-      "static_texts": [],
-      "static_expressions": []
+      "children": [
+        {
+          "type": "form",
+          "props": {
+            "target": "sprints",
+            "submit_scope": "manage sprints"
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "field_input",
+              "props": {
+                "field": "name",
+                "label": "name",
+                "input_type": "text",
+                "required": true
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "project",
+                "label": "project",
+                "input_type": "reference",
+                "required": true,
+                "reference_content": "projects",
+                "reference_display_col": "name",
+                "reference_unique_col": "name"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "goal",
+                "label": "goal",
+                "input_type": "text"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "capacity",
+                "label": "capacity",
+                "input_type": "number",
+                "minimum": 0
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "Team Management",
       "slug": "team_management",
       "role": "project manager",
-      "display_content": null,
-      "table_columns": [],
-      "filters": [],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": null,
-      "related": null,
-      "form_fields": [
+      "required_scope": "admin projects",
+      "children": [
         {
-          "key": "name",
-          "display": "name",
-          "input_type": "text",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "email",
-          "display": "email",
-          "input_type": "text",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "role",
-          "display": "role",
-          "input_type": "enum",
-          "required": false,
-          "minimum": null,
-          "step": null,
-          "enum_values": [
-            "developer",
-            "designer",
-            "qa",
-            "devops"
-          ],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "project",
-          "display": "project",
-          "input_type": "reference",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": "projects",
-          "reference_display_col": "name",
-          "reference_unique_col": "name"
+          "type": "form",
+          "props": {
+            "target": "team_members",
+            "submit_scope": "admin projects"
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "field_input",
+              "props": {
+                "field": "name",
+                "label": "name",
+                "input_type": "text",
+                "required": true
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "email",
+                "label": "email",
+                "input_type": "text",
+                "required": true
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "role",
+                "label": "role",
+                "input_type": "enum",
+                "enum_values": [
+                  "developer",
+                  "designer",
+                  "qa",
+                  "devops"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "project",
+                "label": "project",
+                "input_type": "reference",
+                "required": true,
+                "reference_content": "projects",
+                "reference_display_col": "name",
+                "reference_unique_col": "name"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
         }
-      ],
-      "form_target_content": "team_members",
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [],
-      "chart": null,
-      "required_scope": null,
-      "static_texts": [],
-      "static_expressions": []
+      ]
     }
   ],
   "nav_items": [

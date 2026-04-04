@@ -37,6 +37,24 @@ def _ir_json_default(obj):
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
+def _simplify_props(obj):
+    """Simplify PropValue dicts: {value: x, is_expr: false} → bare x."""
+    if isinstance(obj, dict):
+        for k, v in list(obj.items()):
+            if isinstance(v, dict) and set(v.keys()) == {"value", "is_expr"}:
+                if not v["is_expr"]:
+                    obj[k] = v["value"]
+            elif isinstance(v, (dict, list)):
+                _simplify_props(v)
+    elif isinstance(obj, list):
+        for i, item in enumerate(obj):
+            if isinstance(item, dict) and set(item.keys()) == {"value", "is_expr"}:
+                if not item["is_expr"]:
+                    obj[i] = item["value"]
+            elif isinstance(item, (dict, list)):
+                _simplify_props(item)
+
+
 @main.command()
 @click.argument("source", type=click.Path(exists=True))
 @click.option("-o", "--output", default="app.py", help="Output file path")
@@ -67,7 +85,9 @@ def compile(source: str, output: str, backend_name: str, ir_output: str | None):
     # Optionally dump IR
     if ir_output:
         ir_path = Path(ir_output)
-        ir_json = json.dumps(asdict(spec), indent=2, default=_ir_json_default)
+        ir_dict = asdict(spec)
+        _simplify_props(ir_dict)
+        ir_json = json.dumps(ir_dict, indent=2, default=_ir_json_default)
         ir_path.write_text(ir_json, encoding="utf-8")
         click.echo(f"IR dumped to {ir_path.name}")
 

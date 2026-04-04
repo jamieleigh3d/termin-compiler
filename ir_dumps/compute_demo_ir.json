@@ -201,39 +201,44 @@
       "content": "orders",
       "scope": "read orders",
       "verbs": [
-        "view"
+        "VIEW"
       ]
     },
     {
       "content": "orders",
       "scope": "write orders",
       "verbs": [
-        "create",
-        "update"
+        "CREATE",
+        "UPDATE"
       ]
     },
     {
       "content": "orders",
       "scope": "admin orders",
       "verbs": [
-        "delete"
+        "DELETE"
       ]
     },
     {
       "content": "order_lines",
       "scope": "read orders",
-      "verbs": []
+      "verbs": [
+        "VIEW"
+      ]
     },
     {
       "content": "order_lines",
       "scope": "write orders",
-      "verbs": []
+      "verbs": [
+        "CREATE",
+        "UPDATE"
+      ]
     },
     {
       "content": "reports",
       "scope": "read orders",
       "verbs": [
-        "view"
+        "VIEW"
       ]
     }
   ],
@@ -275,130 +280,142 @@
       "name": "Order Dashboard",
       "slug": "order_dashboard",
       "role": "order clerk",
-      "display_content": "orders",
-      "table_columns": [
-        {
-          "display": "customer",
-          "key": "customer"
-        },
-        {
-          "display": "total",
-          "key": "total"
-        },
-        {
-          "display": "priority",
-          "key": "priority"
-        },
-        {
-          "display": "status",
-          "key": "status"
-        }
-      ],
-      "filters": [
-        {
-          "key": "priority",
-          "display": "priority",
-          "filter_type": "enum",
-          "options": [
-            "low",
-            "medium",
-            "high"
-          ]
-        },
-        {
-          "key": "status",
-          "display": "status",
-          "filter_type": "status",
-          "options": [
-            "pending",
-            "confirmed",
-            "shipped",
-            "cancelled"
-          ]
-        }
-      ],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": null,
-      "related": null,
-      "form_fields": [
-        {
-          "key": "customer",
-          "display": "customer",
-          "input_type": "text",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "priority",
-          "display": "priority",
-          "input_type": "enum",
-          "required": false,
-          "minimum": null,
-          "step": null,
-          "enum_values": [
-            "low",
-            "medium",
-            "high"
-          ],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        }
-      ],
-      "form_target_content": "orders",
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [],
-      "chart": null,
       "required_scope": "write orders",
-      "static_texts": [],
-      "static_expressions": []
+      "children": [
+        {
+          "type": "data_table",
+          "props": {
+            "source": "orders",
+            "columns": [
+              {
+                "field": "customer",
+                "label": "customer"
+              },
+              {
+                "field": "total",
+                "label": "total"
+              },
+              {
+                "field": "priority",
+                "label": "priority"
+              },
+              {
+                "field": "status",
+                "label": "status"
+              }
+            ]
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "filter",
+              "props": {
+                "field": "priority",
+                "mode": "enum",
+                "options": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "filter",
+              "props": {
+                "field": "status",
+                "mode": "state",
+                "options": [
+                  "pending",
+                  "confirmed",
+                  "shipped",
+                  "cancelled"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "form",
+          "props": {
+            "target": "orders",
+            "submit_scope": "write orders"
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "field_input",
+              "props": {
+                "field": "customer",
+                "label": "customer",
+                "input_type": "text",
+                "required": true
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "priority",
+                "label": "priority",
+                "input_type": "enum",
+                "enum_values": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "Order Analytics",
       "slug": "order_analytics",
       "role": "order manager",
-      "display_content": "orders",
-      "table_columns": [
-        {
-          "display": "customer",
-          "key": "customer"
-        },
-        {
-          "display": "total",
-          "key": "total"
-        },
-        {
-          "display": "priority",
-          "key": "priority"
-        },
-        {
-          "display": "status",
-          "key": "status"
-        }
-      ],
-      "filters": [],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": null,
-      "related": null,
-      "form_fields": [],
-      "form_target_content": null,
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [],
-      "chart": null,
       "required_scope": null,
-      "static_texts": [],
-      "static_expressions": []
+      "children": [
+        {
+          "type": "data_table",
+          "props": {
+            "source": "orders",
+            "columns": [
+              {
+                "field": "customer",
+                "label": "customer"
+              },
+              {
+                "field": "total",
+                "label": "total"
+              },
+              {
+                "field": "priority",
+                "label": "priority"
+              },
+              {
+                "field": "status",
+                "label": "status"
+              }
+            ]
+          },
+          "style": {},
+          "layout": {},
+          "children": []
+        }
+      ]
     }
   ],
   "nav_items": [

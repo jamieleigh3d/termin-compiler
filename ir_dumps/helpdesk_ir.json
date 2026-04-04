@@ -233,42 +233,42 @@
       "content": "tickets",
       "scope": "view tickets",
       "verbs": [
-        "view"
+        "VIEW"
       ]
     },
     {
       "content": "tickets",
       "scope": "create tickets",
       "verbs": [
-        "create"
+        "CREATE"
       ]
     },
     {
       "content": "tickets",
       "scope": "manage tickets",
       "verbs": [
-        "update"
+        "UPDATE"
       ]
     },
     {
       "content": "tickets",
       "scope": "admin tickets",
       "verbs": [
-        "delete"
+        "DELETE"
       ]
     },
     {
       "content": "comments",
       "scope": "view tickets",
       "verbs": [
-        "view"
+        "VIEW"
       ]
     },
     {
       "content": "comments",
       "scope": "create tickets",
       "verbs": [
-        "create"
+        "CREATE"
       ]
     }
   ],
@@ -435,212 +435,234 @@
       "name": "Submit Ticket",
       "slug": "submit_ticket",
       "role": "customer",
-      "display_content": null,
-      "table_columns": [],
-      "filters": [],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": null,
-      "related": null,
-      "form_fields": [
-        {
-          "key": "title",
-          "display": "title",
-          "input_type": "text",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "description",
-          "display": "description",
-          "input_type": "text",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "priority",
-          "display": "priority",
-          "input_type": "enum",
-          "required": false,
-          "minimum": null,
-          "step": null,
-          "enum_values": [
-            "low",
-            "medium",
-            "high",
-            "critical"
-          ],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "category",
-          "display": "category",
-          "input_type": "enum",
-          "required": false,
-          "minimum": null,
-          "step": null,
-          "enum_values": [
-            "bug",
-            "feature request",
-            "question",
-            "account issue"
-          ],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        }
-      ],
-      "form_target_content": "tickets",
-      "create_as_status": "open",
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [],
-      "chart": null,
       "required_scope": "create tickets",
-      "static_texts": [],
-      "static_expressions": []
+      "children": [
+        {
+          "type": "form",
+          "props": {
+            "target": "tickets",
+            "create_as": "open",
+            "submit_scope": "create tickets"
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "field_input",
+              "props": {
+                "field": "title",
+                "label": "title",
+                "input_type": "text",
+                "required": true
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "description",
+                "label": "description",
+                "input_type": "text",
+                "required": true
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "priority",
+                "label": "priority",
+                "input_type": "enum",
+                "enum_values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "category",
+                "label": "category",
+                "input_type": "enum",
+                "enum_values": [
+                  "bug",
+                  "feature request",
+                  "question",
+                  "account issue"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "Ticket Queue",
       "slug": "ticket_queue",
       "role": "support agent",
-      "display_content": "tickets",
-      "table_columns": [
-        {
-          "display": "title",
-          "key": "title"
-        },
-        {
-          "display": "priority",
-          "key": "priority"
-        },
-        {
-          "display": "category",
-          "key": "category"
-        },
-        {
-          "display": "status",
-          "key": "status"
-        },
-        {
-          "display": "assigned to",
-          "key": "assigned_to"
-        },
-        {
-          "display": "created at",
-          "key": "created_at"
-        }
-      ],
-      "filters": [
-        {
-          "key": "status",
-          "display": "status",
-          "filter_type": "status",
-          "options": [
-            "open",
-            "in progress",
-            "waiting on customer",
-            "resolved",
-            "closed"
-          ]
-        },
-        {
-          "key": "priority",
-          "display": "priority",
-          "filter_type": "enum",
-          "options": [
-            "low",
-            "medium",
-            "high",
-            "critical"
-          ]
-        },
-        {
-          "key": "category",
-          "display": "category",
-          "filter_type": "enum",
-          "options": [
-            "bug",
-            "feature request",
-            "question",
-            "account issue"
-          ]
-        }
-      ],
-      "search_fields": [
-        "title",
-        "description"
-      ],
-      "highlight": {
-        "field": "",
-        "operator": "lte",
-        "threshold_field": ""
-      },
-      "subscribe_stream": "tickets",
-      "related": null,
-      "form_fields": [],
-      "form_target_content": null,
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [],
-      "chart": null,
       "required_scope": null,
-      "static_texts": [],
-      "static_expressions": []
+      "children": [
+        {
+          "type": "data_table",
+          "props": {
+            "source": "tickets",
+            "columns": [
+              {
+                "field": "title",
+                "label": "title"
+              },
+              {
+                "field": "priority",
+                "label": "priority"
+              },
+              {
+                "field": "category",
+                "label": "category"
+              },
+              {
+                "field": "status",
+                "label": "status"
+              },
+              {
+                "field": "assigned_to",
+                "label": "assigned to"
+              },
+              {
+                "field": "created_at",
+                "label": "created at"
+              }
+            ]
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "highlight",
+              "props": {
+                "condition": {
+                  "value": "priority == \"critical\" || priority == \"high\"",
+                  "is_expr": true
+                }
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "filter",
+              "props": {
+                "field": "status",
+                "mode": "state",
+                "options": [
+                  "open",
+                  "in progress",
+                  "waiting on customer",
+                  "resolved",
+                  "closed"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "filter",
+              "props": {
+                "field": "priority",
+                "mode": "enum",
+                "options": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "filter",
+              "props": {
+                "field": "category",
+                "mode": "enum",
+                "options": [
+                  "bug",
+                  "feature request",
+                  "question",
+                  "account issue"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "search",
+              "props": {
+                "fields": [
+                  "title_or_description"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "subscribe",
+              "props": {
+                "content": "tickets"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "Support Dashboard",
       "slug": "support_dashboard",
       "role": "support manager",
-      "display_content": null,
-      "table_columns": [],
-      "filters": [],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": null,
-      "related": null,
-      "form_fields": [],
-      "form_target_content": null,
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [
+      "required_scope": null,
+      "children": [
         {
-          "key": "total_ticket_count_with_open_v",
-          "description": "total ticket count with open vs resolved breakdown",
-          "agg_type": "count_by_status",
-          "content_ref": "tickets",
-          "join_content": null,
-          "join_column": null,
-          "sum_expression": null
+          "type": "stat_breakdown",
+          "props": {
+            "source": "tickets",
+            "label": "total ticket count with open vs resolved breakdown",
+            "group_by": "status"
+          },
+          "style": {},
+          "layout": {},
+          "children": []
         },
         {
-          "key": "total_comment_count",
-          "description": "total comment count",
-          "agg_type": "count",
-          "content_ref": "comments",
-          "join_content": null,
-          "join_column": null,
-          "sum_expression": null
+          "type": "aggregation",
+          "props": {
+            "source": "comments",
+            "label": "total comment count",
+            "agg_type": "count"
+          },
+          "style": {},
+          "layout": {},
+          "children": []
         }
-      ],
-      "chart": null,
-      "required_scope": null,
-      "static_texts": [],
-      "static_expressions": []
+      ]
     }
   ],
   "nav_items": [

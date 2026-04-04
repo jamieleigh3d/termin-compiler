@@ -277,48 +277,59 @@
       "content": "products",
       "scope": "read inventory",
       "verbs": [
-        "view"
+        "VIEW"
       ]
     },
     {
       "content": "products",
       "scope": "write inventory",
       "verbs": [
-        "create",
-        "update"
+        "CREATE",
+        "UPDATE"
       ]
     },
     {
       "content": "products",
       "scope": "admin inventory",
       "verbs": [
-        "delete"
+        "DELETE"
       ]
     },
     {
       "content": "stock_levels",
       "scope": "read inventory",
-      "verbs": []
+      "verbs": [
+        "VIEW"
+      ]
     },
     {
       "content": "stock_levels",
       "scope": "write inventory",
-      "verbs": []
+      "verbs": [
+        "CREATE",
+        "UPDATE"
+      ]
     },
     {
       "content": "reorder_alerts",
       "scope": "read inventory",
-      "verbs": []
+      "verbs": [
+        "VIEW"
+      ]
     },
     {
       "content": "reorder_alerts",
       "scope": "write inventory",
-      "verbs": []
+      "verbs": [
+        "CREATE"
+      ]
     },
     {
       "content": "reorder_alerts",
       "scope": "admin inventory",
-      "verbs": []
+      "verbs": [
+        "UPDATE"
+      ]
     }
   ],
   "state_machines": [
@@ -450,7 +461,7 @@
       "path": "/api/v1/stock-levels",
       "kind": "LIST",
       "content_ref": "stock_levels",
-      "required_scope": null,
+      "required_scope": "read inventory",
       "lookup_column": "id",
       "target_state": null
     },
@@ -459,7 +470,7 @@
       "path": "/api/v1/stock-levels",
       "kind": "CREATE",
       "content_ref": "stock_levels",
-      "required_scope": null,
+      "required_scope": "write inventory",
       "lookup_column": "id",
       "target_state": null
     },
@@ -468,7 +479,7 @@
       "path": "/api/v1/stock-levels/{id}",
       "kind": "UPDATE",
       "content_ref": "stock_levels",
-      "required_scope": null,
+      "required_scope": "write inventory",
       "lookup_column": "id",
       "target_state": null
     },
@@ -477,7 +488,7 @@
       "path": "/api/v1/alerts",
       "kind": "LIST",
       "content_ref": "reorder_alerts",
-      "required_scope": null,
+      "required_scope": "read inventory",
       "lookup_column": "id",
       "target_state": null
     },
@@ -486,7 +497,7 @@
       "path": "/api/v1/alerts/{id}/acknowledge",
       "kind": "LIST",
       "content_ref": "reorder_alerts",
-      "required_scope": null,
+      "required_scope": "read inventory",
       "lookup_column": "id",
       "target_state": null
     }
@@ -496,324 +507,365 @@
       "name": "Inventory Dashboard",
       "slug": "inventory_dashboard",
       "role": "warehouse clerk",
-      "display_content": "products",
-      "table_columns": [
-        {
-          "display": "SKU",
-          "key": "sku"
-        },
-        {
-          "display": "name",
-          "key": "name"
-        },
-        {
-          "display": "category",
-          "key": "category"
-        },
-        {
-          "display": "status",
-          "key": "status"
-        }
-      ],
-      "filters": [
-        {
-          "key": "category",
-          "display": "category",
-          "filter_type": "enum",
-          "options": [
-            "raw material",
-            "finished good",
-            "packaging"
-          ]
-        },
-        {
-          "key": "warehouse",
-          "display": "warehouse",
-          "filter_type": "distinct",
-          "options": []
-        },
-        {
-          "key": "status",
-          "display": "status",
-          "filter_type": "status",
-          "options": [
-            "draft",
-            "active",
-            "discontinued"
-          ]
-        }
-      ],
-      "search_fields": [
-        "sku",
-        "name"
-      ],
-      "highlight": {
-        "field": "",
-        "operator": "lte",
-        "threshold_field": ""
-      },
-      "subscribe_stream": "stock level",
-      "related": {
-        "related_content": "stock_levels",
-        "join_column": "product",
-        "display_columns": [
-          "warehouse"
-        ]
-      },
-      "form_fields": [],
-      "form_target_content": null,
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [],
-      "chart": null,
       "required_scope": null,
-      "static_texts": [],
-      "static_expressions": []
+      "children": [
+        {
+          "type": "data_table",
+          "props": {
+            "source": "products",
+            "columns": [
+              {
+                "field": "sku",
+                "label": "SKU"
+              },
+              {
+                "field": "name",
+                "label": "name"
+              },
+              {
+                "field": "category",
+                "label": "category"
+              },
+              {
+                "field": "status",
+                "label": "status"
+              }
+            ]
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "related",
+              "props": {
+                "content": "stock_levels",
+                "join": "product",
+                "group_by": "warehouse"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "highlight",
+              "props": {
+                "condition": {
+                  "value": "quantity <= reorder_threshold",
+                  "is_expr": true
+                }
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "filter",
+              "props": {
+                "field": "category",
+                "mode": "enum",
+                "options": [
+                  "raw material",
+                  "finished good",
+                  "packaging"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "filter",
+              "props": {
+                "field": "warehouse",
+                "mode": "distinct"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "filter",
+              "props": {
+                "field": "status",
+                "mode": "state",
+                "options": [
+                  "draft",
+                  "active",
+                  "discontinued"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "search",
+              "props": {
+                "fields": [
+                  "sku_or_name"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "subscribe",
+              "props": {
+                "content": "stock_level"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "Receive Stock",
       "slug": "receive_stock",
       "role": "warehouse clerk",
-      "display_content": null,
-      "table_columns": [],
-      "filters": [],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": null,
-      "related": null,
-      "form_fields": [
+      "required_scope": "write inventory",
+      "children": [
         {
-          "key": "product",
-          "display": "product",
-          "input_type": "reference",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": "products",
-          "reference_display_col": "name",
-          "reference_unique_col": "sku"
-        },
-        {
-          "key": "warehouse",
-          "display": "warehouse",
-          "input_type": "text",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "quantity",
-          "display": "quantity",
-          "input_type": "number",
-          "required": false,
-          "minimum": 0,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "reorder_threshold",
-          "display": "reorder threshold",
-          "input_type": "number",
-          "required": false,
-          "minimum": 0,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
+          "type": "form",
+          "props": {
+            "target": "stock_levels",
+            "after_save": "return to the Inventory Dashboard",
+            "submit_scope": "write inventory"
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "field_input",
+              "props": {
+                "field": "product",
+                "label": "product",
+                "input_type": "reference",
+                "required": true,
+                "reference_content": "products",
+                "reference_display_col": "name",
+                "reference_unique_col": "sku"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "warehouse",
+                "label": "warehouse",
+                "input_type": "text",
+                "required": true
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "quantity",
+                "label": "quantity",
+                "input_type": "number",
+                "minimum": 0
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "reorder_threshold",
+                "label": "reorder threshold",
+                "input_type": "number",
+                "minimum": 0
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
         }
-      ],
-      "form_target_content": "stock_levels",
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": "return to the Inventory Dashboard",
-      "aggregations": [],
-      "chart": null,
-      "required_scope": null,
-      "static_texts": [],
-      "static_expressions": []
+      ]
     },
     {
       "name": "Reorder Alerts",
       "slug": "reorder_alerts",
       "role": "warehouse clerk",
-      "display_content": "reorder_alerts",
-      "table_columns": [
-        {
-          "display": "product",
-          "key": "product"
-        },
-        {
-          "display": "warehouse",
-          "key": "warehouse"
-        },
-        {
-          "display": "current quantity",
-          "key": "current_quantity"
-        },
-        {
-          "display": "threshold",
-          "key": "threshold"
-        },
-        {
-          "display": "created at",
-          "key": "created_at"
-        }
-      ],
-      "filters": [
-        {
-          "key": "warehouse",
-          "display": "warehouse",
-          "filter_type": "distinct",
-          "options": []
-        }
-      ],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": "reorder alerts",
-      "related": null,
-      "form_fields": [],
-      "form_target_content": null,
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [],
-      "chart": null,
       "required_scope": null,
-      "static_texts": [],
-      "static_expressions": []
+      "children": [
+        {
+          "type": "data_table",
+          "props": {
+            "source": "reorder_alerts",
+            "columns": [
+              {
+                "field": "product",
+                "label": "product"
+              },
+              {
+                "field": "warehouse",
+                "label": "warehouse"
+              },
+              {
+                "field": "current_quantity",
+                "label": "current quantity"
+              },
+              {
+                "field": "threshold",
+                "label": "threshold"
+              },
+              {
+                "field": "created_at",
+                "label": "created at"
+              }
+            ]
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "filter",
+              "props": {
+                "field": "warehouse",
+                "mode": "distinct"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "subscribe",
+              "props": {
+                "content": "reorder_alerts"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "Add Product",
       "slug": "add_product",
       "role": "warehouse manager",
-      "display_content": null,
-      "table_columns": [],
-      "filters": [],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": null,
-      "related": null,
-      "form_fields": [
-        {
-          "key": "sku",
-          "display": "SKU",
-          "input_type": "text",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "name",
-          "display": "name",
-          "input_type": "text",
-          "required": true,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "description",
-          "display": "description",
-          "input_type": "text",
-          "required": false,
-          "minimum": null,
-          "step": null,
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "unit_cost",
-          "display": "unit cost",
-          "input_type": "currency",
-          "required": false,
-          "minimum": null,
-          "step": "0.01",
-          "enum_values": [],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        },
-        {
-          "key": "category",
-          "display": "category",
-          "input_type": "enum",
-          "required": false,
-          "minimum": null,
-          "step": null,
-          "enum_values": [
-            "raw material",
-            "finished good",
-            "packaging"
-          ],
-          "reference_content": null,
-          "reference_display_col": null,
-          "reference_unique_col": null
-        }
-      ],
-      "form_target_content": "products",
-      "create_as_status": "draft",
-      "validate_unique_field": "",
-      "after_save_instruction": "offer to set initial stock levels per warehouse",
-      "aggregations": [],
-      "chart": null,
       "required_scope": "write inventory",
-      "static_texts": [],
-      "static_expressions": []
+      "children": [
+        {
+          "type": "form",
+          "props": {
+            "target": "products",
+            "create_as": "draft",
+            "after_save": "offer to set initial stock levels per warehouse",
+            "submit_scope": "write inventory"
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "field_input",
+              "props": {
+                "field": "sku",
+                "label": "SKU",
+                "input_type": "text",
+                "required": true
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "name",
+                "label": "name",
+                "input_type": "text",
+                "required": true
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "description",
+                "label": "description",
+                "input_type": "text"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "unit_cost",
+                "label": "unit cost",
+                "input_type": "currency",
+                "step": "0.01"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "category",
+                "label": "category",
+                "input_type": "enum",
+                "enum_values": [
+                  "raw material",
+                  "finished good",
+                  "packaging"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "Inventory Overview",
       "slug": "inventory_overview",
       "role": "executive",
-      "display_content": null,
-      "table_columns": [],
-      "filters": [],
-      "search_fields": [],
-      "highlight": null,
-      "subscribe_stream": null,
-      "related": null,
-      "form_fields": [],
-      "form_target_content": null,
-      "create_as_status": null,
-      "validate_unique_field": null,
-      "after_save_instruction": null,
-      "aggregations": [
-        {
-          "key": "total_product_count_with_activ",
-          "description": "total product count with active vs discontinued breakdown",
-          "agg_type": "count_by_status",
-          "content_ref": "products",
-          "join_content": null,
-          "join_column": null,
-          "sum_expression": null
-        }
-      ],
-      "chart": {
-        "content_ref": "reorder_alerts",
-        "days": 30,
-        "chart_type": "line"
-      },
       "required_scope": null,
-      "static_texts": [],
-      "static_expressions": []
+      "children": [
+        {
+          "type": "stat_breakdown",
+          "props": {
+            "source": "products",
+            "label": "total product count with active vs discontinued breakdown",
+            "group_by": "status"
+          },
+          "style": {},
+          "layout": {},
+          "children": []
+        },
+        {
+          "type": "chart",
+          "props": {
+            "source": "reorder_alerts",
+            "chart_type": "line",
+            "period_days": 30,
+            "label": "reorder alerts (30 days)"
+          },
+          "style": {},
+          "layout": {},
+          "children": []
+        }
+      ]
     }
   ],
   "nav_items": [

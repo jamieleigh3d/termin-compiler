@@ -12,7 +12,9 @@ from .ast_nodes import (
     Transition, EventRule, UserStory, Directive, ShowPage, DisplayTable,
     ShowRelated, HighlightRows, AllowFilter, AllowSearch, SubscribeTo,
     AcceptInput, ValidateUnique, CreateAs, AfterSave, ShowChart,
-    DisplayAggregation, DisplayText, ComputeNode, ChannelDecl, BoundaryDecl,
+    DisplayAggregation, DisplayText, StructuredAggregation, SectionStart,
+    ActionHeader, ActionButtonDef,
+    ComputeNode, ChannelDecl, BoundaryDecl,
     BoundaryProperty, ErrorHandler, ErrorAction,
 )
 from .ir import (
@@ -20,8 +22,8 @@ from .ir import (
     RoleSpec, AuthSpec, TransitionSpec, StateMachineSpec,
     EventConditionSpec, EventActionSpec, EventSpec,
     HttpMethod, RouteKind, RouteSpec,
-    TableColumn, FilterField, FormField, HighlightRule, RelatedDataSpec,
-    AggregationSpec, ChartSpec, PageSpec, NavItemSpec, StreamSpec, AppSpec,
+    PropValue, ComponentNode, PageEntry,
+    NavItemSpec, StreamSpec, AppSpec,
     ComputeShape, ComputeSpec, ComputeParamSpec, ChannelDirection,
     ChannelDelivery, ChannelRequirementSpec, ChannelSpec, BoundarySpec,
     BoundaryPropertySpec, ErrorHandlerSpec, ErrorActionSpec,
@@ -415,174 +417,273 @@ def lower(program: Program) -> AppSpec:
                 target_state=target_state,
             ))
 
-    # ── Lower pages ──
+    # ── Lower pages (Presentation v2: component trees) ──
     pages = []
     for story in program.stories:
         page_name = ""
-        display_content_name = None
-        table_columns = []
-        filters = []
-        search_fields = []
-        highlight = None
-        subscribe = None
-        related = None
-        form_fields = []
-        form_target_content = None
-        create_as = None
-        validate_unique = None
-        after_save = None
-        aggregations = []
-        chart = None
-        static_texts = []
-        static_expressions = []
+        children = []          # top-level ComponentNode list
+        cur_data_table = None   # current data_table being assembled
+        cur_form = None         # current form being assembled
+        form_target_name = None # snake_case target content for form
 
         for d in story.directives:
             if isinstance(d, ShowPage):
                 page_name = d.page_name
+
             elif isinstance(d, DisplayTable):
                 dt_content = content_by_name.get(d.content_name)
                 if dt_content:
-                    display_content_name = _snake(d.content_name)
-                    table_columns = [TableColumn(display=col, key=_snake(col)) for col in d.columns]
+                    cols = [{"field": _snake(col), "label": col} for col in d.columns]
+                    cur_data_table = ComponentNode(
+                        type="data_table",
+                        props={"source": _snake(d.content_name), "columns": cols},
+                        children=(),
+                    )
+
             elif isinstance(d, AllowFilter):
-                if display_content_name and d.fields:
-                    dt_content = None
-                    for c in program.contents:
-                        if _snake(c.name) == display_content_name:
-                            dt_content = c
-                            break
+                if cur_data_table and d.fields:
+                    source_name = cur_data_table.props.get("source", "")
+                    dt_content = next((c for c in program.contents if _snake(c.name) == source_name), None)
+                    filter_nodes = []
                     for fname in d.fields:
                         fkey = _snake(fname)
-                        ft = "text"
-                        opts = ()
+                        mode = "text"
+                        options = []
                         if fkey == "status" and dt_content and dt_content.name in sm_by_content:
-                            ft = "status"
-                            opts = tuple(sm_by_content[dt_content.name].states)
+                            mode = "state"
+                            options = list(sm_by_content[dt_content.name].states)
                         elif dt_content:
                             for cf in dt_content.fields:
                                 if _snake(cf.name) == fkey and cf.type_expr.base_type == "enum":
-                                    ft = "enum"
-                                    opts = tuple(cf.type_expr.enum_values)
+                                    mode = "enum"
+                                    options = list(cf.type_expr.enum_values)
                                     break
-                        if ft == "text" and fkey == "warehouse":
-                            ft = "distinct"
-                        filters.append(FilterField(key=fkey, display=fname, filter_type=ft, options=opts))
+                        if mode == "text" and fkey == "warehouse":
+                            mode = "distinct"
+                        props = {"field": fkey, "mode": mode}
+                        if options:
+                            props["options"] = options
+                        filter_nodes.append(ComponentNode(type="filter", props=props))
+                    cur_data_table.children = cur_data_table.children + tuple(filter_nodes)
+
             elif isinstance(d, AllowSearch):
-                search_fields = tuple(_snake(f) for f in d.fields)
+                if cur_data_table:
+                    cur_data_table.children = cur_data_table.children + (
+                        ComponentNode(type="search", props={"fields": [_snake(f) for f in d.fields]}),
+                    )
+
             elif isinstance(d, HighlightRows):
-                highlight = HighlightRule(
-                    field=_snake(d.field),
-                    operator="lte",
-                    threshold_field=_snake(d.threshold_field),
-                )
+                if cur_data_table:
+                    if d.jexl_condition:
+                        cond = PropValue(value=d.jexl_condition, is_expr=True)
+                    else:
+                        cond = PropValue(value=f".{_snake(d.field)} <= .{_snake(d.threshold_field)}", is_expr=True)
+                    cur_data_table.children = cur_data_table.children + (
+                        ComponentNode(type="highlight", props={"condition": cond}),
+                    )
+
             elif isinstance(d, SubscribeTo):
-                subscribe = d.content_name
+                if cur_data_table:
+                    cur_data_table.children = cur_data_table.children + (
+                        ComponentNode(type="subscribe", props={"content": _snake(d.content_name)}),
+                    )
+
             elif isinstance(d, ShowRelated):
-                related = RelatedDataSpec(
-                    related_content=_snake(d.related_content),
-                    join_column=_snake(d.singular) if d.singular else "product",
-                    display_columns=(_snake(d.group_by),) if d.group_by else (),
-                )
+                if cur_data_table:
+                    props = {
+                        "content": _snake(d.related_content),
+                        "join": _snake(d.singular) if d.singular else "product",
+                    }
+                    if d.group_by:
+                        props["group_by"] = _snake(d.group_by)
+                    cur_data_table.children = cur_data_table.children + (
+                        ComponentNode(type="related", props=props),
+                    )
+
             elif isinstance(d, AcceptInput):
                 target_content = _best_content_for_fields(d.fields, program.contents)
                 if target_content:
-                    form_target_content = _snake(target_content.name)
+                    form_target_name = _snake(target_content.name)
+                    field_inputs = []
                     for fname in d.fields:
                         col = _snake(fname)
                         field_obj = next((f for f in target_content.fields if _snake(f.name) == col), None)
-                        ff = FormField(key=col, display=fname, input_type="text")
+                        fi_props = {"field": col, "label": fname}
                         if field_obj:
+                            fi_props["input_type"] = field_obj.type_expr.base_type
+                            if field_obj.type_expr.required:
+                                fi_props["required"] = True
                             if field_obj.type_expr.base_type == "currency":
-                                ff = FormField(key=col, display=fname, input_type="currency",
-                                               required=field_obj.type_expr.required, step="0.01")
+                                fi_props["input_type"] = "currency"
+                                fi_props["step"] = "0.01"
                             elif field_obj.type_expr.base_type == "whole_number":
-                                ff = FormField(key=col, display=fname, input_type="number",
-                                               required=field_obj.type_expr.required,
-                                               minimum=field_obj.type_expr.minimum)
+                                fi_props["input_type"] = "number"
+                                if field_obj.type_expr.minimum is not None:
+                                    fi_props["minimum"] = field_obj.type_expr.minimum
                             elif field_obj.type_expr.base_type == "enum":
-                                ff = FormField(key=col, display=fname, input_type="enum",
-                                               required=field_obj.type_expr.required,
-                                               enum_values=tuple(field_obj.type_expr.enum_values))
+                                fi_props["input_type"] = "enum"
+                                fi_props["enum_values"] = list(field_obj.type_expr.enum_values)
                             elif field_obj.type_expr.references:
+                                fi_props["input_type"] = "reference"
+                                fi_props["reference_content"] = _snake(field_obj.type_expr.references)
                                 ref_content = content_by_name.get(field_obj.type_expr.references)
-                                ref_display, ref_unique = ("id", None)
                                 if ref_content:
                                     ref_display, ref_unique = _resolve_ref_display(ref_content)
-                                ff = FormField(key=col, display=fname, input_type="reference",
-                                               required=field_obj.type_expr.required,
-                                               reference_content=_snake(field_obj.type_expr.references),
-                                               reference_display_col=ref_display,
-                                               reference_unique_col=ref_unique)
+                                    fi_props["reference_display_col"] = ref_display
+                                    if ref_unique:
+                                        fi_props["reference_unique_col"] = ref_unique
                             else:
-                                ff = FormField(key=col, display=fname, input_type="text",
-                                               required=field_obj.type_expr.required)
-                        form_fields.append(ff)
+                                fi_props["input_type"] = "text"
+                        field_inputs.append(ComponentNode(type="field_input", props=fi_props))
+                    cur_form = ComponentNode(
+                        type="form",
+                        props={"target": form_target_name},
+                        children=tuple(field_inputs),
+                    )
+
             elif isinstance(d, ValidateUnique):
-                validate_unique = _snake(d.field)
+                if cur_form:
+                    field_key = _snake(d.field)
+                    new_children = []
+                    for ch in cur_form.children:
+                        if ch.type == "field_input" and ch.props.get("field") == field_key:
+                            ch.props["validate_unique"] = True
+                        new_children.append(ch)
+                    cur_form.children = tuple(new_children)
+
             elif isinstance(d, CreateAs):
-                # Only set create_as if the target content has a state machine
-                if form_target_content:
+                if cur_form and form_target_name:
                     for c in program.contents:
-                        if _snake(c.name) == form_target_content and c.name in sm_by_content:
-                            create_as = d.initial_state
+                        if _snake(c.name) == form_target_name and c.name in sm_by_content:
+                            cur_form.props["create_as"] = d.initial_state
                             break
+
             elif isinstance(d, AfterSave):
-                after_save = d.instruction
+                if cur_form:
+                    cur_form.props["after_save"] = d.instruction
+
             elif isinstance(d, DisplayAggregation):
-                slug = _snake(d.description)[:30]
                 desc_lower = d.description.lower()
                 gc = _guess_content(d.description, program.contents)
-                agg_type = "count"
                 if gc:
-                    tbl = _snake(gc.name)
+                    source = _snake(gc.name)
                     if "count" in desc_lower:
                         if "breakdown" in desc_lower or "active" in desc_lower:
-                            agg_type = "count_by_status"
+                            children.append(ComponentNode(
+                                type="stat_breakdown",
+                                props={"source": source, "label": d.description, "group_by": "status"},
+                            ))
                         else:
-                            agg_type = "count"
+                            children.append(ComponentNode(
+                                type="aggregation",
+                                props={"source": source, "label": d.description, "agg_type": "count"},
+                            ))
                     elif "sum" in desc_lower or "value" in desc_lower:
-                        agg_type = "sum_join"
-                    aggregations.append(AggregationSpec(
-                        key=slug, description=d.description, agg_type=agg_type, content_ref=tbl,
-                    ))
+                        children.append(ComponentNode(
+                            type="aggregation",
+                            props={"source": source, "label": d.description, "agg_type": "sum"},
+                        ))
+                    else:
+                        children.append(ComponentNode(
+                            type="aggregation",
+                            props={"source": source, "label": d.description, "agg_type": "count"},
+                        ))
+
             elif isinstance(d, DisplayText):
                 if d.is_expression:
-                    static_expressions.append(d.text)
+                    children.append(ComponentNode(
+                        type="text",
+                        props={"content": PropValue(value=d.text, is_expr=True)},
+                    ))
                 else:
-                    static_texts.append(d.text)
-            elif isinstance(d, ShowChart):
-                chart = ChartSpec(content_ref=_snake(d.content_name), days=d.days)
+                    children.append(ComponentNode(type="text", props={"content": d.text}))
 
-        # Resolve required scope for form POST
+            elif isinstance(d, ShowChart):
+                children.append(ComponentNode(
+                    type="chart",
+                    props={
+                        "source": _snake(d.content_name),
+                        "chart_type": "line",
+                        "period_days": d.days,
+                        "label": f"{d.content_name} ({d.days} days)",
+                    },
+                ))
+
+            elif isinstance(d, StructuredAggregation):
+                source = _snake(d.source_content)
+                if d.group_by:
+                    children.append(ComponentNode(
+                        type="stat_breakdown",
+                        props={"source": source, "label": f"{d.source_content} by {d.group_by}",
+                               "group_by": _snake(d.group_by)},
+                    ))
+                else:
+                    props = {"source": source, "agg_type": d.agg_type,
+                             "label": f"{d.agg_type.title()} of {d.source_content}"}
+                    if d.expression:
+                        props["expression"] = PropValue(value=d.expression, is_expr=True)
+                    if d.format != "number":
+                        props["format"] = d.format
+                    children.append(ComponentNode(type="aggregation", props=props))
+
+            elif isinstance(d, SectionStart):
+                # Push a section marker — subsequent directives become children
+                # We handle this by creating the section node and tracking it
+                section_node = ComponentNode(type="section", props={"title": d.title})
+                children.append(section_node)
+                # Note: true nesting requires indentation tracking which we don't
+                # do yet. For now sections are flat markers. Future: use a stack.
+
+            elif isinstance(d, ActionHeader):
+                pass  # Action header is a context marker; buttons follow
+
+            elif isinstance(d, ActionButtonDef):
+                if cur_data_table:
+                    row_actions = cur_data_table.props.get("row_actions", [])
+                    row_actions.append(ComponentNode(
+                        type="action_button",
+                        props={
+                            "label": d.label,
+                            "action": "transition",
+                            "target_state": d.target_state,
+                            "visible_when": PropValue(
+                                value=f".state.canTransition('{d.target_state}')",
+                                is_expr=True,
+                            ),
+                            "unavailable_behavior": d.unavailable_behavior,
+                        },
+                    ))
+                    cur_data_table.props["row_actions"] = row_actions
+
+        # Finalize accumulated data_table and form
+        if cur_data_table:
+            children.insert(0, cur_data_table)
+        if cur_form:
+            # Resolve scope for form POST
+            if form_target_name:
+                for c in program.contents:
+                    if _snake(c.name) == form_target_name:
+                        scope = _scope_for_verb(c.access_rules, "create")
+                        if scope:
+                            cur_form.props["submit_scope"] = scope
+                        break
+            children.append(cur_form)
+
+        # Resolve required scope for the page
         req_scope = None
-        if form_target_content:
+        if form_target_name:
             for c in program.contents:
-                if _snake(c.name) == form_target_content:
+                if _snake(c.name) == form_target_name:
                     req_scope = _scope_for_verb(c.access_rules, "create")
                     break
 
         if page_name:
-            pages.append(PageSpec(
+            pages.append(PageEntry(
                 name=page_name,
                 slug=_snake(page_name),
                 role=story.role,
-                display_content=display_content_name,
-                table_columns=tuple(table_columns),
-                filters=tuple(filters),
-                search_fields=tuple(search_fields) if search_fields else (),
-                highlight=highlight,
-                subscribe_stream=subscribe,
-                related=related,
-                form_fields=tuple(form_fields),
-                form_target_content=form_target_content,
-                create_as_status=create_as,
-                validate_unique_field=validate_unique,
-                after_save_instruction=after_save,
-                aggregations=tuple(aggregations),
-                chart=chart,
                 required_scope=req_scope,
-                static_texts=tuple(static_texts),
-                static_expressions=tuple(static_expressions),
+                children=tuple(children),
             ))
 
     # ── Lower navigation ──

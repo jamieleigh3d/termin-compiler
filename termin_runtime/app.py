@@ -310,6 +310,36 @@ def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
         async def home():
             return RedirectResponse(url=f"/{first_slug}")
 
+    # ── Extract data requirements from component trees ──
+    def _extract_page_reqs(page):
+        """Walk component tree to find data sources, form targets, reference lists."""
+        reqs = {"sources": set(), "form_target": None, "ref_lists": set(), "create_as": None}
+        def _walk(children):
+            for child in (children or []):
+                t = child.get("type", "")
+                p = child.get("props", {})
+                if t == "data_table":
+                    src = p.get("source")
+                    if src:
+                        reqs["sources"].add(src)
+                    _walk(child.get("children", []))
+                elif t == "form":
+                    reqs["form_target"] = p.get("target")
+                    reqs["create_as"] = p.get("create_as")
+                    _walk(child.get("children", []))
+                elif t == "field_input":
+                    ref = p.get("reference_content")
+                    if ref:
+                        reqs["ref_lists"].add(ref)
+                elif t in ("aggregation", "stat_breakdown"):
+                    src = p.get("source")
+                    if src:
+                        reqs["sources"].add(src)
+                elif t == "section":
+                    _walk(child.get("children", []))
+        _walk(page.get("children", []))
+        return reqs
+
     # Page routes — one route per unique slug
     emitted_slugs: set = set()
     for page in ir.get("pages", []):
@@ -317,12 +347,11 @@ def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
         if slug in emitted_slugs:
             continue
         emitted_slugs.add(slug)
-        display_content = page.get("display_content")
-        form_target = page.get("form_target_content")
+        reqs = _extract_page_reqs(page)
 
-        def make_page_route(pg, sl, dc, ft):
+        def make_page_route(pg, sl, page_reqs):
             @app.get(f"/{sl}", response_class=HTMLResponse)
-            async def page_route(request: Request, _pg=pg, _sl=sl, _dc=dc, _ft=ft):
+            async def page_route(request: Request, _pg=pg, _sl=sl, _reqs=page_reqs):
                 user = get_current_user(request)
                 q = request.query_params.get("q", "")
                 db = await get_db(db_path)
@@ -337,30 +366,28 @@ def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
                         "termin_compute_js": _compute_js,
                     }
 
-                    if _dc:
-                        cursor = await db.execute(f"SELECT * FROM {_dc}")
+                    # Load data sources (data_table, aggregations)
+                    for src in _reqs["sources"]:
+                        cursor = await db.execute(f"SELECT * FROM {src}")
                         rows = await cursor.fetchall()
                         ctx["items"] = [dict(r) for r in rows]
 
                     # Form reference lists
-                    if _ft:
-                        for field in _pg.get("form_fields", []):
-                            ref = field.get("reference_content")
-                            if ref:
-                                ref_cursor = await db.execute(f"SELECT * FROM {ref}")
-                                ctx[f"{ref}_list"] = [dict(r) for r in await ref_cursor.fetchall()]
+                    for ref in _reqs["ref_lists"]:
+                        ref_cursor = await db.execute(f"SELECT * FROM {ref}")
+                        ctx[f"{ref}_list"] = [dict(r) for r in await ref_cursor.fetchall()]
 
                     content_html = page_templates[_sl].render(**ctx)
                     return base_template.render(content=content_html, **ctx)
                 finally:
                     await db.close()
-        make_page_route(page, slug, display_content, form_target)
+        make_page_route(page, slug, reqs)
 
         # Form POST route
-        if form_target:
-            def make_form_post(pg, sl, ft, sm_info):
+        if reqs["form_target"]:
+            def make_form_post(pg, sl, ft, sm_info, create_as):
                 @app.post(f"/{sl}", response_class=HTMLResponse)
-                async def form_post(request: Request, _pg=pg, _sl=sl, _ft=ft, _sm=sm_info):
+                async def form_post(request: Request, _pg=pg, _sl=sl, _ft=ft, _sm=sm_info, _ca=create_as):
                     form = await request.form()
                     data = dict(form)
                     edit_id = data.pop("edit_id", "")
@@ -372,13 +399,13 @@ def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
                         else:
                             if _sm:
                                 data["status"] = _sm.get("initial_state", "")
-                            create_as = _pg.get("create_as_status")
-                            if create_as:
-                                data["status"] = create_as
+                            if _ca:
+                                data["status"] = _ca
                             await create_record(db, _ft, data, schema, _sm, terminator)
                         return RedirectResponse(url=f"/{_sl}", status_code=303)
                     finally:
                         await db.close()
-            make_form_post(page, slug, form_target, sm_lookup.get(form_target))
+            make_form_post(page, slug, reqs["form_target"],
+                          sm_lookup.get(reqs["form_target"]), reqs["create_as"])
 
     return app
