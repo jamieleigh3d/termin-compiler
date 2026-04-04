@@ -289,10 +289,19 @@ def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
     # ── Presentation (pages) ──
     nav_html = build_nav_html(ir.get("nav_items", []), list(roles.keys()))
     base_template = build_base_template(app_name, nav_html)
-    page_templates = {}
+
+    # Group pages by slug — merge same-slug pages for role-conditional rendering
+    from .presentation import build_merged_page_template
+    pages_by_slug: dict[str, list] = {}
     for page in ir.get("pages", []):
-        slug = page["slug"]
-        page_templates[slug] = build_page_template(page)
+        pages_by_slug.setdefault(page["slug"], []).append(page)
+
+    page_templates = {}
+    for slug, pages_list in pages_by_slug.items():
+        if len(pages_list) == 1:
+            page_templates[slug] = build_page_template(pages_list[0])
+        else:
+            page_templates[slug] = build_merged_page_template(pages_list)
 
     # Home redirect
     if ir.get("pages"):
@@ -301,9 +310,13 @@ def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
         async def home():
             return RedirectResponse(url=f"/{first_slug}")
 
-    # Page routes
+    # Page routes — one route per unique slug
+    emitted_slugs: set = set()
     for page in ir.get("pages", []):
         slug = page["slug"]
+        if slug in emitted_slugs:
+            continue
+        emitted_slugs.add(slug)
         display_content = page.get("display_content")
         form_target = page.get("form_target_content")
 

@@ -84,6 +84,44 @@ def build_nav_html(nav_items: list, roles: list) -> str:
     return "\n                ".join(parts)
 
 
+def build_merged_page_template(pages: list) -> object:
+    """Build a role-conditional template for multiple pages sharing a slug."""
+    parts = [f'<h1 class="text-2xl font-bold mb-4">{pages[0]["name"]}</h1>']
+
+    for page in pages:
+        role = page["role"]
+        cond = f'{{% if current_role == "{role}" or current_role|lower == "{role.lower()}" %}}'
+        page_parts = _build_page_content_parts(page)
+        if page_parts:
+            parts.append(cond)
+            parts.extend(page_parts)
+            parts.append('{% endif %}')
+
+    return jinja_env.from_string("\n".join(parts))
+
+
+def _build_page_content_parts(page: dict) -> list:
+    """Build the content parts for a single page (no heading)."""
+    parts = []
+    for text in page.get("static_texts", []):
+        parts.append(f'<div class="text-lg text-gray-800 mb-4">{text}</div>')
+    for expr in page.get("static_expressions", []):
+        parts.append(f'<div class="text-lg text-gray-800 mb-4" data-termin-expr="{expr}">...</div>')
+    # Add table/form/agg parts here if needed
+    if page.get("display_content") and page.get("table_columns"):
+        cols = page["table_columns"]
+        parts.append('<table class="w-full bg-white shadow rounded overflow-hidden">')
+        parts.append('  <thead class="bg-gray-100"><tr>')
+        for col in cols:
+            parts.append(f'    <th class="px-4 py-2 text-left text-sm font-medium text-gray-600">{col["display"]}</th>')
+        parts.append('  </tr></thead><tbody>')
+        parts.append('    {% for item in items %}<tr class="border-t">')
+        for col in cols:
+            parts.append(f'      <td class="px-4 py-2 text-sm">{{{{ item.{col["key"]}|default("") }}}}</td>')
+        parts.append('    </tr>{% endfor %}</tbody></table>')
+    return parts
+
+
 def build_page_template(page: dict) -> object:
     """Build a Jinja2 template for a single page from IR PageSpec."""
     parts = [f'<h1 class="text-2xl font-bold mb-4">{page["name"]}</h1>']
