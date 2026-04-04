@@ -110,7 +110,7 @@ async def init_db(content_schemas: list[dict], db_path: str = None):
 
 
 async def create_record(db, content_name: str, data: dict, schema: dict = None,
-                        sm_info: dict = None, terminator=None):
+                        sm_info: dict = None, terminator=None, event_bus=None):
     """Insert a new record. Returns the created record dict with id."""
     d = dict(data)
     # Remove empty strings for optional fields
@@ -133,6 +133,13 @@ async def create_record(db, content_name: str, data: dict, schema: dict = None,
         record_id = cursor.lastrowid
         record = dict(d)
         record["id"] = record_id
+        if event_bus:
+            await event_bus.publish({
+                "type": f"{content_name}_created",
+                "channel_id": f"content.{content_name}.created",
+                "content_name": content_name,
+                "record": record,
+            })
         return record
     except Exception as e:
         if terminator:
@@ -161,7 +168,7 @@ async def get_record(db, content_name: str, id_value, lookup_col: str = "id"):
 
 
 async def update_record(db, content_name: str, id_value, data: dict,
-                        lookup_col: str = "id", terminator=None):
+                        lookup_col: str = "id", terminator=None, event_bus=None):
     """Update a record. Returns the updated record."""
     d = {k: v for k, v in data.items() if v is not None and v != ""}
     if not d:
@@ -176,7 +183,15 @@ async def update_record(db, content_name: str, id_value, data: dict,
             tuple(values)
         )
         await db.commit()
-        return await get_record(db, content_name, id_value, lookup_col)
+        record = await get_record(db, content_name, id_value, lookup_col)
+        if event_bus:
+            await event_bus.publish({
+                "type": f"{content_name}_updated",
+                "channel_id": f"content.{content_name}.updated",
+                "content_name": content_name,
+                "record": record,
+            })
+        return record
     except Exception as e:
         if terminator:
             from .errors import TerminError
@@ -185,9 +200,16 @@ async def update_record(db, content_name: str, id_value, data: dict,
 
 
 async def delete_record(db, content_name: str, id_value,
-                        lookup_col: str = "id", terminator=None):
+                        lookup_col: str = "id", terminator=None, event_bus=None):
     """Delete a record."""
     await db.execute(
         f'DELETE FROM {content_name} WHERE {lookup_col} = ?', (id_value,)
     )
     await db.commit()
+    if event_bus:
+        await event_bus.publish({
+            "type": f"{content_name}_deleted",
+            "channel_id": f"content.{content_name}.deleted",
+            "content_name": content_name,
+            "record_id": id_value,
+        })

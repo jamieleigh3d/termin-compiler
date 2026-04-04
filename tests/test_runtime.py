@@ -149,3 +149,206 @@ class TestAllExamplesBoot:
         with _make_client(name) as client:
             r = client.get("/")
             assert r.status_code == 200, f"{name} failed to serve /"
+
+
+# ── Runtime registry and bootstrap ──
+
+class TestRuntimeRegistry:
+    """Runtime registry endpoint."""
+
+    def test_registry_returns_json(self):
+        with _make_client("warehouse") as client:
+            r = client.get("/runtime/registry")
+            assert r.status_code == 200
+            data = r.json()
+            assert data["runtime_version"] == "0.2.0"
+            assert "boundaries" in data
+            assert "protocols" in data
+            assert data["protocols"]["realtime"] == "websocket"
+
+    def test_registry_has_presentation_boundary(self):
+        with _make_client("warehouse") as client:
+            data = client.get("/runtime/registry").json()
+            assert "presentation" in data["boundaries"]
+            assert data["boundaries"]["presentation"]["location"] == "client"
+
+    def test_registry_has_ws_url(self):
+        with _make_client("warehouse") as client:
+            data = client.get("/runtime/registry").json()
+            pres = data["boundaries"]["presentation"]
+            assert "/runtime/ws" in pres["channels"]["realtime"]
+
+
+class TestRuntimeBootstrap:
+    """Runtime bootstrap endpoint."""
+
+    def test_bootstrap_returns_identity(self):
+        with _make_client("warehouse") as client:
+            r = client.get("/runtime/bootstrap")
+            assert r.status_code == 200
+            data = r.json()
+            assert "identity" in data
+            assert "role" in data["identity"]
+            assert "scopes" in data["identity"]
+
+    def test_bootstrap_returns_pages(self):
+        with _make_client("warehouse") as client:
+            r = client.get("/runtime/bootstrap",
+                           cookies={"termin_role": "warehouse clerk"})
+            data = r.json()
+            assert "pages" in data
+            assert len(data["pages"]) > 0
+
+    def test_bootstrap_returns_content_names(self):
+        with _make_client("warehouse") as client:
+            data = client.get("/runtime/bootstrap").json()
+            assert "content_names" in data
+            assert "products" in data["content_names"]
+
+    def test_bootstrap_returns_schemas(self):
+        with _make_client("warehouse") as client:
+            data = client.get("/runtime/bootstrap").json()
+            assert "schemas" in data
+            names = [s["name"]["snake"] for s in data["schemas"]]
+            assert "products" in names
+
+    def test_bootstrap_returns_computes(self):
+        with _make_client("compute_demo") as client:
+            data = client.get("/runtime/bootstrap").json()
+            assert "computes" in data
+            # compute_demo has computes with body_lines
+            assert len(data["computes"]) > 0
+
+
+class TestRuntimeWebSocket:
+    """WebSocket multiplexer."""
+
+    def test_ws_connect_receives_identity(self):
+        with _make_client("warehouse") as client:
+            with client.websocket_connect("/runtime/ws") as ws:
+                frame = ws.receive_json()
+                assert frame["v"] == 1
+                assert frame["ch"] == "runtime.identity"
+                assert frame["op"] == "push"
+                assert "role" in frame["payload"]
+                assert "scopes" in frame["payload"]
+
+    def test_ws_subscribe_returns_current_data(self):
+        with _make_client("warehouse") as client:
+            with client.websocket_connect("/runtime/ws") as ws:
+                # Read identity frame
+                ws.receive_json()
+                # Subscribe to products
+                ws.send_json({
+                    "v": 1, "ch": "content.products", "op": "subscribe",
+                    "ref": "sub-1", "payload": {},
+                })
+                frame = ws.receive_json()
+                assert frame["op"] == "response"
+                assert frame["ref"] == "sub-1"
+                assert "current" in frame["payload"]
+                assert isinstance(frame["payload"]["current"], list)
+
+    def test_ws_unsubscribe(self):
+        with _make_client("warehouse") as client:
+            with client.websocket_connect("/runtime/ws") as ws:
+                ws.receive_json()  # identity
+                ws.send_json({
+                    "v": 1, "ch": "content.products", "op": "unsubscribe",
+                    "ref": "unsub-1", "payload": {},
+                })
+                frame = ws.receive_json()
+                assert frame["op"] == "response"
+                assert frame["payload"]["unsubscribed"] is True
+
+
+class TestHydrationAttributes:
+    """SSR output should contain data-termin-* attributes for hydration."""
+
+    def test_data_table_has_source_attribute(self):
+        with _make_client("warehouse") as client:
+            r = client.get("/inventory_dashboard",
+                           cookies={"termin_role": "warehouse clerk"})
+            assert 'data-termin-component="data_table"' in r.text
+            assert 'data-termin-source="products"' in r.text
+
+    def test_table_rows_have_row_id(self):
+        with _make_client("warehouse") as client:
+            import uuid
+            sku = f"HYD-{uuid.uuid4().hex[:6]}"
+            client.post("/api/v1/products", json={
+                "sku": sku, "name": "Hydration Test", "category": "raw material"
+            })
+            r = client.get("/inventory_dashboard",
+                           cookies={"termin_role": "warehouse clerk"})
+            assert "data-termin-row-id" in r.text
+
+    def test_table_cells_have_field_attribute(self):
+        with _make_client("warehouse") as client:
+            import uuid
+            sku = f"HYD-{uuid.uuid4().hex[:6]}"
+            client.post("/api/v1/products", json={
+                "sku": sku, "name": "Field Test", "category": "raw material"
+            })
+            r = client.get("/inventory_dashboard",
+                           cookies={"termin_role": "warehouse clerk"})
+            assert 'data-termin-field="sku"' in r.text
+
+    def test_form_has_component_attribute(self):
+        with _make_client("warehouse") as client:
+            r = client.get("/add_product",
+                           cookies={"termin_role": "warehouse manager"})
+            assert 'data-termin-component="form"' in r.text
+
+    def test_termin_js_script_tag(self):
+        with _make_client("hello") as client:
+            r = client.get("/hello")
+            assert '/runtime/termin.js' in r.text
+
+    def test_termin_js_served(self):
+        with _make_client("hello") as client:
+            r = client.get("/runtime/termin.js")
+            assert r.status_code == 200
+            assert "TERMIN_VERSION" in r.text
+
+
+class TestEventBusChannels:
+    """EventBus channel-based filtering."""
+
+    def test_unfiltered_receives_all(self):
+        import asyncio
+        from termin_runtime.events import EventBus
+
+        async def _test():
+            bus = EventBus()
+            q = bus.subscribe()  # No filter
+            await bus.publish({"type": "test", "channel_id": "content.products.created"})
+            await bus.publish({"type": "test2"})  # No channel_id
+            assert q.qsize() == 2
+
+        asyncio.get_event_loop().run_until_complete(_test())
+
+    def test_filtered_receives_matching(self):
+        import asyncio
+        from termin_runtime.events import EventBus
+
+        async def _test():
+            bus = EventBus()
+            q = bus.subscribe("content.products")
+            await bus.publish({"type": "test", "channel_id": "content.products.created"})
+            await bus.publish({"type": "test2", "channel_id": "content.orders.created"})
+            assert q.qsize() == 1
+
+        asyncio.get_event_loop().run_until_complete(_test())
+
+    def test_filtered_ignores_non_matching(self):
+        import asyncio
+        from termin_runtime.events import EventBus
+
+        async def _test():
+            bus = EventBus()
+            q = bus.subscribe("content.orders")
+            await bus.publish({"type": "test", "channel_id": "content.products.created"})
+            assert q.qsize() == 0
+
+        asyncio.get_event_loop().run_until_complete(_test())

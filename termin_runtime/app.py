@@ -4,16 +4,19 @@ This is the main entry point for the Termin runtime. It reads the IR,
 creates all subsystems, registers routes, and returns a FastAPI app.
 """
 
+import asyncio
 import json
+import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, Request, Response, HTTPException, Depends, Form, Query
+from fastapi import FastAPI, Request, Response, HTTPException, Depends, Form, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 
 from .expression import ExpressionEvaluator
 from .errors import TerminError, TerminAtor
 from .events import EventBus
-from .identity import make_get_current_user, make_require_scope
+from .identity import make_get_current_user, make_require_scope, make_get_user_from_websocket
 from .storage import get_db, init_db, create_record, list_records, get_record, update_record, delete_record
 from .state import do_state_transition
 from .reflection import ReflectionEngine, register_reflection_with_expr_eval
@@ -39,6 +42,7 @@ def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
         roles["anonymous"] = []
 
     get_current_user = make_get_current_user(roles)
+    get_user_from_ws = make_get_user_from_websocket(roles)
     require_scope = make_require_scope(get_current_user)
 
     # Content schemas for storage
@@ -61,6 +65,48 @@ def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
     # Register reflection with expression evaluator
     register_reflection_with_expr_eval(reflection, expr_eval)
 
+    # ── WebSocket Connection Manager ──
+    class ConnectionManager:
+        def __init__(self):
+            self.active: dict[str, dict] = {}  # conn_id -> {ws, user, subscriptions}
+
+        async def connect(self, ws: WebSocket, user: dict) -> str:
+            conn_id = str(uuid.uuid4())[:8]
+            self.active[conn_id] = {"ws": ws, "user": user, "subscriptions": set()}
+            return conn_id
+
+        def disconnect(self, conn_id: str):
+            self.active.pop(conn_id, None)
+
+        def add_subscription(self, conn_id: str, channel_id: str):
+            if conn_id in self.active:
+                self.active[conn_id]["subscriptions"].add(channel_id)
+
+        def remove_subscription(self, conn_id: str, channel_id: str):
+            if conn_id in self.active:
+                self.active[conn_id]["subscriptions"].discard(channel_id)
+
+        async def broadcast_to_subscribers(self, channel_id: str, event: dict):
+            dead = []
+            for conn_id, conn in self.active.items():
+                for pattern in conn["subscriptions"]:
+                    if channel_id.startswith(pattern):
+                        try:
+                            await conn["ws"].send_json({
+                                "v": 1,
+                                "ch": channel_id,
+                                "op": "push",
+                                "ref": None,
+                                "payload": event.get("record") or event,
+                            })
+                        except Exception:
+                            dead.append(conn_id)
+                        break
+            for conn_id in dead:
+                self.disconnect(conn_id)
+
+    conn_manager = ConnectionManager()
+
     # ── Lifespan ──
     @asynccontextmanager
     async def lifespan(app):
@@ -70,8 +116,25 @@ def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
         print(f"[Termin] Phase 3: Initializing storage")
         await init_db(schemas, db_path)
         print(f"[Termin] Phase 4: Registering primitives")
+        print(f"[Termin] Phase 5a: Starting WebSocket forwarder")
+
+        async def _ws_forwarder():
+            q = event_bus.subscribe()
+            try:
+                while True:
+                    event = await q.get()
+                    ch_id = event.get("channel_id")
+                    if ch_id:
+                        await conn_manager.broadcast_to_subscribers(ch_id, event)
+            except asyncio.CancelledError:
+                pass
+            finally:
+                event_bus.unsubscribe(q)
+
+        forwarder = asyncio.create_task(_ws_forwarder())
         print(f"[Termin] Phase 5: Ready to serve")
         yield
+        forwarder.cancel()
         print(f"[Termin] Shutting down...")
 
     app = FastAPI(title=app_name, lifespan=lifespan)
@@ -84,6 +147,160 @@ def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
         if user_name:
             response.set_cookie("termin_user_name", user_name)
         return response
+
+    # ── Runtime endpoints ──
+    @app.get("/runtime/registry")
+    async def runtime_registry(request: Request):
+        """Boundary registry for distributed runtime."""
+        host = request.headers.get("host", "localhost:8000")
+        scheme = "wss" if request.url.scheme == "https" else "ws"
+        http_scheme = request.url.scheme or "http"
+        boundaries = {}
+        for bnd in ir.get("boundaries", []):
+            name = bnd.get("name", {}).get("snake", "unknown")
+            boundaries[name] = {
+                "location": "local",
+                "channels": {
+                    "realtime": f"{scheme}://{host}/runtime/ws",
+                    "reliable": f"{http_scheme}://{host}/runtime/api",
+                },
+            }
+        # Always include presentation boundary for client
+        boundaries["presentation"] = {
+            "location": "client",
+            "channels": {
+                "realtime": f"{scheme}://{host}/runtime/ws",
+                "reliable": f"{http_scheme}://{host}/runtime/api",
+            },
+        }
+        return {
+            "runtime_version": "0.2.0",
+            "application": app_name,
+            "boundaries": boundaries,
+            "protocols": {"realtime": "websocket", "reliable": "rest"},
+        }
+
+    @app.get("/runtime/bootstrap")
+    async def runtime_bootstrap(request: Request):
+        """Role-scoped bootstrap payload for client runtime."""
+        user = get_current_user(request)
+        role = user["role"]
+        # Filter pages by role
+        user_pages = [p for p in ir.get("pages", []) if p["role"] == role
+                      or p["role"].lower() == role.lower()]
+        # Client-safe computes: Transform shape with body_lines
+        client_computes = []
+        for comp in ir.get("computes", []):
+            if comp.get("body_lines"):
+                client_computes.append({
+                    "name": comp["name"],
+                    "input_params": comp.get("input_params", []),
+                    "body_lines": comp.get("body_lines", []),
+                })
+        # Content names for subscription
+        content_names = [cs["name"]["snake"] for cs in ir.get("content", [])]
+        return {
+            "identity": {"role": role, "scopes": user["scopes"], "profile": user["profile"]},
+            "pages": user_pages,
+            "computes": client_computes,
+            "schemas": ir.get("content", []),
+            "content_names": content_names,
+        }
+
+    @app.get("/runtime/termin.js")
+    async def serve_termin_js():
+        """Serve the client runtime module."""
+        js_path = Path(__file__).parent / "static" / "termin.js"
+        if js_path.exists():
+            return Response(content=js_path.read_text(encoding="utf-8"),
+                            media_type="application/javascript",
+                            headers={"Cache-Control": "public, max-age=3600"})
+        return Response(content="// termin.js not found", media_type="application/javascript",
+                        status_code=404)
+
+    # ── WebSocket multiplexer ──
+    @app.websocket("/runtime/ws")
+    async def runtime_ws(websocket: WebSocket):
+        user = get_user_from_ws(websocket)
+        await websocket.accept()
+        conn_id = await conn_manager.connect(websocket, user)
+
+        # Send identity context as first frame
+        await websocket.send_json({
+            "v": 1, "ch": "runtime.identity", "op": "push", "ref": None,
+            "payload": {"role": user["role"], "scopes": user["scopes"], "profile": user["profile"]},
+        })
+
+        try:
+            while True:
+                frame = await websocket.receive_json()
+                op = frame.get("op", "")
+                ch = frame.get("ch", "")
+                ref = frame.get("ref")
+
+                if op == "subscribe":
+                    # Subscribe to content channel
+                    conn_manager.add_subscription(conn_id, ch)
+                    # Send current data
+                    # Parse channel: "content.<name>.changes" -> content_name
+                    parts = ch.split(".")
+                    if len(parts) >= 2 and parts[0] == "content":
+                        content_name = parts[1]
+                        try:
+                            db = await get_db(db_path)
+                            try:
+                                cursor = await db.execute(f"SELECT * FROM {content_name}")
+                                rows = [dict(r) for r in await cursor.fetchall()]
+                            finally:
+                                await db.close()
+                            await websocket.send_json({
+                                "v": 1, "ch": ch, "op": "response", "ref": ref,
+                                "payload": {"current": rows},
+                            })
+                        except Exception as e:
+                            await websocket.send_json({
+                                "v": 1, "ch": ch, "op": "error", "ref": ref,
+                                "payload": {"message": str(e)},
+                            })
+                    else:
+                        await websocket.send_json({
+                            "v": 1, "ch": ch, "op": "response", "ref": ref,
+                            "payload": {"current": []},
+                        })
+
+                elif op == "unsubscribe":
+                    conn_manager.remove_subscription(conn_id, ch)
+                    await websocket.send_json({
+                        "v": 1, "ch": ch, "op": "response", "ref": ref,
+                        "payload": {"unsubscribed": True},
+                    })
+
+                elif op == "request":
+                    # One-shot data request
+                    parts = ch.split(".")
+                    if len(parts) >= 2 and parts[0] == "content":
+                        content_name = parts[1]
+                        try:
+                            db = await get_db(db_path)
+                            try:
+                                cursor = await db.execute(f"SELECT * FROM {content_name}")
+                                rows = [dict(r) for r in await cursor.fetchall()]
+                            finally:
+                                await db.close()
+                            await websocket.send_json({
+                                "v": 1, "ch": ch, "op": "response", "ref": ref,
+                                "payload": {"data": rows},
+                            })
+                        except Exception as e:
+                            await websocket.send_json({
+                                "v": 1, "ch": ch, "op": "error", "ref": ref,
+                                "payload": {"message": str(e)},
+                            })
+
+        except WebSocketDisconnect:
+            conn_manager.disconnect(conn_id)
+        except Exception:
+            conn_manager.disconnect(conn_id)
 
     # ── Event handlers ──
     async def run_event_handlers(db, content_name: str, trigger: str, record: dict):
@@ -155,9 +372,8 @@ def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
                     db = await get_db(db_path)
                     try:
                         schema = content_lookup.get(_cr, {})
-                        record = await create_record(db, _cr, body, schema, _sm, terminator)
+                        record = await create_record(db, _cr, body, schema, _sm, terminator, event_bus)
                         await run_event_handlers(db, _cr, "created", record)
-                        await event_bus.publish({"type": f"{_cr}_created", "id": record.get("id")})
                         return record
                     finally:
                         await db.close()
@@ -185,7 +401,7 @@ def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
                     body = await request.json()
                     db = await get_db(db_path)
                     try:
-                        record = await update_record(db, _cr, param_val, body, _lc, terminator)
+                        record = await update_record(db, _cr, param_val, body, _lc, terminator, event_bus)
                         await run_event_handlers(db, _cr, "updated", record)
                         return record
                     finally:
@@ -200,7 +416,7 @@ def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
                     param_val = list(request.path_params.values())[0] if request.path_params else None
                     db = await get_db(db_path)
                     try:
-                        await delete_record(db, _cr, param_val, _lc, terminator)
+                        await delete_record(db, _cr, param_val, _lc, terminator, event_bus)
                         return {"deleted": True}
                     finally:
                         await db.close()
@@ -395,13 +611,13 @@ def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
                     try:
                         schema = content_lookup.get(_ft, {})
                         if edit_id:
-                            await update_record(db, _ft, edit_id, data, "id", terminator)
+                            await update_record(db, _ft, edit_id, data, "id", terminator, event_bus)
                         else:
                             if _sm:
                                 data["status"] = _sm.get("initial_state", "")
                             if _ca:
                                 data["status"] = _ca
-                            await create_record(db, _ft, data, schema, _sm, terminator)
+                            await create_record(db, _ft, data, schema, _sm, terminator, event_bus)
                         return RedirectResponse(url=f"/{_sl}", status_code=303)
                     finally:
                         await db.close()

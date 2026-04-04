@@ -24,7 +24,8 @@ def _render_data_table(node: dict) -> str:
     cols = props.get("columns", [])
     children = node.get("children", [])
 
-    parts = ['<table class="w-full bg-white shadow rounded overflow-hidden">']
+    source = props.get("source", "")
+    parts = [f'<table class="w-full bg-white shadow rounded overflow-hidden" data-termin-component="data_table" data-termin-source="{source}">']
     parts.append('  <thead class="bg-gray-100"><tr>')
     for col in cols:
         label = col.get("label", col.get("field", ""))
@@ -36,10 +37,10 @@ def _render_data_table(node: dict) -> str:
         parts.append('    <th class="px-4 py-2 text-left text-sm font-medium text-gray-600">Actions</th>')
 
     parts.append('  </tr></thead><tbody>')
-    parts.append('    {% for item in items %}<tr class="border-t">')
+    parts.append('    {% for item in items %}<tr class="border-t" data-termin-row-id="{{ item.id }}">')
     for col in cols:
         key = col.get("field", "")
-        parts.append(f'      <td class="px-4 py-2 text-sm">{{{{ item.{key}|default("") }}}}</td>')
+        parts.append(f'      <td class="px-4 py-2 text-sm" data-termin-field="{key}">{{{{ item.{key}|default("") }}}}</td>')
 
     # Action buttons per row
     if row_actions:
@@ -101,7 +102,8 @@ def _render_form(node: dict, content_schemas: dict = None) -> str:
     props = node.get("props", {})
     target = props.get("target", "")
     # Infer slug from context — form posts to the current page slug
-    parts = [f'<form method="post" class="bg-white shadow rounded p-6 max-w-lg">']
+    target = props.get("target", "")
+    parts = [f'<form method="post" class="bg-white shadow rounded p-6 max-w-lg" data-termin-component="form" data-termin-target="{target}">']
 
     for child in node.get("children", []):
         if child.get("type") == "field_input":
@@ -155,9 +157,9 @@ def _render_aggregation(node: dict) -> str:
     agg_type = props.get("agg_type", "count")
     source = props.get("source", "")
     key = label.lower().replace(" ", "_")[:30]
-    return (f'<div class="bg-white shadow rounded p-4 mb-4">\n'
+    return (f'<div class="bg-white shadow rounded p-4 mb-4" data-termin-component="aggregation" data-termin-source="{source}">\n'
             f'  <div class="text-sm text-gray-600">{label}</div>\n'
-            f'  <div class="text-2xl font-bold mt-1" data-termin-agg="{agg_type}" data-source="{source}">...</div>\n'
+            f'  <div class="text-2xl font-bold mt-1" data-termin-agg="{agg_type}">...</div>\n'
             f'</div>')
 
 
@@ -166,10 +168,10 @@ def _render_stat_breakdown(node: dict) -> str:
     label = props.get("label", "Breakdown")
     source = props.get("source", "")
     group_by = props.get("group_by", "status")
-    return (f'<div class="bg-white shadow rounded p-4 mb-4">\n'
+    return (f'<div class="bg-white shadow rounded p-4 mb-4" data-termin-component="stat_breakdown" data-termin-source="{source}">\n'
             f'  <div class="text-sm text-gray-600">{label}</div>\n'
             f'  <div class="text-2xl font-bold mt-1" data-termin-agg="count_by" '
-            f'data-source="{source}" data-group="{group_by}">...</div>\n'
+            f'data-group="{group_by}">...</div>\n'
             f'</div>')
 
 
@@ -333,6 +335,7 @@ def build_base_template(app_name: str, nav_html: str) -> object:
         }});
     }});
     </script>
+    <script type="module" src="/runtime/termin.js"></script>
 </body>
 </html>'''
     return jinja_env.from_string(template)
