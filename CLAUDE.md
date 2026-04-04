@@ -2,55 +2,73 @@
 
 ## What This Is
 
-Termin is an open-source secure-by-construction application compiler. It takes `.termin` DSL files (formulaic English) and compiles them through a pluggable backend into running applications. The reference backend generates a single self-contained `app.py` (FastAPI + SQLite + HTMX + Tailwind). The security thesis: applications that compile are structurally immune to OWASP Top 10 vulnerability classes.
+Termin is an open-source secure-by-construction application compiler. It takes `.termin` DSL files (formulaic English) and compiles them through a pluggable backend into running applications. The security thesis: applications that compile are structurally immune to OWASP Top 10 vulnerability classes.
 
 The name derives from Determine, Terminus, Terminal, and Lev Termen (inventor of the Theremin).
 
 ## Architecture
 
 ```
-.termin file -> lexer -> parser -> AST -> analyzer -> lower() -> AppSpec (IR) -> Backend -> output
+.termin file -> peg_parser.py (TatSu PEG) -> AST -> analyzer -> lower() -> AppSpec (IR) -> Backend -> output
 ```
 
 The compiler has a pluggable architecture with an explicit Intermediate Representation (IR):
 
-- **Frontend** (termin/): lexer, parser, analyzer — produces a validated AST
+- **Frontend** (termin/): PEG parser (TatSu), analyzer — produces a validated AST
 - **IR** (termin/ir.py + termin/lower.py): Lowers AST to AppSpec — fully resolved, immutable, backend-agnostic
-- **Backend** (termin/backends/): Reads AppSpec and generates output. Reference backend: FastAPI+SQLite+HTMX
+- **Backends** (termin/backends/): Read AppSpec and generate output
+  - `fastapi.py` — Legacy backend: generates a single self-contained app.py (~2000 lines, being deprecated)
+  - `runtime.py` — Runtime backend: generates slim 24-line app.py + companion IR JSON, uses termin_runtime package
+- **Runtime** (termin_runtime/): Python package with 9 modules implementing the runtime subsystems
 
 ## Project Layout
 
 ```
 termin/                     # Compiler package (pip install -e .)
-  cli.py                    # Click CLI: termin compile <file> [-o output] [--backend fastapi]
-  lexer.py                  # Line-oriented tokenizer -> Token stream
-  parser.py                 # Recursive descent -> AST (Program node)
-  ast_nodes.py              # Dataclass AST nodes (Program, Content, Role, etc.)
+  cli.py                    # Click CLI: termin compile <file> [-o output] [--backend runtime]
+  termin.peg                # AUTHORITATIVE PEG grammar (TatSu) — update FIRST before parser changes
+  peg_parser.py             # Two-level parser: line classify + TatSu per-line rules
+  ast_nodes.py              # Dataclass AST nodes (Program, Content, Role, Directives, etc.)
   analyzer.py               # Semantic analysis + security invariant checks
   errors.py                 # TerminError, ParseError, SemanticError, SecurityError
-  ir.py                     # IR dataclasses: AppSpec, Table, Column, RouteSpec, PageSpec, etc.
-  lower.py                  # Lowering pass: Program AST -> AppSpec IR
+  ir.py                     # IR dataclasses: AppSpec, ContentSchema, FieldSpec, ComponentNode, PageEntry, etc.
+  lower.py                  # Lowering pass: Program AST -> AppSpec IR (component trees)
   backend.py                # Backend protocol + plugin discovery via entry points
   backends/
-    fastapi.py              # Reference backend: AppSpec -> single Python file
+    fastapi.py              # Legacy backend (deprecated): AppSpec -> single Python file
+    runtime.py              # Runtime backend: AppSpec -> slim app.py + companion .json
+termin_runtime/             # Runtime package — reads IR JSON, serves the app
+  __init__.py               # Exports create_termin_app()
+  app.py                    # FastAPI app factory from IR JSON (~400 lines)
+  presentation.py           # Component tree renderer (dispatch table of Jinja2 renderers)
+  storage.py                # SQLite schema creation + generic CRUD
+  expression.py             # Server-side JEXL evaluator (pyjexl)
+  errors.py                 # TerminAtor error router
+  events.py                 # EventBus with async queues and log levels
+  identity.py               # Role/scope resolution from cookies
+  state.py                  # Config-driven state transitions
+  reflection.py             # ReflectionEngine from IR JSON
 examples/
+  hello.termin              # Simplest hello world
+  hello_user.termin         # Role-conditional pages + Compute
   warehouse.termin          # Inventory management (full PRFAQ example)
   helpdesk.termin           # Support ticket tracker (multi-word states)
   projectboard.termin       # Project management board (5 content types, deep FK chains)
+  compute_demo.termin       # Compute functions + error handling demo
+ir_dumps/                   # Pre-compiled IR JSON for each example (used by runtime tests)
 tests/
-  test_lexer.py             # Token stream tests
-  test_parser.py            # AST construction tests
+  test_parser.py            # PEG parser tests
   test_analyzer.py          # Semantic + security invariant tests
-  test_ir.py                # IR lowering tests (28 tests across all 3 examples)
+  test_ir.py                # IR lowering tests (71 tests — component tree assertions)
   test_codegen.py           # Generated code validity tests
-  test_e2e.py               # Warehouse end-to-end (Spec Section 8 validation)
-  test_helpdesk.py          # Help desk end-to-end (30 tests)
-  test_projectboard.py      # Project board end-to-end (37 tests)
+  test_runtime.py           # Runtime package tests (19 tests)
+  test_e2e.py               # Warehouse end-to-end
+  test_helpdesk.py          # Help desk end-to-end
+  test_projectboard.py      # Project board end-to-end
 docs/
-  termin-primitives.md      # The 8 Termin primitives (Content, Compute, Channels, etc.)
-  an AWS-native Termin runtime_MVP_Spec.md         # Original MVP specification (reference)
-  an AWS-native Termin runtime_PRFAQ_v2.md         # Original PR/FAQ (reference)
-  UI-testing.md             # Browser UI testing guide
+  termin-primitives.md      # The 8 Termin primitives
+  termin-presentation-ir-spec-v2.md  # Component tree IR spec
+  termin-distributed-runtime-model.md  # Distributed runtime architecture
 setup.py                    # Package config, entry_points -> termin CLI
 ```
 
@@ -60,67 +78,62 @@ setup.py                    # Package config, entry_points -> termin CLI
 # Install compiler in dev mode
 pip install -e .
 
-# Compile a .termin file
-termin compile examples/warehouse.termin -o app.py
-termin compile examples/helpdesk.termin -o helpdesk_app.py --backend fastapi
+# Compile with runtime backend (preferred)
+termin compile examples/warehouse.termin -o app.py --backend runtime
 
-# Run the generated app
-pip install fastapi uvicorn aiosqlite jinja2 python-multipart
-python app.py                    # default port 8000
-python helpdesk_app.py -p 8001   # custom port
+# Compile with legacy backend
+termin compile examples/warehouse.termin -o app.py --backend fastapi
 
-# Run all tests (fast, ~2s)
+# Dump IR
+termin compile examples/warehouse.termin -o app.py --emit-ir warehouse_ir.json
+
+# Run all tests (~11s, 373 tests)
 python -m pytest tests/ -v
 
-# Run just unit tests (no compilation needed)
-python -m pytest tests/ -v --ignore=tests/test_e2e.py --ignore=tests/test_helpdesk.py --ignore=tests/test_projectboard.py
+# Run just compiler tests (no e2e)
+python -m pytest tests/test_parser.py tests/test_analyzer.py tests/test_ir.py -v
 
-# Run e2e tests (compiles fresh, uses FastAPI TestClient in-process)
-python -m pytest tests/test_e2e.py tests/test_helpdesk.py tests/test_projectboard.py -v
+# Run runtime tests
+python -m pytest tests/test_runtime.py -v
 ```
 
-## Compiler Pipeline
+## Parser: Two-Level PEG Approach
 
-```
-.termin file -> lexer.py (tokenize) -> parser.py (AST) -> analyzer.py (validate) -> lower.py (IR) -> backend (emit) -> app.py
-```
+The parser (`peg_parser.py`) uses a two-level design:
+1. **Level 1 (Python):** `_preprocess()` strips comments/blanks, `_classify_line()` uses prefix matching to determine which PEG rule applies
+2. **Level 2 (TatSu):** `_try_parse()` runs the classified PEG rule against the line text
 
-1. **Lexer**: Line-oriented. Classifies lines by keyword patterns (regex). Strips `---` comment lines and blanks. Returns `list[Token]`.
-2. **Parser**: Recursive descent. Each DSL section has a `_parse_*` method. Builds a `Program` AST node. Supports multi-word state names.
-3. **Analyzer**: Two passes - semantic validation then security invariants. Returns `CompileResult` with errors.
-4. **Lower**: Transforms validated AST into AppSpec IR. All inference happens here: name resolution, type mapping, scope resolution, verb-to-state mapping, reference display column resolution, filter type classification.
-5. **Backend**: Reads AppSpec IR and emits output. Reference backend generates FastAPI+SQLite+HTMX single-file app.
+The PEG grammar (`termin.peg`) is **authoritative** — always update it FIRST before changing the parser.
 
 ## IR (Intermediate Representation)
 
-The IR (`AppSpec` in ir.py) is immutable (`@dataclass(frozen=True)`) and fully resolved. Key types:
+The IR (`AppSpec` in ir.py) is immutable and fully resolved. Key types:
 
-- `Table` with `Column` (type, constraints, FK references)
+- `ContentSchema` (was Table) with `FieldSpec` (was Column) — `business_type` preserves semantic type
 - `AuthSpec` with `RoleSpec` (scopes)
 - `StateMachineSpec` with `TransitionSpec`
 - `RouteSpec` with resolved `RouteKind`, `target_state`, `required_scope`
-- `PageSpec` with resolved `FormField`, `FilterField`, `AggregationSpec`
-- `EventSpec` with resolved `column_mapping`
+- **Presentation v2:** `PageEntry` with `children: tuple[ComponentNode, ...]`
+  - `ComponentNode` — typed tree node: `type`, `props`, `style`, `layout`, `children`
+  - Component types: text, data_table, form, field_input, section, aggregation, stat_breakdown, chart, filter, search, highlight, subscribe, related, action_button
+  - Props use `PropValue(value, is_expr)` for JEXL expressions; bare strings for literals
+- `EventSpec` with JEXL conditions and log levels
+- `ComputeSpec`, `ChannelSpec` (Direction/Delivery intents), `BoundarySpec`
 
-Backends never need to do inference — they read pre-resolved data.
+Legacy `PageSpec` (22 flat fields) is retained for backward compat with `page_entry_to_pagespec()` shim.
 
-## Backend Protocol
+## Runtime Backend
 
-```python
-class Backend(Protocol):
-    name: str
-    def generate(self, spec: AppSpec, source_file: str = "") -> str: ...
-    def required_dependencies(self) -> list[str]: ...
-```
+The **runtime backend** is the primary target. It generates:
+1. A slim `app.py` (~24 lines) that calls `create_termin_app(IR_JSON)`
+2. A companion `.json` file containing the full IR
 
-Backends register via Python entry points (`termin.backends` group).
-
-## Testing Approach
-
-- **Unit tests** (lexer, parser, analyzer, codegen): Test each compiler stage in isolation.
-- **IR tests** (test_ir.py): Verify lowering produces correct IR for all 3 examples.
-- **E2E tests** (test_e2e.py, test_helpdesk.py, test_projectboard.py): Compile examples, import generated module, use FastAPI TestClient for in-process HTTP testing.
-- **IMPORTANT on Windows**: Never use `subprocess.Popen` with `stdout=PIPE` to start the uvicorn server — the pipe buffer fills and deadlocks. Always use `TestClient` for in-process testing.
+The `termin_runtime` package reads IR JSON directly and:
+- Creates SQLite tables from ContentSchema
+- Registers API routes from RouteSpec
+- Renders pages by walking the component tree (dispatch-table renderer)
+- Evaluates JEXL expressions (server-side via pyjexl, client-side via CDN)
+- Routes errors through TerminAtor
 
 ## DSL Grammar Quick Reference
 
@@ -130,7 +143,6 @@ Application: {name}
 
 Users authenticate with {provider}
 Scopes are "scope1", "scope2", and "scope3"
-
 A "{role}" has "scope1" and "scope2"
 
 Content called "{name}":
@@ -142,47 +154,47 @@ State for {content} called "{name}":
   A {singular} can also be "{state1}" or "{state2}"
   A {state} {singular} can become {target} if the user has "{scope}"
 
-When a {content} is {created|updated|deleted} and {condition}:
-  {action}
+When [{jexl_condition}]:       # v2 JEXL event trigger
+  Create a {content} with {fields}
+  Log level: {TRACE|DEBUG|INFO|WARN|ERROR}
 
-As a {role}, I want to {action}
-  so that {objective}:
-    Show a page called "{name}"
-    Display a table of {content} with columns: {fields}
-    Display text "{static text}"
-    Accept input for {fields}
-    ...
-
-As anonymous, I want to see a page "{name}" so that {objective}:
-  Display text "{greeting}"
+As a {role}, I want to {action} so that {objective}:
+  Show a page called "{name}"
+  Display a table of {content} with columns: {fields}
+  Display text "{literal}" | Display text [{jexl}]
+  Display count of {content} grouped by {field}    # structured aggregation
+  Display sum of [{expr}] from {content} as {format}
+  Section "{title}":                                # nesting container
+  For each {item}, show actions:                    # action buttons
+    "{Label}" transitions to "{state}" if available [, hide otherwise]
+  Accept input for {fields}
+  Allow filtering by {fields}
+  Allow searching by {fields}
 
 Compute called "{name}":
-  {Shape}: takes {content}, produces {content}
-  {body description}
+  {Shape}: takes {params}, produces {params}
+  [{jexl_body}]
   Anyone with "{scope}" can execute this
 
 Channel called "{name}":
   Carries {content}
   Direction: {inbound|outbound|bidirectional|internal}
   Delivery: {realtime|reliable|batch|auto}
-  Endpoint: {path}
-  Requires "{scope}" to {send|receive}
 
 Boundary called "{name}":
   Contains {content1}, {content2}, and {content3}
-  Identity inherits from {parent}
-  Identity restricts to "{scope}"
-
-Navigation bar:
-  "{label}" links to "{page}" visible to {roles}
-
-Expose a REST API at {path}:
-  {METHOD} {path} {description}
-
-Stream {description} at {path}
+  Exposes property "{name}" : {type} = [{jexl}]
 ```
+
+## Testing Approach
+
+- **Unit tests** (parser, analyzer): Test each compiler stage in isolation
+- **IR tests** (test_ir.py): 71 tests verifying component tree structure from all examples
+- **Runtime tests** (test_runtime.py): 19 tests for the termin_runtime package (uses pre-compiled IR dumps)
+- **E2E tests** (test_e2e.py, test_helpdesk.py, test_projectboard.py): Compile + run via FastAPI TestClient
+- **IMPORTANT on Windows**: Never use `subprocess.Popen` with `stdout=PIPE` for uvicorn — deadlocks. Always use `TestClient`.
 
 ## Related Projects
 
-- **an AWS-native Termin runtime** (enterprise internal, separate repo): enterprise's backend implementation using the Termin IR.
-- `docs/termin-primitives.md`: The full 8-primitive model (Content, Compute, Channels, Boundaries, State, Events, Identity, Presentation).
+- **Termin Studio** (sibling directory termin-studio/): React + Vite visual editor with React Flow
+- **an AWS-native Termin runtime** (enterprise internal, separate repo): enterprise's backend implementation using the Termin IR
