@@ -11,6 +11,7 @@ setup(
         # Compiler
         "click>=8.0",
         "tatsu>=5.8",
+        "lark>=1.1.0",
         # Runtime (termin_runtime)
         "fastapi>=0.100.0",
         "uvicorn>=0.23.0",

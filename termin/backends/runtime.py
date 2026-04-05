@@ -68,13 +68,27 @@ from termin_runtime import create_termin_app
 _ir_path = Path(__file__).with_suffix(".json")
 IR_JSON = _ir_path.read_text(encoding="utf-8")
 
-app = create_termin_app(IR_JSON)
+# Load seed data if a companion _seed.json exists
+_seed_path = Path(__file__).with_name(Path(__file__).stem + "_seed.json")
+_seed_data = None
+if _seed_path.exists():
+    _seed_data = json.loads(_seed_path.read_text(encoding="utf-8"))
+
+app = create_termin_app(IR_JSON, seed_data=_seed_data)
 
 if __name__ == "__main__":
     import uvicorn
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", "--port", type=int, default=8000)
+    parser.add_argument("--seed", type=str, default=None,
+                        help="Path to a JSON seed file (dict of content_name -> [records])")
     args = parser.parse_args()
+    if args.seed:
+        seed_path = Path(args.seed)
+        if seed_path.exists():
+            _seed_data = json.loads(seed_path.read_text(encoding="utf-8"))
+            # Recreate app with seed data
+            app = create_termin_app(IR_JSON, seed_data=_seed_data)
     uvicorn.run(app, host="0.0.0.0", port=args.port)
 '''
 

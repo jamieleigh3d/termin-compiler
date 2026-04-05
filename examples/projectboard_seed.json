@@ -1,0 +1,26 @@
+{
+  "projects": [
+    {"name": "Termin Compiler", "description": "Secure-by-construction application compiler", "status": "active"},
+    {"name": "Termin Studio", "description": "Visual editor for .termin files", "status": "active"},
+    {"name": "Documentation", "description": "Specs, guides, and tutorials", "status": "active"}
+  ],
+  "team_members": [
+    {"name": "Jamie", "email": "jamie@example.com", "role": "developer", "project": 1},
+    {"name": "Alex", "email": "alex@example.com", "role": "developer", "project": 1},
+    {"name": "Sam", "email": "sam@example.com", "role": "designer", "project": 2},
+    {"name": "Pat", "email": "pat@example.com", "role": "qa", "project": 1}
+  ],
+  "sprints": [
+    {"name": "Sprint 1 - Foundations", "project": 1, "goal": "Core compiler pipeline", "capacity": 40},
+    {"name": "Sprint 2 - Runtime", "project": 1, "goal": "Distributed runtime", "capacity": 35},
+    {"name": "Sprint 1 - UI", "project": 2, "goal": "React Flow canvas", "capacity": 30}
+  ],
+  "tasks": [
+    {"title": "PEG parser", "description": "Two-level PEG parser with TatSu", "project": 1, "sprint": 1, "assignee": 1, "points": 8, "priority": "high", "status": "done"},
+    {"title": "Component tree IR", "description": "Replace PageSpec with ComponentNode tree", "project": 1, "sprint": 1, "assignee": 1, "points": 13, "priority": "high", "status": "done"},
+    {"title": "WebSocket multiplexer", "description": "Realtime subscriptions via WebSocket", "project": 1, "sprint": 2, "assignee": 2, "points": 8, "priority": "high", "status": "in progress"},
+    {"title": "Client runtime (termin.js)", "description": "Vanilla JS hydration module", "project": 1, "sprint": 2, "assignee": 1, "points": 5, "priority": "medium", "status": "in progress"},
+    {"title": "Visual editor nodes", "description": "Custom React Flow nodes for all 8 primitives", "project": 2, "sprint": 3, "assignee": 3, "points": 8, "priority": "high", "status": "in sprint"},
+    {"title": "Write test suite", "description": "E2E tests for all examples", "project": 1, "sprint": 2, "assignee": 4, "points": 5, "priority": "medium", "status": "backlog"}
+  ]
+}

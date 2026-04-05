@@ -1,0 +1,18 @@
+{
+  "products": [
+    {"sku": "RM-001", "name": "Steel Sheet", "category": "raw material", "status": "active"},
+    {"sku": "RM-002", "name": "Copper Wire", "category": "raw material", "status": "active"},
+    {"sku": "FG-001", "name": "Widget A", "category": "finished good", "status": "active"},
+    {"sku": "FG-002", "name": "Widget B", "category": "finished good", "status": "draft"},
+    {"sku": "PK-001", "name": "Box Small", "category": "packaging", "status": "active"},
+    {"sku": "PK-002", "name": "Box Large", "category": "packaging", "status": "discontinued"}
+  ],
+  "stock_levels": [
+    {"product": 1, "warehouse": "Main", "quantity": 500, "reorder_threshold": 100},
+    {"product": 2, "warehouse": "Main", "quantity": 50, "reorder_threshold": 200},
+    {"product": 3, "warehouse": "Main", "quantity": 1000, "reorder_threshold": 250},
+    {"product": 3, "warehouse": "East", "quantity": 300, "reorder_threshold": 100},
+    {"product": 4, "warehouse": "Main", "quantity": 10, "reorder_threshold": 50},
+    {"product": 5, "warehouse": "Main", "quantity": 2000, "reorder_threshold": 500}
+  ]
+}

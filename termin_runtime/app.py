@@ -23,8 +23,14 @@ from .reflection import ReflectionEngine, register_reflection_with_expr_eval
 from .presentation import build_base_template, build_nav_html, build_page_template, jinja_env
 
 
-def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
-    """Create a fully configured FastAPI app from an IR JSON string."""
+def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None) -> FastAPI:
+    """Create a fully configured FastAPI app from an IR JSON string.
+
+    Args:
+        ir_json: The IR JSON string.
+        db_path: Path to the SQLite database file.
+        seed_data: Optional dict of {content_name: [record_dicts]} to seed on first run.
+    """
     ir = json.loads(ir_json)
     app_name = ir.get("name", "Termin App")
 
@@ -115,6 +121,27 @@ def create_termin_app(ir_json: str, db_path: str = None) -> FastAPI:
         print(f"[Termin] Phase 2: Expression evaluator ready")
         print(f"[Termin] Phase 3: Initializing storage")
         await init_db(schemas, db_path)
+        # Seed data if provided and tables are empty
+        if seed_data:
+            db = await get_db(db_path)
+            try:
+                for content_name, records in seed_data.items():
+                    cursor = await db.execute(f"SELECT COUNT(*) as cnt FROM {content_name}")
+                    row = await cursor.fetchone()
+                    if row["cnt"] == 0:
+                        for record in records:
+                            cols = list(record.keys())
+                            placeholders = ", ".join("?" for _ in cols)
+                            col_str = ", ".join(cols)
+                            vals = [record[k] for k in cols]
+                            await db.execute(
+                                f"INSERT INTO {content_name} ({col_str}) VALUES ({placeholders})",
+                                tuple(vals),
+                            )
+                        await db.commit()
+                        print(f"[Termin] Seeded {len(records)} records into {content_name}")
+            finally:
+                await db.close()
         print(f"[Termin] Phase 4: Registering primitives")
         print(f"[Termin] Phase 5a: Starting WebSocket forwarder")
 

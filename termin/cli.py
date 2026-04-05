@@ -117,6 +117,13 @@ def compile(source: str, output: str, backend_name: str, ir_output: str | None):
         ir_companion.write_text(backend._ir_json, encoding="utf-8")
         click.echo(f"IR written to {ir_companion.name}")
 
+    # Copy seed data file if it exists alongside the source
+    seed_source = source_path.with_name(source_path.stem + "_seed.json")
+    if seed_source.exists():
+        seed_dest = output_path.with_name(output_path.stem + "_seed.json")
+        seed_dest.write_text(seed_source.read_text(encoding="utf-8"), encoding="utf-8")
+        click.echo(f"Seed data: {seed_dest.name}")
+
     # Write requirements.txt alongside output
     req_path = output_path.parent / "requirements.txt"
     if not req_path.exists():
