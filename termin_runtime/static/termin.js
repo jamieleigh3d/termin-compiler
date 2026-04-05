@@ -49,16 +49,9 @@ async function init() {
     // Register client-safe compute functions with jexl (if available)
     registerComputes(state.bootstrap.computes || []);
 
-    // Resolve WebSocket URL
-    const boundaries = state.registry.boundaries || {};
-    const firstBoundary = Object.values(boundaries).find(b => b.channels && b.channels.realtime);
-    if (firstBoundary) {
-      state.wsUrl = firstBoundary.channels.realtime;
-    } else {
-      // Fallback: derive from current page
-      const proto = location.protocol === "https:" ? "wss:" : "ws:";
-      state.wsUrl = `${proto}//${location.host}/runtime/ws`;
-    }
+    // Derive WebSocket URL from page origin (same host)
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    state.wsUrl = `${proto}//${location.host}/runtime/ws`;
 
     // Create connection indicator
     createIndicator();
@@ -384,30 +377,12 @@ function hydrateAggregations() {
 }
 
 function hydrateForms() {
-  const forms = document.querySelectorAll("form[data-termin-component='form']");
-  for (const form of forms) {
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const formData = new FormData(form);
-      const action = form.getAttribute("action") || form.closest("[action]")?.action || window.location.pathname;
-
-      try {
-        const res = await fetch(action, {
-          method: "POST",
-          body: formData,
-          redirect: "follow",
-        });
-        if (res.redirected) {
-          window.location.href = res.url;
-        } else if (res.ok) {
-          // Reset form on success
-          form.reset();
-        }
-      } catch (err) {
-        console.error("[Termin] Form submit failed:", err.message);
-      }
-    });
-  }
+  // Don't intercept forms — let them POST normally and redirect.
+  // The server handles validation and state transitions. The redirect
+  // triggers a full page re-render with fresh data. WebSocket push
+  // updates OTHER tabs viewing the same data, not the form submitter.
+  //
+  // Future: intercept for optimistic UI or partial page updates.
 }
 
 // ── Connection Indicator ──
