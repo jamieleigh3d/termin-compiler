@@ -1056,8 +1056,12 @@
           "type": "aggregation",
           "props": {
             "source": "time_logs",
-            "label": "total time logged [sum(hours)]",
-            "agg_type": "sum"
+            "label": "total time logged",
+            "agg_type": "sum",
+            "expression": {
+              "value": "hours",
+              "is_expr": true
+            }
           },
           "style": {},
           "layout": {},

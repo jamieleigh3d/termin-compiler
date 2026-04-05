@@ -494,7 +494,8 @@ comma_item
 
 # Or-separated list: a or b
 or_list
-    = item+:words { 'or' item+:words }*
+    = item+:words_before_or { 'or' item+:words_before_or }* ['or' item+:words]
+    | item+:words
     ;
 
 # Quoted list: "a", "b", and "c" OR "a" and "b"
@@ -538,6 +539,7 @@ words_before_over = /\w+(?:\s+(?!over\b)\w+)*/ ;
 words_before_at = /\w+(?:\s+(?!at\b)\w+)*/ ;
 words_before_as = /\w+(?:\s+(?!as\b)\w+)*/ ;
 words_before_changes = /\w+(?:\s+(?!changes\b)\w+)*/ ;
+words_before_or = /\w+(?:\s+(?!or\b)\w+)*/ ;
 
 # Free text (rest of line, greedy)
 rest_of_line = /\S[^\n]*/ ;

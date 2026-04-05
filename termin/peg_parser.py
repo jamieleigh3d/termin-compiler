@@ -537,7 +537,14 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule); return ("directive", AllowFilter(fields=_cl(r.get("fields")) if r else _scal(text[20:]), line=ln))
     if rule == "allow_searching_line":
         r = P(text, rule)
-        fs = _ol(r.get("fields")) if r else [f.strip() for f in text[20:].strip().split(" or ") if f.strip()]
+        fs = _ol(r.get("fields")) if r else []
+        # Fallback: if _ol returned a single item containing " or ", split it
+        if len(fs) == 1 and " or " in fs[0]:
+            fs = [f.strip() for f in fs[0].split(" or ") if f.strip()]
+        if not fs:
+            # "Allow searching by " = 19 chars (NOT 20 — off-by-one caused "itle" from "title")
+            rest = text[len("Allow searching by "):].strip()
+            fs = [f.strip() for f in rest.split(" or ") if f.strip()]
         return ("directive", AllowSearch(fields=fs, line=ln))
     if rule == "subscribes_to_line":
         rest = text[25:].strip()

@@ -6,6 +6,8 @@ intermediate representations for all three example applications.
 
 from pathlib import Path
 
+import pytest
+
 from termin.parser import parse
 from termin.analyzer import analyze
 from termin.lower import lower
@@ -166,6 +168,21 @@ class TestWarehouseIR:
         assert status_filter.props["mode"] == "state"
         assert "draft" in status_filter.props["options"]
 
+    def test_search_fields_split_by_or(self):
+        """'Allow searching by SKU or name' must produce two separate fields, not one."""
+        dash = next(p for p in self.spec.pages if p.slug == "inventory_dashboard")
+        dt = _find_child(dash, "data_table")
+        search = _find_child(dt, "search")
+        assert search is not None, "No search component found"
+        fields = search.props["fields"]
+        assert isinstance(fields, list)
+        assert len(fields) == 2, f"Expected 2 search fields, got {fields}"
+        assert "sku" in fields
+        assert "name" in fields
+        # Ensure no field is a single character (string iteration bug)
+        for f in fields:
+            assert len(f) > 1, f"Search field '{f}' is a single character — likely string iteration bug"
+
     def test_add_product_form(self):
         add = next(p for p in self.spec.pages if p.slug == "add_product")
         form = _find_child(add, "form")
@@ -289,6 +306,15 @@ class TestProjectBoardIR:
         assert project.props["reference_content"] == "projects"
         priority = next(f for f in field_inputs if f.props["field"] == "priority")
         assert priority.props["input_type"] == "enum"
+
+    def test_search_field_not_truncated(self):
+        """'Allow searching by title' must produce ['title'], not ['itle'] or char list."""
+        board = next(p for p in self.spec.pages if p.slug == "sprint_board")
+        dt = _find_child(board, "data_table")
+        search = _find_child(dt, "search")
+        assert search is not None, "No search component on sprint board"
+        fields = search.props["fields"]
+        assert fields == ["title"], f"Expected ['title'], got {fields}"
 
     def test_seven_pages(self):
         assert len(self.spec.pages) == 7
@@ -552,6 +578,60 @@ class TestComponentTree:
         # Should have at least one aggregation or stat_breakdown
         aggs = _find_children(overview, "aggregation") + _find_children(overview, "stat_breakdown")
         assert len(aggs) >= 1
+
+
+class TestNoStringIterationBugs:
+    """Catch the class of bug where a string is iterated as characters.
+
+    When a parser returns 'title' (string) instead of ['title'] (list),
+    list comprehensions like [_snake(f) for f in fields] produce
+    ['t', 'i', 't', 'l', 'e'] instead of ['title']. These tests catch
+    single-character values in list props across ALL examples.
+    """
+
+    @pytest.mark.parametrize("name", [
+        "hello", "hello_user", "warehouse", "helpdesk", "projectboard", "compute_demo"
+    ])
+    def test_no_single_char_search_fields(self, name):
+        spec = _load_and_lower(f"{name}.termin")
+        for page in spec.pages:
+            for child in page.children:
+                if child.type == "data_table":
+                    for subchild in child.children:
+                        if subchild.type == "search":
+                            for field in subchild.props.get("fields", []):
+                                assert len(field) > 1, (
+                                    f"{name}/{page.name}: search field '{field}' is a single char "
+                                    f"(string iteration bug)"
+                                )
+
+    @pytest.mark.parametrize("name", [
+        "hello", "hello_user", "warehouse", "helpdesk", "projectboard", "compute_demo"
+    ])
+    def test_no_single_char_filter_fields(self, name):
+        spec = _load_and_lower(f"{name}.termin")
+        for page in spec.pages:
+            for child in page.children:
+                if child.type == "data_table":
+                    for subchild in child.children:
+                        if subchild.type == "filter":
+                            field = subchild.props.get("field", "")
+                            assert len(field) > 1, (
+                                f"{name}/{page.name}: filter field '{field}' is a single char"
+                            )
+
+    @pytest.mark.parametrize("name", [
+        "hello", "hello_user", "warehouse", "helpdesk", "projectboard", "compute_demo"
+    ])
+    def test_no_single_char_column_fields(self, name):
+        spec = _load_and_lower(f"{name}.termin")
+        for page in spec.pages:
+            for child in page.children:
+                if child.type == "data_table":
+                    for col in child.props.get("columns", []):
+                        assert len(col.get("field", "xx")) > 1, (
+                            f"{name}/{page.name}: column field '{col}' is a single char"
+                        )
 
 
 class TestStructuredAggregationParsing:

@@ -614,7 +614,8 @@
               "type": "search",
               "props": {
                 "fields": [
-                  "title_or_description"
+                  "title",
+                  "description"
                 ]
               },
               "style": {},
