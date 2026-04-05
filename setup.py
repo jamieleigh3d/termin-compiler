@@ -11,7 +11,6 @@ setup(
         # Compiler
         "click>=8.0",
         "tatsu>=5.8",
-        "lark>=1.1.0",
         # Runtime (termin_runtime)
         "fastapi>=0.100.0",
         "uvicorn>=0.23.0",
@@ -22,7 +21,7 @@ setup(
         "pyjexl>=0.3.0",
     ],
     package_data={
-        "termin": ["termin.peg", "grammar.lark"],
+        "termin": ["termin.peg"],
         "termin_runtime": ["static/*.js"],
     },
     entry_points={

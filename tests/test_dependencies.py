@@ -39,7 +39,6 @@ IMPORT_TO_PACKAGE = {
     "websockets": "websockets",
     "starlette": "fastapi",  # starlette comes with fastapi
     "multipart": "python-multipart",
-    "lark": "lark",
 }
 
 
