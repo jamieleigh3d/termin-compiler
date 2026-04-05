@@ -59,17 +59,4 @@ def get_backend(name: str) -> Backend:
         cls = backends[name]
         return cls()
 
-    # Fall back to built-in backends
-    if name == "fastapi":
-        from .codegen import CodeGenerator
-        # Wrap the existing codegen as a backend for backward compatibility
-        class LegacyFastApiBackend:
-            name = "fastapi"
-            def generate(self, spec: AppSpec, source_file: str = "") -> str:
-                raise NotImplementedError("Use the new pipeline via lower() + FastApiBackend")
-            def required_dependencies(self) -> list[str]:
-                return ["fastapi>=0.100.0", "uvicorn>=0.23.0", "aiosqlite>=0.19.0",
-                        "jinja2>=3.1.0", "python-multipart>=0.0.6"]
-        return LegacyFastApiBackend()
-
     raise ValueError(f"Unknown backend: {name}. Available: {list(backends.keys())}")
