@@ -1,4 +1,4 @@
-"""Tests for the an AWS-native Termin runtime semantic analyzer and security invariant checker."""
+"""Tests for the Termin semantic analyzer and security invariant checker."""
 
 from termin.parser import parse
 from termin.analyzer import analyze

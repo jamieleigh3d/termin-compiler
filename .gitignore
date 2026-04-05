@@ -12,4 +12,17 @@ venv/
 /app.py
 /*_app.py
 /app_*.py
+/_tmp_app.py
+/test_app.py
+
+# Generated companion files (root level only)
 /*_app.json
+/app.json
+/*_seed.json
+/app_seed.json
+
+# IDE
+.vscode/
+.idea/
+
+# Note: ir_dumps/*.json and examples/*_seed.json are intentionally tracked

@@ -1,4 +1,4 @@
-"""Structured error types with line numbers for the an AWS-native Termin runtime compiler."""
+"""Structured error types with line numbers for the Termin compiler."""
 
 from dataclasses import dataclass, field
 from typing import Optional

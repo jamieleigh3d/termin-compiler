@@ -534,7 +534,7 @@ def _parse_line(text: str, rule: str, ln: int):
                                                              threshold_field=rest[idx+len(op):].strip(), line=ln))
         return ("directive", HighlightRows(line=ln))
     if rule == "allow_filtering_line":
-        r = P(text, rule); return ("directive", AllowFilter(fields=_cl(r.get("fields")) if r else _scal(text[20:]), line=ln))
+        r = P(text, rule); return ("directive", AllowFilter(fields=_cl(r.get("fields")) if r else _scal(text[len("Allow filtering by "):]), line=ln))
     if rule == "allow_searching_line":
         r = P(text, rule)
         fs = _ol(r.get("fields")) if r else []
@@ -551,7 +551,7 @@ def _parse_line(text: str, rule: str, ln: int):
         if rest.endswith(" changes"): rest = rest[:-8].strip()
         return ("directive", SubscribeTo(content_name=rest, line=ln))
     if rule == "accept_input_line":
-        r = P(text, rule); return ("directive", AcceptInput(fields=_cl(r.get("fields")) if r else _scal(text[17:]), line=ln))
+        r = P(text, rule); return ("directive", AcceptInput(fields=_cl(r.get("fields")) if r else _scal(text[len("Accept input for "):]), line=ln))
     if rule == "validate_unique_line":
         rest = text[14:].strip()
         if rest.startswith("["):

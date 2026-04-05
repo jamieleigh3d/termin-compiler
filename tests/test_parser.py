@@ -1,4 +1,4 @@
-"""Tests for the an AWS-native Termin runtime parser."""
+"""Tests for the Termin parser (legacy recursive descent)."""
 
 from termin.parser import parse
 from termin.ast_nodes import *

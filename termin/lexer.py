@@ -1,6 +1,6 @@
-"""Line-oriented lexer for the an AWS-native Termin runtime DSL.
+"""Line-oriented lexer for the Termin DSL (legacy — used by parser.py).
 
-The an AWS-native Termin runtime DSL is line-structured. The lexer classifies each non-blank,
+The Termin DSL is line-structured. The lexer classifies each non-blank,
 non-comment line by its leading keyword pattern, preserving the full text
 and line number for the parser to do detailed extraction.
 """

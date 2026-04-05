@@ -1,4 +1,4 @@
-"""Tests for the an AWS-native Termin runtime lexer."""
+"""Tests for the Termin lexer (legacy line-oriented tokenizer)."""
 
 from termin.lexer import tokenize, TokenType
 

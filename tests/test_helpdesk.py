@@ -1,6 +1,6 @@
 """End-to-end tests for the Help Desk Ticket Tracker example.
 
-Validates a second an AWS-native Termin runtime application that exercises different features:
+Validates a second Termin application that exercises different features:
 - Multi-word state names ("in progress", "waiting on customer")
 - 5-state ticket lifecycle with multiple transition paths
 - Comments as related content referencing tickets

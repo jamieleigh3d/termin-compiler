@@ -1,8 +1,8 @@
-"""Semantic analysis and security invariant checking for an AWS-native Termin runtime AST.
+"""Semantic analysis and security invariant checking for Termin AST.
 
 Two-pass analysis:
 1. Semantic analysis: resolve references, validate cross-links
-2. Security invariant checks: enforce the security properties that make an AWS-native Termin runtime's argument
+2. Security invariant checks: enforce the security properties that make Termin's argument
 """
 
 from .ast_nodes import (

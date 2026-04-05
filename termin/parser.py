@@ -1,4 +1,4 @@
-"""Recursive descent parser for the an AWS-native Termin runtime DSL.
+"""Recursive descent parser for the Termin DSL (legacy — used by tests).
 
 Consumes a token stream from the lexer and builds a Program AST.
 """
