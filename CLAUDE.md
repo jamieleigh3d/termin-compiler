@@ -189,10 +189,30 @@ Boundary called "{name}":
 ## Testing Approach
 
 - **Unit tests** (parser, analyzer): Test each compiler stage in isolation
-- **IR tests** (test_ir.py): 71 tests verifying component tree structure from all examples
-- **Runtime tests** (test_runtime.py): 19 tests for the termin_runtime package (uses pre-compiled IR dumps)
+- **IR tests** (test_ir.py): 91 tests verifying component tree structure from all examples
+- **Runtime tests** (test_runtime.py): 39 tests for the termin_runtime package (uses pre-compiled IR dumps)
+- **Dependency tests** (test_dependencies.py): Scans imports via AST, verifies all third-party packages are in setup.py
+- **String iteration guards** (TestNoStringIterationBugs in test_ir.py): Parametrized across all examples — catches single-char field names from string-as-list bugs
 - **E2E tests** (test_e2e.py, test_helpdesk.py, test_projectboard.py): Compile + run via FastAPI TestClient
 - **IMPORTANT on Windows**: Never use `subprocess.Popen` with `stdout=PIPE` for uvicorn — deadlocks. Always use `TestClient`.
+- **IMPORTANT**: After parser/lowering changes, regenerate all IR dumps in ir_dumps/ — runtime tests depend on them.
+
+## Bug Investigation Workflow
+
+When a user reports a bug:
+1. **Trace the full pipeline** — check output at each stage: DSL → parser → AST → lowering → IR → renderer → HTML
+2. **Check for stale compiled artifacts** — the running app reads compiled JSON, not source code
+3. **Root cause before fixing** — find the exact line and mechanism
+4. **Write tests that catch the CLASS of error**, parametrized across all examples
+5. **Test end-to-end** — regenerate artifacts, verify rendered output, full test suite
+
+## PEG Grammar Pitfalls
+
+The `words` terminal is greedy — it consumes keywords like "or", "with", "as". Use `words_before_X` terminals with negative lookahead. Example: `words_before_or = /\w+(?:\s+(?!or\b)\w+)*/`. Never use magic numbers for string slicing in fallback paths — use `len("prefix")` instead.
+
+## Seed Data
+
+Examples can have companion `_seed.json` files (e.g., `examples/projectboard_seed.json`). The compiler copies them alongside output. The runtime auto-seeds empty tables on first run. Use `--seed custom.json` for explicit seed files.
 
 ## Related Projects
 
