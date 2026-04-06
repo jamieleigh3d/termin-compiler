@@ -1,6 +1,6 @@
 # Termin Confidentiality System — Business Requirements Document
 
-**Author:** Jamie-Leigh Blake & Claude
+**Author:** Jamie-Leigh Blake & Claude Anthropic
 **Version:** 1.0.0
 **Date:** April 2026
 **Status:** Approved for implementation

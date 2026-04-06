@@ -1,5 +1,6 @@
 # Termin Confidentiality System — Technical Specification
 
+**Author:** Jamie-Leigh Blake & Claude Anthropic
 **Version:** 1.0.0
 **Date:** April 2026
 **Status:** Draft

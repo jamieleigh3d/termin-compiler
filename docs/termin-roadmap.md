@@ -1,7 +1,7 @@
 # Termin Product Roadmap & Backlog
 
 **Last updated:** April 2026
-**Maintained by:** Jamie-Leigh Blake & Claude
+**Maintained by:** Jamie-Leigh Blake & Claude Anthropic
 
 ---
 
