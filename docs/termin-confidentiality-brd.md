@@ -128,7 +128,127 @@ If a compromised compiler produces an application that attempts to read redacted
 
 ---
 
-## 6. Acceptance Criteria
+## 6. Runtime Check Enumeration
+
+The confidentiality system performs checks at multiple points. Each catches a distinct failure mode. The checks are ordered from earliest (Channel input boundary) to latest (JEXL evaluation), forming defense in depth.
+
+### Check 1: Channel Input — Identity vs. Required Scopes (Pre-Execution Gate)
+
+**When:** A Compute invocation arrives at the input Channel boundary, before any code runs.
+
+**What:** The runtime reads the Compute's `required_confidentiality_scopes` from the IR dependency graph and checks them against the effective identity (the delegate identity for delegate mode, the service identity for service mode).
+
+**Failure mode — delegate identity lacks required scope:**
+A manager (lacking `access_salary`) invokes `CalculateBonusPool` in delegate mode. The Compute requires `access_salary`. Invocation rejected. No JEXL executes.
+
+```
+TerminAtor: confidentiality_gate_rejected
+  compute: CalculateBonusPool
+  identity: manager (delegate)
+  missing_scope: access_salary
+  action: invocation_blocked
+```
+
+**Failure mode — service identity lacks required scope:**
+A misconfigured service account invokes `CalculateBonusPool` in service mode but the service account doesn't have `access_salary`. The union check fails (service needs `access_salary` + `view_team_metrics`). Invocation rejected.
+
+```
+TerminAtor: confidentiality_gate_rejected
+  compute: CalculateBonusPool
+  identity: service:bonus-calculator
+  missing_scope: access_salary
+  action: invocation_blocked
+```
+
+### Check 2: Channel Input — Unredacted Field Integrity (Taint Violation)
+
+**When:** Data arrives at the Compute's input Channel with the on-behalf-of identity attached.
+
+**What:** The runtime inspects the incoming record. For each field with a confidentiality scope, it checks: does the on-behalf-of identity have that scope? If the on-behalf-of identity does NOT have `access_salary` but the salary field arrives **unredacted**, something upstream failed to redact — the data is tainted. The Compute must not process it, because any result would inherit the taint and be returned to someone who shouldn't have it.
+
+**Failure mode — unredacted field sent on behalf of unauthorized identity:**
+A service account sends `{ "name": "Alice", "salary": 150000 }` on behalf of a manager who lacks `access_salary`. The salary field should have been redacted before reaching this Channel, but wasn't (either a bug or a compromised upstream).
+
+```
+TerminAtor: confidentiality_taint_violation
+  compute: CalculateBonusPool
+  identity: service:bonus-calculator (on-behalf-of: manager)
+  field: salary
+  required_scope: access_salary
+  on_behalf_of_has_scope: false
+  field_redacted: false
+  action: invocation_blocked — unredacted confidential field for unauthorized delegate
+```
+
+This is the "belt and suspenders" check. If redaction happened correctly upstream, this never fires. It catches the case where a compromised or buggy component in the pipeline sent unredacted data.
+
+### Check 3: JEXL Evaluation — Redacted Field Dereference
+
+**When:** A JEXL expression accesses a field that IS correctly redacted (the `{ "__redacted": true }` marker).
+
+**What:** The JEXL evaluator encounters the redaction marker during expression evaluation. This happens when:
+- The dependency graph said the Compute uses `salary`, but the field arrived redacted (e.g., the identity check passed because the Compute is in service mode, but the data source sent already-redacted data)
+- Dynamic property access that the static analyzer couldn't trace
+
+**Failure mode — JEXL expression operates on redacted marker:**
+`[bonus_pool = sum(employees.salary * bonus_rate)]` evaluates, and `employees[0].salary` resolves to `{ "__redacted": true }`. Arithmetic on a redaction marker is meaningless.
+
+```
+TerminAtor: redacted_field_access
+  compute: CalculateBonusPool
+  expression: sum(employees.salary * bonus_rate)
+  field: employees.salary
+  redaction_scope: access_salary
+  action: expression_aborted
+```
+
+### Check 4: Output Channel — Taint Propagation Enforcement
+
+**When:** A Compute completes and its output is about to cross the output Channel boundary back to the caller.
+
+**What:** The runtime checks the output against the **on-behalf-of** identity's scopes. If the Compute ran in service mode with elevated access, the output might contain values derived from confidential fields.
+
+**Without declassification:** Output fields are checked against the input taint. Any output value that was derived from a field with confidentiality scope X is tagged with scope X. If the on-behalf-of identity lacks scope X, those output fields are redacted.
+
+**With declassification:** The `Output confidentiality` scope is checked against the on-behalf-of identity. If the identity has the output scope, the output passes through at the declared lower confidentiality.
+
+**Failure mode — undeclared confidential output:**
+A Compute accidentally includes raw salary data in its output (e.g., `{ "bonus_pool": 450000, "salaries": [150000, 300000] }`). The `salaries` field was derived from `access_salary`-scoped input. The on-behalf-of identity (manager) lacks `access_salary`. The `salaries` field is redacted in the output. The `bonus_pool` field, if the Compute declared `Output confidentiality: "view_team_metrics"`, passes through.
+
+```
+TerminAtor: output_redaction_applied
+  compute: CalculateBonusPool
+  field: salaries
+  taint_scope: access_salary
+  on_behalf_of: manager
+  action: field_redacted_in_output
+```
+
+**Failure mode — declassified output but caller lacks even the output scope:**
+A Compute declares `Output confidentiality: "view_team_metrics"` but the calling identity doesn't even have `view_team_metrics`.
+
+```
+TerminAtor: output_scope_rejected
+  compute: CalculateBonusPool
+  output_scope: view_team_metrics
+  on_behalf_of: intern
+  action: output_blocked
+```
+
+### Check Summary
+
+| # | Check Point | What It Catches | When It Fires |
+|---|------------|-----------------|---------------|
+| 1 | Channel input gate | Identity lacks required scopes | Every invocation |
+| 2 | Channel input integrity | Unredacted field for unauthorized delegate | Upstream bug or compromise |
+| 3 | JEXL evaluation | Expression accesses redacted marker | Static analysis gap or dynamic access |
+| 4 | Channel output taint | Derived values leak confidential data | Every service-mode output |
+
+Checks 1 and 4 fire on every invocation (they're the normal enforcement path). Checks 2 and 3 are defense-in-depth — they catch failures in the redaction pipeline itself, indicating either bugs or malicious behavior. A Check 2 or Check 3 firing in production should trigger investigation because it means something upstream in the pipeline is broken.
+
+---
+
+## 7. Acceptance Criteria
 
 1. A `.termin` file with `confidentiality is "access_salary"` on a field compiles without error.
 2. A Compute that accesses that field without declaring `Requires "access_salary"` fails to compile.
@@ -138,3 +258,7 @@ If a compromised compiler produces an application that attempts to read redacted
 6. Derived output inherits input confidentiality unless explicitly declassified.
 7. Declassification is visible in the IR and queryable via Reflection.
 8. Runtime JEXL evaluation of a redacted marker raises an error routed through TerminAtor.
+9. Check 1 (identity gate) blocks invocation before any JEXL executes when caller lacks required scopes.
+10. Check 2 (taint violation) blocks invocation when unredacted confidential fields arrive for an unauthorized delegate.
+11. Check 3 (redacted dereference) aborts JEXL evaluation when an expression accesses a redaction marker.
+12. Check 4 (output taint) redacts derived fields in service-mode Compute output that the delegate identity cannot see.
