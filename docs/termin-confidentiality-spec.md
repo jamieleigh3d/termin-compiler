@@ -63,7 +63,7 @@ Compute called "Calculate Bonus Pool":
 
 `Identity: service` declares that this Compute runs with elevated privileges (its own service identity, not the caller's). The service identity must hold the **union** of all `Requires` scopes AND all `Output confidentiality` scopes.
 
-`Output confidentiality: "scope_name"` is an explicit **declassification**. It declares that the output is intentionally at a lower confidentiality than the inputs. Without this declaration, output confidentiality is inherited from inputs (taint propagation).
+`Output confidentiality: "scope_name"` is an explicit **reclassification**. It declares that the output carries a different confidentiality scope than the inputs. The system does not rank scopes as higher or lower — they are simply different. Without this declaration, the entire output inherits the input taint scope and is only accessible to identities holding that scope.
 
 ### 1.5 Default Identity: Delegate
 
@@ -128,7 +128,7 @@ class ComputeSpec:
     # NEW: confidentiality
     identity_mode: str = "delegate"              # "delegate" or "service"
     required_confidentiality_scopes: tuple[str, ...] = ()  # scopes for input fields
-    output_confidentiality_scope: Optional[str] = None     # explicit declassification
+    output_confidentiality_scope: Optional[str] = None     # explicit reclassification
     field_dependencies: tuple[FieldDependency, ...] = ()   # compiler-resolved
 ```
 
@@ -143,7 +143,7 @@ class FieldDependency:
     confidentiality_scope: Optional[str] = None  # "access_salary"
 
 @dataclass(frozen=True)
-class DeclassificationPoint:
+class ReclassificationPoint:
     """Records an explicit confidentiality downgrade for audit."""
     compute_name: str                  # "Calculate Bonus Pool"
     input_scopes: tuple[str, ...]      # ("access_salary",)
@@ -157,7 +157,7 @@ class DeclassificationPoint:
 class AppSpec:
     # ... existing fields ...
     # NEW:
-    declassification_points: tuple[DeclassificationPoint, ...] = ()
+    reclassification_points: tuple[ReclassificationPoint, ...] = ()
 ```
 
 ---
@@ -237,15 +237,15 @@ scopes ["access_salary", "view_team_metrics"] but service identity
 does not declare all of them.
 ```
 
-**Step 6: Record declassification.** If `Output confidentiality` is declared and is narrower than the input confidentiality, emit a `DeclassificationPoint` in the IR.
+**Step 6: Record reclassification.** If `Output confidentiality` is declared and is narrower than the input confidentiality, emit a `ReclassificationPoint` in the IR.
 
 ### 3.4 Taint Propagation Rule
 
 **Default:** Output confidentiality = max(input field confidentialities). "Max" means the most restrictive — if any input is `access_pii`, the output is `access_pii`.
 
-**Explicit declassification:** `Output confidentiality: "lower_scope"` overrides the default. This is recorded as a `DeclassificationPoint` for audit.
+**Explicit reclassification:** `Output confidentiality: "other_scope"` overrides the default. This is recorded as a `ReclassificationPoint` for audit.
 
-**No implicit declassification.** A Compute cannot produce output at a lower confidentiality than its inputs unless explicitly declared. The compiler enforces this.
+**No implicit reclassification.** A Compute cannot produce output at a different confidentiality scope than its inputs unless explicitly declared. The compiler enforces this.
 
 ---
 
@@ -324,25 +324,34 @@ class RedactionAwareEvaluator:
 When a service-identity Compute completes, its output is checked against the **caller's** confidentiality:
 
 ```python
-def apply_output_confidentiality(output, compute_spec, caller_scopes):
-    """Ensure service Compute output doesn't leak restricted data."""
+def apply_output_confidentiality(output, compute_spec, delegate_scopes):
+    """Ensure service Compute output respects taint propagation.
+
+    The entire output is tainted at the max input confidentiality.
+    No field-by-field tracing — the whole blob carries the taint.
+    """
     output_scope = compute_spec.output_confidentiality_scope
     if output_scope:
-        # Explicit declassification — output is at declared scope
-        if output_scope not in caller_scopes:
-            # Caller can't even see the declared output scope
+        # Explicit reclassification — output carries the declared scope
+        if output_scope not in delegate_scopes:
             raise TerminError(
                 source=compute_spec.name.display,
                 kind="confidentiality",
-                message=f"Output requires scope '{output_scope}'"
+                message=f"Reclassified output requires scope '{output_scope}'"
             )
-        return output  # Output is at declared scope, caller has it
+        return output  # Delegate has the reclassified scope
 
-    # No declassification — output inherits input taint
-    # Redact any fields matching input confidentiality scopes
+    # No reclassification — entire output is at input taint scope
     for scope in compute_spec.required_confidentiality_scopes:
-        if scope not in caller_scopes:
-            output = redact_dict_recursive(output, scope)
+        if scope not in delegate_scopes:
+            # Delegate lacks the input taint scope and no
+            # reclassification was declared — block entire output
+            raise TerminError(
+                source=compute_spec.name.display,
+                kind="confidentiality",
+                message=f"Output tainted by scope '{scope}' — "
+                        f"declare Output confidentiality to reclassify"
+            )
     return output
 ```
 
@@ -406,7 +415,7 @@ The compiler produces a `confidentiality_graph` section in the IR:
         "declassifies": true
       }
     },
-    "declassification_points": [
+    "reclassification_points": [
       {
         "compute": "calculate_bonus_pool",
         "input_scopes": ["access_salary"],
@@ -433,13 +442,13 @@ This graph is:
 
 2. **No field leakage through Compute.** Compute modules cannot access redacted fields at runtime. Compile-time analysis catches missing scope declarations. Runtime JEXL guards catch anything the compiler missed.
 
-3. **No implicit declassification.** Output from Compute inherits input taint. Lowering confidentiality requires explicit DSL declaration.
+3. **No implicit reclassification.** Entire Compute output inherits input taint scope. Producing output at a different scope requires explicit DSL declaration.
 
 4. **No scope escalation through service identity.** Service identity Compute requires the union of input scopes and output scopes. The compiler verifies this.
 
 ### 7.2 Not Guaranteed
 
-1. **Side-channel inference.** A user who can see `bonus_pool` for a team of one can infer the individual's salary. Taint propagation ensures `bonus_pool` inherits `access_salary` scope by default, but explicit declassification bypasses this. The declassification is a business decision, not a technical guarantee.
+1. **Side-channel inference.** A user who can see `bonus_pool` for a team of one can infer the individual's salary. Taint propagation ensures `bonus_pool` inherits `access_salary` scope by default, but explicit reclassification bypasses this. The reclassification is a business decision, not a technical guarantee.
 
 2. **Provider behavior.** Custom Compute providers (Tier 2/3) execute opaque code. The runtime validates inputs and outputs but cannot inspect what happens inside `execute()`.
 

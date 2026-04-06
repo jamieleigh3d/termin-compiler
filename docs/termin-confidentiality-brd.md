@@ -29,9 +29,9 @@ The compiler analyzes Compute modules to determine which Content fields they acc
 
 Any value derived from a confidential field inherits that field's confidentiality. If `salary` requires `access_salary` scope, then `bonus_pool = sum(salary * rate)` also requires `access_salary` scope. This prevents information laundering through aggregation, renaming, or mathematical transformation.
 
-### 2.4 Explicit Declassification
+### 2.4 Explicit Reclassification
 
-When a Compute intentionally produces lower-confidentiality output from higher-confidentiality input (e.g., returning a team-level aggregate count from individual salary data), the DSL author must explicitly declare this. Declassification points are flagged for security review.
+When a Compute intentionally produces output at a different confidentiality scope than its inputs (e.g., returning a team-level aggregate from individual salary data), the DSL author must explicitly declare this. The system does not assign hierarchy to scopes — `access_salary` is not "higher" or "lower" than `view_team_metrics`, they are simply different scopes. Reclassification is the act of declaring that the output carries a different scope than the inputs. Without this declaration, the entire output inherits the input taint and is only accessible to identities holding the input scope. Reclassification points are flagged for security review.
 
 ---
 
@@ -59,7 +59,7 @@ The `CalculateBonusPool` Compute requires `access_salary` (because it reads sala
 
 > As a security auditor, I want assurance that a manager cannot extract individual salaries through constructed queries (team of one, bonus rate of 1.0, etc.).
 
-Taint propagation ensures that `bonus_pool` inherits `access_salary` confidentiality by default. The only way to produce output at a lower confidentiality is explicit declassification in the DSL. The declassification is logged and available for audit review. The business decision to allow aggregate access is visible in the `.termin` file, not hidden in application code.
+Taint propagation ensures that `bonus_pool` inherits `access_salary` confidentiality by default. The only way to produce output at a lower confidentiality is explicit reclassification in the DSL. The reclassification is logged and available for audit review. The business decision to allow aggregate access is visible in the `.termin` file, not hidden in application code.
 
 ### 3.5 Compiler Catches Missing Scope Declarations
 
@@ -95,8 +95,8 @@ If a compromised compiler produces an application that attempts to read redacted
 | FR-6 | Missing scope declaration on Compute is a compile error | Must |
 | FR-7 | Runtime rejects Compute invocation at Channel boundary if caller lacks required scopes | Must |
 | FR-8 | Output confidentiality defaults to maximum confidentiality of all inputs (taint propagation) | Must |
-| FR-9 | Explicit declassification syntax in DSL for Compute output | Must |
-| FR-10 | Declassification points flagged in IR for security review | Must |
+| FR-9 | Explicit reclassification syntax in DSL for Compute output | Must |
+| FR-10 | Reclassification points flagged in IR for security review | Must |
 | FR-11 | Service identity Compute must have union of required scopes AND output confidentiality scopes | Must |
 | FR-12 | Runtime JEXL evaluator detects access to redacted markers and raises error | Must |
 | FR-13 | Redacted field access errors route through TerminAtor | Must |
@@ -206,33 +206,50 @@ TerminAtor: redacted_field_access
 
 **When:** A Compute completes and its output is about to cross the output Channel boundary back to the caller.
 
-**What:** The runtime checks the output against the **on-behalf-of** identity's scopes. If the Compute ran in service mode with elevated access, the output might contain values derived from confidential fields.
+**What:** The **entire output** of a Compute inherits the maximum confidentiality of all its inputs. This is not field-by-field — the whole output blob is tainted. The runtime does not attempt to trace which output values derived from which input fields, because such tracing is both unreliable and trivially defeated by renaming fields or restructuring data.
 
-**Without declassification:** Output fields are checked against the input taint. Any output value that was derived from a field with confidentiality scope X is tagged with scope X. If the on-behalf-of identity lacks scope X, those output fields are redacted.
+The rule is simple: if a Compute consumed `access_salary`-scoped data, **everything it produces** is at `access_salary` scope. The output key names are irrelevant — `bonus_pool`, `total`, `result`, or `age` all carry the same taint regardless of what they're called.
 
-**With declassification:** The `Output confidentiality` scope is checked against the on-behalf-of identity. If the identity has the output scope, the output passes through at the declared lower confidentiality.
+**Without reclassification:** The entire output is at the input taint scope. If the on-behalf-of identity lacks that scope, the entire output is blocked. Not redacted field-by-field — blocked entirely, because every value in the output is potentially derived from the confidential input.
 
-**Failure mode — undeclared confidential output:**
-A Compute accidentally includes raw salary data in its output (e.g., `{ "bonus_pool": 450000, "salaries": [150000, 300000] }`). The `salaries` field was derived from `access_salary`-scoped input. The on-behalf-of identity (manager) lacks `access_salary`. The `salaries` field is redacted in the output. The `bonus_pool` field, if the Compute declared `Output confidentiality: "view_team_metrics"`, passes through.
+**With reclassification:** The Compute declares `Output reclassification: "view_team_metrics"`. This is the author's assertion that the output, while derived from confidential data, is intentionally being produced at a different scope. The on-behalf-of identity's scopes are checked against the reclassified output scope.
+
+**Failure mode — no reclassification, delegate lacks input scope:**
+`CalculateBonusPool` runs in service mode, consumes `access_salary` data, produces `{ "bonus_pool": 450000 }`. No reclassification declared. The entire output is at `access_salary` scope. The on-behalf-of identity (manager) lacks `access_salary`. The entire output is blocked.
 
 ```
-TerminAtor: output_redaction_applied
+TerminAtor: output_taint_blocked
   compute: CalculateBonusPool
-  field: salaries
-  taint_scope: access_salary
+  output_taint: access_salary
   on_behalf_of: manager
-  action: field_redacted_in_output
+  has_scope: false
+  reclassification: none
+  action: entire_output_blocked
 ```
 
-**Failure mode — declassified output but caller lacks even the output scope:**
-A Compute declares `Output confidentiality: "view_team_metrics"` but the calling identity doesn't even have `view_team_metrics`.
+This is correct — without explicit reclassification, the system treats the output as confidential as its inputs. The Compute author must add `Output reclassification: "view_team_metrics"` to deliberately release the aggregate.
+
+**Failure mode — reclassified output but caller lacks the reclassified scope:**
+The Compute declares `Output reclassification: "view_team_metrics"` but the on-behalf-of identity (intern) doesn't have `view_team_metrics` either.
 
 ```
 TerminAtor: output_scope_rejected
   compute: CalculateBonusPool
-  output_scope: view_team_metrics
+  reclassified_scope: view_team_metrics
   on_behalf_of: intern
   action: output_blocked
+```
+
+**Success case — reclassification with authorized delegate:**
+The Compute declares `Output reclassification: "view_team_metrics"`. The on-behalf-of identity (manager) has `view_team_metrics`. The output passes through at the reclassified scope.
+
+```
+TerminAtor: output_reclassified (TRACE)
+  compute: CalculateBonusPool
+  input_taint: access_salary
+  reclassified_to: view_team_metrics
+  on_behalf_of: manager
+  action: output_delivered
 ```
 
 ### Check Summary
@@ -242,7 +259,7 @@ TerminAtor: output_scope_rejected
 | 1 | Channel input gate | Identity lacks required scopes | Every invocation |
 | 2 | Channel input integrity | Unredacted field for unauthorized delegate | Upstream bug or compromise |
 | 3 | JEXL evaluation | Expression accesses redacted marker | Static analysis gap or dynamic access |
-| 4 | Channel output taint | Derived values leak confidential data | Every service-mode output |
+| 4 | Channel output taint | Entire output tainted by input confidentiality | Every service-mode output |
 
 Checks 1 and 4 fire on every invocation (they're the normal enforcement path). Checks 2 and 3 are defense-in-depth — they catch failures in the redaction pipeline itself, indicating either bugs or malicious behavior. A Check 2 or Check 3 firing in production should trigger investigation because it means something upstream in the pipeline is broken.
 
@@ -255,8 +272,8 @@ Checks 1 and 4 fire on every invocation (they're the normal enforcement path). C
 3. A runtime serving that application redacts the field for identities lacking `access_salary` scope.
 4. The redacted field appears as `{ "__redacted": true }` in API responses and as `[REDACTED]` in Presentation rendering.
 5. A Compute with `Identity: service` and declared scopes can process the field and return derived output.
-6. Derived output inherits input confidentiality unless explicitly declassified.
-7. Declassification is visible in the IR and queryable via Reflection.
+6. Derived output inherits input confidentiality unless explicitly reclassified.
+7. Reclassification is visible in the IR and queryable via Reflection.
 8. Runtime JEXL evaluation of a redacted marker raises an error routed through TerminAtor.
 9. Check 1 (identity gate) blocks invocation before any JEXL executes when caller lacks required scopes.
 10. Check 2 (taint violation) blocks invocation when unredacted confidential fields arrive for an unauthorized delegate.

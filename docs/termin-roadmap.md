@@ -52,7 +52,7 @@ Termin is a governed application substrate where business software is structural
 | Confidentiality enforcement at Channels | PLANNED | termin-confidentiality-spec.md | Field redaction at every Channel crossing |
 | Compile-time JEXL field dependency analysis | PLANNED | termin-confidentiality-spec.md | Scope requirement inference and validation |
 | Taint propagation for derived values | PLANNED | termin-confidentiality-spec.md | Output inherits max input confidentiality |
-| Explicit declassification syntax + audit | PLANNED | termin-confidentiality-spec.md | `Output confidentiality:` in DSL |
+| Explicit reclassification syntax + audit | PLANNED | termin-confidentiality-spec.md | `Output confidentiality:` in DSL |
 | AppSec review of runtime | PLANNED | termin-product-strategy.md | Review once, certify many |
 | Pilot application deployed | PLANNED | termin-product-strategy.md | Real team, real use, 4+ weeks |
 | Deployment manifest format | PLANNED | termin-distributed-runtime-model.md | JSON mapping boundaries to targets |
@@ -140,7 +140,7 @@ This is the ordered implementation backlog for completing Phase 0:
 | 5 | Implement `redact_record()` in runtime storage/app | Medium | #1 |
 | 6 | Implement Compute invocation gate at Channel boundary | Medium | #3, #5 |
 | 7 | Implement JEXL field dependency static analysis in compiler | Large | #2 |
-| 8 | Implement taint propagation + declassification in lowering | Medium | #7 |
+| 8 | Implement taint propagation + reclassification in lowering | Medium | #7 |
 | 9 | Add `DeclassificationPoint` to IR + Reflection | Small | #8 |
 | 10 | Implement runtime JEXL redaction guard | Medium | #5 |
 | 11 | System-defined JEXL functions (sum, count, now, etc.) | Medium | — |
