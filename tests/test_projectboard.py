@@ -50,7 +50,7 @@ def seeded(client):
     """Seed the database with a project, team, sprint, and tasks."""
     # Project
     r = client.post("/api/v1/projects", json={
-        "name": "an AWS-native Termin runtime", "description": "The compiler", "status": "active"
+        "name": "Termin", "description": "The compiler", "status": "active"
     }, cookies={"termin_role": "project manager"})
     project_id = r.json()["id"]
 

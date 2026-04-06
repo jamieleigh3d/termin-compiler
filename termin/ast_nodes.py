@@ -1,4 +1,4 @@
-"""AST node definitions for the an AWS-native Termin runtime DSL.
+"""AST node definitions for the Termin DSL.
 
 All nodes are Python dataclasses with a `line` field for error reporting.
 """

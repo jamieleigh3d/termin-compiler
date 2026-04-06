@@ -217,4 +217,4 @@ Examples can have companion `_seed.json` files (e.g., `examples/projectboard_see
 ## Related Projects
 
 - **Termin Studio** (sibling directory termin-studio/): React + Vite visual editor with React Flow
-- **an AWS-native Termin runtime** (enterprise internal, separate repo): enterprise's backend implementation using the Termin IR
+- **Seedling** (Clarity Intelligence): Autonomous AI daemon that uses Termin as its application substrate
