@@ -132,6 +132,8 @@ If a compromised compiler produces an application that attempts to read redacted
 
 The confidentiality system performs checks at multiple points. Each catches a distinct failure mode. The checks are ordered from earliest (Channel input boundary) to latest (JEXL evaluation), forming defense in depth.
 
+**Terminology note:** "On-behalf-of identity" and "delegate identity" are the same thing. Delegate is the default identity mode — the Compute runs carrying the original caller's identity. In the check descriptions below, "on-behalf-of" describes the delegate identity attached to a service-mode invocation (the service acts, but the delegate identity determines what the output can contain).
+
 ### Check 1: Channel Input — Identity vs. Required Scopes (Pre-Execution Gate)
 
 **When:** A Compute invocation arrives at the input Channel boundary, before any code runs.
