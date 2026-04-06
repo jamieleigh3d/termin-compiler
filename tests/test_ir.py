@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from termin.parser import parse
+from termin.peg_parser import parse_peg as parse
 from termin.analyzer import analyze
 from termin.lower import lower
 from termin.ir import (

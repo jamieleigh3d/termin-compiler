@@ -1,6 +1,6 @@
 """Tests for the Termin semantic analyzer and security invariant checker."""
 
-from termin.parser import parse
+from termin.peg_parser import parse_peg as parse
 from termin.analyzer import analyze
 from termin.errors import SemanticError, SecurityError
 

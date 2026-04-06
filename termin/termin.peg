@@ -139,7 +139,8 @@ verb_phrase
 # ==================================================================
 
 state_header
-    = 'State' 'for' target:words_before_called 'called' name:quoted_string ':' $
+    = 'State' 'for' prefix:('channel'|'compute'|'boundary') target:quoted_string 'called' name:quoted_string ':' $  #StatePrimitive
+    | 'State' 'for' target:words_before_called 'called' name:quoted_string ':' $                                     #StateContent
     ;
 
 state_starts_line

@@ -366,7 +366,7 @@ class TestSecurityInvariants:
         assert r.status_code == 422
 
     def test_compile_rejects_missing_access_rules(self):
-        from termin.parser import parse
+        from termin.peg_parser import parse_peg as parse
         from termin.analyzer import analyze
         source = ('Users authenticate with stub\nScopes are "read"\n'
                   'A "user" has "read"\n'
@@ -377,7 +377,7 @@ class TestSecurityInvariants:
         assert result.has_security_errors
 
     def test_compile_rejects_undefined_reference(self):
-        from termin.parser import parse
+        from termin.peg_parser import parse_peg as parse
         from termin.analyzer import analyze
         source = ('Users authenticate with stub\nScopes are "read"\n'
                   'A "user" has "read"\n'

@@ -193,8 +193,8 @@ def _parse_type_text(text: str, ln: int = 0) -> TypeExpr:
         if tl.endswith(", unique") or tl.endswith(",unique"):
             expr.unique = True; text = text[:text.lower().rfind("unique")].rstrip().rstrip(",").strip(); continue
         changed = False
-        for mk, attr in [(",minimum ", "minimum"), (", minimum ", "minimum"),
-                         (",maximum ", "maximum"), (", maximum ", "maximum")]:
+        for mk, attr in [(",maximum ", "maximum"), (", maximum ", "maximum"),
+                         (",minimum ", "minimum"), (", minimum ", "minimum")]:
             idx = tl.rfind(mk)
             if idx >= 0:
                 vt = text[idx + len(mk):].strip().rstrip(",").strip()
@@ -456,8 +456,18 @@ def _parse_line(text: str, rule: str, ln: int):
         return ("access", AccessRule(scope=sc, verbs=["view"], line=ln))
     if rule == "state_header":
         r = P(text, rule)
-        if r: tgt = str(r.get("target","")).strip(); mn = _qs(r.get("name",""))
-        else: mn = _fq(text); ci = text.find(" called "); tgt = text[10:ci].strip() if ci>=0 else ""
+        if r:
+            tgt = _qs(r.get("target",""))
+            mn = _qs(r.get("name",""))
+        else:
+            mn = _fq(text)
+            ci = text.find(" called ")
+            tgt = text[len("State for "):ci].strip() if ci >= 0 else ""
+            # Strip channel/compute/boundary prefix
+            for prefix in ("channel ", "compute ", "boundary "):
+                if tgt.startswith(prefix):
+                    tgt = tgt[len(prefix):].strip().strip('"')
+                    break
         return ("state_header", StateMachine(content_name=tgt, machine_name=mn, singular="", initial_state="", line=ln))
     if rule == "state_starts_line":
         r = P(text, rule)

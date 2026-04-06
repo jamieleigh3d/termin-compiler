@@ -6,8 +6,7 @@ import ast
 import json
 from pathlib import Path
 
-from termin.lexer import tokenize, TokenType
-from termin.parser import parse
+from termin.peg_parser import parse_peg as parse, _classify_line
 from termin.analyzer import analyze
 from termin.lower import lower
 from termin.ir import BoundaryPropertySpec
@@ -45,22 +44,16 @@ Content called "order lines":
 # Feature 1: Role Aliases
 # ============================================================
 
-class TestRoleAliasLexer:
-    def test_tokenize_role_alias(self):
-        tokens = tokenize('"clerk" is alias for "order clerk"')
-        assert tokens[0].type == TokenType.ROLE_ALIAS
+class TestRoleAliasClassification:
+    def test_classify_role_alias(self):
+        assert _classify_line('"clerk" is alias for "order clerk"') == "role_alias_line"
 
     def test_role_alias_before_role_decl(self):
-        source = '''"clerk" is alias for "order clerk"\nA "order clerk" has "read"'''
-        tokens = tokenize(source)
-        assert tokens[0].type == TokenType.ROLE_ALIAS
-        assert tokens[1].type == TokenType.ROLE_DECL
+        assert _classify_line('"clerk" is alias for "order clerk"') == "role_alias_line"
+        assert _classify_line('A "order clerk" has "read"') == "role_standard_line"
 
     def test_role_alias_multiword(self):
-        tokens = tokenize('"mgr" is alias for "order manager"')
-        assert tokens[0].type == TokenType.ROLE_ALIAS
-        assert "mgr" in tokens[0].value
-        assert "order manager" in tokens[0].value
+        assert _classify_line('"mgr" is alias for "order manager"') == "role_alias_line"
 
 
 class TestRoleAliasParser:
@@ -116,10 +109,9 @@ class TestRoleAliasAnalyzer:
 # Feature 2: Boundary Properties
 # ============================================================
 
-class TestBoundaryPropertyLexer:
-    def test_tokenize_boundary_exposes(self):
-        tokens = tokenize('  Exposes property "order count" : whole number = [orders.length]')
-        assert tokens[0].type == TokenType.BOUNDARY_EXPOSES
+class TestBoundaryPropertyClassification:
+    def test_classify_boundary_exposes(self):
+        assert _classify_line('Exposes property "order count" : whole number = [orders.length]') == "boundary_exposes_line"
 
 
 class TestBoundaryPropertyParser:
@@ -184,14 +176,12 @@ class TestBoundaryPropertyIR:
 # Feature 3: State on Non-Content Primitives
 # ============================================================
 
-class TestStateNonContentLexer:
-    def test_tokenize_state_for_channel(self):
-        tokens = tokenize('State for channel "order webhook" called "lifecycle":')
-        assert tokens[0].type == TokenType.STATE_DECL
+class TestStateNonContentClassification:
+    def test_classify_state_for_channel(self):
+        assert _classify_line('State for channel "order webhook" called "lifecycle":') == "state_header"
 
-    def test_tokenize_state_for_compute(self):
-        tokens = tokenize('State for compute "calculate total" called "execution":')
-        assert tokens[0].type == TokenType.STATE_DECL
+    def test_classify_state_for_compute(self):
+        assert _classify_line('State for compute "calculate total" called "execution":') == "state_header"
 
 
 class TestStateNonContentParser:
