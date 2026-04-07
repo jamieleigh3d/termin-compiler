@@ -738,9 +738,19 @@ def lower(program: Program) -> AppSpec:
     computes = []
     compute_by_name: dict[str, ComputeNode] = {c.name: c for c in program.computes}
     for comp in program.computes:
+        shape = SHAPE_MAP.get(comp.shape, ComputeShape.TRANSFORM)
+        # Infer client_safe: a Compute is client-safe when it has a pure JEXL
+        # body, is a TRANSFORM shape (1:1, no joins/aggregation), and has no
+        # required scope (no server-side authorization needed for evaluation).
+        # This is a conservative heuristic — false negatives are safe.
+        is_client_safe = (
+            bool(comp.body_lines)
+            and shape == ComputeShape.TRANSFORM
+            and not comp.access_scope
+        )
         computes.append(ComputeSpec(
             name=_qname(comp.name),
-            shape=SHAPE_MAP.get(comp.shape, ComputeShape.TRANSFORM),
+            shape=shape,
             input_content=tuple(_resolve_to_content(i) for i in comp.inputs),
             output_content=tuple(_resolve_to_content(o) for o in comp.outputs),
             body_lines=tuple(comp.body_lines),
@@ -754,6 +764,7 @@ def lower(program: Program) -> AppSpec:
                 ComputeParamSpec(name=p.name, type_name=p.type_name)
                 for p in comp.output_params
             ),
+            client_safe=is_client_safe,
         ))
 
     # ── Lower channels ──
