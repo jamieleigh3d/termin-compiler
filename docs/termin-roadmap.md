@@ -191,3 +191,8 @@ Restructured April 2026 to prioritize end-to-end demo completeness. Confidential
 | 2026-04-05 | Confidentiality BRD, tech spec, product roadmap | 8c7f8c4..ed469eb |
 | 2026-04-06 | Add boundary_type + client_safe to IR | 8730ef1 |
 | 2026-04-06 | JSON Schema (2020-12) + Runtime Implementer's Guide | 20de60e |
+| 2026-04-06 | A1-A3, A5-A8: State transitions, CEL functions, highlight, buttons, forms | be7ef84..b358407 |
+| 2026-04-07 | Fix action button visibility + highlight + transition endpoint | 9bc6abb..746c003 |
+| 2026-04-07 | `defaults to [expr]` with User identity object | b358407 |
+| 2026-04-07 | JEXL → CEL migration (Phases 0-3) | 297073f..417da41 |
+| 2026-04-07 | A9: Conformance test suite (206 tests, 25 categories) | 5c3c4d9 |
