@@ -403,12 +403,36 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                 @app.post(p, status_code=201, dependencies=deps)
                 async def create_route(request: Request, _cr=cr, _sm=sm_info):
                     body = await request.json()
+                    # Set initial state from state machine (API creates)
+                    # Always override — clients cannot set initial status directly
+                    if _sm:
+                        body["status"] = _sm.get("initial", "")
+                    # Evaluate default_expr for missing fields
+                    user = get_current_user(request)
+                    default_ctx = {"User": user.get("User", {}), "now": __import__("datetime").datetime.utcnow().isoformat() + "Z", "today": __import__("datetime").date.today().isoformat()}
+                    schema = content_lookup.get(_cr, {})
+                    for field_def in schema.get("fields", []):
+                        fname = field_def["name"]
+                        dexpr = field_def.get("default_expr")
+                        if dexpr and fname not in body:
+                            try:
+                                body[fname] = expr_eval.evaluate(dexpr, default_ctx)
+                            except Exception:
+                                pass
                     db = await get_db(db_path)
                     try:
-                        schema = content_lookup.get(_cr, {})
                         record = await create_record(db, _cr, body, schema, _sm, terminator, event_bus)
                         await run_event_handlers(db, _cr, "created", record)
                         return record
+                    except Exception as e:
+                        err_msg = str(e)
+                        if "UNIQUE constraint" in err_msg:
+                            raise HTTPException(status_code=409, detail=err_msg)
+                        if "NOT NULL constraint" in err_msg:
+                            raise HTTPException(status_code=400, detail=err_msg)
+                        if "no column named" in err_msg:
+                            raise HTTPException(status_code=400, detail=err_msg)
+                        raise HTTPException(status_code=500, detail=err_msg)
                     finally:
                         await db.close()
             make_create_route(path, content_ref, scope, sm_lookup.get(content_ref))
@@ -417,7 +441,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
             def make_get_route(p, cr, sc, lc):
                 deps = [Depends(require_scope(sc))] if sc else []
                 @app.get(p, dependencies=deps)
-                async def get_route(request: Request, _cr=cr, _lc=lc, **kwargs):
+                async def get_route(request: Request, _cr=cr, _lc=lc):
                     param_val = list(request.path_params.values())[0] if request.path_params else None
                     db = await get_db(db_path)
                     try:

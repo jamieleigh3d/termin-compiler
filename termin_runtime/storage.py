@@ -201,11 +201,14 @@ async def update_record(db, content_name: str, id_value, data: dict,
 
 async def delete_record(db, content_name: str, id_value,
                         lookup_col: str = "id", terminator=None, event_bus=None):
-    """Delete a record."""
-    await db.execute(
+    """Delete a record. Returns True if a record was deleted, False if not found."""
+    cursor = await db.execute(
         f'DELETE FROM {content_name} WHERE {lookup_col} = ?', (id_value,)
     )
     await db.commit()
+    if cursor.rowcount == 0:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Record not found")
     if event_bus:
         await event_bus.publish({
             "type": f"{content_name}_deleted",
