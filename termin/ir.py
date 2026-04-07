@@ -499,6 +499,7 @@ class ComputeSpec:
     required_role: Optional[str] = None   # alternative to scope
     input_params: tuple[ComputeParamSpec, ...] = ()
     output_params: tuple[ComputeParamSpec, ...] = ()
+    client_safe: bool = False             # compiler-inferred: safe to evaluate on client
 
 
 # ── Channels ──
@@ -545,6 +546,7 @@ class BoundaryPropertySpec:
 @dataclass(frozen=True)
 class BoundarySpec:
     name: QualifiedName
+    boundary_type: str = "application"               # "application", "library", "module", "configuration"
     contains_content: tuple[str, ...] = ()            # resolved snake_case table names
     contains_boundaries: tuple[str, ...] = ()        # snake_case boundary names
     identity_mode: str = "inherit"                   # "inherit" or "restrict"

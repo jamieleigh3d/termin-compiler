@@ -457,7 +457,8 @@
       "required_scope": "write orders",
       "required_role": null,
       "input_params": [],
-      "output_params": []
+      "output_params": [],
+      "client_safe": false
     },
     {
       "name": {
@@ -478,7 +479,8 @@
       "required_scope": "read orders",
       "required_role": null,
       "input_params": [],
-      "output_params": []
+      "output_params": [],
+      "client_safe": false
     },
     {
       "name": {
@@ -499,7 +501,8 @@
       "required_scope": "write orders",
       "required_role": null,
       "input_params": [],
-      "output_params": []
+      "output_params": [],
+      "client_safe": false
     },
     {
       "name": {
@@ -521,7 +524,8 @@
       "required_scope": "read orders",
       "required_role": null,
       "input_params": [],
-      "output_params": []
+      "output_params": [],
+      "client_safe": false
     },
     {
       "name": {
@@ -543,7 +547,8 @@
       "required_scope": "write orders",
       "required_role": null,
       "input_params": [],
-      "output_params": []
+      "output_params": [],
+      "client_safe": false
     }
   ],
   "channels": [
@@ -618,6 +623,7 @@
         "snake": "order_processing",
         "pascal": "OrderProcessing"
       },
+      "boundary_type": "application",
       "contains_content": [
         "orders",
         "order_lines",
@@ -634,6 +640,7 @@
         "snake": "order_reporting",
         "pascal": "OrderReporting"
       },
+      "boundary_type": "application",
       "contains_content": [
         "reports"
       ],

@@ -99,7 +99,8 @@
           "name": "greeting",
           "type_name": "Text"
         }
-      ]
+      ],
+      "client_safe": false
     }
   ],
   "channels": [],
