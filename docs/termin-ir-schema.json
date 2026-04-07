@@ -47,7 +47,7 @@
     "events": {
       "type": "array",
       "items": { "$ref": "#/$defs/EventSpec" },
-      "description": "Event rules: triggers (CRUD or JEXL conditions) that cause side-effects."
+      "description": "Event rules: triggers (CRUD or CEL conditions) that cause side-effects."
     },
     "routes": {
       "type": "array",
@@ -192,7 +192,7 @@
         "default_expr": {
           "type": ["string", "null"],
           "default": null,
-          "description": "Default value expression evaluated at record creation time. If from a JEXL expression (DSL: defaults to [expr]), this is the raw expression string (e.g., 'User.Name', '0', 'now'). If from a literal (DSL: defaults to \"text\"), this is a JEXL string literal (e.g., '\"normal\"'). The runtime evaluates this with the User object and system variables (now, today) in scope. Null means no default — the field is left empty unless provided by the caller."
+          "description": "Default value expression evaluated at record creation time. If from a CEL expression (DSL: defaults to [expr]), this is the raw expression string (e.g., 'User.Name', '0', 'now'). If from a literal (DSL: defaults to \"text\"), this is a CEL string literal (e.g., '\"normal\"'). The runtime evaluates this with the User object and system variables (now, today) in scope. Null means no default — the field is left empty unless provided by the caller."
         }
       }
     },
@@ -402,8 +402,8 @@
         },
         "trigger": {
           "type": "string",
-          "enum": ["created", "updated", "deleted", "jexl"],
-          "description": "What triggers the event. 'jexl' uses the jexl_condition expression."
+          "enum": ["created", "updated", "deleted", "expr"],
+          "description": "What triggers the event. 'expr' uses the condition_expr expression."
         },
         "condition": {
           "oneOf": [
@@ -411,7 +411,7 @@
             { "type": "null" }
           ],
           "default": null,
-          "description": "Legacy simple condition (column comparison). Null for unconditional or JEXL triggers."
+          "description": "Legacy simple condition (column comparison). Null for unconditional or CEL triggers."
         },
         "action": {
           "oneOf": [
@@ -421,10 +421,10 @@
           "default": null,
           "description": "Action to perform when the event fires."
         },
-        "jexl_condition": {
+        "condition_expr": {
           "type": ["string", "null"],
           "default": null,
-          "description": "JEXL expression evaluated against the record. Event fires when this evaluates to truthy."
+          "description": "CEL expression evaluated against the record. Event fires when this evaluates to truthy."
         },
         "log_level": {
           "type": "string",
@@ -482,7 +482,7 @@
 
     "PropValue": {
       "type": "object",
-      "description": "A JEXL expression prop. When is_expr is true, the runtime must evaluate the value as a JEXL expression against the current data context.",
+      "description": "A CEL expression prop. When is_expr is true, the runtime must evaluate the value as a CEL expression against the current data context.",
       "required": ["value", "is_expr"],
       "additionalProperties": false,
       "properties": {
@@ -509,7 +509,7 @@
         },
         "props": {
           "type": "object",
-          "description": "Component-specific properties. Values are either plain strings/numbers/booleans/arrays, or PropValue objects for JEXL expressions. See the Implementer's Guide for per-type prop documentation."
+          "description": "Component-specific properties. Values are either plain strings/numbers/booleans/arrays, or PropValue objects for CEL expressions. See the Implementer's Guide for per-type prop documentation."
         },
         "style": {
           "type": "object",
@@ -623,7 +623,7 @@
 
     "ComputeSpec": {
       "type": "object",
-      "description": "A Compute module — a pure data transformation with declared inputs, outputs, and a JEXL body. Computes are the processing primitive: they read Content, transform it, and write to Content.",
+      "description": "A Compute module — a pure data transformation with declared inputs, outputs, and a CEL body. Computes are the processing primitive: they read Content, transform it, and write to Content.",
       "required": ["name", "shape", "input_content", "output_content"],
       "additionalProperties": false,
       "properties": {
@@ -643,7 +643,7 @@
           "type": "array",
           "items": { "type": "string" },
           "default": [],
-          "description": "JEXL expression lines forming the Compute body. Evaluated server-side (or client-side if client_safe)."
+          "description": "CEL expression lines forming the Compute body. Evaluated server-side (or client-side if client_safe)."
         },
         "required_scope": {
           "type": ["string", "null"],
@@ -670,7 +670,7 @@
         "client_safe": {
           "type": "boolean",
           "default": false,
-          "description": "Compiler-inferred flag: true when the Compute's JEXL body can be safely evaluated on the client (no server-only field access, no side effects). Client runtimes may use this for optimistic local evaluation."
+          "description": "Compiler-inferred flag: true when the Compute's CEL body can be safely evaluated on the client (no server-only field access, no side effects). Client runtimes may use this for optimistic local evaluation."
         }
       }
     },
@@ -738,14 +738,14 @@
     "BoundaryPropertySpec": {
       "type": "object",
       "description": "A computed property exposed by a Boundary. Queryable via Reflection.",
-      "required": ["name", "type_name", "jexl_expr"],
+      "required": ["name", "type_name", "expr"],
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string" },
         "type_name": { "type": "string" },
-        "jexl_expr": {
+        "expr": {
           "type": "string",
-          "description": "JEXL expression evaluated against the Boundary's contained Content."
+          "description": "CEL expression evaluated against the Boundary's contained Content."
         }
       }
     },
@@ -827,10 +827,10 @@
           "default": null,
           "description": "Target Content or Channel for create/notify actions."
         },
-        "jexl_expr": {
+        "expr": {
           "type": ["string", "null"],
           "default": null,
-          "description": "JEXL expression for computed values in set/create actions."
+          "description": "CEL expression for computed values in set/create actions."
         },
         "log_level": {
           "type": ["string", "null"],
@@ -861,10 +861,10 @@
           "default": null,
           "description": "Snake_case Boundary name this handler is scoped to."
         },
-        "condition_jexl": {
+        "condition_expr": {
           "type": ["string", "null"],
           "default": null,
-          "description": "JEXL expression evaluated against the error context. Handler fires only when truthy."
+          "description": "CEL expression evaluated against the error context. Handler fires only when truthy."
         },
         "actions": {
           "type": "array",

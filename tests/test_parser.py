@@ -369,8 +369,8 @@ def test_parse_event_jexl():
   Create a reorder alert with the product, warehouse''')
     assert errors.ok, errors.format()
     ev = program.events[0]
-    assert ev.trigger == "jexl"
-    assert ev.jexl_condition == "stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold"
+    assert ev.trigger == "expr"
+    assert ev.condition_expr == "stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold"
 
 
 def test_parse_compute_jexl_body():
@@ -392,7 +392,7 @@ def test_parse_highlight_jexl():
     Highlight rows where [quantity <= threshold]''')
     assert errors.ok, errors.format()
     hl = [d for d in program.stories[0].directives if isinstance(d, HighlightRows)]
-    assert hl[0].jexl_condition == "quantity <= threshold"
+    assert hl[0].condition_expr == "quantity <= threshold"
 
 
 def test_parse_new_types():

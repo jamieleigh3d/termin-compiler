@@ -117,7 +117,7 @@ class EventRule:
     trigger: str  # "created", "updated", "deleted"
     condition: Optional[EventCondition] = None
     action: Optional[EventAction] = None
-    jexl_condition: Optional[str] = None  # v2: When [jexl]:
+    condition_expr: Optional[str] = None  # v2: When [expr]:
     log_level: Optional[str] = None  # v2: Log level: WARN
     line: int = 0
 
@@ -153,7 +153,7 @@ class HighlightRows(Directive):
     field: str = ""
     operator: str = ""
     threshold_field: str = ""
-    jexl_condition: Optional[str] = None  # v2: Highlight rows where [jexl]
+    condition_expr: Optional[str] = None  # v2: Highlight rows where [expr]
 
 
 @dataclass
@@ -179,7 +179,7 @@ class AcceptInput(Directive):
 @dataclass
 class ValidateUnique(Directive):
     field: str = ""
-    jexl_condition: Optional[str] = None  # v2: Validate that [jexl] before saving
+    condition_expr: Optional[str] = None  # v2: Validate that [expr] before saving
 
 
 @dataclass
@@ -340,7 +340,7 @@ class ChannelDecl:
 class BoundaryProperty:
     name: str
     type_name: str
-    jexl_expr: str
+    expr: str
     line: int = 0
 
 
@@ -364,7 +364,7 @@ class ErrorAction:
     retry_backoff: bool = False
     retry_max_delay: Optional[str] = None
     target: Optional[str] = None  # for disable/notify
-    jexl_expr: Optional[str] = None  # for create/notify/set
+    expr: Optional[str] = None  # for create/notify/set
     log_level: Optional[str] = None
     line: int = 0
 
@@ -372,7 +372,7 @@ class ErrorAction:
 @dataclass
 class ErrorHandler:
     source: str  # primitive name, or "" for catch-all
-    condition_jexl: Optional[str] = None  # where [expr]
+    condition_expr: Optional[str] = None  # where [expr]
     actions: list[ErrorAction] = field(default_factory=list)
     is_catch_all: bool = False
     line: int = 0

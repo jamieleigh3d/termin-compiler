@@ -379,7 +379,7 @@
   "events": [
     {
       "source_content": "stock_levels",
-      "trigger": "jexl",
+      "trigger": "expr",
       "condition": null,
       "action": {
         "target_content": "reorder_alerts",
@@ -402,7 +402,7 @@
           ]
         ]
       },
-      "jexl_condition": "stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold",
+      "condition_expr": "stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold",
       "log_level": "INFO"
     }
   ],

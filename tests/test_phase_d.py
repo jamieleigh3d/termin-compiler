@@ -131,7 +131,7 @@ class TestBoundaryPropertyParser:
         prop = bnd.properties[0]
         assert prop.name == "order count"
         assert prop.type_name == "whole number"
-        assert prop.jexl_expr == "orders.length"
+        assert prop.expr == "orders.length"
 
     def test_parse_boundary_multiple_properties(self):
         source = VALID_BASE + (
@@ -169,7 +169,7 @@ class TestBoundaryPropertyIR:
         assert isinstance(prop, BoundaryPropertySpec)
         assert prop.name == "order count"
         assert prop.type_name == "whole number"
-        assert prop.jexl_expr == "orders.length"
+        assert prop.expr == "orders.length"
 
 
 # ============================================================

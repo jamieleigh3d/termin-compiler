@@ -141,10 +141,10 @@ class EventActionSpec:
 @dataclass(frozen=True)
 class EventSpec:
     source_content: str                     # resolved snake_case
-    trigger: str                          # "created", "updated", "deleted", "jexl"
+    trigger: str                          # "created", "updated", "deleted", "expr"
     condition: Optional[EventConditionSpec] = None
     action: Optional[EventActionSpec] = None
-    jexl_condition: Optional[str] = None  # v2: JEXL expression for trigger
+    condition_expr: Optional[str] = None  # v2: JEXL expression for trigger
     log_level: str = "INFO"               # v2: TRACE, DEBUG, INFO, WARN, ERROR
 
 
@@ -541,7 +541,7 @@ class ChannelSpec:
 class BoundaryPropertySpec:
     name: str
     type_name: str
-    jexl_expr: str
+    expr: str
 
 
 @dataclass(frozen=True)
@@ -564,7 +564,7 @@ class ErrorActionSpec:
     retry_backoff: bool = False
     retry_max_delay: Optional[str] = None
     target: Optional[str] = None
-    jexl_expr: Optional[str] = None
+    expr: Optional[str] = None
     log_level: Optional[str] = None
 
 
@@ -573,7 +573,7 @@ class ErrorHandlerSpec:
     source: str  # primitive name, or "" for catch-all
     source_type: str = ""              # "content", "channel", "compute", "boundary", or ""
     boundary: Optional[str] = None     # which boundary this handler belongs to
-    condition_jexl: Optional[str] = None
+    condition_expr: Optional[str] = None
     actions: tuple['ErrorActionSpec', ...] = ()
     is_catch_all: bool = False
 

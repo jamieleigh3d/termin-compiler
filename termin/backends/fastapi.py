@@ -247,7 +247,7 @@ class FastApiBackend:
                                 target = action.get("target", "")
                                 print(f"[TerminAtor] Notifying {target} about {error.source}")
                             elif kind == "set":
-                                expr = action.get("jexl_expr", "")
+                                expr = action.get("expr", "")
                                 print(f"[TerminAtor] Setting {expr} for {error.source}")
                             log_level = action.get("log_level")
                             if log_level:
@@ -610,8 +610,8 @@ class FastApiBackend:
 
         for ev in self.spec.events:
             # JEXL-triggered events use expression evaluation
-            if ev.trigger == "jexl" and ev.jexl_condition:
-                jexl_expr = ev.jexl_condition.replace("'", "\\'")
+            if ev.trigger == "expr" and ev.condition_expr:
+                expr = ev.condition_expr.replace("'", "\\'")
                 # Build context: record fields directly + prefixed by source name
                 # so both "quantity" and "stockLevel.quantity" resolve
                 source = ev.source_content
@@ -631,7 +631,7 @@ class FastApiBackend:
                 self._w(f'        _prefixed["updated"] = True')
                 self._w(f'        _prefixed["created"] = True')
                 self._w(f'        _ctx["{camel}"] = _prefixed')
-                self._w(f"        if expr_eval.evaluate('{jexl_expr}', _ctx):")
+                self._w(f"        if expr_eval.evaluate('{expr}', _ctx):")
             elif ev.condition:
                 self._w(f'    if content_name == "{ev.source_content}" and trigger == "{ev.trigger}":')
                 left = ev.condition.left_column
@@ -1341,8 +1341,8 @@ class FastApiBackend:
                     action_dict += f', "retry_max_delay": "{a.retry_max_delay}"'
                 if a.target:
                     action_dict += f', "target": "{a.target}"'
-                if a.jexl_expr:
-                    action_dict += f', "jexl_expr": {repr(a.jexl_expr)}'
+                if a.expr:
+                    action_dict += f', "expr": {repr(a.expr)}'
                 if a.log_level:
                     action_dict += f', "log_level": "{a.log_level}"'
                 action_dict += "}"
@@ -1350,7 +1350,7 @@ class FastApiBackend:
 
             actions_str = ", ".join(actions_list)
             source = eh.source
-            condition = repr(eh.condition_jexl) if eh.condition_jexl else "None"
+            condition = repr(eh.condition_expr) if eh.condition_expr else "None"
             is_catch_all = "True" if eh.is_catch_all else "False"
 
             self._w(f'terminator.register_handler("{source}", {{')

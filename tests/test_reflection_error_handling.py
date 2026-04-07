@@ -125,7 +125,7 @@ On error from "item webhook" where [error.kind == "external"]:
         assert len(program.error_handlers) == 1
         eh = program.error_handlers[0]
         assert eh.source == "item webhook"
-        assert eh.condition_jexl == 'error.kind == "external"'
+        assert eh.condition_expr == 'error.kind == "external"'
         assert len(eh.actions) == 2
         assert eh.actions[0].kind == "retry"
         assert eh.actions[0].retry_count == 2
@@ -168,7 +168,7 @@ On error from "item webhook":
         eh = program.error_handlers[0]
         assert eh.actions[0].kind == "notify"
         assert eh.actions[0].target == "manager"
-        assert eh.actions[0].jexl_expr == "error.message"
+        assert eh.actions[0].expr == "error.message"
 
     def test_parse_multiple_handlers(self):
         source = VALID_BASE + """

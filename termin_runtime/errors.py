@@ -85,7 +85,7 @@ class TerminAtor:
                     target = action.get("target", "")
                     print(f"[TerminAtor] Notifying {target} about {error.source}")
                 elif kind == "set":
-                    expr = action.get("jexl_expr", "")
+                    expr = action.get("expr", "")
                     print(f"[TerminAtor] Setting {expr} for {error.source}")
                 log_level = action.get("log_level")
                 if log_level:

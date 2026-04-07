@@ -299,8 +299,8 @@ def lower(program: Program) -> AppSpec:
 
         # For JEXL events, try to infer source content from expression prefix
         # e.g., "stockLevel.updated" -> content "stock levels"
-        if not resolved_content and ev.jexl_condition:
-            prefix = ev.jexl_condition.split(".")[0].strip()
+        if not resolved_content and ev.condition_expr:
+            prefix = ev.condition_expr.split(".")[0].strip()
             # Convert camelCase to snake_case: "stockLevel" -> "stock_level"
             import re as _re
             camel_to_snake = _re.sub(r'([a-z])([A-Z])', r'\1_\2', prefix).lower()
@@ -352,7 +352,7 @@ def lower(program: Program) -> AppSpec:
             trigger=ev.trigger,
             condition=cond,
             action=action,
-            jexl_condition=ev.jexl_condition,
+            condition_expr=ev.condition_expr,
             log_level=ev.log_level or "INFO",
         ))
 
@@ -483,8 +483,8 @@ def lower(program: Program) -> AppSpec:
 
             elif isinstance(d, HighlightRows):
                 if cur_data_table:
-                    if d.jexl_condition:
-                        cond = PropValue(value=d.jexl_condition, is_expr=True)
+                    if d.condition_expr:
+                        cond = PropValue(value=d.condition_expr, is_expr=True)
                     else:
                         cond = PropValue(value=f".{_snake(d.field)} <= .{_snake(d.threshold_field)}", is_expr=True)
                     cur_data_table.children = cur_data_table.children + (
@@ -577,7 +577,7 @@ def lower(program: Program) -> AppSpec:
                 # Extract bracket expression if present: "total time [sum(hours)]" -> "sum(hours)"
                 import re as _re_agg
                 jexl_match = _re_agg.search(r'\[(.+?)\]', d.description)
-                jexl_expr = jexl_match.group(1) if jexl_match else None
+                expr = jexl_match.group(1) if jexl_match else None
                 # Clean label: strip bracket expression
                 clean_label = _re_agg.sub(r'\[.+?\]', '', d.description).strip()
                 if gc:
@@ -595,13 +595,13 @@ def lower(program: Program) -> AppSpec:
                             ))
                     elif "sum" in desc_lower or "value" in desc_lower:
                         props = {"source": source, "label": clean_label or d.description, "agg_type": "sum"}
-                        if jexl_expr:
+                        if expr:
                             # Extract the column from expressions like "sum(hours)" -> "hours"
-                            col_match = _re_agg.match(r'sum\((\w+)\)', jexl_expr)
+                            col_match = _re_agg.match(r'sum\((\w+)\)', expr)
                             if col_match:
                                 props["expression"] = PropValue(value=col_match.group(1), is_expr=True)
                             else:
-                                props["expression"] = PropValue(value=jexl_expr, is_expr=True)
+                                props["expression"] = PropValue(value=expr, is_expr=True)
                         children.append(ComponentNode(type="aggregation", props=props))
                     else:
                         children.append(ComponentNode(
@@ -820,7 +820,7 @@ def lower(program: Program) -> AppSpec:
             BoundaryPropertySpec(
                 name=p.name,
                 type_name=p.type_name,
-                jexl_expr=p.jexl_expr,
+                expr=p.expr,
             )
             for p in bnd.properties
         )
@@ -849,7 +849,7 @@ def lower(program: Program) -> AppSpec:
                 retry_backoff=a.retry_backoff,
                 retry_max_delay=a.retry_max_delay,
                 target=a.target,
-                jexl_expr=a.jexl_expr,
+                expr=a.expr,
                 log_level=a.log_level,
             ))
         # Infer source_type from source name
@@ -867,7 +867,7 @@ def lower(program: Program) -> AppSpec:
         error_handlers.append(ErrorHandlerSpec(
             source=eh.source,
             source_type=src_type,
-            condition_jexl=eh.condition_jexl,
+            condition_expr=eh.condition_expr,
             actions=tuple(actions),
             is_catch_all=eh.is_catch_all,
         ))

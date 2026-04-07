@@ -367,15 +367,15 @@ def _build_err_act(text, ln) -> ErrorAction:
         if rn == "ActionDisable": return ErrorAction(kind="disable", target=str(ar.get("target","")).strip(), line=ln)
         if rn == "ActionEscalate" or ar == "escalate": return ErrorAction(kind="escalate", line=ln)
         if rn == "ActionNotify": return ErrorAction(kind="notify", target=_qs(ar.get("role","")),
-                                                     jexl_expr=_qs(ar.get("expr","")), line=ln)
+                                                     expr=_qs(ar.get("expr","")), line=ln)
         if rn == "ActionCreate": return ErrorAction(kind="create", target=_qs(ar.get("name","")), line=ln)
-        if rn == "ActionSet": return ErrorAction(kind="set", jexl_expr=_qs(ar.get("expr","")), line=ln)
+        if rn == "ActionSet": return ErrorAction(kind="set", expr=_qs(ar.get("expr","")), line=ln)
     rest = text[5:].strip()
     if rest.startswith("disable "): return ErrorAction(kind="disable", target=rest[8:].strip(), line=ln)
     if rest == "escalate": return ErrorAction(kind="escalate", line=ln)
-    if rest.startswith("notify "): return ErrorAction(kind="notify", target=_fq(rest), jexl_expr=_jb(rest) or "", line=ln)
+    if rest.startswith("notify "): return ErrorAction(kind="notify", target=_fq(rest), expr=_jb(rest) or "", line=ln)
     if rest.startswith("create "): return ErrorAction(kind="create", target=_fq(rest), line=ln)
-    if rest.startswith("set "): return ErrorAction(kind="set", jexl_expr=_jb(rest) or "", line=ln)
+    if rest.startswith("set "): return ErrorAction(kind="set", expr=_jb(rest) or "", line=ln)
     return ErrorAction(kind="unknown", target=rest, line=ln)
 
 def _build_comp_shape(text) -> tuple:
@@ -495,7 +495,7 @@ def _parse_line(text: str, rule: str, ln: int):
         t = _build_trans(text, ln); return ("state_transition", t) if t else None
     if rule == "event_jexl_line":
         r = P(text, rule); j = _qs(r.get("jexl","")) if r else (_jb(text) or "")
-        return ("event_header", EventRule(content_name="", trigger="jexl", jexl_condition=j, line=ln))
+        return ("event_header", EventRule(content_name="", trigger="expr", condition_expr=j, line=ln))
     if rule == "event_v1_line":
         return ("event_header", _build_ev1(text, ln))
     if rule == "event_action_line":
@@ -516,7 +516,7 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule)
         if r: src = _qs(r.get("source","")); j = _qs(r.get("jexl","")) if r.get("jexl") else None
         else: src = _fq(text); j = _jb(text)
-        return ("error_header", ErrorHandler(source=src, condition_jexl=j, line=ln))
+        return ("error_header", ErrorHandler(source=src, condition_expr=j, line=ln))
     if rule == "error_catch_all_line":
         return ("error_header", ErrorHandler(source="", is_catch_all=True, line=ln))
     if rule == "error_retry_line":
@@ -550,7 +550,7 @@ def _parse_line(text: str, rule: str, ln: int):
         return ("directive", ShowRelated(singular=sg, related_content=af[:gi].strip(), group_by=af[gi+12:].strip(), line=ln))
     if rule == "highlight_rows_line":
         rest = text[21:].strip(); j = _jb(rest)
-        if j: return ("directive", HighlightRows(jexl_condition=j, line=ln))
+        if j: return ("directive", HighlightRows(condition_expr=j, line=ln))
         for op in (" is at or below "," is above "," is below "," is equal to "):
             idx = rest.find(op)
             if idx >= 0: return ("directive", HighlightRows(field=rest[:idx].strip(), operator=op.strip()[3:],
@@ -578,7 +578,7 @@ def _parse_line(text: str, rule: str, ln: int):
     if rule == "validate_unique_line":
         rest = text[14:].strip()
         if rest.startswith("["):
-            be = rest.find("]"); return ("directive", ValidateUnique(jexl_condition=rest[1:be].strip() if be>0 else rest[1:].strip(), line=ln))
+            be = rest.find("]"); return ("directive", ValidateUnique(condition_expr=rest[1:be].strip() if be>0 else rest[1:].strip(), line=ln))
         ii = rest.find(" is unique"); return ("directive", ValidateUnique(field=rest[:ii].strip() if ii>=0 else rest.strip(), line=ln))
     if rule == "create_as_line":
         rest = text[11:].strip(); ai = rest.rfind(" as ")
@@ -712,11 +712,11 @@ def _parse_line(text: str, rule: str, ln: int):
     if rule == "boundary_exposes_line":
         r = P(text, rule)
         if r: return ("boundary_prop", "exposes", BoundaryProperty(name=_qs(r.get("name","")),
-                          type_name=str(r.get("type_name","")).strip(), jexl_expr=_qs(r.get("jexl","")), line=ln))
+                          type_name=str(r.get("type_name","")).strip(), expr=_qs(r.get("jexl","")), line=ln))
         n = _fq(text); j = _jb(text)
         ci = text.find(":", text.find('"', text.find('"')+1)+1); ei = text.find("=")
         tn = text[ci+1:ei].strip() if ci>=0 and ei>ci else ""
-        return ("boundary_prop", "exposes", BoundaryProperty(name=n, type_name=tn, jexl_expr=j or "", line=ln))
+        return ("boundary_prop", "exposes", BoundaryProperty(name=n, type_name=tn, expr=j or "", line=ln))
     return None
 
 # --- Block assembly ---

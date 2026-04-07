@@ -126,9 +126,9 @@ class TestWarehouseIR:
     def test_events(self):
         assert len(self.spec.events) == 1
         ev = self.spec.events[0]
-        assert ev.trigger == "jexl"
-        assert ev.jexl_condition is not None
-        assert "stockLevel" in ev.jexl_condition
+        assert ev.trigger == "expr"
+        assert ev.condition_expr is not None
+        assert "stockLevel" in ev.condition_expr
         assert ev.action.target_content == "reorder_alerts"
 
     def test_routes(self):

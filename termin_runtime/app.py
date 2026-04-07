@@ -339,7 +339,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
     # ── Event handlers ──
     async def run_event_handlers(db, content_name: str, trigger: str, record: dict):
         for ev in ir.get("events", []):
-            if ev.get("trigger") == "jexl" and ev.get("jexl_condition"):
+            if ev.get("trigger") == "expr" and ev.get("condition_expr"):
                 if content_name == ev.get("source_content", ""):
                     ctx = dict(record)
                     # Add camelCase aliases
@@ -355,7 +355,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                     prefixed["created"] = True
                     ctx[camel_prefix] = prefixed
                     try:
-                        if expr_eval.evaluate(ev["jexl_condition"], ctx):
+                        if expr_eval.evaluate(ev["condition_expr"], ctx):
                             action = ev.get("action")
                             if action and action.get("column_mapping"):
                                 cols = [p[0] for p in action["column_mapping"]]
