@@ -694,6 +694,19 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                         if edit_id:
                             await update_record(db, _ft, edit_id, data, "id", terminator, event_bus)
                         else:
+                            # Auto-populate identity fields not in the form
+                            user = get_current_user(request)
+                            identity_fields = {
+                                "submitted_by", "created_by", "assigned_to",
+                                "author", "owner", "reporter", "requester",
+                            }
+                            for field_def in schema.get("fields", []):
+                                fname = field_def["name"]
+                                if (fname in identity_fields
+                                        and field_def.get("required")
+                                        and fname not in data):
+                                    data[fname] = user["profile"].get("DisplayName", user["role"])
+
                             if _sm:
                                 data["status"] = _sm.get("initial", "")
                             if _ca:
