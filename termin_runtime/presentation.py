@@ -75,8 +75,14 @@ def _render_data_table(node: dict) -> str:
         jinja_expr = _to_jinja_field(highlight_expr)
         # Replace JEXL operators with Jinja equivalents
         jinja_expr = jinja_expr.replace("||", " or ").replace("&&", " and ")
-        # Wrap in Jinja2 safe accessor: use item.get() for missing fields
-        jinja_expr = re.sub(r'item\.(\w+)', r'item.get("\1", 0)', jinja_expr)
+        # Collect all field names referenced in the expression
+        field_names = re.findall(r'item\.(\w+)', jinja_expr)
+        # Use .get() with None default so missing fields → None → comparison fails
+        jinja_expr = re.sub(r'item\.(\w+)', r'item.get("\1")', jinja_expr)
+        # Guard: only evaluate when ALL referenced fields exist on the row
+        if field_names:
+            guards = " and ".join(f'item.get("{f}") is not none' for f in set(field_names))
+            jinja_expr = f'{guards} and ({jinja_expr})'
         parts.append(f'    {{% for item in items %}}<tr class="border-t {{% if {jinja_expr} %}}bg-red-50 font-semibold{{% endif %}}" data-termin-row-id="{{{{ item.id }}}}">')
     else:
         parts.append('    {% for item in items %}<tr class="border-t" data-termin-row-id="{{ item.id }}">')
@@ -92,8 +98,9 @@ def _render_data_table(node: dict) -> str:
             label = ap.get("label", "Action")
             target = ap.get("target_state", "")
             source = props.get("source", "")
+            safe_target = target.replace(" ", "_")
             parts.append(
-                f'        <form method="post" action="/api/v1/{source}/{{{{ item.id }}}}/{target.replace(" ", "_")}" '
+                f'        <form method="post" action="/_transition/{source}/{{{{ item.id }}}}/{safe_target}" '
                 f'style="display:inline">'
                 f'<button type="submit" class="text-indigo-600 hover:text-indigo-800 text-xs">{label}</button></form>'
             )

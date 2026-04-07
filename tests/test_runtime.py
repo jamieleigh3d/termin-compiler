@@ -420,22 +420,37 @@ class TestSystemJEXLFunctions:
 class TestHighlightRendering:
     """A5: Highlight row rendering produces conditional CSS classes."""
 
-    def test_highlight_class_in_table_html(self):
-        """Warehouse inventory dashboard should render highlight conditions."""
+    def test_highlight_renders_without_error(self):
+        """Warehouse dashboard with highlight condition renders cleanly.
+        The highlight references stock_levels fields which don't exist on products,
+        so no rows should be highlighted — but it must not crash."""
         with _make_client("warehouse") as client:
             client.cookies.set("termin_role", "warehouse clerk")
             r = client.get("/inventory_dashboard")
             assert r.status_code == 200
-            assert "bg-red-50" in r.text, "Highlight CSS class should be in template"
 
     def test_highlight_with_string_comparison(self):
-        """Helpdesk uses priority == 'critical' — page should render without errors."""
+        """Helpdesk uses priority == 'critical' || 'high' — renders without errors."""
         with _make_client("helpdesk") as client:
             client.cookies.set("termin_role", "support agent")
             r = client.get("/ticket_queue")
-            # The page should render without Jinja errors (the highlight expression
-            # uses string comparisons with || which must be converted to 'or')
             assert r.status_code == 200
+
+    def test_highlight_applied_when_condition_met(self):
+        """When highlight condition fields exist and match, rows get CSS class."""
+        with _make_client("helpdesk") as client:
+            import uuid
+            client.cookies.set("termin_role", "support agent")
+            # Create a critical ticket — should be highlighted
+            client.post("/api/v1/tickets", json={
+                "title": f"Critical Bug {uuid.uuid4().hex[:4]}",
+                "description": "Test", "category": "bug",
+                "priority": "critical", "submitted_by": "tester",
+                "assigned_to": "agent1",
+            })
+            r = client.get("/ticket_queue")
+            assert r.status_code == 200
+            assert "bg-red-50" in r.text, "Critical priority row should be highlighted"
 
 
 class TestValidateUnique:

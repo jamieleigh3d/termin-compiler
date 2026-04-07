@@ -530,6 +530,40 @@
                 "field": "status",
                 "label": "status"
               }
+            ],
+            "row_actions": [
+              {
+                "type": "action_button",
+                "props": {
+                  "label": "Activate",
+                  "action": "transition",
+                  "target_state": "active",
+                  "visible_when": {
+                    "value": ".state.canTransition('active')",
+                    "is_expr": true
+                  },
+                  "unavailable_behavior": "disable"
+                },
+                "style": {},
+                "layout": {},
+                "children": []
+              },
+              {
+                "type": "action_button",
+                "props": {
+                  "label": "Discontinue",
+                  "action": "transition",
+                  "target_state": "discontinued",
+                  "visible_when": {
+                    "value": ".state.canTransition('discontinued')",
+                    "is_expr": true
+                  },
+                  "unavailable_behavior": "disable"
+                },
+                "style": {},
+                "layout": {},
+                "children": []
+              }
             ]
           },
           "style": {},

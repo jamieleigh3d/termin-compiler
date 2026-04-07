@@ -67,6 +67,9 @@ As a warehouse clerk, I want to see all products and their current stock levels
     Allow filtering by category, warehouse, and status
     Allow searching by SKU or name
     This table subscribes to stock level changes
+    For each product, show actions:
+      "Activate" transitions to "active" if available
+      "Discontinue" transitions to "discontinued" if available, hide otherwise
 
 As a warehouse clerk, I want to receive stock into the warehouse
   so that inventory levels stay accurate:

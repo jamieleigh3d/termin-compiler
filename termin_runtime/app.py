@@ -500,6 +500,24 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
             log = [e for e in log if order.get(e.get("log_level", "INFO"), 2) >= min_l]
         return log
 
+    # ── Generic transition endpoint (used by presentation action buttons) ──
+    @app.post("/_transition/{content}/{record_id}/{target_state}")
+    async def generic_transition(content: str, record_id: int, target_state: str,
+                                 request: Request):
+        """Presentation-layer transition by record ID. Converts underscores in
+        target_state back to spaces for multi-word states."""
+        target = target_state.replace("_", " ")
+        user = get_current_user(request)
+        db = await get_db(db_path)
+        try:
+            result = await do_state_transition(db, content, record_id, target, user,
+                                               sm_lookup, terminator, event_bus)
+            # Redirect back to referring page
+            referer = request.headers.get("referer", "/")
+            return RedirectResponse(url=referer, status_code=303)
+        finally:
+            await db.close()
+
     # ── SSE stream ──
     for stream in ir.get("streams", []):
         def make_sse(p):
