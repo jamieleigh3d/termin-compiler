@@ -63,7 +63,6 @@ As a warehouse clerk, I want to see all products and their current stock levels
     Show a page called "Inventory Dashboard"
     Display a table of products with columns: SKU, name, category, status
     For each product, show stock levels grouped by warehouse
-    Highlight rows where [quantity <= reorder_threshold]
     Allow filtering by category, warehouse, and status
     Allow searching by SKU or name
     This table subscribes to stock level changes

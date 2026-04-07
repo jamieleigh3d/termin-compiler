@@ -90,7 +90,7 @@ def _render_data_table(node: dict) -> str:
         key = col.get("field", "")
         parts.append(f'      <td class="px-4 py-2 text-sm" data-termin-field="{key}">{{{{ item.{key}|default("") }}}}</td>')
 
-    # Action buttons per row
+    # Action buttons per row — rendered conditionally based on state + scope
     if row_actions:
         parts.append('      <td class="px-4 py-2 text-sm space-x-1">')
         for action in row_actions:
@@ -99,11 +99,34 @@ def _render_data_table(node: dict) -> str:
             target = ap.get("target_state", "")
             source = props.get("source", "")
             safe_target = target.replace(" ", "_")
-            parts.append(
-                f'        <form method="post" action="/_transition/{source}/{{{{ item.id }}}}/{safe_target}" '
-                f'style="display:inline">'
-                f'<button type="submit" class="text-indigo-600 hover:text-indigo-800 text-xs">{label}</button></form>'
-            )
+            behavior = ap.get("unavailable_behavior", "disable")
+
+            # Build Jinja conditions:
+            # 1. Is (current_status, target_state) a valid transition?
+            # 2. Does the user hold the required scope for this transition?
+            # _sm_transitions is a dict of {(from,to): scope} injected into context
+            valid_check = f'(item.get("status",""), "{target}") in _sm_transitions'
+            scope_check = f'_sm_transitions.get((item.get("status",""), "{target}"), "") in user_scopes or _sm_transitions.get((item.get("status",""), "{target}"), "") == ""'
+
+            if behavior == "hide":
+                # Hide: don't render the button at all when transition unavailable
+                parts.append(f'        {{% if {valid_check} and ({scope_check}) %}}')
+                parts.append(
+                    f'        <form method="post" action="/_transition/{source}/{{{{ item.id }}}}/{safe_target}" '
+                    f'style="display:inline">'
+                    f'<button type="submit" class="text-indigo-600 hover:text-indigo-800 text-xs">{label}</button></form>')
+                parts.append(f'        {{% endif %}}')
+            else:
+                # Disable (default): render grayed-out button when unavailable
+                parts.append(f'        {{% if {valid_check} and ({scope_check}) %}}')
+                parts.append(
+                    f'        <form method="post" action="/_transition/{source}/{{{{ item.id }}}}/{safe_target}" '
+                    f'style="display:inline">'
+                    f'<button type="submit" class="text-indigo-600 hover:text-indigo-800 text-xs">{label}</button></form>')
+                parts.append(f'        {{% else %}}')
+                parts.append(
+                    f'        <button disabled class="text-gray-400 text-xs cursor-not-allowed">{label}</button>')
+                parts.append(f'        {{% endif %}}')
         parts.append('      </td>')
 
     parts.append('    </tr>{% endfor %}</tbody></table>')

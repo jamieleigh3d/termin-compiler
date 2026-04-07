@@ -111,9 +111,11 @@ class TestAPIRoutes:
             assert isinstance(r.json(), list)
 
     def test_create_route(self):
+        import uuid
         with _make_client("warehouse") as client:
             r = client.post("/api/v1/products", json={
-                "sku": "RT-001", "name": "Runtime Test", "category": "raw material"
+                "sku": f"RT-{uuid.uuid4().hex[:6]}", "name": "Runtime Test",
+                "category": "raw material",
             })
             assert r.status_code == 201
 
@@ -451,6 +453,56 @@ class TestHighlightRendering:
             r = client.get("/ticket_queue")
             assert r.status_code == 200
             assert "bg-red-50" in r.text, "Critical priority row should be highlighted"
+
+
+class TestActionButtonVisibility:
+    """Action buttons must disable/hide based on state machine and user scope."""
+
+    def _create_product(self, client, status="draft"):
+        import uuid
+        sku = uuid.uuid4().hex[:6]
+        client.cookies.set("termin_role", "warehouse manager")
+        r = client.post("/api/v1/products", json={
+            "sku": sku, "name": f"Test {sku}", "category": "raw material",
+            "unit_cost": 10.0,
+        })
+        assert r.status_code == 201
+        pid = r.json()["id"]
+        if status != "draft":
+            r2 = client.post(f"/_transition/products/{pid}/active")
+        return sku, pid
+
+    def test_draft_product_shows_activate_enabled(self):
+        """A draft product should show an enabled Activate button."""
+        with _make_client("warehouse") as client:
+            self._create_product(client)
+            client.cookies.set("termin_role", "warehouse manager")
+            r = client.get("/inventory_dashboard")
+            assert r.status_code == 200
+            # Should have an enabled Activate button (not disabled)
+            assert "Activate</button></form>" in r.text
+
+    def test_active_product_disables_activate(self):
+        """An active product should show Activate as disabled."""
+        with _make_client("warehouse") as client:
+            sku, pid = self._create_product(client)
+            # Transition to active
+            client.post(f"/_transition/products/{pid}/active")
+            client.cookies.set("termin_role", "warehouse manager")
+            r = client.get("/inventory_dashboard")
+            assert r.status_code == 200
+            # There should be a disabled Activate button somewhere
+            assert 'disabled' in r.text
+
+    def test_executive_sees_disabled_buttons(self):
+        """Executive lacks write inventory scope — buttons should be disabled."""
+        with _make_client("warehouse") as client:
+            self._create_product(client)
+            client.cookies.set("termin_role", "executive")
+            r = client.get("/inventory_dashboard")
+            assert r.status_code == 200
+            # Executive can't transition, so all action buttons should be disabled
+            assert 'cursor-not-allowed' in r.text
 
 
 class TestValidateUnique:

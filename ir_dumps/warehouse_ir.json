@@ -581,18 +581,6 @@
               "children": []
             },
             {
-              "type": "highlight",
-              "props": {
-                "condition": {
-                  "value": "quantity <= reorder_threshold",
-                  "is_expr": true
-                }
-              },
-              "style": {},
-              "layout": {},
-              "children": []
-            },
-            {
               "type": "filter",
               "props": {
                 "field": "category",

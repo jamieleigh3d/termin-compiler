@@ -630,6 +630,11 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                 q = request.query_params.get("q", "")
                 db = await get_db(db_path)
                 try:
+                    # Build merged transition dict for action button rendering
+                    all_transitions = {}
+                    for sm_content, sm_data in sm_lookup.items():
+                        all_transitions.update(sm_data.get("transitions", {}))
+
                     ctx = {
                         "page_title": _pg["name"],
                         "current_role": user["role"],
@@ -638,6 +643,8 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                         "roles": list(roles.keys()),
                         "q": q,
                         "termin_compute_js": _compute_js,
+                        "_sm_transitions": all_transitions,
+                        "user_scopes": set(user["scopes"]),
                     }
 
                     # Load data sources (data_table, aggregations)
