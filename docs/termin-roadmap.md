@@ -15,7 +15,7 @@ Termin is a governed application substrate where business software is structural
 
 ### Phase 0: Proof of Architecture (Current — Q2 2026)
 
-**Status:** In progress. Core pipeline working. Real-time subscriptions working. Cleaning up legacy code.
+**Status:** In progress. Core pipeline and real-time subscriptions working. Legacy code removed. IR schema and implementer's guide published. Focus shifting to end-to-end demo completeness.
 
 | Item | Status | Source Doc | Notes |
 |------|--------|-----------|-------|
@@ -35,6 +35,8 @@ Termin is a governed application substrate where business software is structural
 | **System-defined JEXL functions** | **PLANNED** | termin-appserver-and-ecosystem-v2.md | sum(), count(), now(), identity.has_scope() |
 | `boundary_type` in registry response | DONE | termin-appserver-and-ecosystem-v2.md | Forward compat: application/library/module/configuration |
 | `client_safe` flag on ComputeSpec | DONE | termin-distributed-runtime-model.md | Added to IR; inference logic pending |
+| JSON Schema (draft 2020-12) for IR | DONE | termin-ir-schema.json | Machine-readable contract, validated against all examples |
+| Runtime Implementer's Guide | DONE | termin-runtime-implementers-guide.md | Companion to schema for building conforming runtimes |
 | `maximum` constraint in PEG grammar | DONE | — | Fixed iteration order bug |
 | `State for channel/compute` in PEG parser | DONE | — | Fixed prefix stripping |
 
@@ -131,25 +133,44 @@ Termin is a governed application substrate where business software is structural
 
 ## Immediate Priority Queue (Next 4-6 Weeks)
 
-This is the ordered implementation backlog for completing Phase 0:
+Restructured April 2026 to prioritize end-to-end demo completeness. Confidentiality system deferred to a later block after working demos prove the architecture.
+
+### Block A: End-to-End Demo Completeness
+
+| # | Item | Effort | Notes |
+|---|------|--------|-------|
+| A1 | State transition scope-gating in runtime | Medium | Runtime rejects transitions caller lacks scope for. Needed for any real demo. |
+| A2 | System-defined JEXL functions (sum, count, now, identity.has_scope) | Medium | Required for aggregation expressions and visibility conditions. |
+| A3 | `client_safe` inference logic in compiler | Small | Analyze Compute bodies to set the flag (pure field access = safe). |
+| A4 | Richer example app (helpdesk or HR) demonstrating all primitives | Medium | Should use Content, Compute, Channel, Boundary, State, Events, Presentation. |
+| A5 | Highlight row rendering in presentation | Small | JEXL condition per-row → CSS class. Already in IR, renderer missing. |
+| A6 | Related data display in presentation | Small | JOIN query + grouped rendering. Already in IR, renderer missing. |
+| A7 | `validate_unique` on form field_input | Small | Server-side check before insert, 409 on conflict. |
+| A8 | After-save navigation (`after_save` prop on form) | Small | Redirect to target page after successful create. |
+| A9 | Conformance test suite seed (20+ tests) | Medium | Cover Tier 1: identity, state machine, access control, field validation. |
+
+### Block B: Confidentiality System
 
 | # | Item | Effort | Depends On |
 |---|------|--------|------------|
-| 1 | Add `confidentiality_scope` to FieldSpec + ContentSchema in IR | Small | — |
-| 2 | Add `confidentiality is` to PEG grammar + parser + lowering | Medium | #1 |
-| 3 | Add `Identity: service/delegate` to Compute DSL + IR | Small | — |
-| 4 | Add `Output confidentiality:` to Compute DSL + IR | Small | #3 |
-| 5 | Implement `redact_record()` in runtime storage/app | Medium | #1 |
-| 6 | Implement Compute invocation gate at Channel boundary | Medium | #3, #5 |
-| 7 | Implement JEXL field dependency static analysis in compiler | Large | #2 |
-| 8 | Implement taint propagation + reclassification in lowering | Medium | #7 |
-| 9 | Add `DeclassificationPoint` to IR + Reflection | Small | #8 |
-| 10 | Implement runtime JEXL redaction guard | Medium | #5 |
-| 11 | System-defined JEXL functions (sum, count, now, etc.) | Medium | — |
-| 12 | State transition scope-gating | Medium | — |
-| 13 | Boundary isolation enforcement | Large | — |
-| 14 | Conformance test suite (20+ tests) | Medium | #5, #6, #12, #13 |
-| 15 | Add example with confidentiality (HR app or medical records) | Small | #2, #5 |
+| B1 | Add `confidentiality_scope` to FieldSpec + ContentSchema in IR | Small | — |
+| B2 | Add `confidentiality is` to PEG grammar + parser + lowering | Medium | B1 |
+| B3 | Add `Identity: service/delegate` to Compute DSL + IR | Small | — |
+| B4 | Add `Output confidentiality:` to Compute DSL + IR | Small | B3 |
+| B5 | Implement `redact_record()` in runtime storage/app | Medium | B1 |
+| B6 | Implement Compute invocation gate at Channel boundary | Medium | B3, B5 |
+| B7 | Implement JEXL field dependency static analysis in compiler | Large | B2 |
+| B8 | Implement taint propagation + reclassification in lowering | Medium | B7 |
+| B9 | Add `ReclassificationPoint` to IR + Reflection | Small | B8 |
+| B10 | Implement runtime JEXL redaction guard | Medium | B5 |
+| B11 | Add example with confidentiality (HR app or medical records) | Small | B2, B5 |
+
+### Block C: Boundary Enforcement
+
+| # | Item | Effort | Notes |
+|---|------|--------|-------|
+| C1 | Boundary isolation enforcement | Large | Data only crosses Boundaries through Channels |
+| C2 | Cross-boundary identity propagation | Medium | Identity flows through delegate mode Boundaries |
 
 ---
 
@@ -167,3 +188,6 @@ This is the ordered implementation backlog for completing Phase 0:
 | 2026-04-05 | Remove old codegen.py (1,744 lines) | 81063bc |
 | 2026-04-05 | Remove legacy lexer + parser (1,466 lines) | 61dbbb8 |
 | 2026-04-05 | Fix PEG gaps: maximum constraint, State for channel | 61dbbb8 |
+| 2026-04-05 | Confidentiality BRD, tech spec, product roadmap | 8c7f8c4..ed469eb |
+| 2026-04-06 | Add boundary_type + client_safe to IR | 8730ef1 |
+| 2026-04-06 | JSON Schema (2020-12) + Runtime Implementer's Guide | 20de60e |
