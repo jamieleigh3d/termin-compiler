@@ -54,12 +54,19 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
     # Content schemas for storage
     schemas = []
     content_lookup = {}  # snake_name -> schema dict
-    sm_lookup = {}  # content_ref -> state machine
+    sm_lookup = {}  # content_ref -> {"initial": str, "transitions": {(from,to): scope}}
     for cs in ir.get("content", []):
         schemas.append(cs)
         content_lookup[cs["name"]["snake"]] = cs
     for sm in ir.get("state_machines", []):
-        sm_lookup[sm["content_ref"]] = sm
+        # Normalize transitions array into {(from, to): scope} dict
+        trans_dict = {}
+        for t in sm.get("transitions", []):
+            trans_dict[(t["from_state"], t["to_state"])] = t.get("required_scope", "")
+        sm_lookup[sm["content_ref"]] = {
+            "initial": sm.get("initial_state", ""),
+            "transitions": trans_dict,
+        }
 
     # Access grants for scope lookup
     def scope_for_content_verb(content_snake, verb):
@@ -450,8 +457,9 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
             make_delete_route(path, content_ref, scope, lookup_col)
 
         elif kind == "TRANSITION":
-            def make_transition_route(p, cr, lc, ts):
-                @app.post(p)
+            def make_transition_route(p, cr, sc, lc, ts):
+                deps = [Depends(require_scope(sc))] if sc else []
+                @app.post(p, dependencies=deps)
                 async def transition_route(request: Request, _cr=cr, _lc=lc, _ts=ts):
                     param_val = list(request.path_params.values())[0] if request.path_params else None
                     user = get_current_user(request)
@@ -461,11 +469,10 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                         row = await cursor.fetchone()
                         if not row:
                             raise HTTPException(status_code=404)
-                        sm = sm_lookup.get(_cr, {})
-                        return await do_state_transition(db, _cr, row["id"], _ts, user, sm, terminator)
+                        return await do_state_transition(db, _cr, row["id"], _ts, user, sm_lookup, terminator, event_bus)
                     finally:
                         await db.close()
-            make_transition_route(path, content_ref, lookup_col, target_state)
+            make_transition_route(path, content_ref, scope, lookup_col, target_state)
 
     # ── Reflection + Error + Events endpoints ──
     @app.get("/api/reflect")
@@ -641,7 +648,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                             await update_record(db, _ft, edit_id, data, "id", terminator, event_bus)
                         else:
                             if _sm:
-                                data["status"] = _sm.get("initial_state", "")
+                                data["status"] = _sm.get("initial", "")
                             if _ca:
                                 data["status"] = _ca
                             await create_record(db, _ft, data, schema, _sm, terminator, event_bus)
