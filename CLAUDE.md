@@ -69,6 +69,8 @@ docs/
   termin-primitives.md      # The 8 Termin primitives
   termin-presentation-ir-spec-v2.md  # Component tree IR spec
   termin-distributed-runtime-model.md  # Distributed runtime architecture
+  termin-ir-schema.json     # JSON Schema (2020-12) — machine-readable IR contract
+  termin-runtime-implementers-guide.md  # How to build a Termin runtime from the schema
 setup.py                    # Package config, entry_points -> termin CLI
 ```
 

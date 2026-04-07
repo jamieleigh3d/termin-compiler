@@ -33,8 +33,8 @@ Termin is a governed application substrate where business software is structural
 | **State transition scope-gating** | **PLANNED** | termin-product-strategy.md | Runtime rejects transitions caller's identity doesn't permit |
 | **Conformance test suite seed** | **PLANNED** | termin-product-strategy.md | 10-20 tests covering Tier 1 guarantees |
 | **System-defined JEXL functions** | **PLANNED** | termin-appserver-and-ecosystem-v2.md | sum(), count(), now(), identity.has_scope() |
-| `boundary_type` in registry response | PLANNED | termin-appserver-and-ecosystem-v2.md | Forward compat: application/library/module/configuration |
-| `client_safe` flag on ComputeSpec | PLANNED | termin-distributed-runtime-model.md | Compiler infers from shape + field access |
+| `boundary_type` in registry response | DONE | termin-appserver-and-ecosystem-v2.md | Forward compat: application/library/module/configuration |
+| `client_safe` flag on ComputeSpec | DONE | termin-distributed-runtime-model.md | Added to IR; inference logic pending |
 | `maximum` constraint in PEG grammar | DONE | — | Fixed iteration order bug |
 | `State for channel/compute` in PEG parser | DONE | — | Fixed prefix stripping |
 
@@ -123,6 +123,8 @@ Termin is a governed application substrate where business software is structural
 | `termin-confidentiality-brd.md` | Business requirements for field redaction + taint propagation | Approved |
 | `termin-confidentiality-spec.md` | Technical spec: DSL syntax, IR changes, compiler analysis, runtime enforcement | Draft |
 | `termin-roadmap.md` | This document — backlog, priorities, implementation order | Living document |
+| `termin-ir-schema.json` | JSON Schema (draft 2020-12) for the IR — machine-readable contract | Current |
+| `termin-runtime-implementers-guide.md` | How to build a conforming Termin runtime from the IR schema | Current |
 | `UI-testing.md` | Manual and automated UI testing guide | Current |
 
 ---
