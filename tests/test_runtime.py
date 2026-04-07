@@ -354,6 +354,69 @@ class TestEventBusChannels:
         asyncio.get_event_loop().run_until_complete(_test())
 
 
+class TestSystemJEXLFunctions:
+    """System-defined JEXL transforms available via pipe syntax."""
+
+    def test_aggregation_sum(self):
+        from termin_runtime.expression import ExpressionEvaluator
+        ev = ExpressionEvaluator()
+        assert ev.evaluate("items|sum", {"items": [1, 2, 3]}) == 6
+
+    def test_aggregation_avg(self):
+        from termin_runtime.expression import ExpressionEvaluator
+        ev = ExpressionEvaluator()
+        assert ev.evaluate("items|avg", {"items": [10, 20, 30]}) == 20
+
+    def test_aggregation_count(self):
+        from termin_runtime.expression import ExpressionEvaluator
+        ev = ExpressionEvaluator()
+        assert ev.evaluate("items|count", {"items": [1, 2, 3]}) == 3
+
+    def test_temporal_now_context(self):
+        """'now' is a context variable injected fresh each call."""
+        from termin_runtime.expression import ExpressionEvaluator
+        ev = ExpressionEvaluator()
+        result = ev.evaluate("now")
+        assert result.endswith("Z")
+        assert "T" in result
+
+    def test_temporal_days_between(self):
+        from termin_runtime.expression import ExpressionEvaluator
+        ev = ExpressionEvaluator()
+        # pyjexl resolves literal args but not variable refs in transform args
+        result = ev.evaluate("a|daysBetween('2026-01-10')", {"a": "2026-01-01"})
+        assert result == 9
+
+    def test_string_uppercase(self):
+        from termin_runtime.expression import ExpressionEvaluator
+        ev = ExpressionEvaluator()
+        assert ev.evaluate("s|uppercase", {"s": "hello"}) == "HELLO"
+
+    def test_math_clamp(self):
+        from termin_runtime.expression import ExpressionEvaluator
+        ev = ExpressionEvaluator()
+        assert ev.evaluate("n|clamp(0, 100)", {"n": 150}) == 100
+        assert ev.evaluate("n|clamp(0, 100)", {"n": -5}) == 0
+        assert ev.evaluate("n|clamp(0, 100)", {"n": 50}) == 50
+
+    def test_collection_unique(self):
+        from termin_runtime.expression import ExpressionEvaluator
+        ev = ExpressionEvaluator()
+        assert ev.evaluate("items|unique", {"items": [1, 2, 2, 3, 3]}) == [1, 2, 3]
+
+    def test_transforms_in_comparison(self):
+        """Transforms work inside larger expressions with comparisons."""
+        from termin_runtime.expression import ExpressionEvaluator
+        ev = ExpressionEvaluator()
+        result = ev.evaluate("items|count > 2", {"items": [1, 2, 3]})
+        assert result is True
+
+    def test_string_length(self):
+        from termin_runtime.expression import ExpressionEvaluator
+        ev = ExpressionEvaluator()
+        assert ev.evaluate("s|length", {"s": "hello"}) == 5
+
+
 class TestStateTransitionScopeGating:
     """State transitions must enforce required_scope from the state machine."""
 
