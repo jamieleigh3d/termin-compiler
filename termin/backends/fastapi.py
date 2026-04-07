@@ -1,5 +1,10 @@
 """FastAPI backend: AppSpec (IR) -> single Python file (app.py).
 
+DEPRECATED: This backend generates standalone code that still uses pyjexl
+for expression evaluation. The runtime backend (termin_runtime) has migrated
+to CEL (cel-python). This backend is maintained for backward compatibility
+only and will be removed in a future version.
+
 Reads all data from the fully-resolved AppSpec intermediate representation.
 No AST inference is needed -- every name, scope, column mapping, and
 reference display column is already resolved in the IR.

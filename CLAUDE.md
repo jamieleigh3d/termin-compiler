@@ -42,7 +42,7 @@ termin_runtime/             # Runtime package — reads IR JSON, serves the app
   app.py                    # FastAPI app factory from IR JSON (~400 lines)
   presentation.py           # Component tree renderer (dispatch table of Jinja2 renderers)
   storage.py                # SQLite schema creation + generic CRUD
-  expression.py             # Server-side JEXL evaluator (pyjexl)
+  expression.py             # Server-side CEL evaluator (cel-python)
   errors.py                 # TerminAtor error router
   events.py                 # EventBus with async queues and log levels
   identity.py               # Role/scope resolution from cookies
@@ -118,8 +118,8 @@ The IR (`AppSpec` in ir.py) is immutable and fully resolved. Key types:
 - **Presentation v2:** `PageEntry` with `children: tuple[ComponentNode, ...]`
   - `ComponentNode` — typed tree node: `type`, `props`, `style`, `layout`, `children`
   - Component types: text, data_table, form, field_input, section, aggregation, stat_breakdown, chart, filter, search, highlight, subscribe, related, action_button
-  - Props use `PropValue(value, is_expr)` for JEXL expressions; bare strings for literals
-- `EventSpec` with JEXL conditions and log levels
+  - Props use `PropValue(value, is_expr)` for CEL expressions; bare strings for literals
+- `EventSpec` with CEL conditions and log levels
 - `ComputeSpec`, `ChannelSpec` (Direction/Delivery intents), `BoundarySpec`
 
 Legacy `PageSpec` (22 flat fields) is retained for backward compat with `page_entry_to_pagespec()` shim.
@@ -134,7 +134,7 @@ The `termin_runtime` package reads IR JSON directly and:
 - Creates SQLite tables from ContentSchema
 - Registers API routes from RouteSpec
 - Renders pages by walking the component tree (dispatch-table renderer)
-- Evaluates JEXL expressions (server-side via pyjexl, client-side via CDN)
+- Evaluates CEL expressions (server-side via cel-python, client-side via CDN)
 - Routes errors through TerminAtor
 
 ## DSL Grammar Quick Reference
@@ -156,14 +156,14 @@ State for {content} called "{name}":
   A {singular} can also be "{state1}" or "{state2}"
   A {state} {singular} can become {target} if the user has "{scope}"
 
-When [{jexl_condition}]:       # v2 JEXL event trigger
+When [{condition_expr}]:       # v2 CEL event trigger
   Create a {content} with {fields}
   Log level: {TRACE|DEBUG|INFO|WARN|ERROR}
 
 As a {role}, I want to {action} so that {objective}:
   Show a page called "{name}"
   Display a table of {content} with columns: {fields}
-  Display text "{literal}" | Display text [{jexl}]
+  Display text "{literal}" | Display text [{cel}]
   Display count of {content} grouped by {field}    # structured aggregation
   Display sum of [{expr}] from {content} as {format}
   Section "{title}":                                # nesting container
@@ -175,7 +175,7 @@ As a {role}, I want to {action} so that {objective}:
 
 Compute called "{name}":
   {Shape}: takes {params}, produces {params}
-  [{jexl_body}]
+  [{cel_body}]
   Anyone with "{scope}" can execute this
 
 Channel called "{name}":
@@ -185,7 +185,7 @@ Channel called "{name}":
 
 Boundary called "{name}":
   Contains {content1}, {content2}, and {content3}
-  Exposes property "{name}" : {type} = [{jexl}]
+  Exposes property "{name}" : {type} = [{cel}]
 ```
 
 ## Testing Approach

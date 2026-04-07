@@ -65,19 +65,19 @@ Taint propagation ensures that `bonus_pool` inherits `access_salary` confidentia
 
 > As a developer writing a Compute module, I want the compiler to tell me if I forgot to declare required scopes, so that I don't create a runtime security hole.
 
-The compiler analyzes the JEXL body, traces field access, resolves confidentiality requirements, and compares against the Compute's declared scope requirements. If a Compute accesses `salary` (which requires `access_salary`) but doesn't declare `Requires "access_salary"`, the compiler emits an error and refuses to compile.
+The compiler analyzes the CEL body, traces field access, resolves confidentiality requirements, and compares against the Compute's declared scope requirements. If a Compute accesses `salary` (which requires `access_salary`) but doesn't declare `Requires "access_salary"`, the compiler emits an error and refuses to compile.
 
 ### 3.6 Runtime Blocks Unauthorized Compute Invocation
 
 > As a runtime operator, I want the system to reject unauthorized Compute invocations at the Channel boundary, before any code executes.
 
-When a manager (lacking `access_salary`) attempts to invoke `CalculateBonusPool` in delegate mode, the runtime checks the Compute's required scopes against the caller's identity at the Channel boundary. The invocation is rejected with a TerminAtor error before any JEXL evaluates. The error is logged for audit.
+When a manager (lacking `access_salary`) attempts to invoke `CalculateBonusPool` in delegate mode, the runtime checks the Compute's required scopes against the caller's identity at the Channel boundary. The invocation is rejected with a TerminAtor error before any CEL evaluates. The error is logged for audit.
 
 ### 3.7 Malicious App Detected and Terminated
 
 > As a platform operator, I want the runtime to detect and terminate applications that attempt to access redacted fields at runtime, even if the compile-time checks were bypassed.
 
-If a compromised compiler produces an application that attempts to read redacted field values at runtime, the JEXL evaluator encounters the redaction marker and raises a `RedactedFieldAccess` error. This error routes through TerminAtor, is logged with full context (identity, Compute, field, timestamp), and can trigger application termination if the violation pattern indicates malicious intent.
+If a compromised compiler produces an application that attempts to read redacted field values at runtime, the CEL evaluator encounters the redaction marker and raises a `RedactedFieldAccess` error. This error routes through TerminAtor, is logged with full context (identity, Compute, field, timestamp), and can trigger application termination if the violation pattern indicates malicious intent.
 
 ---
 
@@ -90,7 +90,7 @@ If a compromised compiler produces an application that attempts to read redacted
 | FR-1 | Content fields can declare a confidentiality scope in the DSL | Must |
 | FR-2 | Records crossing Channel boundaries have restricted fields redacted | Must |
 | FR-3 | Redacted fields use a marker (`__redacted: true`) preserving schema shape | Must |
-| FR-4 | Compiler traces field access in Compute JEXL bodies | Must |
+| FR-4 | Compiler traces field access in Compute CEL bodies | Must |
 | FR-5 | Compiler enforces scope declarations match field confidentiality | Must |
 | FR-6 | Missing scope declaration on Compute is a compile error | Must |
 | FR-7 | Runtime rejects Compute invocation at Channel boundary if caller lacks required scopes | Must |
@@ -98,7 +98,7 @@ If a compromised compiler produces an application that attempts to read redacted
 | FR-9 | Explicit reclassification syntax in DSL for Compute output | Must |
 | FR-10 | Reclassification points flagged in IR for security review | Must |
 | FR-11 | Service identity Compute must have union of required scopes AND output confidentiality scopes | Must |
-| FR-12 | Runtime JEXL evaluator detects access to redacted markers and raises error | Must |
+| FR-12 | Runtime CEL evaluator detects access to redacted markers and raises error | Must |
 | FR-13 | Redacted field access errors route through TerminAtor | Must |
 | FR-14 | Default identity mode for all Compute is delegate | Must |
 | FR-15 | Service identity is opt-in via DSL declaration | Must |
@@ -130,7 +130,7 @@ If a compromised compiler produces an application that attempts to read redacted
 
 ## 6. Runtime Check Enumeration
 
-The confidentiality system performs checks at multiple points. Each catches a distinct failure mode. The checks are ordered from earliest (Channel input boundary) to latest (JEXL evaluation), forming defense in depth.
+The confidentiality system performs checks at multiple points. Each catches a distinct failure mode. The checks are ordered from earliest (Channel input boundary) to latest (CEL evaluation), forming defense in depth.
 
 **Terminology note:** "On-behalf-of identity" and "delegate identity" are the same thing. Delegate is the default identity mode — the Compute runs carrying the original caller's identity. In the check descriptions below, "on-behalf-of" describes the delegate identity attached to a service-mode invocation (the service acts, but the delegate identity determines what the output can contain).
 
@@ -141,7 +141,7 @@ The confidentiality system performs checks at multiple points. Each catches a di
 **What:** The runtime reads the Compute's `required_confidentiality_scopes` from the IR dependency graph and checks them against the effective identity (the delegate identity for delegate mode, the service identity for service mode).
 
 **Failure mode — delegate identity lacks required scope:**
-A manager (lacking `access_salary`) invokes `CalculateBonusPool` in delegate mode. The Compute requires `access_salary`. Invocation rejected. No JEXL executes.
+A manager (lacking `access_salary`) invokes `CalculateBonusPool` in delegate mode. The Compute requires `access_salary`. Invocation rejected. No CEL executes.
 
 ```
 TerminAtor: confidentiality_gate_rejected
@@ -184,15 +184,15 @@ TerminAtor: confidentiality_taint_violation
 
 This is the "belt and suspenders" check. If redaction happened correctly upstream, this never fires. It catches the case where a compromised or buggy component in the pipeline sent unredacted data.
 
-### Check 3: JEXL Evaluation — Redacted Field Dereference
+### Check 3: CEL Evaluation — Redacted Field Dereference
 
-**When:** A JEXL expression accesses a field that IS correctly redacted (the `{ "__redacted": true }` marker).
+**When:** A CEL expression accesses a field that IS correctly redacted (the `{ "__redacted": true }` marker).
 
-**What:** The JEXL evaluator encounters the redaction marker during expression evaluation. This happens when:
+**What:** The CEL evaluator encounters the redaction marker during expression evaluation. This happens when:
 - The dependency graph said the Compute uses `salary`, but the field arrived redacted (e.g., the identity check passed because the Compute is in service mode, but the data source sent already-redacted data)
 - Dynamic property access that the static analyzer couldn't trace
 
-**Failure mode — JEXL expression operates on redacted marker:**
+**Failure mode — CEL expression operates on redacted marker:**
 `[bonus_pool = sum(employees.salary * bonus_rate)]` evaluates, and `employees[0].salary` resolves to `{ "__redacted": true }`. Arithmetic on a redaction marker is meaningless.
 
 ```
@@ -260,7 +260,7 @@ TerminAtor: output_reclassified (TRACE)
 |---|------------|-----------------|---------------|
 | 1 | Channel input gate | Identity lacks required scopes | Every invocation |
 | 2 | Channel input integrity | Unredacted field for unauthorized delegate | Upstream bug or compromise |
-| 3 | JEXL evaluation | Expression accesses redacted marker | Static analysis gap or dynamic access |
+| 3 | CEL evaluation | Expression accesses redacted marker | Static analysis gap or dynamic access |
 | 4 | Channel output taint | Entire output tainted by input confidentiality | Every service-mode output |
 
 Checks 1 and 4 fire on every invocation (they're the normal enforcement path). Checks 2 and 3 are defense-in-depth — they catch failures in the redaction pipeline itself, indicating either bugs or malicious behavior. A Check 2 or Check 3 firing in production should trigger investigation because it means something upstream in the pipeline is broken.
@@ -276,8 +276,8 @@ Checks 1 and 4 fire on every invocation (they're the normal enforcement path). C
 5. A Compute with `Identity: service` and declared scopes can process the field and return derived output.
 6. Derived output inherits input confidentiality unless explicitly reclassified.
 7. Reclassification is visible in the IR and queryable via Reflection.
-8. Runtime JEXL evaluation of a redacted marker raises an error routed through TerminAtor.
-9. Check 1 (identity gate) blocks invocation before any JEXL executes when caller lacks required scopes.
+8. Runtime CEL evaluation of a redacted marker raises an error routed through TerminAtor.
+9. Check 1 (identity gate) blocks invocation before any CEL executes when caller lacks required scopes.
 10. Check 2 (taint violation) blocks invocation when unredacted confidential fields arrive for an unauthorized delegate.
-11. Check 3 (redacted dereference) aborts JEXL evaluation when an expression accesses a redaction marker.
+11. Check 3 (redacted dereference) aborts CEL evaluation when an expression accesses a redaction marker.
 12. Check 4 (output taint) redacts derived fields in service-mode Compute output that the delegate identity cannot see.

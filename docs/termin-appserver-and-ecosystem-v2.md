@@ -461,7 +461,7 @@ Channel called "payment processing":
 
 Every conformant Termin runtime ships with these providers, requiring no registration:
 
-**Compute:** JEXL (the default — if no `Provider is` line appears, compute bodies are JEXL expressions)
+**Compute:** CEL (the default — if no `Provider is` line appears, compute bodies are CEL expressions)
 
 **Channels:** HTTP/REST, WebSocket, Internal (intra-boundary, zero-copy)
 
@@ -589,7 +589,7 @@ On cloud deployments: IAM role assumption with session tags recording the origin
 
 ## 7. System-Defined Functions
 
-The runtime provides a standard library of JEXL functions available in any expression without declaration:
+The runtime provides a standard library of CEL functions available in any expression without declaration:
 
 **Aggregation:** `sum()`, `avg()`, `min()`, `max()`, `count()`
 
@@ -605,7 +605,7 @@ The runtime provides a standard library of JEXL functions available in any expre
 
 **Reflection:** `reflect.content_types()`, `reflect.state_of()`, `reflect.channel_status()`
 
-These are baked into the JEXL expression evaluator. They are part of the runtime spec. The conformance test suite validates that every compliant runtime implements them correctly.
+These are baked into the CEL expression evaluator. They are part of the runtime spec. The conformance test suite validates that every compliant runtime implements them correctly.
 
 Custom Compute providers can register additional functions, but those functions are namespaced under the provider name and only available within Compute nodes that use that provider. System-defined functions are global.
 
@@ -631,7 +631,7 @@ The agent's tools, in the LLM tool-calling sense, are exactly the runtime's exis
 | `event.create(name, payload)` | Event subsystem | Fire an Event |
 | `channel.send(name, payload)` | Channel subsystem | Send through a Channel |
 | `reflect.*` | Reflection | Any Reflection query |
-| `termin.shell(expression)` | Expression Evaluator | Evaluate arbitrary JEXL |
+| `termin.shell(expression)` | Expression Evaluator | Evaluate arbitrary CEL |
 
 The agent doesn't get a special API. It gets the same API that `termin shell` uses, that the dashboard app uses through Reflection, that any Compute node uses internally. The security model doesn't change. The observability model doesn't change.
 
@@ -741,9 +741,9 @@ The difference is scope and triggers, not a different primitive type.
 |-----------|-----------|----------|------------|-------------|----------------------|---------------------|
 | **Category** | Declarative application platform | Declarative full-stack framework | Deployless backend language | Cloud-native programming language | Enterprise low-code platform | Internal tool builder |
 | **Core thesis** | Business intent compiles to secure applications. Security is topological. | Reduce full-stack boilerplate via DSL generating React + Node + Prisma | Eliminate deployment and infrastructure from backend dev | Network-aware type system for cloud integration | Visual drag-and-drop for rapid enterprise apps | Pre-built components + data connectors for internal dashboards |
-| **DSL / Language** | External DSL — English-like, ~80 reserved words, zero programming syntax. Expressions use JEXL. | External DSL + JS/TS for business logic. Config-like syntax for wiring. | Full functional language (F#-based). Statically typed, immutable. | Full language (C-like). Network primitives in type system. | Proprietary visual modeling language. | No DSL — JS/SQL in drag-and-drop IDE. |
+| **DSL / Language** | External DSL — English-like, ~80 reserved words, zero programming syntax. Expressions use CEL. | External DSL + JS/TS for business logic. Config-like syntax for wiring. | Full functional language (F#-based). Statically typed, immutable. | Full language (C-like). Network primitives in type system. | Proprietary visual modeling language. | No DSL — JS/SQL in drag-and-drop IDE. |
 | **Who writes** | AI (Seedling) or a PM | Developers (React/Node) | Developers learning a new language | Developers (Java/Go background) | Citizen devs (visual) + pro devs | Developers (SQL + JS) |
-| **Security model** | Structural: Boundaries enforce isolation, Channels enforce data flow, Identity scopes gate every operation, JEXL sandbox prevents injection | Conventional: developer-managed, auth built-in | Immutability helps, no structural guarantees | Taint checking, type-safe network calls | Platform RBAC, enterprise certs (SOC 2, ISO 27001) | Component RBAC, SQL injection possible |
+| **Security model** | Structural: Boundaries enforce isolation, Channels enforce data flow, Identity scopes gate every operation, CEL sandbox prevents injection | Conventional: developer-managed, auth built-in | Immutability helps, no structural guarantees | Taint checking, type-safe network calls | Platform RBAC, enterprise certs (SOC 2, ISO 27001) | Component RBAC, SQL injection possible |
 | **State machines** | First-class, scope-gated transitions | Manual (implement in JS) | None | Planned (workflow support) | Visual process modeler | None |
 | **Multi-app composition** | Application Server with typed, scoped Channels and boundary-path namespace | Single-app model | Single-app model | Network primitives but separate runtimes | App marketplace, inter-app via APIs | Separate apps via APIs |
 | **Extensibility** | Registered Compute and Channel providers at any boundary level | npm packages | Standard library | Module system | Marketplace extensions | Plugin ecosystem |

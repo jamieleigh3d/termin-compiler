@@ -32,7 +32,7 @@ Termin is a governed application substrate where business software is structural
 | **Boundary isolation enforcement** | **PLANNED** | termin-appserver-and-ecosystem-v2.md | Cross-boundary data only through declared Channels |
 | **State transition scope-gating** | **PLANNED** | termin-product-strategy.md | Runtime rejects transitions caller's identity doesn't permit |
 | **Conformance test suite seed** | **PLANNED** | termin-product-strategy.md | 10-20 tests covering Tier 1 guarantees |
-| **System-defined JEXL functions** | **PLANNED** | termin-appserver-and-ecosystem-v2.md | sum(), count(), now(), identity.has_scope() |
+| **System-defined CEL functions** | **PLANNED** | termin-appserver-and-ecosystem-v2.md | sum(), count(), now(), identity.has_scope() |
 | `boundary_type` in registry response | DONE | termin-appserver-and-ecosystem-v2.md | Forward compat: application/library/module/configuration |
 | `client_safe` flag on ComputeSpec | DONE | termin-distributed-runtime-model.md | Added to IR; inference logic pending |
 | JSON Schema (draft 2020-12) for IR | DONE | termin-ir-schema.json | Machine-readable contract, validated against all examples |
@@ -52,7 +52,7 @@ Termin is a governed application substrate where business software is structural
 | PostgreSQL storage adapter | PLANNED | termin-product-strategy.md | Replace SQLite for production workloads |
 | `termin deploy` CLI command | PLANNED | termin-product-strategy.md | Package and deploy to target environment |
 | Confidentiality enforcement at Channels | PLANNED | termin-confidentiality-spec.md | Field redaction at every Channel crossing |
-| Compile-time JEXL field dependency analysis | PLANNED | termin-confidentiality-spec.md | Scope requirement inference and validation |
+| Compile-time CEL field dependency analysis | PLANNED | termin-confidentiality-spec.md | Scope requirement inference and validation |
 | Taint propagation for derived values | PLANNED | termin-confidentiality-spec.md | Output inherits max input confidentiality |
 | Explicit reclassification syntax + audit | PLANNED | termin-confidentiality-spec.md | `Output confidentiality:` in DSL |
 | AppSec review of runtime | PLANNED | termin-product-strategy.md | Review once, certify many |
@@ -140,7 +140,7 @@ Restructured April 2026 to prioritize end-to-end demo completeness. Confidential
 | # | Item | Effort | Subsystems | Design Doc |
 |---|------|--------|------------|------------|
 | A1 | State transition scope-gating in runtime | Medium | runtime | primitives.md § State; implementers-guide.md § 4 State Machines |
-| A2 | System-defined JEXL functions (sum, count, now, identity.has_scope) | Medium | runtime, compiler | appserver-v2.md § 7 System-Defined Functions |
+| A2 | System-defined CEL functions (sum, count, now, identity.has_scope) | Medium | runtime, compiler | appserver-v2.md § 7 System-Defined Functions |
 | A3 | `client_safe` inference logic in compiler | Small | compiler | distributed-runtime.md § 3 Client-Side Compute |
 | A4 | Richer example app (helpdesk or HR) demonstrating all primitives | Medium | examples | presentation-ir-v2.md § DSL to IR Examples |
 | A5 | Highlight row rendering in presentation | Small | runtime (presentation) | presentation-ir-v2.md § Data Table Sub-Components (highlight) |
@@ -159,10 +159,10 @@ Restructured April 2026 to prioritize end-to-end demo completeness. Confidential
 | B4 | Add `Output confidentiality:` to Compute DSL + IR | Small | compiler, IR | confidentiality-spec.md § 1 DSL Syntax (output_confidentiality) |
 | B5 | Implement `redact_record()` in runtime | Medium | runtime (storage, app) | confidentiality-spec.md § 4 Runtime Changes; BRD § 6 Check 1 |
 | B6 | Implement Compute invocation gate at Channel boundary | Medium | runtime (app) | confidentiality-spec.md § 4 Runtime Changes; BRD § 6 Check 2 |
-| B7 | Implement JEXL field dependency static analysis | Large | compiler (analyzer) | confidentiality-spec.md § 3 Compiler Static Analysis |
+| B7 | Implement CEL field dependency static analysis | Large | compiler (analyzer) | confidentiality-spec.md § 3 Compiler Static Analysis |
 | B8 | Implement taint propagation + reclassification in lowering | Medium | compiler (lower) | confidentiality-spec.md § 3 Compiler Static Analysis |
 | B9 | Add `ReclassificationPoint` to IR + Reflection | Small | IR, runtime | confidentiality-spec.md § 2 IR Changes |
-| B10 | Implement runtime JEXL redaction guard | Medium | runtime (expression) | confidentiality-spec.md § 4 Runtime Changes; BRD § 6 Check 3 |
+| B10 | Implement runtime CEL redaction guard | Medium | runtime (expression) | confidentiality-spec.md § 4 Runtime Changes; BRD § 6 Check 3 |
 | B11 | Add example with confidentiality (HR app or medical records) | Small | examples | confidentiality-BRD.md § 4 User Stories |
 
 ### Block C: Boundary Enforcement

@@ -15,7 +15,7 @@ The grammar prioritizes:
 - **Determinism over flexibility.** Each construct has one way to express it. The compiler never guesses intent.
 - **Declarative over imperative.** You describe what the application does, not how it does it.
 - **Accessibility over grammatical purity.** The DSL is not English. It uses English-like structure but does not require perfect English grammar. Non-native speakers should not be disadvantaged. Articles (`a`/`an`) are interchangeable and never cause a parse error.
-- **Expressions are code, not prose.** All executable expressions, conditions, and Compute bodies use JEXL syntax inside square brackets `[]`. Natural language is for declarations and structure. JEXL is for logic.
+- **Expressions are code, not prose.** All executable expressions, conditions, and Compute bodies use CEL syntax inside square brackets `[]`. Natural language is for declarations and structure. CEL is for logic.
 
 ---
 
@@ -54,20 +54,20 @@ Comments are enclosed in parentheses `()`. They may appear on their own line or 
 Users authenticate with stub (Inline comment here.)
 ```
 
-Comments cannot appear inside square brackets. Inside square brackets, use JEXL comment syntax: `//` for line comments.
+Comments cannot appear inside square brackets. Inside square brackets, use CEL comment syntax: `//` for line comments.
 
-### Expressions (JEXL Blocks)
+### Expressions (CEL Blocks)
 
-All executable expressions, conditions, and Compute bodies are enclosed in square brackets `[]`. Content inside square brackets is parsed as JEXL, not as Termin DSL.
+All executable expressions, conditions, and Compute bodies are enclosed in square brackets `[]`. Content inside square brackets is parsed as CEL, not as Termin DSL.
 
 ```
 Display text [SayHelloTo(LoggedInUser.CurrentUser)]
 greeting = [u.FirstName + " " + u.LastName]
 ```
 
-This cleanly separates comments `()` from function calls `[]`. Parentheses are always comments. Square brackets are always JEXL expressions.
+This cleanly separates comments `()` from function calls `[]`. Parentheses are always comments. Square brackets are always CEL expressions.
 
-Inside square brackets, JEXL syntax applies: `//` for line comments, `/* */` for block comments, standard JS-like operators and property access.
+Inside square brackets, CEL syntax applies: `//` for line comments, `/* */` for block comments, standard JS-like operators and property access.
 
 ### String Literals
 
@@ -265,10 +265,10 @@ State for <primitive-name> called "<state-machine-name>":
 
 ```
 <article> "<state>" <entity> can become "<state>" if the user has "<scope>"
-<article> "<state>" <entity> can become "<state>" if [<jexl-condition>]
+<article> "<state>" <entity> can become "<state>" if [<cel-condition>]
 ```
 
-The pattern `if the user has "<scope>"` is syntactic sugar that the compiler expands to a scope check. For complex conditions, use JEXL in square brackets.
+The pattern `if the user has "<scope>"` is syntactic sugar that the compiler expands to a scope check. For complex conditions, use CEL in square brackets.
 
 The word `again` may optionally appear for re-entry transitions.
 
@@ -287,11 +287,11 @@ State for channel "order webhook" called "webhook lifecycle":
 ## Events
 
 ```
-When [<jexl-trigger-condition>]:
+When [<cel-trigger-condition>]:
   <action>
 ```
 
-The trigger condition is a JEXL expression in square brackets. This ensures deterministic parsing regardless of how the condition is phrased.
+The trigger condition is a CEL expression in square brackets. This ensures deterministic parsing regardless of how the condition is phrased.
 
 ```
 When [stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold]:
@@ -309,7 +309,7 @@ The action line remains in Termin DSL syntax.
 ```
 Compute called "<name>":
   <shape declaration>
-  [<jexl body>]
+  [<cel body>]
   <access rule>
 ```
 
@@ -331,9 +331,9 @@ Transform: takes u : UserProfile, produces greeting : Text
 Transform: takes order : "orders", produces total : currency
 ```
 
-### Compute Body — JEXL Only
+### Compute Body — CEL Only
 
-All Compute bodies are JEXL expressions inside square brackets. Natural language Compute bodies are **not supported** — they are non-deterministic and fragile in practice.
+All Compute bodies are CEL expressions inside square brackets. Natural language Compute bodies are **not supported** — they are non-deterministic and fragile in practice.
 
 ```
 Compute called "SayHelloTo":
@@ -347,7 +347,7 @@ Compute called "calculate order total":
   Anyone with "write orders" can execute this
 ```
 
-For complex Compute that exceeds inline JEXL, register a custom Compute function in the runtime and reference it by name.
+For complex Compute that exceeds inline CEL, register a custom Compute function in the runtime and reference it by name.
 
 ### Compute Access Rule
 
@@ -407,17 +407,17 @@ As <role>, I want to <action>
 | Page | `Show a page called "<name>"` |
 | Table | `Display a table of <content> with columns: <field>, <field>` |
 | Text (literal) | `Display text "<literal>"` |
-| Text (expression) | `Display text [<jexl-expression>]` |
+| Text (expression) | `Display text [<cel-expression>]` |
 | Aggregation | `Display total <field> with <state> vs <state> breakdown` |
 | Chart | `Show a chart of <content> over the past <n> days` |
 | Input | `Accept input for <field>, <field>, <field>` |
 | Filter | `Allow filtering by <field>, <field>, <field>` |
 | Search | `Allow searching by <field> or <field>` |
-| Highlight | `Highlight rows where [<jexl-condition>]` |
+| Highlight | `Highlight rows where [<cel-condition>]` |
 | Subscription | `This table subscribes to <content> changes` |
 | Create | `Create the <entity> as "<state>"` |
 | Navigate | `After saving, return to the "<page>"` |
-| Validate | `Validate that [<jexl-condition>] before saving` |
+| Validate | `Validate that [<cel-condition>] before saving` |
 | Grouped | `For each <entity>, show <content> grouped by <field>` |
 
 ---
@@ -429,7 +429,7 @@ Navigation bar:
   "<label>" links to "<page-name>" visible to <visibility>
 ```
 
-**Visibility**: `all`, a role name (full or alias), or comma-separated role names. Badge: `visible to all, badge: [<jexl-expression>]`
+**Visibility**: `all`, a role name (full or alias), or comma-separated role names. Badge: `visible to all, badge: [<cel-expression>]`
 
 ---
 
@@ -488,20 +488,20 @@ When referencing types in lists or collections, the DSL applies simple pluraliza
 
 ---
 
-## JEXL Security Model
+## CEL Security Model
 
-JEXL expressions are sandboxed by the Termin runtime. The runtime constructs a restricted evaluation context containing only:
+CEL expressions are sandboxed by the Termin runtime. The runtime constructs a restricted evaluation context containing only:
 
 - Declared Content schemas accessible to the current Identity
 - Registered Compute functions callable by the current Identity
 - Current Identity context (CurrentUser, roles, scopes)
 - Built-in operators (arithmetic, string, comparison, logical)
 
-JEXL **cannot access**: the filesystem, the network, `require`/`import`, `process`, `eval`, `Function` constructor, or any global not explicitly placed in the context. The runtime enforces this by never placing dangerous objects in the evaluation context.
+CEL **cannot access**: the filesystem, the network, `require`/`import`, `process`, `eval`, `Function` constructor, or any global not explicitly placed in the context. The runtime enforces this by never placing dangerous objects in the evaluation context.
 
-This is a defense-in-depth model: JEXL (the npm package by TomFrost) is already a context-based evaluator with no access to Node.js globals. The Termin runtime adds a second layer by constructing a minimal context. Server-side JEXL expressions are evaluated against the same restricted context — no user-provided expression can escape the context boundary.
+This is a defense-in-depth model: CEL (@marcbachmann/cel-js) is already a context-based evaluator with no access to Node.js globals. The Termin runtime adds a second layer by constructing a minimal context. Server-side CEL expressions are evaluated against the same restricted context — no user-provided expression can escape the context boundary.
 
-Additionally, JEXL expressions in `.termin` files are authored by the application developer, not by end users. End-user input flows through Content schemas (which are validated) and never into the expression evaluator directly. This eliminates the EL injection vector described by OWASP.
+Additionally, CEL expressions in `.termin` files are authored by the application developer, not by end users. End-user input flows through Content schemas (which are validated) and never into the expression evaluator directly. This eliminates the EL injection vector described by OWASP.
 
 ---
 
@@ -545,6 +545,6 @@ Reflection access is scoped by Identity — you can only reflect on primitives y
 ## Open Questions
 
 1. **Canonical spec authority:** Should the PEG grammar file or this document be authoritative when they diverge?
-2. **Multi-line JEXL:** Should `[[ ... ]]` syntax support multi-line expression blocks?
+2. **Multi-line CEL:** Should `[[ ... ]]` syntax support multi-line expression blocks?
 3. **List nesting depth:** Should `list of list of <type>` have a maximum nesting depth?
 4. **Channel state transitions:** Should some State transitions on Channels be runtime-managed (automatic error state on connection failure) vs. user-initiated?

@@ -26,7 +26,7 @@ Reflection is:
 - **Read-only.** Reflection observes. It never mutates. You cannot change a State, invoke a Compute, or send through a Channel via Reflection.
 - **Identity-scoped.** Reflection respects the same access rules as everything else. You can only reflect on primitives your identity context has scope to see.
 - **Boundary-aware.** You can reflect on primitives within your Boundary and on the exposed surface (Properties, Channel state, lifecycle) of other Boundaries. You cannot reflect on the internals of another Boundary.
-- **Accessible via JEXL.** All Reflection data is available in JEXL expressions through a consistent accessor syntax.
+- **Accessible via CEL.** All Reflection data is available in CEL expressions through a consistent accessor syntax.
 
 ## Reflection Accessors
 
@@ -162,7 +162,7 @@ Event.reflect.event("reorder alert").logLevel  → "WARN"
 
 ## Reflection in the DSL
 
-Reflection accessors are available anywhere a JEXL expression is accepted:
+Reflection accessors are available anywhere a CEL expression is accepted:
 
 ```
 (In Presentation:)
@@ -229,7 +229,7 @@ On error from "<primitive-name>" where [<condition>]:
   <handler declarations>
 ```
 
-The `where` clause filters errors by JEXL condition, typically on `error.kind`:
+The `where` clause filters errors by CEL condition, typically on `error.kind`:
 
 ```
 On error from "order webhook" where [error.kind == "external"]:
@@ -295,7 +295,7 @@ Creates a notification Event targeted at a specific role. The Presentation layer
 Then set [<expression>]
 ```
 
-Applies a corrective action via a JEXL expression. For example, setting a default value or clearing a flag that caused the error.
+Applies a corrective action via a CEL expression. For example, setting a default value or clearing a flag that caused the error.
 
 ### Combining Actions
 
@@ -428,7 +428,7 @@ Note: The circuit breaker uses standard Termin primitives (State machine on a Ch
 
 **`registerErrorHandler(primitiveRef, condition, actions) → void`**
 
-Registers an error handler from the IR. The condition is a compiled JEXL expression (or null for catch-all). Actions are a sequence of typed recovery operations.
+Registers an error handler from the IR. The condition is a compiled CEL expression (or null for catch-all). Actions are a sequence of typed recovery operations.
 
 **`handleError(error, primitiveRef) → handled | escalate`**
 

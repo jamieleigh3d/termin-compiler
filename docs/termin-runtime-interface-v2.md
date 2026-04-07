@@ -36,10 +36,10 @@ The runtime is composed of **eight subsystems** (one per primitive) and **two cr
 
 | Concern | Responsibility |
 |---|---|
-| Expression Evaluator | Execute JEXL expressions in controlled context |
+| Expression Evaluator | Execute CEL expressions in controlled context |
 | Error Router (the **TerminAtor**) | Route errors through boundary hierarchy, catch-all at global scope |
 
-The Expression Evaluator is used by every subsystem that evaluates JEXL. The Error Router — affectionately named the **TerminAtor** — manages error Channels on every primitive and handles error escalation through the Boundary hierarchy.
+The Expression Evaluator is used by every subsystem that evaluates CEL. The Error Router — affectionately named the **TerminAtor** — manages error Channels on every primitive and handles error escalation through the Boundary hierarchy.
 
 ---
 
@@ -158,13 +158,13 @@ Content access is always parameterized. No storage adapter ever receives a const
 
 ## Expression Evaluator
 
-The Expression Evaluator executes JEXL expressions in a controlled context. It is used by every subsystem that evaluates expressions.
+The Expression Evaluator executes CEL expressions in a controlled context. It is used by every subsystem that evaluates expressions.
 
 ### Contract
 
 **`evaluate(expression, context) → value | error`**
 
-Evaluates a JEXL expression against a provided context object.
+Evaluates a CEL expression against a provided context object.
 
 **`compile(expression) → compiledExpression | error`**
 
@@ -172,11 +172,11 @@ Parses and validates at compile time. The compiler must validate all expressions
 
 **`registerFunction(name, function) → void`**
 
-Registers a callable function for JEXL context.
+Registers a callable function for CEL context.
 
 **`registerTransform(name, function) → void`**
 
-Registers a transform for the JEXL pipe operator.
+Registers a transform for the CEL pipe operator.
 
 ### Expression Context
 
@@ -221,15 +221,15 @@ The compiler emits a warning when a name exists in multiple namespaces and is us
 - Maximum expression depth of 20 nesting levels
 - Registered functions only
 
-### JEXL Dialect
+### CEL Dialect
 
-Termin uses full JEXL syntax with three restrictions:
+Termin uses full CEL syntax with three restrictions:
 
 - No object literal construction (prevents smuggling past schema validation)
 - No async/Promise features (expressions are synchronous and deterministic)
 - Compiler-enforced maximum expression depth of 20 levels
 
-All other JEXL features — ternary, array filtering, transforms, pipe operator — are permitted.
+All other CEL features — ternary, array filtering, transforms, pipe operator — are permitted.
 
 ---
 
@@ -283,7 +283,7 @@ Returns the current state.
 
 **`requestTransition(primitiveRef, recordId, targetState, identityContext) → newState | error`**
 
-Attempts a transition. Verifies the transition is declared, evaluates the condition (scope check or JEXL expression), updates state, emits a transition Event. Invalid transitions route to the primitive's error Channel.
+Attempts a transition. Verifies the transition is declared, evaluates the condition (scope check or CEL expression), updates state, emits a transition Event. Invalid transitions route to the primitive's error Channel.
 
 This is the same operation as the built-in `transition` verb — the verb is the DSL-facing interface, `requestTransition` is the runtime API.
 
@@ -417,7 +417,7 @@ Boundaries expose Properties — typed, identity-scoped, read-only accessors for
 
 Properties may be:
 - **Stored:** direct reference to an internal value
-- **Computed:** JEXL expression evaluated on demand
+- **Computed:** CEL expression evaluated on demand
 
 ```
 Boundary called "order processing":
@@ -444,7 +444,7 @@ Boundary called "emergency override":
 
 A ScopeGrant:
 - Must be **declared** in the `.termin` file (no runtime-constructed escalations)
-- Must specify a **condition** (JEXL expression that must be true)
+- Must specify a **condition** (CEL expression that must be true)
 - Must specify a **duration** (the grant expires automatically)
 - May require **approval** from a specific role (the approver's identity is captured)
 - Is **logged as an Event** with full audit trail (who requested, who approved, what scope, when, why)

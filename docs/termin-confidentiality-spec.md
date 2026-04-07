@@ -49,7 +49,7 @@ Compute called "Calculate Bonus Pool":
   [bonus_pool = sum(employees.salary * bonus_rate)]
 ```
 
-The `Requires "scope_name"` clause declares that this Compute accesses fields gated by the named scope. The compiler verifies this declaration matches the actual field access in the JEXL body. Missing or incorrect declarations are compile errors.
+The `Requires "scope_name"` clause declares that this Compute accesses fields gated by the named scope. The compiler verifies this declaration matches the actual field access in the CEL body. Missing or incorrect declarations are compile errors.
 
 ### 1.4 Service Identity Declaration
 
@@ -214,9 +214,9 @@ class ComputeNode:
 
 ### 3.3 Static Field Dependency Analysis
 
-The compiler performs a resolution pass over Compute JEXL bodies:
+The compiler performs a resolution pass over Compute CEL bodies:
 
-**Step 1: Extract field references.** Parse each JEXL expression to identify property access patterns. `employees.salary` → `(content: "employees", field: "salary")`. Nested access like `order.customer.email` → `(content: "customers", field: "email")` via reference chain resolution.
+**Step 1: Extract field references.** Parse each CEL expression to identify property access patterns. `employees.salary` → `(content: "employees", field: "salary")`. Nested access like `order.customer.email` → `(content: "customers", field: "email")` via reference chain resolution.
 
 **Step 2: Resolve confidentiality.** For each field reference, look up the field's `confidentiality_scope` (or the Content's if the field doesn't override).
 
@@ -297,14 +297,14 @@ def check_compute_access(compute_spec, caller_identity):
     return True
 ```
 
-### 4.3 JEXL Redaction Guard
+### 4.3 CEL Redaction Guard
 
 The Expression Evaluator wraps property access to detect redaction markers:
 
 ```python
 class RedactionAwareEvaluator:
     def evaluate(self, expression, context):
-        result = jexl.eval(expression, context)
+        result = cel.eval(expression, context)
         # Check if any intermediate value was a redaction marker
         # that leaked into the result
         self._check_for_redacted(result)
@@ -428,7 +428,7 @@ The compiler produces a `confidentiality_graph` section in the IR:
 ```
 
 This graph is:
-- Used by the runtime for fast scope checking (no JEXL re-analysis needed)
+- Used by the runtime for fast scope checking (no CEL re-analysis needed)
 - Queryable via Reflection for operational visibility
 - Reviewable by AppSec teams to audit all confidentiality decisions
 - Exportable for compliance documentation
@@ -441,7 +441,7 @@ This graph is:
 
 1. **No field leakage through API.** Every API response passes through `redact_record`. Fields with confidentiality scopes not held by the caller are redacted.
 
-2. **No field leakage through Compute.** Compute modules cannot access redacted fields at runtime. Compile-time analysis catches missing scope declarations. Runtime JEXL guards catch anything the compiler missed.
+2. **No field leakage through Compute.** Compute modules cannot access redacted fields at runtime. Compile-time analysis catches missing scope declarations. Runtime CEL guards catch anything the compiler missed.
 
 3. **No implicit reclassification.** Entire Compute output inherits input taint scope. Producing output at a different scope requires explicit DSL declaration.
 

@@ -138,7 +138,7 @@ The evaluation context must include:
 - **`now`** — current UTC timestamp as ISO 8601 string
 - **`today`** — current date as ISO 8601 string
 
-DSL authors write `defaults to [User.Name]` (JEXL expression) or `defaults to "literal"` (literal string). The compiler normalizes both into a JEXL expression string in `default_expr`. Literals become JEXL string literals: `"normal"` in DSL becomes `'"normal"'` in the IR.
+DSL authors write `defaults to [User.Name]` (CEL expression) or `defaults to "literal"` (literal string). The compiler normalizes both into a CEL expression string in `default_expr`. Literals become CEL string literals: `"normal"` in DSL becomes `'"normal"'` in the IR.
 
 **Evaluation rules:**
 1. Only evaluate on **create**, not update
@@ -173,7 +173,7 @@ Termin uses a scope-based access model. Scopes are flat strings (not hierarchica
 
 ### 3.2 The User Object
 
-Every auth provider must produce a standard `User` object available in JEXL expressions. This is the identity contract between the auth system and the expression evaluator.
+Every auth provider must produce a standard `User` object available in CEL expressions. This is the identity contract between the auth system and the expression evaluator.
 
 | Field | Type | Description |
 |---|---|---|
@@ -184,7 +184,7 @@ Every auth provider must produce a standard `User` object available in JEXL expr
 | `User.Scopes` | array | Scopes granted by the current role. |
 | `User.Authenticated` | boolean | `true` if the user has a real identity, `false` for anonymous. |
 
-**PascalCase convention:** System objects in JEXL use PascalCase (`User.Name`, `User.Role`). Data fields use snake_case (`item.submitted_by`). This is intentional — it visually distinguishes system-provided values from row data. The DSL is case-insensitive, but JEXL inside `[brackets]` is case-sensitive.
+**PascalCase convention:** System objects in CEL use PascalCase (`User.Name`, `User.Role`). Data fields use snake_case (`item.submitted_by`). This is intentional — it visually distinguishes system-provided values from row data. The DSL is case-insensitive, but CEL inside `[brackets]` is case-sensitive.
 
 **No email:** Email is PII, provider-dependent, and not part of the standard User object. Applications that need email should declare it as a Content field.
 
@@ -261,7 +261,7 @@ Events are reactive rules: when something happens to Content, do something.
 - `created` — fires after a new record is inserted
 - `updated` — fires after a record is modified
 - `deleted` — fires after a record is removed
-- `jexl` — fires when `jexl_condition` evaluates to truthy against the record
+- `cel` — fires when `condition_expr` evaluates to truthy against the record
 
 ### 5.2 Event Actions
 
@@ -276,12 +276,12 @@ When an event fires, the runtime executes its `action`:
 
 This creates a record in `alerts` with `product_id` copied from the source record's `id` and `alert_type` set to the literal `'low_stock'`.
 
-### 5.3 JEXL Conditions
+### 5.3 CEL Conditions
 
-When `trigger` is `"jexl"`, the runtime evaluates `jexl_condition` against the record after each create/update:
+When `trigger` is `"cel"`, the runtime evaluates `condition_expr` against the record after each create/update:
 
 ```json
-{ "trigger": "jexl", "jexl_condition": "record.quantity <= record.reorder_threshold" }
+{ "trigger": "cel", "condition_expr": "record.quantity <= record.reorder_threshold" }
 ```
 
 The event fires when the expression is truthy.
@@ -340,7 +340,7 @@ renderPage(page, identity):
 renderComponent(node, context):
   1. Evaluate visible_when if present → skip/disable if false
   2. Resolve data requirements (fetch Content for data_table, aggregation, etc.)
-  3. Evaluate is_expr props against context using JEXL
+  3. Evaluate is_expr props against context using CEL
   4. Render the component type
   5. Recursively render children
 ```
@@ -349,7 +349,7 @@ renderComponent(node, context):
 
 Props can be:
 - **Bare strings/numbers/booleans/arrays** — literal values, use directly
-- **PropValue objects** `{"value": "expr", "is_expr": true}` — JEXL expressions, evaluate at render time
+- **PropValue objects** `{"value": "expr", "is_expr": true}` — CEL expressions, evaluate at render time
 
 The compiler's serializer simplifies literal PropValues to bare values. So in practice:
 ```json
@@ -357,7 +357,7 @@ The compiler's serializer simplifies literal PropValues to bare values. So in pr
 "content": {"value": "greet(user.name)", "is_expr": true}   // expression
 ```
 
-A runtime implementer should check: if a prop value is an object with `is_expr: true`, evaluate `value` as JEXL. Otherwise, use the value as-is.
+A runtime implementer should check: if a prop value is an object with `is_expr: true`, evaluate `value` as CEL. Otherwise, use the value as-is.
 
 ### 7.4 Component Type Reference
 
@@ -439,7 +439,7 @@ Conditional row highlighting on a parent `data_table`.
 
 | Prop | Type | Description |
 |---|---|---|
-| `condition` | PropValue | JEXL expression evaluated per-row |
+| `condition` | PropValue | CEL expression evaluated per-row |
 
 Rows where the expression is truthy should be visually highlighted (e.g., red background, bold text).
 
@@ -469,7 +469,7 @@ A computed summary value.
 | `label` | string | Display text |
 | `agg_type` | string | `"count"`, `"sum"`, `"average"`, `"minimum"`, `"maximum"` |
 | `source` | string | Snake_case Content to aggregate |
-| `expression` | PropValue? | JEXL expression to aggregate (for sum/average/min/max) |
+| `expression` | PropValue? | CEL expression to aggregate (for sum/average/min/max) |
 | `format` | string? | Display format: `"currency"`, `"number"`, `"percentage"` |
 
 **SQL mapping:**
@@ -519,7 +519,7 @@ Triggers a state transition on a record.
 | `label` | string | Button text |
 | `action` | string | `"transition"` |
 | `target_state` | string | State to transition to |
-| `visible_when` | PropValue? | JEXL expression for conditional visibility |
+| `visible_when` | PropValue? | CEL expression for conditional visibility |
 | `unavailable_behavior` | string | `"disable"` (default) or `"hide"` |
 
 Action buttons appear either as standalone components or in `row_actions` on a `data_table`. In `row_actions`, the `visible_when` expression evaluates per-row with `.` prefix accessing the current row's fields.
@@ -567,11 +567,11 @@ Compute modules are declared data transformations. They don't execute automatica
 
 ### 9.2 Body Evaluation
 
-`body_lines` contains JEXL expressions. The runtime evaluates them with input Content records in scope. The variable names in the JEXL match the input/output Content names.
+`body_lines` contains CEL expressions. The runtime evaluates them with input Content records in scope. The variable names in the CEL match the input/output Content names.
 
 ### 9.3 Client Safety
 
-When `client_safe` is `true`, the Compute's JEXL body can be evaluated on the client without server involvement. This is useful for optimistic UI updates. The server always retains the authoritative copy and re-evaluates server-side.
+When `client_safe` is `true`, the Compute's CEL body can be evaluated on the client without server involvement. This is useful for optimistic UI updates. The server always retains the authoritative copy and re-evaluates server-side.
 
 ---
 
@@ -621,7 +621,7 @@ Error handlers match errors from specific sources and apply recovery actions.
 - `escalate` — promote error severity
 - `create` — create a record in a Content (for audit trails)
 - `notify` — send a notification
-- `set` — set a value using a JEXL expression
+- `set` — set a value using a CEL expression
 
 Catch-all handlers (`is_catch_all: true`, `source: ""`) match any error within their boundary scope.
 
@@ -702,9 +702,9 @@ A conforming Termin runtime must:
 - [ ] Check AccessGrants on every CRUD operation (deny-by-default)
 - [ ] Enforce state machine transitions (only declared transitions, scope-checked)
 - [ ] Set `initial_state` on record creation when `has_state_machine` is true
-- [ ] Process events on Content changes (CRUD triggers + JEXL conditions)
+- [ ] Process events on Content changes (CRUD triggers + CEL conditions)
 - [ ] Render pages by walking component trees
-- [ ] Evaluate JEXL expressions in props marked with `is_expr: true`
+- [ ] Evaluate CEL expressions in props marked with `is_expr: true`
 - [ ] Support real-time subscriptions for `subscribe` components
 - [ ] Expose Reflection endpoints when `reflection_enabled` is true
 

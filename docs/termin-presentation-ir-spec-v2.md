@@ -43,7 +43,7 @@ Props are key-value pairs. Each value is an object with `value` and `is_expr`:
 }
 ```
 
-When `is_expr` is `true`, the runtime evaluates the `value` string as JEXL. When `false`, the `value` is a literal.
+When `is_expr` is `true`, the runtime evaluates the `value` string as CEL. When `false`, the `value` is a literal.
 
 This replaces the `=` prefix convention from v1. The lowering pass converts DSL bracket expressions `[expr]` to `{ "value": "expr", "is_expr": true }` and literal strings to `{ "value": "string", "is_expr": false }`.
 

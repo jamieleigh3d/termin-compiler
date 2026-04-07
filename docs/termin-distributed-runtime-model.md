@@ -269,7 +269,7 @@ The client runtime is a lightweight projection. It renders the Presentation laye
 
 | Subsystem | Client Role |
 |---|---|
-| Expression Evaluator | Evaluates Presentation expressions (JEXL) |
+| Expression Evaluator | Evaluates Presentation expressions (CEL) |
 | Presentation Renderer | Walks the component tree, renders UI |
 | Local Cache | In-memory store of Content received from server |
 | Channel Client | Sends requests, receives pushes through multiplexed connection |
@@ -436,7 +436,7 @@ Standard Phase 0-5 from the runtime interface spec, plus:
 
 1. Load the application shell (HTML served by server)
 2. Fetch the registry: `GET /runtime/registry`
-3. Initialize the Expression Evaluator (load JEXL)
+3. Initialize the Expression Evaluator (load CEL)
 4. Initialize the Channel client (open WebSocket with auth token in handshake)
 5. Receive resolved IdentityContext in the handshake response
 6. Load client-safe Compute functions into local Compute Registry

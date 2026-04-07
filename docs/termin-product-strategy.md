@@ -66,13 +66,13 @@ Not all Termin applications carry the same level of structural guarantee. The gu
 
 ### Tier 1: Pure Termin (Built-ins Only)
 
-Applications using only the Termin DSL, JEXL expressions, built-in Compute (JEXL bodies), and built-in Channels (HTTP, WebSocket, Internal).
+Applications using only the Termin DSL, CEL expressions, built-in Compute (CEL bodies), and built-in Channels (HTTP, WebSocket, Internal).
 
 **Guaranteed by compiler:**
 - All Content access is parameterized — no constructed queries, no string interpolation
 - All State transitions are explicitly declared — undeclared transitions are rejected at compile time
 - All access rules reference declared scopes — typos and undefined scopes are caught
-- All expressions are valid JEXL within sandbox restrictions — no host access, no object construction
+- All expressions are valid CEL within sandbox restrictions — no host access, no object construction
 - All Channel schemas are validated — type mismatches between boundaries are caught
 
 **Guaranteed by runtime:**
@@ -317,7 +317,7 @@ A legitimate concern: if deployment manifests can alter behavior, they risk beco
 **What a deployment manifest cannot do:**
 - Add or remove Content types, Compute nodes, State machines, or Channels
 - Alter access rules, scope definitions, or role assignments
-- Change JEXL expressions or Presentation layout
+- Change CEL expressions or Presentation layout
 - Override confidentiality on individual fields
 - Grant scopes that aren't declared in the application
 
