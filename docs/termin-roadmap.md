@@ -137,40 +137,40 @@ Restructured April 2026 to prioritize end-to-end demo completeness. Confidential
 
 ### Block A: End-to-End Demo Completeness
 
-| # | Item | Effort | Notes |
-|---|------|--------|-------|
-| A1 | State transition scope-gating in runtime | Medium | Runtime rejects transitions caller lacks scope for. Needed for any real demo. |
-| A2 | System-defined JEXL functions (sum, count, now, identity.has_scope) | Medium | Required for aggregation expressions and visibility conditions. |
-| A3 | `client_safe` inference logic in compiler | Small | Analyze Compute bodies to set the flag (pure field access = safe). |
-| A4 | Richer example app (helpdesk or HR) demonstrating all primitives | Medium | Should use Content, Compute, Channel, Boundary, State, Events, Presentation. |
-| A5 | Highlight row rendering in presentation | Small | JEXL condition per-row → CSS class. Already in IR, renderer missing. |
-| A6 | Related data display in presentation | Small | JOIN query + grouped rendering. Already in IR, renderer missing. |
-| A7 | `validate_unique` on form field_input | Small | Server-side check before insert, 409 on conflict. |
-| A8 | After-save navigation (`after_save` prop on form) | Small | Redirect to target page after successful create. |
-| A9 | Conformance test suite seed (20+ tests) | Medium | Cover Tier 1: identity, state machine, access control, field validation. |
+| # | Item | Effort | Subsystems | Design Doc |
+|---|------|--------|------------|------------|
+| A1 | State transition scope-gating in runtime | Medium | runtime | primitives.md § State; implementers-guide.md § 4 State Machines |
+| A2 | System-defined JEXL functions (sum, count, now, identity.has_scope) | Medium | runtime, compiler | appserver-v2.md § 7 System-Defined Functions |
+| A3 | `client_safe` inference logic in compiler | Small | compiler | distributed-runtime.md § 3 Client-Side Compute |
+| A4 | Richer example app (helpdesk or HR) demonstrating all primitives | Medium | examples | presentation-ir-v2.md § DSL to IR Examples |
+| A5 | Highlight row rendering in presentation | Small | runtime (presentation) | presentation-ir-v2.md § Data Table Sub-Components (highlight) |
+| A6 | Related data display in presentation | Small | runtime (presentation, storage) | presentation-ir-v2.md § Data Table Sub-Components (related) |
+| A7 | `validate_unique` on form field_input | Small | runtime (app, storage) | presentation-ir-v2.md § Input Components (field_input) |
+| A8 | After-save navigation (`after_save` prop on form) | Small | runtime (presentation) | presentation-ir-v2.md § Input Components (form) |
+| A9 | Conformance test suite seed (20+ tests) | Medium | tests | product-strategy.md § Tier 1 Guarantees |
 
 ### Block B: Confidentiality System
 
-| # | Item | Effort | Depends On |
-|---|------|--------|------------|
-| B1 | Add `confidentiality_scope` to FieldSpec + ContentSchema in IR | Small | — |
-| B2 | Add `confidentiality is` to PEG grammar + parser + lowering | Medium | B1 |
-| B3 | Add `Identity: service/delegate` to Compute DSL + IR | Small | — |
-| B4 | Add `Output confidentiality:` to Compute DSL + IR | Small | B3 |
-| B5 | Implement `redact_record()` in runtime storage/app | Medium | B1 |
-| B6 | Implement Compute invocation gate at Channel boundary | Medium | B3, B5 |
-| B7 | Implement JEXL field dependency static analysis in compiler | Large | B2 |
-| B8 | Implement taint propagation + reclassification in lowering | Medium | B7 |
-| B9 | Add `ReclassificationPoint` to IR + Reflection | Small | B8 |
-| B10 | Implement runtime JEXL redaction guard | Medium | B5 |
-| B11 | Add example with confidentiality (HR app or medical records) | Small | B2, B5 |
+| # | Item | Effort | Subsystems | Design Doc |
+|---|------|--------|------------|------------|
+| B1 | Add `confidentiality_scope` to FieldSpec + ContentSchema | Small | IR | confidentiality-spec.md § 2 IR Changes |
+| B2 | Add `confidentiality is` to PEG grammar + parser + lowering | Medium | compiler (PEG, parser, lower) | confidentiality-spec.md § 1 DSL Syntax |
+| B3 | Add `Identity: service/delegate` to Compute DSL + IR | Small | compiler, IR | confidentiality-spec.md § 1 DSL Syntax (identity_mode) |
+| B4 | Add `Output confidentiality:` to Compute DSL + IR | Small | compiler, IR | confidentiality-spec.md § 1 DSL Syntax (output_confidentiality) |
+| B5 | Implement `redact_record()` in runtime | Medium | runtime (storage, app) | confidentiality-spec.md § 4 Runtime Changes; BRD § 6 Check 1 |
+| B6 | Implement Compute invocation gate at Channel boundary | Medium | runtime (app) | confidentiality-spec.md § 4 Runtime Changes; BRD § 6 Check 2 |
+| B7 | Implement JEXL field dependency static analysis | Large | compiler (analyzer) | confidentiality-spec.md § 3 Compiler Static Analysis |
+| B8 | Implement taint propagation + reclassification in lowering | Medium | compiler (lower) | confidentiality-spec.md § 3 Compiler Static Analysis |
+| B9 | Add `ReclassificationPoint` to IR + Reflection | Small | IR, runtime | confidentiality-spec.md § 2 IR Changes |
+| B10 | Implement runtime JEXL redaction guard | Medium | runtime (expression) | confidentiality-spec.md § 4 Runtime Changes; BRD § 6 Check 3 |
+| B11 | Add example with confidentiality (HR app or medical records) | Small | examples | confidentiality-BRD.md § 4 User Stories |
 
 ### Block C: Boundary Enforcement
 
-| # | Item | Effort | Notes |
-|---|------|--------|-------|
-| C1 | Boundary isolation enforcement | Large | Data only crosses Boundaries through Channels |
-| C2 | Cross-boundary identity propagation | Medium | Identity flows through delegate mode Boundaries |
+| # | Item | Effort | Subsystems | Design Doc |
+|---|------|--------|------------|------------|
+| C1 | Boundary isolation enforcement | Large | runtime (app, storage) | appserver-v2.md § 3 Boundaries; primitives.md § Boundary |
+| C2 | Cross-boundary identity propagation | Medium | runtime (identity, app) | distributed-runtime.md § Cross-Boundary Identity Propagation |
 
 ---
 
