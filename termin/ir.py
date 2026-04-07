@@ -53,6 +53,7 @@ class FieldSpec:
     foreign_key: Optional[str] = None  # target table snake name
     is_auto: bool = False              # automatic timestamp
     list_type: Optional[str] = None    # inner type for JSON list columns
+    default_expr: Optional[str] = None # JEXL expression or literal string for default value
 
 
 # Backward-compatible alias

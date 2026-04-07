@@ -188,6 +188,11 @@
           "type": ["string", "null"],
           "default": null,
           "description": "Inner type name when business_type is 'list'. Stored as JSON array in a JSON column."
+        },
+        "default_expr": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Default value expression evaluated at record creation time. If from a JEXL expression (DSL: defaults to [expr]), this is the raw expression string (e.g., 'User.Name', '0', 'now'). If from a literal (DSL: defaults to \"text\"), this is a JEXL string literal (e.g., '\"normal\"'). The runtime evaluates this with the User object and system variables (now, today) in scope. Null means no default — the field is left empty unless provided by the caller."
         }
       }
     },

@@ -48,7 +48,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "total",
@@ -62,7 +63,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "priority",
@@ -80,7 +82,8 @@
           ],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         }
       ],
       "storage_intent": "auto",
@@ -106,7 +109,8 @@
           "enum_values": [],
           "foreign_key": "orders",
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "product_name",
@@ -120,7 +124,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "quantity",
@@ -134,7 +139,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "unit_price",
@@ -148,7 +154,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         }
       ],
       "storage_intent": "auto",
@@ -174,7 +181,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "total_revenue",
@@ -188,7 +196,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         }
       ],
       "storage_intent": "auto",

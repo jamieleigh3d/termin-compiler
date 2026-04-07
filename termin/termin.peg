@@ -118,6 +118,8 @@ constraint
     | 'unique'                #Unique
     | 'minimum' val:number    #Minimum
     | 'maximum' val:number    #Maximum
+    | 'defaults' 'to' expr:jexl_expr        #DefaultExpr
+    | 'defaults' 'to' lit:quoted_string    #DefaultLiteral
     ;
 
 access_line

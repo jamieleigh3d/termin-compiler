@@ -122,6 +122,30 @@ The runtime must reject values not in the enum list on create and update.
 
 When `has_state_machine` is `true`, new records must be created with `status` set to `initial_state`. The runtime must not allow clients to set the initial status directly — it is system-assigned.
 
+### 2.6 Default Expressions
+
+When `default_expr` is set (non-null), the runtime evaluates it at record creation time for fields not provided by the caller.
+
+```json
+{ "name": "submitted_by", "default_expr": "User.Name" }
+{ "name": "priority", "default_expr": "\"normal\"" }
+{ "name": "count", "default_expr": "0" }
+{ "name": "created_at", "default_expr": "now" }
+```
+
+The evaluation context must include:
+- **`User`** — the standard User identity object (see § 3.2)
+- **`now`** — current UTC timestamp as ISO 8601 string
+- **`today`** — current date as ISO 8601 string
+
+DSL authors write `defaults to [User.Name]` (JEXL expression) or `defaults to "literal"` (literal string). The compiler normalizes both into a JEXL expression string in `default_expr`. Literals become JEXL string literals: `"normal"` in DSL becomes `'"normal"'` in the IR.
+
+**Evaluation rules:**
+1. Only evaluate on **create**, not update
+2. Only populate fields **not provided by the caller** (caller values take precedence)
+3. If evaluation fails (expression error), skip the default silently
+4. `is_auto` fields (like `automatic` timestamps) may also use `default_expr` — the runtime should apply `default_expr` even for auto fields when they carry an explicit expression
+
 ---
 
 ## 3. Access Control
@@ -147,7 +171,24 @@ Termin uses a scope-based access model. Scopes are flat strings (not hierarchica
 
 **The `stub` provider** is for development. It presents a role picker UI and stores the selection in a cookie. Production runtimes should implement real identity providers (SSO, OIDC, SAML) but the scope-checking logic remains the same.
 
-### 3.2 Access Grant Enforcement
+### 3.2 The User Object
+
+Every auth provider must produce a standard `User` object available in JEXL expressions. This is the identity contract between the auth system and the expression evaluator.
+
+| Field | Type | Description |
+|---|---|---|
+| `User.Username` | string | Login identifier. `"anonymous"` for unauthenticated users. |
+| `User.Name` | string | Display name. `"Anonymous"` fallback. |
+| `User.FirstName` | string | First name, derived from Name if provider doesn't supply it. |
+| `User.Role` | string | Current role name. |
+| `User.Scopes` | array | Scopes granted by the current role. |
+| `User.Authenticated` | boolean | `true` if the user has a real identity, `false` for anonymous. |
+
+**PascalCase convention:** System objects in JEXL use PascalCase (`User.Name`, `User.Role`). Data fields use snake_case (`item.submitted_by`). This is intentional — it visually distinguishes system-provided values from row data. The DSL is case-insensitive, but JEXL inside `[brackets]` is case-sensitive.
+
+**No email:** Email is PII, provider-dependent, and not part of the standard User object. Applications that need email should declare it as a Content field.
+
+### 3.3 Access Grant Enforcement
 
 Each `AccessGrant` says: "identity holding scope X may perform verbs Y on Content Z."
 
@@ -163,7 +204,7 @@ On every API request, the runtime must:
 
 **Important:** If no AccessGrant matches a Content+verb combination, access is denied by default. Termin is deny-by-default.
 
-### 3.3 Route Scope Checking
+### 3.4 Route Scope Checking
 
 Routes may have their own `required_scope` in addition to AccessGrant checks:
 

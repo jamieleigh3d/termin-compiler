@@ -20,6 +20,8 @@ class TypeExpr:
     enum_values: list[str] = field(default_factory=list)
     references: Optional[str] = None  # name of referenced Content
     list_type: Optional[str] = None   # inner type for "list of <type>"
+    default_expr: Optional[str] = None  # JEXL expression or literal string for default value
+    default_is_expr: bool = False       # True = JEXL from [brackets]; False = literal from "quotes"
     line: int = 0
 
 

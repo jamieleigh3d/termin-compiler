@@ -186,6 +186,19 @@ def _jb(text: str) -> Optional[str]:
 # --- Type expression ---
 def _parse_type_text(text: str, ln: int = 0) -> TypeExpr:
     expr = TypeExpr(base_type="text", line=ln)
+    # Extract "defaults to [expr]" or 'defaults to "literal"' before other constraint stripping
+    import re
+    dm = re.search(r',?\s*defaults\s+to\s+\[([^\]]+)\]', text, re.IGNORECASE)
+    if dm:
+        expr.default_expr = dm.group(1).strip()
+        expr.default_is_expr = True
+        text = text[:dm.start()] + text[dm.end():]
+    else:
+        dm = re.search(r',?\s*defaults\s+to\s+"([^"]*)"', text, re.IGNORECASE)
+        if dm:
+            expr.default_expr = dm.group(1)
+            expr.default_is_expr = False
+            text = text[:dm.start()] + text[dm.end():]
     while True:
         tl = text.lower().rstrip()
         if tl.endswith(", required") or tl.endswith(",required"):

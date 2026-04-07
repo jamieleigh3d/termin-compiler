@@ -505,6 +505,50 @@ class TestActionButtonVisibility:
             assert 'cursor-not-allowed' in r.text
 
 
+class TestDefaultExpr:
+    """default_expr fields are auto-populated at create time."""
+
+    def test_user_name_default(self):
+        """submitted_by with defaults to [User.Name] gets the display name."""
+        import uuid
+        tag = uuid.uuid4().hex[:6]
+        with _make_client("helpdesk") as client:
+            client.cookies.set("termin_role", "customer")
+            client.cookies.set("termin_user_name", "Jamie-Leigh")
+            r = client.post("/submit_ticket", data={
+                "title": f"Test Default {tag}", "description": "Testing defaults",
+                "priority": "low", "category": "question",
+            })
+            assert r.status_code == 200  # TestClient follows redirects
+            r2 = client.get("/api/v1/tickets")
+            tickets = r2.json()
+            test_ticket = [t for t in tickets if t["title"] == f"Test Default {tag}"]
+            assert len(test_ticket) == 1
+            assert test_ticket[0]["submitted_by"] == "Jamie-Leigh"
+
+    def test_literal_default(self):
+        """A field with defaults to \"literal\" gets the string value."""
+        # This tests the IR representation — compile the parse result
+        from termin.peg_parser import parse_peg
+        from termin.lower import lower
+        import textwrap
+        dsl = textwrap.dedent('''\
+            Application: Default Test
+            Description: Tests literal defaults
+            Content called "items":
+              Each item has a name which is text, required
+              Each item has a priority which is text, defaults to "normal"
+              Each item has a count which is a whole number, defaults to [0]
+        ''')
+        prog, _ = parse_peg(dsl)
+        ir = lower(prog)
+        fields = {f.name: f for f in ir.content[0].fields}
+        # Literal default: stored as JEXL string literal
+        assert fields["priority"].default_expr == '"normal"'
+        # Expression default: stored as JEXL expression
+        assert fields["count"].default_expr == '0'
+
+
 class TestValidateUnique:
     """A7: Unique field validation rejects duplicates on form submit."""
 

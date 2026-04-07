@@ -56,7 +56,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "description",
@@ -70,7 +71,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "status",
@@ -88,7 +90,8 @@
           ],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         }
       ],
       "storage_intent": "auto",
@@ -114,7 +117,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "email",
@@ -128,7 +132,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "role",
@@ -147,7 +152,8 @@
           ],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "project",
@@ -161,7 +167,8 @@
           "enum_values": [],
           "foreign_key": "projects",
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         }
       ],
       "storage_intent": "auto",
@@ -187,7 +194,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "project",
@@ -201,7 +209,8 @@
           "enum_values": [],
           "foreign_key": "projects",
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "goal",
@@ -215,7 +224,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "capacity",
@@ -229,7 +239,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         }
       ],
       "storage_intent": "auto",
@@ -255,7 +266,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "description",
@@ -269,7 +281,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "project",
@@ -283,7 +296,8 @@
           "enum_values": [],
           "foreign_key": "projects",
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "sprint",
@@ -297,7 +311,8 @@
           "enum_values": [],
           "foreign_key": "sprints",
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "assignee",
@@ -311,7 +326,8 @@
           "enum_values": [],
           "foreign_key": "team_members",
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "points",
@@ -325,7 +341,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "priority",
@@ -344,7 +361,8 @@
           ],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         }
       ],
       "storage_intent": "auto",
@@ -370,7 +388,8 @@
           "enum_values": [],
           "foreign_key": "tasks",
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "team_member",
@@ -384,7 +403,8 @@
           "enum_values": [],
           "foreign_key": "team_members",
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "hours",
@@ -398,7 +418,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "logged_at",
@@ -412,7 +433,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": true,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         }
       ],
       "storage_intent": "auto",

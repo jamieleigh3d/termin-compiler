@@ -54,7 +54,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "name",
@@ -68,7 +69,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "description",
@@ -82,7 +84,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "unit_cost",
@@ -96,7 +99,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "category",
@@ -114,7 +118,8 @@
           ],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         }
       ],
       "storage_intent": "auto",
@@ -140,7 +145,8 @@
           "enum_values": [],
           "foreign_key": "products",
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "warehouse",
@@ -154,7 +160,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "quantity",
@@ -168,7 +175,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "reorder_threshold",
@@ -182,7 +190,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         }
       ],
       "storage_intent": "auto",
@@ -208,7 +217,8 @@
           "enum_values": [],
           "foreign_key": "products",
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "warehouse",
@@ -222,7 +232,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "current_quantity",
@@ -236,7 +247,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "threshold",
@@ -250,7 +262,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": false,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         },
         {
           "name": "created_at",
@@ -264,7 +277,8 @@
           "enum_values": [],
           "foreign_key": null,
           "is_auto": true,
-          "list_type": null
+          "list_type": null,
+          "default_expr": null
         }
       ],
       "storage_intent": "auto",

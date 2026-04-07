@@ -197,6 +197,14 @@ def lower(program: Program) -> AppSpec:
     for c in program.contents:
         fields = []
         for f in c.fields:
+            # Build default_expr for IR: JEXL expressions pass through,
+            # literal strings are wrapped in quotes to form a valid JEXL literal
+            default_ir = None
+            if f.type_expr.default_expr is not None:
+                if f.type_expr.default_is_expr:
+                    default_ir = f.type_expr.default_expr  # JEXL: User.Name, 0, now
+                else:
+                    default_ir = f'"{f.type_expr.default_expr}"'  # Literal: "N/A" → JEXL '"N/A"'
             fields.append(FieldSpec(
                 name=_snake(f.name),
                 display_name=f.name,
@@ -210,6 +218,7 @@ def lower(program: Program) -> AppSpec:
                 foreign_key=_snake(f.type_expr.references) if f.type_expr.references else None,
                 is_auto=f.type_expr.base_type == "automatic",
                 list_type=f.type_expr.list_type,
+                default_expr=default_ir,
             ))
         has_sm = c.name in sm_by_content
         content_schemas.append(ContentSchema(
