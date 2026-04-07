@@ -32,7 +32,7 @@ IMPORT_TO_PACKAGE = {
     "click": "click",
     "tatsu": "tatsu",
     "jinja2": "jinja2",
-    "pyjexl": "pyjexl",
+    "celpy": "cel-python",
     "fastapi": "fastapi",
     "uvicorn": "uvicorn",
     "aiosqlite": "aiosqlite",

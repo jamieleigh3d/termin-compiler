@@ -356,23 +356,24 @@ class TestEventBusChannels:
         asyncio.get_event_loop().run_until_complete(_test())
 
 
-class TestSystemJEXLFunctions:
-    """System-defined JEXL transforms available via pipe syntax."""
+class TestSystemCELFunctions:
+    """System-defined CEL functions available via function-call syntax."""
 
     def test_aggregation_sum(self):
         from termin_runtime.expression import ExpressionEvaluator
         ev = ExpressionEvaluator()
-        assert ev.evaluate("items|sum", {"items": [1, 2, 3]}) == 6
+        assert ev.evaluate("sum(items)", {"items": [1, 2, 3]}) == 6
 
     def test_aggregation_avg(self):
         from termin_runtime.expression import ExpressionEvaluator
         ev = ExpressionEvaluator()
-        assert ev.evaluate("items|avg", {"items": [10, 20, 30]}) == 20
+        assert ev.evaluate("avg(items)", {"items": [10, 20, 30]}) == 20
 
-    def test_aggregation_count(self):
+    def test_aggregation_size(self):
+        """size() is a CEL built-in — replaces count/length."""
         from termin_runtime.expression import ExpressionEvaluator
         ev = ExpressionEvaluator()
-        assert ev.evaluate("items|count", {"items": [1, 2, 3]}) == 3
+        assert ev.evaluate("size(items)", {"items": [1, 2, 3]}) == 3
 
     def test_temporal_now_context(self):
         """'now' is a context variable injected fresh each call."""
@@ -385,38 +386,52 @@ class TestSystemJEXLFunctions:
     def test_temporal_days_between(self):
         from termin_runtime.expression import ExpressionEvaluator
         ev = ExpressionEvaluator()
-        # pyjexl resolves literal args but not variable refs in transform args
-        result = ev.evaluate("a|daysBetween('2026-01-10')", {"a": "2026-01-01"})
+        # CEL uses function-call syntax — both args resolved from context
+        result = ev.evaluate("daysBetween(a, b)", {"a": "2026-01-01", "b": "2026-01-10"})
         assert result == 9
 
-    def test_string_uppercase(self):
+    def test_string_upper(self):
         from termin_runtime.expression import ExpressionEvaluator
         ev = ExpressionEvaluator()
-        assert ev.evaluate("s|uppercase", {"s": "hello"}) == "HELLO"
+        assert ev.evaluate("upper(s)", {"s": "hello"}) == "HELLO"
 
     def test_math_clamp(self):
         from termin_runtime.expression import ExpressionEvaluator
         ev = ExpressionEvaluator()
-        assert ev.evaluate("n|clamp(0, 100)", {"n": 150}) == 100
-        assert ev.evaluate("n|clamp(0, 100)", {"n": -5}) == 0
-        assert ev.evaluate("n|clamp(0, 100)", {"n": 50}) == 50
+        assert ev.evaluate("clamp(n, 0, 100)", {"n": 150}) == 100
+        assert ev.evaluate("clamp(n, 0, 100)", {"n": -5}) == 0
+        assert ev.evaluate("clamp(n, 0, 100)", {"n": 50}) == 50
 
     def test_collection_unique(self):
         from termin_runtime.expression import ExpressionEvaluator
         ev = ExpressionEvaluator()
-        assert ev.evaluate("items|unique", {"items": [1, 2, 2, 3, 3]}) == [1, 2, 3]
+        assert ev.evaluate("unique(items)", {"items": [1, 2, 2, 3, 3]}) == [1, 2, 3]
 
-    def test_transforms_in_comparison(self):
-        """Transforms work inside larger expressions with comparisons."""
+    def test_size_in_comparison(self):
+        """CEL built-in size() works in comparisons."""
         from termin_runtime.expression import ExpressionEvaluator
         ev = ExpressionEvaluator()
-        result = ev.evaluate("items|count > 2", {"items": [1, 2, 3]})
+        result = ev.evaluate("size(items) > 2", {"items": [1, 2, 3]})
         assert result is True
 
-    def test_string_length(self):
+    def test_string_size(self):
+        """size() works on strings too (CEL built-in)."""
         from termin_runtime.expression import ExpressionEvaluator
         ev = ExpressionEvaluator()
-        assert ev.evaluate("s|length", {"s": "hello"}) == 5
+        assert ev.evaluate("size(s)", {"s": "hello"}) == 5
+
+    def test_string_startswith_builtin(self):
+        """CEL built-in string method."""
+        from termin_runtime.expression import ExpressionEvaluator
+        ev = ExpressionEvaluator()
+        assert ev.evaluate('s.startsWith("he")', {"s": "hello"}) is True
+
+    def test_has_macro(self):
+        """CEL has() macro for field presence checks."""
+        from termin_runtime.expression import ExpressionEvaluator
+        ev = ExpressionEvaluator()
+        assert ev.evaluate("has(User.Email)", {"User": {"Email": "a@b.com"}}) is True
+        assert ev.evaluate("has(User.Email)", {"User": {"Name": "JL"}}) is False
 
 
 class TestHighlightRendering:

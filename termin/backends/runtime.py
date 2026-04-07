@@ -101,5 +101,5 @@ if __name__ == "__main__":
             "aiosqlite>=0.19.0",
             "jinja2>=3.1.0",
             "python-multipart>=0.0.6",
-            "pyjexl>=0.3.0",
+            "cel-python>=0.5.0",
         ]

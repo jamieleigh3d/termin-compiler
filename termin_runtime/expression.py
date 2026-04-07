@@ -1,81 +1,147 @@
-"""JEXL expression evaluator for the Termin runtime.
+"""CEL expression evaluator for the Termin runtime.
 
-Provides system-defined JEXL transforms and context variables available
-in any expression without declaration.
+Uses Google's Common Expression Language (CEL) via cel-python.
+CEL is non-Turing-complete, formally specified, and has matching
+implementations in Python, JavaScript, Rust, and Go.
 
-JEXL uses pipe syntax for transforms: value|transform(args)
-  items|sum, name|uppercase, 150|clamp(0, 100), date|daysUntil
+Expressions use standard function-call syntax:
+  sum(items), upper(name), clamp(n, 0, 100), daysBetween(a, b)
 
-Zero-argument "functions" are injected as context variables:
-  now, today (evaluated fresh on each expression evaluation)
+Built-in CEL functions (no registration needed):
+  size(), contains(), startsWith(), endsWith(), has()
+
+System context variables (injected fresh per evaluation):
+  now, today
 """
 
 import math
 from datetime import datetime, date, timedelta
 
-from pyjexl import JEXL
+import celpy
+from celpy import json_to_cel
+from celpy.celtypes import StringType, DoubleType, IntType, BoolType, ListType
 
 
-def _register_system_transforms(jexl: JEXL):
-    """Register all system-defined transforms on a JEXL instance."""
+# ── System Functions ──
 
-    # ── Aggregation ──
-    jexl.add_transform("sum", lambda arr: sum(arr) if arr else 0)
-    jexl.add_transform("avg", lambda arr: (sum(arr) / len(arr)) if arr else 0)
-    jexl.add_transform("min", lambda arr: min(arr) if arr else None)
-    jexl.add_transform("max", lambda arr: max(arr) if arr else None)
-    jexl.add_transform("count", lambda arr: len(arr) if isinstance(arr, (list, tuple)) else 0)
+def _cel_sum(items):
+    return DoubleType(sum(float(x) for x in items))
 
-    # ── Collection ──
-    jexl.add_transform("flatten", lambda arr: [x for sub in arr for x in (sub if isinstance(sub, list) else [sub])])
-    jexl.add_transform("unique", lambda arr: list(dict.fromkeys(arr)))
-    jexl.add_transform("first", lambda arr: arr[0] if arr else None)
-    jexl.add_transform("last", lambda arr: arr[-1] if arr else None)
-    jexl.add_transform("sort", lambda arr: sorted(arr) if arr else [])
+def _cel_avg(items):
+    vals = [float(x) for x in items]
+    return DoubleType(sum(vals) / len(vals)) if vals else DoubleType(0)
 
-    # ── Temporal ──
-    def _days_between(d1, d2):
-        try:
-            a = date.fromisoformat(str(d1)[:10])
-            b = date.fromisoformat(str(d2)[:10])
-            return abs((b - a).days)
-        except (ValueError, TypeError):
-            return 0
+def _cel_min(items):
+    vals = [float(x) for x in items]
+    return DoubleType(min(vals)) if vals else IntType(0)
 
-    def _days_until(d):
-        try:
-            target = date.fromisoformat(str(d)[:10])
-            return (target - date.today()).days
-        except (ValueError, TypeError):
-            return 0
+def _cel_max(items):
+    vals = [float(x) for x in items]
+    return DoubleType(max(vals)) if vals else IntType(0)
 
-    def _add_days(d, n):
-        try:
-            base = date.fromisoformat(str(d)[:10])
-            return (base + timedelta(days=int(n))).isoformat()
-        except (ValueError, TypeError):
-            return d
+def _cel_flatten(items):
+    result = []
+    for sub in items:
+        if hasattr(sub, '__iter__') and not isinstance(sub, (str, StringType)):
+            result.extend(sub)
+        else:
+            result.append(sub)
+    return ListType(result)
 
-    jexl.add_transform("daysBetween", _days_between)
-    jexl.add_transform("daysUntil", _days_until)
-    jexl.add_transform("addDays", _add_days)
+def _cel_unique(items):
+    seen = []
+    for x in items:
+        if x not in seen:
+            seen.append(x)
+    return ListType(seen)
 
-    # ── String ──
-    jexl.add_transform("uppercase", lambda s: str(s).upper() if s else "")
-    jexl.add_transform("lowercase", lambda s: str(s).lower() if s else "")
-    jexl.add_transform("trim", lambda s: str(s).strip() if s else "")
-    jexl.add_transform("contains", lambda s, sub: str(sub) in str(s) if s else False)
-    jexl.add_transform("startsWith", lambda s, pre: str(s).startswith(str(pre)) if s else False)
-    jexl.add_transform("endsWith", lambda s, suf: str(s).endswith(str(suf)) if s else False)
-    jexl.add_transform("replace", lambda s, old, new: str(s).replace(str(old), str(new)) if s else "")
-    jexl.add_transform("length", lambda s: len(s) if s else 0)
+def _cel_first(items):
+    return items[IntType(0)] if items else BoolType(False)
 
-    # ── Math ──
-    jexl.add_transform("round", lambda n, d=0: round(float(n), int(d)) if n is not None else 0)
-    jexl.add_transform("floor", lambda n: math.floor(float(n)) if n is not None else 0)
-    jexl.add_transform("ceil", lambda n: math.ceil(float(n)) if n is not None else 0)
-    jexl.add_transform("abs", lambda n: abs(float(n)) if n is not None else 0)
-    jexl.add_transform("clamp", lambda n, lo, hi: max(float(lo), min(float(n), float(hi))))
+def _cel_last(items):
+    return items[IntType(len(items) - 1)] if items else BoolType(False)
+
+def _cel_sort(items):
+    return ListType(sorted(items))
+
+def _cel_days_between(d1, d2):
+    try:
+        a = date.fromisoformat(str(d1)[:10])
+        b = date.fromisoformat(str(d2)[:10])
+        return IntType(abs((b - a).days))
+    except (ValueError, TypeError):
+        return IntType(0)
+
+def _cel_days_until(d):
+    try:
+        target = date.fromisoformat(str(d)[:10])
+        return IntType((target - date.today()).days)
+    except (ValueError, TypeError):
+        return IntType(0)
+
+def _cel_add_days(d, n):
+    try:
+        base = date.fromisoformat(str(d)[:10])
+        return StringType((base + timedelta(days=int(n))).isoformat())
+    except (ValueError, TypeError):
+        return d
+
+def _cel_upper(s):
+    return StringType(str(s).upper()) if s else StringType("")
+
+def _cel_lower(s):
+    return StringType(str(s).lower()) if s else StringType("")
+
+def _cel_trim(s):
+    return StringType(str(s).strip()) if s else StringType("")
+
+def _cel_replace(s, old, new):
+    return StringType(str(s).replace(str(old), str(new))) if s else StringType("")
+
+def _cel_round(n, d=IntType(0)):
+    return DoubleType(round(float(n), int(d))) if n is not None else DoubleType(0)
+
+def _cel_floor(n):
+    return IntType(math.floor(float(n))) if n is not None else IntType(0)
+
+def _cel_ceil(n):
+    return IntType(math.ceil(float(n))) if n is not None else IntType(0)
+
+def _cel_abs(n):
+    return DoubleType(abs(float(n))) if n is not None else DoubleType(0)
+
+def _cel_clamp(n, lo, hi):
+    return DoubleType(max(float(lo), min(float(n), float(hi))))
+
+
+SYSTEM_FUNCTIONS = {
+    # Aggregation
+    "sum": _cel_sum,
+    "avg": _cel_avg,
+    "min": _cel_min,
+    "max": _cel_max,
+    # Collection
+    "flatten": _cel_flatten,
+    "unique": _cel_unique,
+    "first": _cel_first,
+    "last": _cel_last,
+    "sort": _cel_sort,
+    # Temporal
+    "daysBetween": _cel_days_between,
+    "daysUntil": _cel_days_until,
+    "addDays": _cel_add_days,
+    # String
+    "upper": _cel_upper,
+    "lower": _cel_lower,
+    "trim": _cel_trim,
+    "replace": _cel_replace,
+    # Math
+    "round": _cel_round,
+    "floor": _cel_floor,
+    "ceil": _cel_ceil,
+    "abs": _cel_abs,
+    "clamp": _cel_clamp,
+}
 
 
 def _make_dynamic_context():
@@ -87,18 +153,44 @@ def _make_dynamic_context():
 
 
 class ExpressionEvaluator:
+    """CEL expression evaluator with system functions and dynamic context."""
+
     def __init__(self):
-        self.jexl = JEXL()
-        self._functions = {}
-        _register_system_transforms(self.jexl)
+        self._env = celpy.Environment()
+        self._custom_functions = dict(SYSTEM_FUNCTIONS)
 
     def register_function(self, name, fn):
-        self._functions[name] = fn
+        """Register a custom function available in CEL expressions."""
+        self._custom_functions[name] = fn
 
     def evaluate(self, expression, context=None):
-        ctx = _make_dynamic_context()   # temporal context, refreshed per call
+        """Evaluate a CEL expression string against a context dict.
+
+        Context values can be plain Python dicts/lists/strings/numbers —
+        json_to_cel() handles the conversion to CEL types.
+        """
+        ctx_dict = _make_dynamic_context()
         if context:
-            ctx.update(context)         # user context overrides
-        for name, fn in self._functions.items():
-            ctx[name] = fn              # registered functions override
-        return self.jexl.evaluate(expression, ctx)
+            ctx_dict.update(context)
+        cel_ctx = json_to_cel(ctx_dict)
+        ast = self._env.compile(expression)
+        prog = self._env.program(ast, functions=self._custom_functions)
+        result = prog.evaluate(cel_ctx)
+        # Convert CEL types back to Python for downstream consumers
+        return _cel_to_python(result)
+
+
+def _cel_to_python(value):
+    """Convert CEL result types back to plain Python values."""
+    if isinstance(value, BoolType):
+        return bool(value)
+    if isinstance(value, IntType):
+        return int(value)
+    if isinstance(value, DoubleType):
+        return float(value)
+    if isinstance(value, StringType):
+        return str(value)
+    if isinstance(value, ListType):
+        return [_cel_to_python(x) for x in value]
+    # MapType or unknown — try to return as-is
+    return value
