@@ -562,8 +562,11 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
 
     # ── Extract data requirements from component trees ──
     def _extract_page_reqs(page):
-        """Walk component tree to find data sources, form targets, reference lists."""
-        reqs = {"sources": set(), "form_target": None, "ref_lists": set(), "create_as": None}
+        """Walk component tree to find data sources, form targets, reference lists, etc."""
+        reqs = {
+            "sources": set(), "form_target": None, "ref_lists": set(),
+            "create_as": None, "unique_fields": set(), "after_save": None,
+        }
         def _walk(children):
             for child in (children or []):
                 t = child.get("type", "")
@@ -576,11 +579,14 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                 elif t == "form":
                     reqs["form_target"] = p.get("target")
                     reqs["create_as"] = p.get("create_as")
+                    reqs["after_save"] = p.get("after_save")
                     _walk(child.get("children", []))
                 elif t == "field_input":
                     ref = p.get("reference_content")
                     if ref:
                         reqs["ref_lists"].add(ref)
+                    if p.get("validate_unique"):
+                        reqs["unique_fields"].add(p.get("field", ""))
                 elif t in ("aggregation", "stat_breakdown"):
                     src = p.get("source")
                     if src:
@@ -635,15 +641,31 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
 
         # Form POST route
         if reqs["form_target"]:
-            def make_form_post(pg, sl, ft, sm_info, create_as):
+            def make_form_post(pg, sl, ft, sm_info, create_as, unique_fields, after_save):
                 @app.post(f"/{sl}", response_class=HTMLResponse)
-                async def form_post(request: Request, _pg=pg, _sl=sl, _ft=ft, _sm=sm_info, _ca=create_as):
+                async def form_post(request: Request, _pg=pg, _sl=sl, _ft=ft,
+                                    _sm=sm_info, _ca=create_as,
+                                    _uf=unique_fields, _as=after_save):
                     form = await request.form()
                     data = dict(form)
                     edit_id = data.pop("edit_id", "")
                     db = await get_db(db_path)
                     try:
                         schema = content_lookup.get(_ft, {})
+
+                        # A7: Validate unique fields before insert
+                        if not edit_id and _uf:
+                            for uf in _uf:
+                                val = data.get(uf, "")
+                                if val:
+                                    cursor = await db.execute(
+                                        f"SELECT id FROM {_ft} WHERE {uf} = ?", (val,))
+                                    existing = await cursor.fetchone()
+                                    if existing:
+                                        raise HTTPException(
+                                            status_code=409,
+                                            detail=f"A record with {uf} '{val}' already exists")
+
                         if edit_id:
                             await update_record(db, _ft, edit_id, data, "id", terminator, event_bus)
                         else:
@@ -652,10 +674,17 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                             if _ca:
                                 data["status"] = _ca
                             await create_record(db, _ft, data, schema, _sm, terminator, event_bus)
-                        return RedirectResponse(url=f"/{_sl}", status_code=303)
+
+                        # A8: After-save navigation
+                        redirect_url = f"/{_sl}"
+                        if _as and _as.startswith("return_to:"):
+                            target_slug = _as.split(":", 1)[1].strip()
+                            redirect_url = f"/{target_slug}"
+                        return RedirectResponse(url=redirect_url, status_code=303)
                     finally:
                         await db.close()
             make_form_post(page, slug, reqs["form_target"],
-                          sm_lookup.get(reqs["form_target"]), reqs["create_as"])
+                          sm_lookup.get(reqs["form_target"]), reqs["create_as"],
+                          reqs["unique_fields"], reqs["after_save"])
 
     return app

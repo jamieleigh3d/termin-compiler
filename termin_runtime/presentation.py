@@ -37,7 +37,49 @@ def _render_data_table(node: dict) -> str:
         parts.append('    <th class="px-4 py-2 text-left text-sm font-medium text-gray-600">Actions</th>')
 
     parts.append('  </tr></thead><tbody>')
-    parts.append('    {% for item in items %}<tr class="border-t" data-termin-row-id="{{ item.id }}">')
+    # A5: Highlight — check for highlight child with JEXL condition
+    highlight_expr = None
+    for child in children:
+        if child.get("type") == "highlight":
+            cond = child.get("props", {}).get("condition", {})
+            if isinstance(cond, dict) and cond.get("is_expr"):
+                highlight_expr = cond["value"]
+
+    if highlight_expr:
+        # Convert JEXL field references to Jinja item.field references
+        import re
+        def _to_jinja_field(expr):
+            """Convert JEXL row expression to Jinja2.
+            Prefixes bare identifiers with 'item.' while preserving
+            string literals and operators."""
+            result = []
+            # Split on quoted strings to avoid replacing inside them
+            parts_split = re.split(r'("[^"]*"|\'[^\']*\')', expr)
+            keywords = {'and', 'or', 'not', 'true', 'false', 'none', 'is', 'in', 'item'}
+            for i, part in enumerate(parts_split):
+                if i % 2 == 1:
+                    # Quoted string — keep as-is
+                    result.append(part)
+                else:
+                    # Replace .field -> item.field
+                    part = re.sub(r'\.([a-zA-Z_]\w*)', r'item.\1', part)
+                    # Replace bare identifiers -> item.identifier
+                    part = re.sub(
+                        r'\b([a-z_][a-zA-Z0-9_]*)\b',
+                        lambda m: m.group(0) if m.group(1) in keywords else f'item.{m.group(1)}',
+                        part)
+                    # Deduplicate item.item. -> item.
+                    part = part.replace('item.item.', 'item.')
+                    result.append(part)
+            return ''.join(result)
+        jinja_expr = _to_jinja_field(highlight_expr)
+        # Replace JEXL operators with Jinja equivalents
+        jinja_expr = jinja_expr.replace("||", " or ").replace("&&", " and ")
+        # Wrap in Jinja2 safe accessor: use item.get() for missing fields
+        jinja_expr = re.sub(r'item\.(\w+)', r'item.get("\1", 0)', jinja_expr)
+        parts.append(f'    {{% for item in items %}}<tr class="border-t {{% if {jinja_expr} %}}bg-red-50 font-semibold{{% endif %}}" data-termin-row-id="{{{{ item.id }}}}">')
+    else:
+        parts.append('    {% for item in items %}<tr class="border-t" data-termin-row-id="{{ item.id }}">')
     for col in cols:
         key = col.get("field", "")
         parts.append(f'      <td class="px-4 py-2 text-sm" data-termin-field="{key}">{{{{ item.{key}|default("") }}}}</td>')
@@ -67,9 +109,26 @@ def _render_data_table(node: dict) -> str:
             sub_parts.append(rendered)
         if child.get("type") == "search":
             sub_parts.append(_render_search(child))
-    if sub_parts:
-        return '\n'.join(sub_parts) + '\n' + '\n'.join(parts)
-    return '\n'.join(parts)
+    # A6: Related data — render a related data section below the table
+    related_parts = []
+    for child in children:
+        if child.get("type") == "related":
+            rp = child.get("props", {})
+            rel_content = rp.get("content", "")
+            join_col = rp.get("join", "")
+            related_parts.append(
+                f'<div class="mt-4 bg-gray-50 rounded p-3 text-sm" '
+                f'data-termin-component="related" data-termin-source="{rel_content}" '
+                f'data-termin-join="{join_col}">'
+                f'<div class="font-medium text-gray-700 mb-2">Related: {rel_content}</div>'
+                f'<div class="text-gray-500">[Related {rel_content} by {join_col} loaded dynamically]</div>'
+                f'</div>'
+            )
+
+    result = '\n'.join(sub_parts) + '\n' + '\n'.join(parts) if sub_parts else '\n'.join(parts)
+    if related_parts:
+        result += '\n' + '\n'.join(related_parts)
+    return result
 
 
 def _render_filter(node: dict) -> str:
@@ -121,6 +180,7 @@ def _render_field_input(node: dict, content_schemas: dict = None) -> str:
     label = props.get("label", key)
     input_type = props.get("input_type", "text")
     required = ' required' if props.get("required") else ''
+    unique_attr = ' data-validate-unique="true"' if props.get("validate_unique") else ''
 
     parts = [f'  <div class="mb-4">']
     parts.append(f'    <label class="block text-sm font-medium text-gray-700 mb-1">{label}</label>')
@@ -145,7 +205,7 @@ def _render_field_input(node: dict, content_schemas: dict = None) -> str:
         min_attr = f' min="{props["minimum"]}"' if props.get("minimum") is not None else ""
         parts.append(f'    <input type="number" name="{key}" class="w-full border rounded px-3 py-2"{step}{min_attr}{required}>')
     else:
-        parts.append(f'    <input type="text" name="{key}" class="w-full border rounded px-3 py-2"{required}>')
+        parts.append(f'    <input type="text" name="{key}" class="w-full border rounded px-3 py-2"{required}{unique_attr}>')
 
     parts.append(f'  </div>')
     return '\n'.join(parts)
