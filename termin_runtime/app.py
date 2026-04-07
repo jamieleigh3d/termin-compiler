@@ -535,21 +535,23 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
         make_sse(stream["path"])
 
     # ── Build client-side compute JS registrations ──
+    # Registers compute functions in the CEL evaluation context.
+    # Client-side computes are registered as JS functions on ctx.
     compute_js_parts = []
     for comp in ir.get("computes", []):
         body_lines = comp.get("body_lines", [])
         input_params = comp.get("input_params", [])
         if body_lines and input_params:
             param_name = input_params[0].get("name", "x") if input_params else "x"
-            # Compile body to JS: "greeting = expr" -> "return expr;"
             for line in body_lines:
                 clean = line.strip().lstrip("[").rstrip("]").strip()
                 import re as _re
                 m = _re.match(r'(\w+)\s*=\s*(.*)', clean)
                 if m:
                     expr = m.group(2).strip()
+                    fname = comp["name"]["display"]
                     compute_js_parts.append(
-                        f'jexl.addFunction("{comp["name"]["display"]}", function({param_name}) {{ return {expr}; }});'
+                        f'ctx["{fname}"] = function({param_name}) {{ return {expr}; }};'
                     )
                     break
     _compute_js = "\n".join(compute_js_parts)

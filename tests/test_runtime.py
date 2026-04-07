@@ -28,20 +28,20 @@ def _make_client(name: str):
 # ── Compute function registration ──
 
 class TestComputeRegistration:
-    """Compute functions defined in IR must be registered with client-side jexl."""
+    """Compute functions defined in IR must be registered on the client-side context."""
 
     def test_compute_js_registered_in_page(self):
-        """hello_user has SayHelloTo compute — it must appear as jexl.addFunction in page HTML."""
+        """hello_user has SayHelloTo compute — it must appear as ctx function in page HTML."""
         with _make_client("hello_user") as client:
             client.cookies.set("termin_role", "LoggedInUser")
             client.cookies.set("termin_user_name", "Test")
             r = client.get("/hello")
             assert r.status_code == 200
-            assert 'jexl.addFunction("SayHelloTo"' in r.text, \
-                "Compute function SayHelloTo not registered with client-side jexl"
+            assert 'ctx["SayHelloTo"]' in r.text, \
+                "Compute function SayHelloTo not registered on client context"
 
     def test_compute_js_has_correct_body(self):
-        """The registered function body should contain the JEXL expression."""
+        """The registered function body should contain the expression."""
         with _make_client("hello_user") as client:
             client.cookies.set("termin_role", "LoggedInUser")
             r = client.get("/hello")
@@ -49,11 +49,10 @@ class TestComputeRegistration:
                 "Compute function body missing u.FirstName reference"
 
     def test_compute_js_empty_when_no_computes(self):
-        """hello.termin has no computes — compute_js should be empty but not break."""
+        """hello.termin has no computes — page should render without errors."""
         with _make_client("hello") as client:
             r = client.get("/hello")
             assert r.status_code == 200
-            assert 'jexl.addFunction' not in r.text
 
     def test_all_computes_registered(self):
         """compute_demo has 5 computes — all should produce addFunction calls."""
@@ -66,8 +65,8 @@ class TestComputeRegistration:
                                     if c.get("body_lines") and c.get("input_params")]
             for comp in computes_with_bodies:
                 name = comp["name"]["display"]
-                assert f'jexl.addFunction("{name}"' in r.text, \
-                    f"Compute {name} not registered with jexl"
+                assert f'ctx["{name}"]' in r.text, \
+                    f"Compute {name} not registered on client context"
 
 
 # ── Page rendering ──

@@ -5,7 +5,7 @@
  * via WebSocket, subscribes to content changes, and patches the DOM
  * when push events arrive. Progressive enhancement: page works without JS.
  *
- * No build step. No npm dependencies. JEXL loaded from CDN (already in page).
+ * No build step. No npm dependencies. CEL evaluator loaded from CDN (already in page).
  */
 
 const TERMIN_VERSION = "0.2.0";
@@ -46,7 +46,7 @@ async function init() {
     state.bootstrap = await bootstrapRes.json();
     state.identity = state.bootstrap.identity;
 
-    // Register client-safe compute functions with jexl (if available)
+    // Register client-safe compute functions (if available)
     registerComputes(state.bootstrap.computes || []);
 
     // Derive WebSocket URL from page origin (same host)
@@ -71,33 +71,11 @@ async function init() {
 // ── Compute Registration ──
 
 function registerComputes(computes) {
-  if (typeof jexl === "undefined") return;
-  for (const comp of computes) {
-    const name = comp.name && comp.name.display;
-    const params = comp.input_params || [];
-    const bodyLines = comp.body_lines || [];
-    if (!name || !bodyLines.length || !params.length) continue;
-
-    const paramName = params[0].name || "x";
-    // Extract expression from body: "greeting = expr" -> expr
-    for (const line of bodyLines) {
-      const clean = line.replace(/^\[/, "").replace(/\]$/, "").trim();
-      const m = clean.match(/^\w+\s*=\s*(.*)/);
-      if (m) {
-        const expr = m[1].trim();
-        // Register with jexl
-        try {
-          jexl.addFunction(name, function(arg) {
-            return jexl.evalSync(expr, { [paramName]: arg });
-          });
-        } catch (_) {
-          // jexl.evalSync may not be available; try async fallback
-          jexl.addFunction(name, function(arg) { return expr; });
-        }
-        break;
-      }
-    }
-  }
+  // Compute functions are registered on the page-level context object
+  // by the server-generated inline script (ctx["FuncName"] = function...).
+  // This function is a placeholder for future client-side compute
+  // registration from the bootstrap API response.
+  // Currently, server-side JS generation handles this in app.py.
 }
 
 // ── WebSocket ──

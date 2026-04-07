@@ -411,18 +411,19 @@ def build_base_template(app_name: str, nav_html: str) -> object:
     </main>
     <script id="termin-user-data" type="application/json">{{{{ user_profile_json|safe }}}}</script>
     <script type="module">
-    import jexl from "https://cdn.jsdelivr.net/npm/jexl@2.3.0/+esm";
+    import {{ evaluate }} from "https://cdn.jsdelivr.net/npm/@marcbachmann/cel-js/+esm";
     var profile = JSON.parse(document.getElementById("termin-user-data").textContent);
     var role = "{{{{ current_role }}}}";
-    var ctx = {{ role: role, CurrentUser: profile }};
+    var ctx = {{ role: role, CurrentUser: profile, User: profile }};
     ctx[role] = {{ CurrentUser: profile }};
     {{{{ termin_compute_js|safe }}}}
     document.querySelectorAll("[data-termin-expr]").forEach(function(el) {{
-        jexl.eval(el.dataset.terminExpr, ctx).then(function(result) {{
+        try {{
+            var result = evaluate(el.dataset.terminExpr, ctx);
             el.textContent = result;
-        }}).catch(function(err) {{
+        }} catch(err) {{
             el.textContent = "[Error: " + err.message + "]";
-        }});
+        }}
     }});
     </script>
     <script type="module" src="/runtime/termin.js"></script>
