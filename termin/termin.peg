@@ -122,7 +122,7 @@ constraint
     | 'unique'                #Unique
     | 'minimum' val:number    #Minimum
     | 'maximum' val:number    #Maximum
-    | 'defaults' 'to' expr:jexl_expr        #DefaultExpr
+    | 'defaults' 'to' expr:expr        #DefaultExpr
     | 'defaults' 'to' lit:quoted_string    #DefaultLiteral
     | 'confidentiality' 'is' scopes:quoted_list  #Confidentiality
     ;
@@ -169,8 +169,8 @@ state_transition_line
       #TransitionScope
     | article from_state:words_before_word_can
       singular:word 'can' 'become' to_state:word
-      ['again'] 'if' jexl:jexl_expr $
-      #TransitionJexl
+      ['again'] 'if' cel:expr $
+      #TransitionExpr
     ;
 
 
@@ -178,8 +178,8 @@ state_transition_line
 # EVENTS
 # ==================================================================
 
-event_jexl_line
-    = 'When' jexl:jexl_expr ':' $
+event_expr_line
+    = 'When' cel:expr ':' $
     ;
 
 event_v1_line
@@ -218,7 +218,7 @@ log_level = 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' ;
 
 error_from_line
     = 'On' 'error' 'from' source:quoted_string
-      ['where' jexl:jexl_expr] ':' $
+      ['where' cel:expr] ':' $
     ;
 
 error_catch_all_line
@@ -237,9 +237,9 @@ error_then_line
 error_action
     = 'disable' target:word           #ActionDisable
     | 'escalate'                      #ActionEscalate
-    | 'notify' role:quoted_string 'with' expr:jexl_expr  #ActionNotify
+    | 'notify' role:quoted_string 'with' expr:expr  #ActionNotify
     | 'create' name:quoted_string rest_of_line  #ActionCreate
-    | 'set' expr:jexl_expr           #ActionSet
+    | 'set' expr:expr           #ActionSet
     ;
 
 error_create_line
@@ -288,7 +288,7 @@ show_related_line
     ;
 
 highlight_rows_line
-    = 'Highlight' 'rows' 'where' jexl:jexl_expr $      #HighlightJexl
+    = 'Highlight' 'rows' 'where' cel:expr $      #HighlightExpr
     | 'Highlight' 'rows' 'where' rest:rest_of_line $    #HighlightFree
     ;
 
@@ -309,7 +309,7 @@ accept_input_line
     ;
 
 validate_unique_line
-    = 'Validate' 'that' jexl:jexl_expr ['before' 'saving'] $  #ValidateJexl
+    = 'Validate' 'that' cel:expr ['before' 'saving'] $  #ValidateExpr
     | 'Validate' 'that' field:words_before_is 'is' 'unique'
       ['before' 'saving'] $                                     #ValidateUnique
     ;
@@ -328,7 +328,7 @@ show_chart_line
     ;
 
 display_text_line
-    = 'Display' 'text' jexl:jexl_expr $          #DisplayTextJexl
+    = 'Display' 'text' cel:expr $          #DisplayTextExpr
     | 'Display' 'text' text:quoted_string $       #DisplayTextQuoted
     | 'Display' 'text' expr:rest_of_line $        #DisplayTextExpr
     ;
@@ -337,9 +337,9 @@ structured_agg_line
     = 'Display' 'count' 'of' content:words_before_grouped
       'grouped' 'by' field:word $                         #AggCountGrouped
     | 'Display' 'count' 'of' content:words $              #AggCount
-    | 'Display' func:agg_func 'of' expr:jexl_expr
+    | 'Display' func:agg_func 'of' expr:expr
       'from' content:words_before_as 'as' format:word $   #AggExprFormat
-    | 'Display' func:agg_func 'of' expr:jexl_expr
+    | 'Display' func:agg_func 'of' expr:expr
       'from' content:words $                               #AggExpr
     ;
 
@@ -433,8 +433,8 @@ param
     | [article] name:words                               #ParamUntyped
     ;
 
-compute_body_jexl_line
-    = jexl:jexl_expr $
+compute_body_expr_line
+    = cel:expr $
     ;
 
 compute_body_text_line
@@ -499,7 +499,7 @@ boundary_restricts_line
 
 boundary_exposes_line
     = 'Exposes' 'property' name:quoted_string ':'
-      type_name:words '=' jexl:jexl_expr $
+      type_name:words '=' cel:expr $
     ;
 
 
@@ -541,7 +541,11 @@ article = /\b[Aa]n?\b/ | /\b[Tt]he\b/ ;
 
 quoted_string = '"' content:/[^"]*/ '"' ;
 
-jexl_expr = '[' content:/[^\]]+/ ']' ;
+# Expression delimiters: backtick for inline, triple-backtick for multi-line
+expr = '`' content:/[^`]+/ '`' ;
+
+# Legacy bracket syntax (deprecated, will be removed)
+# expr_legacy = '[' content:/[^\]]+/ ']' ;
 
 word = /\w+/ ;
 

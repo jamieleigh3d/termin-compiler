@@ -52,7 +52,8 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Users authenticate with", "identity_line"), ("Scopes are", "scopes_line"),
     ("Content called", "content_header"), ("Scoped to", "content_scoped_line"), ("Each ", "field_line"),
     ("Anyone with", "access_line"), ("State for", "state_header"),
-    ("When [", "event_jexl_line"), ("When a ", "event_v1_line"), ("When an ", "event_v1_line"),
+    ("When `", "event_expr_line"), ("When [", "event_expr_line"),  # backtick first, bracket legacy
+    ("When a ", "event_v1_line"), ("When an ", "event_v1_line"),
     ("Create a ", "event_action_line"), ("Create an ", "event_action_line"),
     ("Log level:", "log_level_line"), ("On error from", "error_from_line"),
     ("On any error:", "error_catch_all_line"), ("Retry ", "error_retry_line"),
@@ -109,7 +110,8 @@ def _classify_line(text: str) -> str:
     if text.startswith('"') and " links to " in text: return "nav_item_line"
     if any(text.startswith(m) or text.lstrip().startswith(m) for m in _HTTP_METHODS): return "api_endpoint_line"
     if any(text.startswith(kw) for kw in _SHAPE_KW): return "compute_shape_line"
-    if text.startswith("[") and text.endswith("]"): return "compute_body_jexl_line"
+    if text.startswith("`") and text.endswith("`") and not text.startswith("```"): return "compute_body_expr_line"
+    if text.startswith("[") and text.endswith("]"): return "compute_body_expr_line"  # legacy bracket support
     if " can execute this" in text: return "compute_access_line"
     return "unknown"
 
@@ -183,10 +185,16 @@ def _fq(text: str) -> str:
     q2 = text.find('"', q1 + 1)
     return text[q1 + 1:q2] if q2 >= 0 else ""
 
-def _jb(text: str) -> Optional[str]:
-    b1 = text.find("[")
-    if b1 < 0: return None
-    b2 = text.find("]", b1 + 1)
+def _eb(text: str) -> Optional[str]:
+    """Extract backtick expression content from text."""
+    b1 = text.find("`")
+    if b1 < 0:
+        # Legacy bracket fallback
+        b1 = text.find("[")
+        if b1 < 0: return None
+        b2 = text.find("]", b1 + 1)
+        return text[b1 + 1:b2].strip() if b2 >= 0 else None
+    b2 = text.find("`", b1 + 1)
     return text[b1 + 1:b2].strip() if b2 >= 0 else None
 
 # --- Type expression ---
@@ -200,8 +208,10 @@ def _parse_type_text(text: str, ln: int = 0) -> TypeExpr:
         expr.confidentiality_scopes = [s.strip().strip('"') for s in re.findall(r'"([^"]*)"', scope_str)]
         text = text[:cm.start()] + text[cm.end():]
 
-    # Extract "defaults to [expr]" or 'defaults to "literal"' before other constraint stripping
-    dm = re.search(r',?\s*defaults\s+to\s+\[([^\]]+)\]', text, re.IGNORECASE)
+    # Extract "defaults to `expr`" or "defaults to [expr]" (legacy) or 'defaults to "literal"'
+    dm = re.search(r',?\s*defaults\s+to\s+`([^`]+)`', text, re.IGNORECASE)
+    if not dm:
+        dm = re.search(r',?\s*defaults\s+to\s+\[([^\]]+)\]', text, re.IGNORECASE)  # legacy bracket
     if dm:
         expr.default_expr = dm.group(1).strip()
         expr.default_is_expr = True
@@ -386,9 +396,9 @@ def _build_err_act(text, ln) -> ErrorAction:
     rest = text[5:].strip()
     if rest.startswith("disable "): return ErrorAction(kind="disable", target=rest[8:].strip(), line=ln)
     if rest == "escalate": return ErrorAction(kind="escalate", line=ln)
-    if rest.startswith("notify "): return ErrorAction(kind="notify", target=_fq(rest), expr=_jb(rest) or "", line=ln)
+    if rest.startswith("notify "): return ErrorAction(kind="notify", target=_fq(rest), expr=_eb(rest) or "", line=ln)
     if rest.startswith("create "): return ErrorAction(kind="create", target=_fq(rest), line=ln)
-    if rest.startswith("set "): return ErrorAction(kind="set", expr=_jb(rest) or "", line=ln)
+    if rest.startswith("set "): return ErrorAction(kind="set", expr=_eb(rest) or "", line=ln)
     return ErrorAction(kind="unknown", target=rest, line=ln)
 
 def _build_comp_shape(text) -> tuple:
@@ -508,8 +518,8 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule); return ("state_also", _ql(r.get("states")) if r else _eqs(text))
     if rule == "state_transition_line":
         t = _build_trans(text, ln); return ("state_transition", t) if t else None
-    if rule == "event_jexl_line":
-        r = P(text, rule); j = _qs(r.get("jexl","")) if r else (_jb(text) or "")
+    if rule == "event_expr_line":
+        r = P(text, rule); j = _qs(r.get("cel","")) if r else (_eb(text) or "")
         return ("event_header", EventRule(content_name="", trigger="expr", condition_expr=j, line=ln))
     if rule == "event_v1_line":
         return ("event_header", _build_ev1(text, ln))
@@ -529,8 +539,8 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule); return ("log_level", str(r.get("level","")).strip() if r else text.split(":",1)[1].strip())
     if rule == "error_from_line":
         r = P(text, rule)
-        if r: src = _qs(r.get("source","")); j = _qs(r.get("jexl","")) if r.get("jexl") else None
-        else: src = _fq(text); j = _jb(text)
+        if r: src = _qs(r.get("source","")); j = _qs(r.get("cel","")) if r.get("cel") else None
+        else: src = _fq(text); j = _eb(text)
         return ("error_header", ErrorHandler(source=src, condition_expr=j, line=ln))
     if rule == "error_catch_all_line":
         return ("error_header", ErrorHandler(source="", is_catch_all=True, line=ln))
@@ -564,7 +574,7 @@ def _parse_line(text: str, rule: str, ln: int):
         if gi < 0: return ("directive", ShowRelated(singular=sg, related_content=af, line=ln))
         return ("directive", ShowRelated(singular=sg, related_content=af[:gi].strip(), group_by=af[gi+12:].strip(), line=ln))
     if rule == "highlight_rows_line":
-        rest = text[21:].strip(); j = _jb(rest)
+        rest = text[21:].strip(); j = _eb(rest)
         if j: return ("directive", HighlightRows(condition_expr=j, line=ln))
         for op in (" is at or below "," is above "," is below "," is equal to "):
             idx = rest.find(op)
@@ -608,10 +618,10 @@ def _parse_line(text: str, rule: str, ln: int):
     if rule == "display_text_line":
         r = P(text, rule)
         if r:
-            if r.get("jexl"): return ("directive", DisplayText(text=_qs(r["jexl"]), is_expression=True, line=ln))
+            if r.get("cel"): return ("directive", DisplayText(text=_qs(r["cel"]), is_expression=True, line=ln))
             if r.get("text"): return ("directive", DisplayText(text=_qs(r["text"]), line=ln))
             if r.get("expr"): return ("directive", DisplayText(text=str(r["expr"]).strip(), is_expression=True, line=ln))
-        rest = text[12:].strip(); j = _jb(rest)
+        rest = text[12:].strip(); j = _eb(rest)
         if j: return ("directive", DisplayText(text=j, is_expression=True, line=ln))
         q = _fq(rest)
         if q: return ("directive", DisplayText(text=q, line=ln))
@@ -697,7 +707,7 @@ def _parse_line(text: str, rule: str, ln: int):
     if rule == "compute_header":
         r = P(text, rule); return ("compute_header", ComputeNode(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "compute_shape_line": return ("compute_shape", _build_comp_shape(text))
-    if rule == "compute_body_jexl_line": return ("compute_body", text[1:-1].strip())
+    if rule == "compute_body_expr_line": return ("compute_body", text[1:-1].strip())
     if rule == "compute_access_line":
         r = P(text, rule)
         if r: return ("compute_access", _qs(r.get("role","")))
@@ -743,8 +753,8 @@ def _parse_line(text: str, rule: str, ln: int):
     if rule == "boundary_exposes_line":
         r = P(text, rule)
         if r: return ("boundary_prop", "exposes", BoundaryProperty(name=_qs(r.get("name","")),
-                          type_name=str(r.get("type_name","")).strip(), expr=_qs(r.get("jexl","")), line=ln))
-        n = _fq(text); j = _jb(text)
+                          type_name=str(r.get("type_name","")).strip(), expr=_qs(r.get("cel","")), line=ln))
+        n = _fq(text); j = _eb(text)
         ci = text.find(":", text.find('"', text.find('"')+1)+1); ei = text.find("=")
         tn = text[ci+1:ei].strip() if ci>=0 and ei>ci else ""
         return ("boundary_prop", "exposes", BoundaryProperty(name=n, type_name=tn, expr=j or "", line=ln))

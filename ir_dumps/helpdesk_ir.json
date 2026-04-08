@@ -1,5 +1,5 @@
 {
-  "ir_version": "0.3.0",
+  "ir_version": "0.4.0",
   "reflection_enabled": true,
   "app_id": "9d81658f-b642-437f-8f39-ffe31faa7701",
   "name": "Help Desk Ticket Tracker",
@@ -60,7 +60,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "description",
@@ -75,7 +76,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "priority",
@@ -95,7 +97,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "category",
@@ -115,7 +118,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "submitted_by",
@@ -130,7 +134,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": "User.Name"
+          "default_expr": "User.Name",
+          "confidentiality_scopes": []
         },
         {
           "name": "assigned_to",
@@ -145,7 +150,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "created_at",
@@ -160,12 +166,14 @@
           "foreign_key": null,
           "is_auto": true,
           "list_type": null,
-          "default_expr": "now"
+          "default_expr": "now",
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": true,
-      "initial_state": "open"
+      "initial_state": "open",
+      "confidentiality_scopes": []
     },
     {
       "name": {
@@ -187,7 +195,8 @@
           "foreign_key": "tickets",
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "author",
@@ -202,7 +211,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": "User.Name"
+          "default_expr": "User.Name",
+          "confidentiality_scopes": []
         },
         {
           "name": "body",
@@ -217,7 +227,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "posted_at",
@@ -232,12 +243,14 @@
           "foreign_key": null,
           "is_auto": true,
           "list_type": null,
-          "default_expr": "now"
+          "default_expr": "now",
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": false,
-      "initial_state": null
+      "initial_state": null,
+      "confidentiality_scopes": []
     }
   ],
   "access_grants": [
@@ -714,5 +727,6 @@
   "computes": [],
   "channels": [],
   "boundaries": [],
-  "error_handlers": []
+  "error_handlers": [],
+  "reclassification_points": []
 }

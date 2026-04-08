@@ -1,5 +1,5 @@
 {
-  "ir_version": "0.3.0",
+  "ir_version": "0.4.0",
   "reflection_enabled": true,
   "app_id": "7bc65103-25fd-43c1-a8b0-7a5905bcc38b",
   "name": "Order Processing Demo",
@@ -50,7 +50,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "total",
@@ -65,7 +66,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "priority",
@@ -84,12 +86,14 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": true,
-      "initial_state": "pending"
+      "initial_state": "pending",
+      "confidentiality_scopes": []
     },
     {
       "name": {
@@ -111,7 +115,8 @@
           "foreign_key": "orders",
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "product_name",
@@ -126,7 +131,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "quantity",
@@ -141,7 +147,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "unit_price",
@@ -156,12 +163,14 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": false,
-      "initial_state": null
+      "initial_state": null,
+      "confidentiality_scopes": []
     },
     {
       "name": {
@@ -183,7 +192,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "total_revenue",
@@ -198,12 +208,14 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": false,
-      "initial_state": null
+      "initial_state": null,
+      "confidentiality_scopes": []
     }
   ],
   "access_grants": [
@@ -468,7 +480,11 @@
       "required_role": null,
       "input_params": [],
       "output_params": [],
-      "client_safe": false
+      "client_safe": false,
+      "identity_mode": "delegate",
+      "required_confidentiality_scopes": [],
+      "output_confidentiality_scope": null,
+      "field_dependencies": []
     },
     {
       "name": {
@@ -490,7 +506,11 @@
       "required_role": null,
       "input_params": [],
       "output_params": [],
-      "client_safe": false
+      "client_safe": false,
+      "identity_mode": "delegate",
+      "required_confidentiality_scopes": [],
+      "output_confidentiality_scope": null,
+      "field_dependencies": []
     },
     {
       "name": {
@@ -512,7 +532,11 @@
       "required_role": null,
       "input_params": [],
       "output_params": [],
-      "client_safe": false
+      "client_safe": false,
+      "identity_mode": "delegate",
+      "required_confidentiality_scopes": [],
+      "output_confidentiality_scope": null,
+      "field_dependencies": []
     },
     {
       "name": {
@@ -535,7 +559,11 @@
       "required_role": null,
       "input_params": [],
       "output_params": [],
-      "client_safe": false
+      "client_safe": false,
+      "identity_mode": "delegate",
+      "required_confidentiality_scopes": [],
+      "output_confidentiality_scope": null,
+      "field_dependencies": []
     },
     {
       "name": {
@@ -558,7 +586,11 @@
       "required_role": null,
       "input_params": [],
       "output_params": [],
-      "client_safe": false
+      "client_safe": false,
+      "identity_mode": "delegate",
+      "required_confidentiality_scopes": [],
+      "output_confidentiality_scope": null,
+      "field_dependencies": []
     }
   ],
   "channels": [
@@ -662,5 +694,6 @@
       "properties": []
     }
   ],
-  "error_handlers": []
+  "error_handlers": [],
+  "reclassification_points": []
 }

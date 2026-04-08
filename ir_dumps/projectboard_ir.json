@@ -1,5 +1,5 @@
 {
-  "ir_version": "0.3.0",
+  "ir_version": "0.4.0",
   "reflection_enabled": true,
   "app_id": "98883884-b402-42a0-858f-20defd9f1184",
   "name": "Project Management Board",
@@ -58,7 +58,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "description",
@@ -73,7 +74,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "status",
@@ -92,12 +94,14 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": false,
-      "initial_state": null
+      "initial_state": null,
+      "confidentiality_scopes": []
     },
     {
       "name": {
@@ -119,7 +123,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "email",
@@ -134,7 +139,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "role",
@@ -154,7 +160,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "project",
@@ -169,12 +176,14 @@
           "foreign_key": "projects",
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": false,
-      "initial_state": null
+      "initial_state": null,
+      "confidentiality_scopes": []
     },
     {
       "name": {
@@ -196,7 +205,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "project",
@@ -211,7 +221,8 @@
           "foreign_key": "projects",
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "goal",
@@ -226,7 +237,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "capacity",
@@ -241,12 +253,14 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": false,
-      "initial_state": null
+      "initial_state": null,
+      "confidentiality_scopes": []
     },
     {
       "name": {
@@ -268,7 +282,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "description",
@@ -283,7 +298,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "project",
@@ -298,7 +314,8 @@
           "foreign_key": "projects",
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "sprint",
@@ -313,7 +330,8 @@
           "foreign_key": "sprints",
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "assignee",
@@ -328,7 +346,8 @@
           "foreign_key": "team_members",
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "points",
@@ -343,7 +362,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "priority",
@@ -363,12 +383,14 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": true,
-      "initial_state": "backlog"
+      "initial_state": "backlog",
+      "confidentiality_scopes": []
     },
     {
       "name": {
@@ -390,7 +412,8 @@
           "foreign_key": "tasks",
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "team_member",
@@ -405,7 +428,8 @@
           "foreign_key": "team_members",
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "hours",
@@ -420,7 +444,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "logged_at",
@@ -435,12 +460,14 @@
           "foreign_key": null,
           "is_auto": true,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": false,
-      "initial_state": null
+      "initial_state": null,
+      "confidentiality_scopes": []
     }
   ],
   "access_grants": [
@@ -1079,12 +1106,8 @@
           "type": "aggregation",
           "props": {
             "source": "time_logs",
-            "label": "total time logged",
-            "agg_type": "sum",
-            "expression": {
-              "value": "hours",
-              "is_expr": true
-            }
+            "label": "total time logged `sum(hours)`",
+            "agg_type": "sum"
           },
           "style": {},
           "layout": {},
@@ -1364,5 +1387,6 @@
   "computes": [],
   "channels": [],
   "boundaries": [],
-  "error_handlers": []
+  "error_handlers": [],
+  "reclassification_points": []
 }

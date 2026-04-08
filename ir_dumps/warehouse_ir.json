@@ -1,5 +1,5 @@
 {
-  "ir_version": "0.3.0",
+  "ir_version": "0.4.0",
   "reflection_enabled": true,
   "app_id": "3e157422-d10c-4a2b-b6c3-9f80fc80f27b",
   "name": "Warehouse Inventory Manager",
@@ -56,7 +56,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "name",
@@ -71,7 +72,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "description",
@@ -86,7 +88,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "unit_cost",
@@ -101,7 +104,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "category",
@@ -120,12 +124,14 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": true,
-      "initial_state": "draft"
+      "initial_state": "draft",
+      "confidentiality_scopes": []
     },
     {
       "name": {
@@ -147,7 +153,8 @@
           "foreign_key": "products",
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "warehouse",
@@ -162,7 +169,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "quantity",
@@ -177,7 +185,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "reorder_threshold",
@@ -192,12 +201,14 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": false,
-      "initial_state": null
+      "initial_state": null,
+      "confidentiality_scopes": []
     },
     {
       "name": {
@@ -219,7 +230,8 @@
           "foreign_key": "products",
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "warehouse",
@@ -234,7 +246,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "current_quantity",
@@ -249,7 +262,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "threshold",
@@ -264,7 +278,8 @@
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         },
         {
           "name": "created_at",
@@ -279,12 +294,14 @@
           "foreign_key": null,
           "is_auto": true,
           "list_type": null,
-          "default_expr": null
+          "default_expr": null,
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": false,
-      "initial_state": null
+      "initial_state": null,
+      "confidentiality_scopes": []
     }
   ],
   "access_grants": [
@@ -958,5 +975,6 @@
   "computes": [],
   "channels": [],
   "boundaries": [],
-  "error_handlers": []
+  "error_handlers": [],
+  "reclassification_points": []
 }
