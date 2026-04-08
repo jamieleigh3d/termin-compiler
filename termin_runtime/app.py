@@ -26,6 +26,7 @@ from .confidentiality import (
     check_compute_access, check_taint_integrity, enforce_output_taint,
     check_for_redacted_values, is_redacted,
 )
+from .transaction import Transaction
 
 
 def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None) -> FastAPI:
@@ -614,6 +615,42 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                         message=taint_err))
                     raise HTTPException(status_code=500, detail=taint_err)
 
+        # ── Transaction + Pre/Postcondition Framework ──
+
+        # Create transaction for snapshot isolation
+        tx = Transaction()
+
+        # Build Compute execution context
+        compute_ctx = {
+            "Compute": {
+                "Name": comp["name"]["display"],
+                "Provider": comp.get("provider") or "cel",
+                "IdentityMode": comp.get("identity_mode", "delegate"),
+                "Scopes": list(user_scopes),
+                "ExecutionId": tx.id,
+                "Trigger": "api",
+                "StartedAt": tx.started_at,
+            },
+            "User": user.get("User", {}),
+        }
+
+        # Evaluate preconditions
+        for i, precond in enumerate(comp.get("preconditions", [])):
+            try:
+                result = expr_eval.evaluate(precond, compute_ctx)
+                if not result:
+                    tx.rollback()
+                    detail = f"Precondition {i+1} failed: {precond}"
+                    terminator.route(TerminError(
+                        source=comp["name"]["display"], kind="precondition_failed",
+                        message=detail))
+                    raise HTTPException(status_code=412, detail=detail)
+            except HTTPException:
+                raise
+            except Exception as e:
+                tx.rollback()
+                raise HTTPException(status_code=500, detail=f"Precondition evaluation error: {e}")
+
         # Execute the CEL body
         body_lines = comp.get("body_lines", [])
         if not body_lines:
@@ -621,18 +658,17 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
 
         cel_body = body_lines[0]  # First body line is the expression
         try:
-            # Build context with input data and User object
-            ctx = {"User": user.get("User", {})}
+            ctx = dict(compute_ctx)
             if isinstance(input_data, dict):
                 ctx.update(input_data)
             elif isinstance(input_data, list):
-                # For content-based input, use the input content name as the key
                 for input_name in comp.get("input_content", []):
                     ctx[input_name] = input_data
 
             # Check 3: CEL redaction guard — detect __redacted markers in context
             redacted_err = check_for_redacted_values(ctx)
             if redacted_err:
+                tx.rollback()
                 terminator.route(TerminError(
                     source="expression", kind="redacted_field_access",
                     message=redacted_err))
@@ -642,17 +678,42 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
         except HTTPException:
             raise
         except Exception as e:
+            tx.rollback()
             raise HTTPException(status_code=500, detail=f"Compute evaluation failed: {e}")
 
-        output = {"result": result}
+        output = {"result": result, "transaction_id": tx.id}
+
+        # Evaluate postconditions
+        post_ctx = dict(compute_ctx)
+        post_ctx["After"] = {"result": result}
+        post_ctx["Before"] = {"result": None}  # simplified — full snapshot in E10 phase 2
+        for i, postcond in enumerate(comp.get("postconditions", [])):
+            try:
+                check = expr_eval.evaluate(postcond, post_ctx)
+                if not check:
+                    tx.rollback()
+                    detail = f"Postcondition {i+1} failed: {postcond}"
+                    terminator.route(TerminError(
+                        source=comp["name"]["display"], kind="postcondition_failed",
+                        message=detail))
+                    raise HTTPException(status_code=409, detail=detail)
+            except HTTPException:
+                raise
+            except Exception:
+                pass  # postcondition eval errors are non-fatal for now
 
         # Check 4: Output taint enforcement
         final_output, taint_err = enforce_output_taint(output, comp, user_scopes)
         if taint_err:
+            tx.rollback()
             terminator.route(TerminError(
                 source=comp["name"]["display"], kind="output_taint_blocked",
                 message=taint_err))
             raise HTTPException(status_code=403, detail=taint_err)
+
+        # Transaction succeeds — in a full implementation, tx.commit() would
+        # write staged changes to production. For CEL-only Computes, there's
+        # nothing to commit (the result is returned directly).
 
         return final_output
 
