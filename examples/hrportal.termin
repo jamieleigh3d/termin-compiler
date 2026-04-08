@@ -1,0 +1,132 @@
+Application: HR Portal
+  Description: Human Resources management with field-level confidentiality
+
+--- Identity ---
+
+Users authenticate with stub
+Scopes are "view_employees", "manage_employees", "access_salary", "access_pii", "view_team_metrics", and "manage_hr"
+
+--- Roles ---
+
+An "employee" has "view_employees"
+A "manager" has "view_employees" and "view_team_metrics"
+An "hr business partner" has "view_employees", "manage_employees", "access_salary", "access_pii", "view_team_metrics", and "manage_hr"
+An "executive" has "view_employees" and "view_team_metrics"
+
+--- Content ---
+
+Content called "employees":
+  Each employee has a name which is text, required
+  Each employee has a department which is text, required
+  Each employee has a role which is text
+  Each employee has a start date which is a date
+  Each employee has a salary which is currency, confidentiality is "access_salary"
+  Each employee has a bonus rate which is a number, confidentiality is "access_salary"
+  Each employee has a ssn which is text, confidentiality is "access_pii"
+  Each employee has a phone which is text, confidentiality is "access_pii"
+  Each employee has a added by which is text, defaults to [User.Name]
+  Anyone with "view_employees" can view employees
+  Anyone with "manage_employees" can create or update employees
+  Anyone with "manage_hr" can delete employees
+
+Content called "departments":
+  Each department has a name which is text, required, unique
+  Each department has a budget which is currency, confidentiality is "access_salary"
+  Each department has a head count which is a whole number
+  Anyone with "view_employees" can view departments
+  Anyone with "manage_hr" can create, update, or delete departments
+
+Content called "salary reviews":
+  Scoped to "access_salary"
+  Each salary review has an employee which references employees, required
+  Each salary review has a review date which is a date
+  Each salary review has an old salary which is currency
+  Each salary review has a new salary which is currency
+  Each salary review has a reason which is text
+  Each salary review has an approved by which is text, defaults to [User.Name]
+  Each salary review has a created at which is automatic, defaults to [now]
+  Anyone with "access_salary" can view salary reviews
+  Anyone with "manage_hr" can create or update salary reviews
+
+--- State ---
+
+State for salary reviews called "review lifecycle":
+  A salary review starts as "pending"
+  A salary review can also be "approved" or "applied"
+  A pending salary review can become approved if the user has "manage_hr"
+  An approved salary review can become applied if the user has "manage_hr"
+
+--- Compute ---
+
+Compute called "Calculate Team Bonus Pool":
+  Transform: takes employees, produces bonus_summary
+  Identity: service
+  Requires "access_salary"
+  Output confidentiality: "view_team_metrics"
+  [team_bonus = sum(employees.salary * employees.bonus_rate)]
+
+--- User Stories ---
+
+As an employee, I want to see the employee directory
+  so that I can find colleagues:
+    Show a page called "Employee Directory"
+    Display a table of employees with columns: name, department, role, start date
+    Allow searching by name or department
+
+As a manager, I want to see my team overview
+  so that I can plan effectively:
+    Show a page called "Team Overview"
+    Display a table of employees with columns: name, department, role, start date
+    Display count of employees grouped by department
+
+As an hr business partner, I want to manage employee records
+  so that I can maintain accurate HR data:
+    Show a page called "HR Dashboard"
+    Display a table of employees with columns: name, department, role, salary, bonus rate, start date
+    Highlight rows where [salary > 150000]
+    Allow filtering by department
+    Allow searching by name
+
+As an hr business partner, I want to add new employees
+  so that I can onboard them:
+    Show a page called "Add Employee"
+    Accept input for name, department, role, start date, salary, bonus rate, ssn, and phone
+    Create the employee
+
+As an hr business partner, I want to review salary changes
+  so that I can manage compensation:
+    Show a page called "Salary Reviews"
+    Display a table of salary reviews with columns: employee, review date, old salary, new salary, reason, status, approved by
+    Allow filtering by status
+    For each salary review, show actions:
+      "Approve" transitions to "approved" if available
+      "Apply" transitions to "applied" if available
+
+--- Navigation ---
+
+Navigation bar:
+  "Directory" links to "Employee Directory" visible to all
+  "Team" links to "Team Overview" visible to manager, executive
+  "HR Dashboard" links to "HR Dashboard" visible to hr business partner
+  "Add Employee" links to "Add Employee" visible to hr business partner
+  "Salary Reviews" links to "Salary Reviews" visible to hr business partner
+
+--- API ---
+
+Expose a REST API at /api/v1:
+  GET    /employees              lists employees
+  POST   /employees              creates an employee
+  GET    /employees/{id}         gets an employee
+  PUT    /employees/{id}         updates an employee
+  DELETE /employees/{id}         deletes an employee
+  GET    /departments            lists departments
+  POST   /departments            creates a department
+  GET    /departments/{id}       gets a department
+  PUT    /departments/{id}       updates a department
+  DELETE /departments/{id}       deletes a department
+  GET    /salary-reviews         lists salary reviews
+  POST   /salary-reviews         creates a salary review
+  GET    /salary-reviews/{id}    gets a salary review
+  PUT    /salary-reviews/{id}    updates a salary review
+
+Stream employee updates at /api/v1/stream
