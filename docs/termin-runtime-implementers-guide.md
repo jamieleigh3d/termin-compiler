@@ -186,7 +186,7 @@ Every auth provider must produce a standard `User` object available in CEL expre
 
 **PascalCase convention:** System objects in CEL use PascalCase (`User.Name`, `User.Role`). Data fields use snake_case (`item.submitted_by`). This is intentional — it visually distinguishes system-provided values from row data. The DSL is case-insensitive, but CEL inside `[brackets]` is case-sensitive.
 
-**No email:** Email is PII, provider-dependent, and not part of the standard User object. Applications that need email should declare it as a Content field.
+**No dedicated email field:** The standard User object does not include a `User.Email` field. Email is PII, provider-dependent, and not needed for runtime operations. Applications that need email should declare it as a Content field. Note: `User.Username` may be an email address (many auth providers use email as the login identifier) — the runtime treats it as an opaque string regardless of its format.
 
 ### 3.3 Access Grant Enforcement
 
