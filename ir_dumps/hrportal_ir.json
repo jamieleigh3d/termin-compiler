@@ -55,7 +55,6 @@
         "snake": "employees",
         "pascal": "Employees"
       },
-      "confidentiality_scope": null,
       "fields": [
         {
           "name": "name",
@@ -71,7 +70,7 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": null
+          "confidentiality_scopes": []
         },
         {
           "name": "department",
@@ -87,7 +86,7 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": null
+          "confidentiality_scopes": []
         },
         {
           "name": "role",
@@ -103,7 +102,7 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": null
+          "confidentiality_scopes": []
         },
         {
           "name": "start_date",
@@ -119,7 +118,7 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": null
+          "confidentiality_scopes": []
         },
         {
           "name": "salary",
@@ -135,7 +134,9 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": "access_salary"
+          "confidentiality_scopes": [
+            "access_salary"
+          ]
         },
         {
           "name": "bonus_rate",
@@ -151,7 +152,9 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": "access_salary"
+          "confidentiality_scopes": [
+            "access_salary"
+          ]
         },
         {
           "name": "ssn",
@@ -167,7 +170,9 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": "access_pii"
+          "confidentiality_scopes": [
+            "access_pii"
+          ]
         },
         {
           "name": "phone",
@@ -183,7 +188,9 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": "access_pii"
+          "confidentiality_scopes": [
+            "access_pii"
+          ]
         },
         {
           "name": "added_by",
@@ -199,12 +206,13 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": "User.Name",
-          "confidentiality_scope": null
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": false,
-      "initial_state": null
+      "initial_state": null,
+      "confidentiality_scopes": []
     },
     {
       "name": {
@@ -212,7 +220,6 @@
         "snake": "departments",
         "pascal": "Departments"
       },
-      "confidentiality_scope": null,
       "fields": [
         {
           "name": "name",
@@ -228,7 +235,7 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": null
+          "confidentiality_scopes": []
         },
         {
           "name": "budget",
@@ -244,7 +251,9 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": "access_salary"
+          "confidentiality_scopes": [
+            "access_salary"
+          ]
         },
         {
           "name": "head_count",
@@ -260,12 +269,13 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": null
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": false,
-      "initial_state": null
+      "initial_state": null,
+      "confidentiality_scopes": []
     },
     {
       "name": {
@@ -273,7 +283,6 @@
         "snake": "salary_reviews",
         "pascal": "SalaryReviews"
       },
-      "confidentiality_scope": "access_salary",
       "fields": [
         {
           "name": "employee",
@@ -289,7 +298,7 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": null
+          "confidentiality_scopes": []
         },
         {
           "name": "review_date",
@@ -305,7 +314,7 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": null
+          "confidentiality_scopes": []
         },
         {
           "name": "old_salary",
@@ -321,7 +330,7 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": null
+          "confidentiality_scopes": []
         },
         {
           "name": "new_salary",
@@ -337,7 +346,7 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": null
+          "confidentiality_scopes": []
         },
         {
           "name": "reason",
@@ -353,7 +362,7 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": null,
-          "confidentiality_scope": null
+          "confidentiality_scopes": []
         },
         {
           "name": "approved_by",
@@ -369,7 +378,7 @@
           "is_auto": false,
           "list_type": null,
           "default_expr": "User.Name",
-          "confidentiality_scope": null
+          "confidentiality_scopes": []
         },
         {
           "name": "created_at",
@@ -385,12 +394,15 @@
           "is_auto": true,
           "list_type": null,
           "default_expr": "now",
-          "confidentiality_scope": null
+          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
       "has_state_machine": true,
-      "initial_state": "pending"
+      "initial_state": "pending",
+      "confidentiality_scopes": [
+        "access_salary"
+      ]
     }
   ],
   "access_grants": [
@@ -1072,12 +1084,16 @@
         {
           "content_name": "employees",
           "field_name": "salary",
-          "confidentiality_scope": "access_salary"
+          "confidentiality_scopes": [
+            "access_salary"
+          ]
         },
         {
           "content_name": "employees",
           "field_name": "bonus_rate",
-          "confidentiality_scope": "access_salary"
+          "confidentiality_scopes": [
+            "access_salary"
+          ]
         }
       ]
     }

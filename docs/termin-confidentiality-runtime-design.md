@@ -26,41 +26,41 @@ This document describes the implementation plan for the confidentiality system i
 
 ---
 
-## 2. Design Decisions (Requiring Confirmation)
+## 2. Design Decisions (Confirmed)
 
-### D1: Content + Field Scope Intersection
+### D1: Content + Field Scope Intersection — AND Semantics ✅
 
-**Proposed:** When a Content has `Scoped to "access_medical"` and a field has `confidentiality is "access_billing"`, the field requires **both** scopes (AND semantics). The caller must hold `access_medical` AND `access_billing` to see the field unredacted.
+When a Content has `Scoped to "access_medical"` and a field has `confidentiality is "access_billing"`, the field requires **both** scopes (AND semantics). You need `access_medical` to be routed the content in the first place, and you need `access_billing` additionally to see the `billing_code` field unredacted.
 
-**Rationale:** "Narrow but never widen" means a field can only add restrictions, not remove the Content-level restriction. This is the only interpretation consistent with defense-in-depth.
+**Implementation:** `effective_scopes(field) = {content_scope, *field_scopes} - {None}`. Redaction fires if caller is missing *any* scope in the set.
 
-**Implementation:** `effective_scope(field) = {content_scope, field_scope} - {None}`. Redaction fires if caller is missing *any* scope in the set.
+### D2: Reclassification = Different, Not "Narrower" ✅
 
-### D2: Reclassification = Different, Not "Narrower"
+Any `Output confidentiality` that differs from the input taint scope is a reclassification. The compiler does not rank scopes — there is no hierarchy. If you're changing the scope, you need a reclassification point or it's a compile error.
 
-**Proposed:** Any `Output confidentiality` that differs from the input taint scope is a reclassification. The compiler does not rank scopes. The word "narrower" in the spec should be read as "different from."
+**Implementation:** `if output_scope != input_taint_scope: emit ReclassificationPoint`.
 
-**Implementation:** `if output_scope != max_input_scope: emit ReclassificationPoint`.
+### D3: Multiple Scopes Per Field (Scope List) ✅
 
-### D3: One Scope Per Field
+A field can declare multiple confidentiality scopes: `confidentiality is "scope1" and "scope2"`. The DSL syntax is a scope list, consistent with other list constructs. A single-item list looks identical to a single string. All listed scopes are required (AND semantics, same as D1).
 
-**Proposed:** A field declares at most one `confidentiality is "scope"`. Multiple scopes on a single field are not supported. If a field needs multiple scopes, compose them into a single scope name (e.g., `"access_salary_and_hr"`).
+**Implementation:** `FieldSpec.confidentiality_scopes: tuple[str, ...] = ()` (plural, tuple). The `effective_scopes()` function unions content scopes with all field scopes.
 
-**Rationale:** Keeps the DSL simple. Content-level scope already provides the second layer when needed (D1).
+### D4: State Machine Status Can Be Confidential ✅
 
-### D4: System Fields Pass Through
+The `status` field is an externalized field on Content when a state machine is attached. Like any other field, its visibility can be limited by a confidentiality scope. System-provided metadata (`id`) always passes through — the record's *existence* is never hidden (that's row-level security, out of scope). But `status`, `created_at`, and other auto fields are subject to redaction if they carry a confidentiality scope.
 
-**Proposed:** `id`, `status`, `created_at` and other system-managed fields are never redacted. They are structural and necessary for the client to render table rows, manage state, and construct URLs. If the *existence* of a record needs protection, that's row-level security (out of scope per BRD § 5).
+**Implementation:** When state machine is attached and the Content has a `confidentiality_scope`, the `status` field inherits that scope. Auto fields (`created_at`) without explicit confidentiality pass through unredacted.
 
-### D5: List Endpoints Redact Field-by-Field
+### D5: List Endpoints Redact Field-by-Field ✅
 
-**Proposed:** API list endpoints return all records the user can see (based on access grants). Within each record, confidential fields are replaced with `{"__redacted": true, "scope": "..."}`. The record itself is never omitted — the client always sees the record shape.
+API list endpoints return all records the user can see (based on access grants). Within each record, confidential fields are replaced with `{"__redacted": true, "scope": "..."}`. The record is never omitted — even if every user-defined field is redacted, the record is still present with its `id` and redacted markers. The client always sees record presence and system metadata.
 
-### D6: Update Forms Preserve Redacted Values
+### D6: Partial Updates Preserve Existing Fields ✅
 
-**Proposed:** When a user submits an update form that omits confidential fields (because the form didn't render them), the runtime preserves the existing values for those fields. The update handler merges submitted fields with current values, never overwriting a field that wasn't in the submitted payload.
+Updates are partial — only fields present in the request body are written. If a field is not in the payload (because the form didn't render it, or it was omitted), the existing value is preserved. If a client attempts to *write* to a field they're not authorized to see (i.e., the field is redacted for their identity), that's a runtime error — it should have been caught at compile time. The merge strategy: load current record, apply only submitted fields, preserve all others.
 
-**Implementation:** On form POST or API PATCH/PUT, load the current record, merge only the fields present in the request body, preserve all others.
+**Implementation:** On API PUT or form POST, load current record from storage, overlay submitted fields, write merged result. Reject writes to fields where the caller lacks the required confidentiality scope.
 
 ---
 
@@ -73,8 +73,8 @@ This document describes the implementation plan for the confidentiality system i
 Add to `termin.peg`:
 
 ```peg
-# Field constraint
-confidentiality_constraint = 'confidentiality' 'is' scope:quoted_string ;
+# Field constraint — single or list: confidentiality is "a" and "b"
+confidentiality_constraint = 'confidentiality' 'is' scope_list ;
 
 # Content-level line (inside Content block)
 content_scope_line = 'Scoped' 'to' scope:quoted_string ;
@@ -105,12 +105,12 @@ The `confidentiality is` constraint is handled inline during field constraint pa
 @dataclass
 class TypeExpr:
     # ... existing ...
-    confidentiality_scope: Optional[str] = None  # NEW
+    confidentiality_scopes: tuple[str, ...] = ()  # NEW — all required (AND)
 
 @dataclass
 class Content:
     # ... existing ...
-    confidentiality_scope: Optional[str] = None  # NEW
+    confidentiality_scopes: tuple[str, ...] = ()  # NEW — all required (AND)
 
 @dataclass
 class ComputeNode:
@@ -127,12 +127,12 @@ class ComputeNode:
 @dataclass(frozen=True)
 class FieldSpec:
     # ... existing ...
-    confidentiality_scope: Optional[str] = None  # scope required to see this field
+    confidentiality_scopes: tuple[str, ...] = ()  # scopes required to see this field (AND)
 
 @dataclass(frozen=True)
 class ContentSchema:
     # ... existing ...
-    confidentiality_scope: Optional[str] = None  # inherited by fields without their own
+    confidentiality_scopes: tuple[str, ...] = ()  # inherited by fields without their own
 
 @dataclass(frozen=True)
 class FieldDependency:
@@ -214,12 +214,10 @@ Central module for all confidentiality enforcement:
 
 ```python
 def effective_scopes(field_spec, content_schema) -> set[str]:
-    """Return the set of scopes required to see this field."""
+    """Return the set of scopes required to see this field (AND semantics)."""
     scopes = set()
-    if content_schema.confidentiality_scope:
-        scopes.add(content_schema.confidentiality_scope)
-    if field_spec.confidentiality_scope:
-        scopes.add(field_spec.confidentiality_scope)
+    scopes.update(content_schema.confidentiality_scopes)
+    scopes.update(field_spec.confidentiality_scopes)
     return scopes
 
 def redact_record(record: dict, schema: ContentSchema, caller_scopes: set[str]) -> dict:
@@ -229,11 +227,12 @@ def redact_record(record: dict, schema: ContentSchema, caller_scopes: set[str]) 
     for key, value in record.items():
         field_spec = fields_by_name.get(key)
         if field_spec is None:
-            result[key] = value  # system fields (id, status) pass through
+            result[key] = value  # id always passes through
             continue
         required = effective_scopes(field_spec, schema)
         if required and not required.issubset(caller_scopes):
-            result[key] = {"__redacted": True, "scope": sorted(required)[0]}
+            missing = sorted(required - caller_scopes)
+            result[key] = {"__redacted": True, "scope": missing[0]}
         else:
             result[key] = value
     return result
