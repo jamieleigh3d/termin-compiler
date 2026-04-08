@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://termin.dev/schemas/ir/0.3.0/appspec.json",
+  "$id": "https://termin.dev/schemas/ir/0.4.0/appspec.json",
   "title": "Termin AppSpec IR",
   "description": "The complete Intermediate Representation of a compiled Termin application. Produced by the Termin compiler, consumed by any conforming Termin runtime.",
   "type": "object",
@@ -9,7 +9,7 @@
   "properties": {
     "ir_version": {
       "type": "string",
-      "const": "0.3.0",
+      "const": "0.4.0",
       "description": "Semantic version of the IR schema. Runtimes should reject versions they don't support."
     },
     "reflection_enabled": {
@@ -717,6 +717,38 @@
           "items": { "$ref": "#/$defs/FieldDependency" },
           "default": [],
           "description": "Explicit field-level data dependencies. Declares which fields from which Content this Compute reads, along with the confidentiality scopes required to access them."
+        },
+        "provider": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Compute provider. null or 'cel' (default CEL evaluator), 'ai-agent' (autonomous AI), or a CCP package name."
+        },
+        "preconditions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "CEL expressions evaluated before execution. All must return true or execution is rejected (HTTP 412)."
+        },
+        "postconditions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "CEL expressions evaluated after execution against the staging snapshot. All must return true or the transaction is rolled back (HTTP 409)."
+        },
+        "objective": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Multi-line system prompt for ai-agent provider. Opaque to the runtime — passed to the LLM provider."
+        },
+        "strategy": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Multi-line execution plan for ai-agent provider. Opaque to the runtime — passed to the LLM provider."
+        },
+        "trigger": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Trigger mechanism: 'schedule <interval>' or 'event <name>'. null means API-invoked only."
         }
       }
     },
