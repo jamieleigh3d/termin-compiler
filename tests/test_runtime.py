@@ -552,7 +552,7 @@ class TestDefaultExpr:
             Content called "items":
               Each item has a name which is text, required
               Each item has a priority which is text, defaults to "normal"
-              Each item has a count which is a whole number, defaults to [0]
+              Each item has a count which is a whole number, defaults to `0`
         ''')
         prog, _ = parse_peg(dsl)
         ir = lower(prog)

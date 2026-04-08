@@ -353,19 +353,19 @@ def test_parse_compute_typed_params():
     assert len(c.body_lines) >= 1
 
 
-# ── CEL bracket syntax (v2) ──
+# ── CEL backtick syntax (v2) ──
 
-def test_parse_display_text_jexl_brackets():
+def test_parse_display_text_backtick():
     program, errors = parse('''As anonymous, I want to see a page "Hello" so that I can test:
-  Display text [SayHello(user.name)]''')
+  Display text `SayHello(user.name)`''')
     assert errors.ok, errors.format()
     dt = [d for d in program.stories[0].directives if isinstance(d, DisplayText)]
     assert dt[0].is_expression is True
     assert dt[0].text == "SayHello(user.name)"
 
 
-def test_parse_event_jexl():
-    program, errors = parse('''When [stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold]:
+def test_parse_event_expr():
+    program, errors = parse('''When `stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold`:
   Create a reorder alert with the product, warehouse''')
     assert errors.ok, errors.format()
     ev = program.events[0]
@@ -373,10 +373,10 @@ def test_parse_event_jexl():
     assert ev.condition_expr == "stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold"
 
 
-def test_parse_compute_jexl_body():
+def test_parse_compute_expr_body():
     program, errors = parse('''Compute called "greet":
   Transform: takes u : UserProfile, produces greeting : Text
-  [greeting = "Hello, " + u.FirstName + "!"]
+  `greeting = "Hello, " + u.FirstName + "!"`
   "Admin" can execute this''')
     assert errors.ok, errors.format()
     c = program.computes[0]
@@ -384,12 +384,12 @@ def test_parse_compute_jexl_body():
     assert c.access_role == "Admin"
 
 
-def test_parse_highlight_jexl():
+def test_parse_highlight_expr():
     program, errors = parse('''As a user, I want to see items
   so that I can browse:
     Show a page called "Items"
     Display a table of items with columns: name, quantity
-    Highlight rows where [quantity <= threshold]''')
+    Highlight rows where `quantity <= threshold`''')
     assert errors.ok, errors.format()
     hl = [d for d in program.stories[0].directives if isinstance(d, HighlightRows)]
     assert hl[0].condition_expr == "quantity <= threshold"
