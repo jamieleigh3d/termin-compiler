@@ -557,9 +557,9 @@ class TestDefaultExpr:
         prog, _ = parse_peg(dsl)
         ir = lower(prog)
         fields = {f.name: f for f in ir.content[0].fields}
-        # Literal default: stored as JEXL string literal
+        # Literal default: stored as CEL string literal
         assert fields["priority"].default_expr == '"normal"'
-        # Expression default: stored as JEXL expression
+        # Expression default: stored as CEL expression
         assert fields["count"].default_expr == '0'
 
 

@@ -353,7 +353,7 @@ def test_parse_compute_typed_params():
     assert len(c.body_lines) >= 1
 
 
-# ── JEXL bracket syntax (v2) ──
+# ── CEL bracket syntax (v2) ──
 
 def test_parse_display_text_jexl_brackets():
     program, errors = parse('''As anonymous, I want to see a page "Hello" so that I can test:

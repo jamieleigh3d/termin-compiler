@@ -53,7 +53,7 @@ class FieldSpec:
     foreign_key: Optional[str] = None  # target table snake name
     is_auto: bool = False              # automatic timestamp
     list_type: Optional[str] = None    # inner type for JSON list columns
-    default_expr: Optional[str] = None # JEXL expression or literal string for default value
+    default_expr: Optional[str] = None # CEL expression or literal string for default value
 
 
 # Backward-compatible alias
@@ -144,7 +144,7 @@ class EventSpec:
     trigger: str                          # "created", "updated", "deleted", "expr"
     condition: Optional[EventConditionSpec] = None
     action: Optional[EventActionSpec] = None
-    condition_expr: Optional[str] = None  # v2: JEXL expression for trigger
+    condition_expr: Optional[str] = None  # v2: CEL expression for trigger
     log_level: str = "INFO"               # v2: TRACE, DEBUG, INFO, WARN, ERROR
 
 
@@ -268,7 +268,7 @@ class PageSpec:
 
 @dataclass(frozen=True)
 class PropValue:
-    """A prop value that may be a literal string or a JEXL expression."""
+    """A prop value that may be a literal string or a CEL expression."""
     value: str
     is_expr: bool = False
 
@@ -359,7 +359,7 @@ def page_entry_to_pagespec(entry: 'PageEntry') -> PageSpec:
             elif t == "highlight":
                 cond = p.get("condition")
                 if isinstance(cond, dict) and cond.get("is_expr"):
-                    highlight = HighlightRule(field="", operator="jexl", threshold_field=cond["value"])
+                    highlight = HighlightRule(field="", operator="expr", threshold_field=cond["value"])
 
             elif t == "subscribe":
                 subscribe_stream = p.get("content")

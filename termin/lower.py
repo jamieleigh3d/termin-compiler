@@ -197,12 +197,12 @@ def lower(program: Program) -> AppSpec:
     for c in program.contents:
         fields = []
         for f in c.fields:
-            # Build default_expr for IR: JEXL expressions pass through,
-            # literal strings are wrapped in quotes to form a valid JEXL literal
+            # Build default_expr for IR: CEL expressions pass through,
+            # literal strings are wrapped in quotes to form a valid CEL literal
             default_ir = None
             if f.type_expr.default_expr is not None:
                 if f.type_expr.default_is_expr:
-                    default_ir = f.type_expr.default_expr  # JEXL: User.Name, 0, now
+                    default_ir = f.type_expr.default_expr  # CEL: User.Name, 0, now
                 else:
                     default_ir = f'"{f.type_expr.default_expr}"'  # Literal: "N/A" → JEXL '"N/A"'
             fields.append(FieldSpec(
@@ -297,7 +297,7 @@ def lower(program: Program) -> AppSpec:
         if not resolved_content:
             resolved_content = content_by_singular.get(ev.content_name)
 
-        # For JEXL events, try to infer source content from expression prefix
+        # For CEL events, try to infer source content from expression prefix
         # e.g., "stockLevel.updated" -> content "stock levels"
         if not resolved_content and ev.condition_expr:
             prefix = ev.condition_expr.split(".")[0].strip()
@@ -748,7 +748,7 @@ def lower(program: Program) -> AppSpec:
     compute_by_name: dict[str, ComputeNode] = {c.name: c for c in program.computes}
     for comp in program.computes:
         shape = SHAPE_MAP.get(comp.shape, ComputeShape.TRANSFORM)
-        # Infer client_safe: a Compute is client-safe when it has a pure JEXL
+        # Infer client_safe: a Compute is client-safe when it has a pure CEL
         # body, is a TRANSFORM shape (1:1, no joins/aggregation), and has no
         # required scope (no server-side authorization needed for evaluation).
         # This is a conservative heuristic — false negatives are safe.

@@ -9,11 +9,11 @@ from fastapi import Request, HTTPException, WebSocket
 
 
 def _build_user_object(role: str, scopes: list, display_name: str) -> dict:
-    """Build the standard User object available in JEXL expressions.
+    """Build the standard User object available in CEL expressions.
 
     The User object is the identity contract between auth providers and
     the runtime. Any auth provider (stub, SSO, OIDC) must produce a User
-    object with these fields. JEXL expressions use PascalCase: User.Name,
+    object with these fields. CEL expressions use PascalCase: User.Name,
     User.Username, User.Role.
     """
     authenticated = role != "anonymous"

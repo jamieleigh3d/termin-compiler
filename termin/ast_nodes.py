@@ -20,8 +20,8 @@ class TypeExpr:
     enum_values: list[str] = field(default_factory=list)
     references: Optional[str] = None  # name of referenced Content
     list_type: Optional[str] = None   # inner type for "list of <type>"
-    default_expr: Optional[str] = None  # JEXL expression or literal string for default value
-    default_is_expr: bool = False       # True = JEXL from [brackets]; False = literal from "quotes"
+    default_expr: Optional[str] = None  # CEL expression or literal string for default value
+    default_is_expr: bool = False       # True = CEL from [brackets]; False = literal from "quotes"
     line: int = 0
 
 
@@ -214,7 +214,7 @@ class StructuredAggregation(Directive):
     """Structured aggregation: Display count/sum/average/min/max of ..."""
     agg_type: str = ""            # "count", "sum", "average", "minimum", "maximum"
     source_content: str = ""      # content name
-    expression: Optional[str] = None  # JEXL expression (for sum/avg/min/max)
+    expression: Optional[str] = None  # CEL expression (for sum/avg/min/max)
     group_by: Optional[str] = None    # field name (for count ... grouped by)
     format: str = "number"        # "number", "currency", etc.
 

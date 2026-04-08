@@ -37,7 +37,7 @@ def _render_data_table(node: dict) -> str:
         parts.append('    <th class="px-4 py-2 text-left text-sm font-medium text-gray-600">Actions</th>')
 
     parts.append('  </tr></thead><tbody>')
-    # A5: Highlight — check for highlight child with JEXL condition
+    # A5: Highlight — check for highlight child with CEL condition
     highlight_expr = None
     for child in children:
         if child.get("type") == "highlight":
@@ -46,10 +46,10 @@ def _render_data_table(node: dict) -> str:
                 highlight_expr = cond["value"]
 
     if highlight_expr:
-        # Convert JEXL field references to Jinja item.field references
+        # Convert CEL field references to Jinja item.field references
         import re
         def _to_jinja_field(expr):
-            """Convert JEXL row expression to Jinja2.
+            """Convert CEL row expression to Jinja2.
             Prefixes bare identifiers with 'item.' while preserving
             string literals and operators."""
             result = []
@@ -73,7 +73,7 @@ def _render_data_table(node: dict) -> str:
                     result.append(part)
             return ''.join(result)
         jinja_expr = _to_jinja_field(highlight_expr)
-        # Replace JEXL operators with Jinja equivalents
+        # Replace CEL operators with Jinja equivalents
         jinja_expr = jinja_expr.replace("||", " or ").replace("&&", " and ")
         # Collect all field names referenced in the expression
         field_names = re.findall(r'item\.(\w+)', jinja_expr)
