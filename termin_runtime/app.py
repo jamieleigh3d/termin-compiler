@@ -21,7 +21,11 @@ from .storage import get_db, init_db, create_record, list_records, get_record, u
 from .state import do_state_transition
 from .reflection import ReflectionEngine, register_reflection_with_expr_eval
 from .presentation import build_base_template, build_nav_html, build_page_template, jinja_env
-from .confidentiality import redact_record, redact_records, check_write_access
+from .confidentiality import (
+    redact_record, redact_records, check_write_access,
+    check_compute_access, check_taint_integrity, enforce_output_taint,
+    check_for_redacted_values, is_redacted,
+)
 
 
 def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None) -> FastAPI:
@@ -567,6 +571,91 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
     async def api_errors():
         return terminator.get_error_log()
 
+    # ── Compute lookup ──
+    compute_lookup = {}  # snake_name -> compute IR dict
+    for comp in ir.get("computes", []):
+        compute_lookup[comp["name"]["snake"]] = comp
+
+    # ── Server-side Compute invocation endpoint ──
+    @app.post("/api/v1/compute/{compute_name}")
+    async def invoke_compute(compute_name: str, request: Request):
+        """Execute a Compute server-side with confidentiality checks (Checks 1-4)."""
+        comp = compute_lookup.get(compute_name)
+        if not comp:
+            raise HTTPException(status_code=404, detail=f"Compute '{compute_name}' not found")
+
+        user = get_current_user(request)
+        user_scopes = set(user.get("scopes", []))
+        body = await request.json()
+        input_data = body.get("input", {})
+
+        # Check execution permission (existing scope check)
+        req_scope = comp.get("required_scope")
+        if req_scope and req_scope not in user_scopes:
+            raise HTTPException(status_code=403, detail=f"Requires scope '{req_scope}' to execute")
+
+        # Check 1: Confidentiality gate — delegate must have required scopes
+        gate_err = check_compute_access(comp, user_scopes)
+        if gate_err:
+            terminator.route(TerminError(
+                source=comp["name"]["display"], kind="confidentiality_gate_rejected",
+                message=gate_err))
+            raise HTTPException(status_code=403, detail=gate_err)
+
+        # Check 2: Taint integrity — detect unredacted fields for unauthorized delegate
+        if isinstance(input_data, list) and comp.get("identity_mode") == "service":
+            # For service mode, check against delegate's scopes
+            for input_content_name in comp.get("input_content", []):
+                schema = content_lookup.get(input_content_name, {})
+                taint_err = check_taint_integrity(input_data, schema, user_scopes)
+                if taint_err:
+                    terminator.route(TerminError(
+                        source="confidentiality", kind="taint_violation",
+                        message=taint_err))
+                    raise HTTPException(status_code=500, detail=taint_err)
+
+        # Execute the CEL body
+        body_lines = comp.get("body_lines", [])
+        if not body_lines:
+            raise HTTPException(status_code=400, detail="Compute has no body to execute")
+
+        cel_body = body_lines[0]  # First body line is the expression
+        try:
+            # Build context with input data and User object
+            ctx = {"User": user.get("User", {})}
+            if isinstance(input_data, dict):
+                ctx.update(input_data)
+            elif isinstance(input_data, list):
+                # For content-based input, use the input content name as the key
+                for input_name in comp.get("input_content", []):
+                    ctx[input_name] = input_data
+
+            # Check 3: CEL redaction guard — detect __redacted markers in context
+            redacted_err = check_for_redacted_values(ctx)
+            if redacted_err:
+                terminator.route(TerminError(
+                    source="expression", kind="redacted_field_access",
+                    message=redacted_err))
+                raise HTTPException(status_code=500, detail=redacted_err)
+
+            result = expr_eval.evaluate(cel_body, ctx)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Compute evaluation failed: {e}")
+
+        output = {"result": result}
+
+        # Check 4: Output taint enforcement
+        final_output, taint_err = enforce_output_taint(output, comp, user_scopes)
+        if taint_err:
+            terminator.route(TerminError(
+                source=comp["name"]["display"], kind="output_taint_blocked",
+                message=taint_err))
+            raise HTTPException(status_code=403, detail=taint_err)
+
+        return final_output
+
     @app.get("/api/events")
     async def api_events(level: str = Query(default=None)):
         log = event_bus.get_event_log()
@@ -726,10 +815,14 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                     }
 
                     # Load data sources (data_table, aggregations)
+                    user_scopes = set(user.get("scopes", []))
                     for src in _reqs["sources"]:
                         cursor = await db.execute(f"SELECT * FROM {src}")
                         rows = await cursor.fetchall()
-                        ctx["items"] = [dict(r) for r in rows]
+                        records = [dict(r) for r in rows]
+                        # Redact confidential fields for presentation
+                        schema = content_lookup.get(src, {})
+                        ctx["items"] = redact_records(records, schema, user_scopes)
 
                     # Form reference lists
                     for ref in _reqs["ref_lists"]:

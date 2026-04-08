@@ -88,7 +88,16 @@ def _render_data_table(node: dict) -> str:
         parts.append('    {% for item in items %}<tr class="border-t" data-termin-row-id="{{ item.id }}">')
     for col in cols:
         key = col.get("field", "")
-        parts.append(f'      <td class="px-4 py-2 text-sm" data-termin-field="{key}">{{{{ item.{key}|default("") }}}}</td>')
+        # Handle redacted values: show [REDACTED] in gray italic
+        parts.append(
+            f'      <td class="px-4 py-2 text-sm" data-termin-field="{key}">'
+            f'{{% if item.{key} is mapping and item.{key}.__redacted %}}'
+            f'<span class="text-gray-400 italic">[REDACTED]</span>'
+            f'{{% else %}}'
+            f'{{{{ item.{key}|default("") }}}}'
+            f'{{% endif %}}'
+            f'</td>'
+        )
 
     # Action buttons per row — rendered conditionally based on state + scope
     if row_actions:

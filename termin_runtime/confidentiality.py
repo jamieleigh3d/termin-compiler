@@ -70,3 +70,89 @@ def check_write_access(fields_to_write: dict, content_ir: dict, caller_scopes: s
             missing = sorted(required - caller_scopes)
             return f"Cannot write to field '{key}' — requires scope '{missing[0]}'"
     return None
+
+
+# ── Compute Confidentiality Checks (BRD Checks 1-4) ──
+
+def check_compute_access(compute_ir: dict, caller_scopes: set[str]) -> str | None:
+    """Check 1: Identity gate — reject if caller lacks required confidentiality scopes.
+
+    In delegate mode, caller must have all required_confidentiality_scopes.
+    In service mode, this check passes (service identity is auto-provisioned).
+
+    Returns None if OK, or an error message.
+    """
+    if compute_ir.get("identity_mode") == "service":
+        return None  # Service mode — scopes are auto-provisioned
+    for scope in compute_ir.get("required_confidentiality_scopes", []):
+        if scope not in caller_scopes:
+            return f"Compute '{compute_ir['name']['display']}' requires confidentiality scope '{scope}'"
+    return None
+
+
+def check_taint_integrity(input_data: list[dict], content_ir: dict, delegate_scopes: set[str]) -> str | None:
+    """Check 2: Taint integrity — detect unredacted confidential fields for unauthorized delegate.
+
+    If a field should be redacted for the delegate but arrives unredacted,
+    something upstream is broken. This is a defense-in-depth check.
+
+    Returns None if OK, or an error message.
+    """
+    fields_by_name = {f["name"]: f for f in content_ir.get("fields", [])}
+    for record in input_data:
+        for fname, fval in record.items():
+            field_ir = fields_by_name.get(fname)
+            if field_ir is None:
+                continue
+            required = effective_scopes(field_ir, content_ir)
+            if required and not required.issubset(delegate_scopes):
+                if fval is not None and not is_redacted(fval):
+                    return (f"Taint violation: field '{fname}' is unredacted "
+                            f"for delegate lacking scope '{sorted(required - delegate_scopes)[0]}'")
+    return None
+
+
+def enforce_output_taint(output: dict, compute_ir: dict, delegate_scopes: set[str]) -> tuple[dict | None, str | None]:
+    """Check 4: Output taint enforcement.
+
+    Without reclassification, entire output is tainted by input scopes.
+    With reclassification, output carries the declared scope.
+
+    Returns (output, None) if OK, or (None, error_message) if blocked.
+    """
+    output_scope = compute_ir.get("output_confidentiality_scope")
+    if output_scope:
+        # Explicit reclassification — check delegate has the reclassified scope
+        if output_scope not in delegate_scopes:
+            return None, (f"Compute '{compute_ir['name']['display']}' reclassified output "
+                         f"requires scope '{output_scope}'")
+        return output, None
+
+    # No reclassification — entire output tainted by input scopes
+    for scope in compute_ir.get("required_confidentiality_scopes", []):
+        if scope not in delegate_scopes:
+            return None, (f"Compute '{compute_ir['name']['display']}' output tainted by "
+                         f"scope '{scope}' — declare Output confidentiality to reclassify")
+    return output, None
+
+
+def check_for_redacted_values(value, path="") -> str | None:
+    """Check 3: CEL redaction guard — detect redacted markers in values.
+
+    Recursively checks if any value contains a __redacted marker.
+    Returns None if clean, or an error message describing the redacted field.
+    """
+    if isinstance(value, dict):
+        if value.get("__redacted"):
+            scope = value.get("scope", "unknown")
+            return f"Redacted field access at '{path}' (scope: {scope})"
+        for k, v in value.items():
+            err = check_for_redacted_values(v, f"{path}.{k}" if path else k)
+            if err:
+                return err
+    elif isinstance(value, (list, tuple)):
+        for i, item in enumerate(value):
+            err = check_for_redacted_values(item, f"{path}[{i}]")
+            if err:
+                return err
+    return None
