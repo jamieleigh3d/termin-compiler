@@ -464,9 +464,9 @@ class TestComputeDemoIR:
         assert c.name.display == "SayHelloTo"
         assert c.shape == ComputeShape.TRANSFORM
         assert len(c.input_params) == 1
-        assert c.input_params[0].name == "u"
-        assert c.input_params[0].type_name == "UserProfile"
-        assert c.required_role == "LoggedInUser"
+        assert c.input_params[0].name == "name"
+        assert c.input_params[0].type_name == "text"
+        assert c.required_role == "user"
 
     def test_hello_user_merged_pages(self):
         spec = _load_and_lower("hello_user.termin")
@@ -474,7 +474,7 @@ class TestComputeDemoIR:
         anon_page = next(p for p in spec.pages if p.role == "Anonymous")
         anon_texts = _find_children(anon_page, "text")
         assert any("Anon, Hello!" == t.props.get("content") for t in anon_texts)
-        logged_page = next(p for p in spec.pages if p.role == "LoggedInUser")
+        logged_page = next(p for p in spec.pages if p.role == "user")
         logged_texts = _find_children(logged_page, "text")
         assert any(
             isinstance(t.props.get("content"), PropValue)
@@ -548,7 +548,7 @@ class TestComponentTree:
     def test_text_expression_component(self):
         """Display text [expr] -> text component with PropValue content."""
         spec = _load_and_lower("hello_user.termin")
-        logged = next(p for p in spec.pages if p.role == "LoggedInUser")
+        logged = next(p for p in spec.pages if p.role == "user")
         texts = _find_children(logged, "text")
         expr_text = next((t for t in texts if isinstance(t.props.get("content"), PropValue)
                           and t.props["content"].is_expr), None)

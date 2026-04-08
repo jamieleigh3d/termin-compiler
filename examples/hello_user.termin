@@ -4,18 +4,18 @@ Id: cb4aef7b-1f54-41a2-8999-55d9367a9304
 
 (This is a comment.)
 
-Users authenticate with stub (Defines CurrentUser. Anonymous is built-in.)
+Users authenticate with stub
 Scopes are "view app"
 Anonymous has "view app"
-A "LoggedInUser" has "view app"
+A "user" has "view app"
 
 As Anonymous, I want to see a page "Hello" so that I can be greeted:
   Display text "Anon, Hello!"
 
-As LoggedInUser, I want to see a page "Hello" so that I can be greeted:
-  Display text [SayHelloTo(LoggedInUser.CurrentUser)]
+As user, I want to see a page "Hello" so that I can be greeted:
+  Display text [SayHelloTo(User.FirstName)]
 
 Compute called "SayHelloTo":
-  Transform: takes u : UserProfile, produces "greeting" : Text
-  [greeting = "Hello, " + u.FirstName + "!"]
-  "LoggedInUser" can execute this
+  Transform: takes name : text, produces greeting : text
+  [greeting = "Hello, " + name + "!"]
+  "user" can execute this

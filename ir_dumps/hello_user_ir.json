@@ -17,7 +17,7 @@
         ]
       },
       {
-        "name": "LoggedInUser",
+        "name": "user",
         "scopes": [
           "view app"
         ]
@@ -50,14 +50,14 @@
     {
       "name": "Hello",
       "slug": "hello",
-      "role": "LoggedInUser",
+      "role": "user",
       "required_scope": null,
       "children": [
         {
           "type": "text",
           "props": {
             "content": {
-              "value": "SayHelloTo(LoggedInUser.CurrentUser)",
+              "value": "SayHelloTo(User.FirstName)",
               "is_expr": true
             }
           },
@@ -79,32 +79,37 @@
       },
       "shape": "TRANSFORM",
       "input_content": [
-        "userprofile"
+        "text"
       ],
       "output_content": [
         "text"
       ],
       "body_lines": [
-        "greeting = \"Hello, \" + u.FirstName + \"!\""
+        "greeting = \"Hello, \" + name + \"!\""
       ],
       "required_scope": null,
-      "required_role": "LoggedInUser",
+      "required_role": "user",
       "input_params": [
         {
-          "name": "u",
-          "type_name": "UserProfile"
+          "name": "name",
+          "type_name": "text"
         }
       ],
       "output_params": [
         {
           "name": "greeting",
-          "type_name": "Text"
+          "type_name": "text"
         }
       ],
-      "client_safe": true
+      "client_safe": true,
+      "identity_mode": "delegate",
+      "required_confidentiality_scopes": [],
+      "output_confidentiality_scope": null,
+      "field_dependencies": []
     }
   ],
   "channels": [],
   "boundaries": [],
-  "error_handlers": []
+  "error_handlers": [],
+  "reclassification_points": []
 }

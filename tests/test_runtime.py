@@ -33,7 +33,7 @@ class TestComputeRegistration:
     def test_compute_js_registered_in_page(self):
         """hello_user has SayHelloTo compute — it must appear as ctx function in page HTML."""
         with _make_client("hello_user") as client:
-            client.cookies.set("termin_role", "LoggedInUser")
+            client.cookies.set("termin_role", "user")
             client.cookies.set("termin_user_name", "Test")
             r = client.get("/hello")
             assert r.status_code == 200
@@ -43,10 +43,10 @@ class TestComputeRegistration:
     def test_compute_js_has_correct_body(self):
         """The registered function body should contain the expression."""
         with _make_client("hello_user") as client:
-            client.cookies.set("termin_role", "LoggedInUser")
+            client.cookies.set("termin_role", "user")
             r = client.get("/hello")
-            assert 'u.FirstName' in r.text, \
-                "Compute function body missing u.FirstName reference"
+            assert 'name' in r.text, \
+                "Compute function body missing name reference"
 
     def test_compute_js_empty_when_no_computes(self):
         """hello.termin has no computes — page should render without errors."""

@@ -437,7 +437,7 @@ def test_parse_hello_user_example():
     assert len(program.roles) == 2
     assert len(program.stories) == 2
     assert len(program.computes) == 1
-    assert program.computes[0].access_role == "LoggedInUser"
+    assert program.computes[0].access_role == "user"
 
 
 def test_parse_hello_example():
