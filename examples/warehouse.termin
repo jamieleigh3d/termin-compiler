@@ -54,7 +54,7 @@ State for products called "product lifecycle":
 
 --- Events ---
 
-When [stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold]:
+When `stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold`:
   Create a "reorder alert" with the product, warehouse, current quantity, and threshold
 
 --- User Stories ---
@@ -89,7 +89,7 @@ As a warehouse manager, I want to add new products to the catalog
   so that we can track their inventory:
     Show a page called "Add Product"
     Accept input for SKU, name, description, unit cost, and category
-    Validate that [SKU != ""] before saving
+    Validate that `SKU != ""` before saving
     Create the product as draft
     After saving, offer to set initial stock levels per warehouse
 
@@ -97,7 +97,7 @@ As an executive, I want to see an overview of inventory health
   so that I can make purchasing decisions:
     Show a page called "Inventory Overview"
     Display total product count with active vs discontinued breakdown
-    Display total stock value [sum(quantity * unit_cost)]
+    Display total stock value `sum(quantity * unit_cost)`
     Show a chart of reorder alerts over the past 30 days
 
 --- Navigation ---

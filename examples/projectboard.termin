@@ -95,7 +95,7 @@ As a project manager, I want to see project health metrics
   so that I can report progress to stakeholders:
     Show a page called "Project Dashboard"
     Display total task count with backlog vs done breakdown
-    Display total time logged [sum(hours)]
+    Display total time logged `sum(hours)`
 
 As a project manager, I want to create new projects
   so that we can organize work:

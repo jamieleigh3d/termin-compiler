@@ -24,7 +24,7 @@ Content called "employees":
   Each employee has a bonus rate which is a number, confidentiality is "access_salary"
   Each employee has a ssn which is text, confidentiality is "access_pii"
   Each employee has a phone which is text, confidentiality is "access_pii"
-  Each employee has a added by which is text, defaults to [User.Name]
+  Each employee has a added by which is text, defaults to `User.Name`
   Anyone with "view_employees" can view employees
   Anyone with "manage_employees" can create or update employees
   Anyone with "manage_hr" can delete employees
@@ -43,8 +43,8 @@ Content called "salary reviews":
   Each salary review has an old salary which is currency
   Each salary review has a new salary which is currency
   Each salary review has a reason which is text
-  Each salary review has an approved by which is text, defaults to [User.Name]
-  Each salary review has a created at which is automatic, defaults to [now]
+  Each salary review has an approved by which is text, defaults to `User.Name`
+  Each salary review has a created at which is automatic, defaults to `now`
   Anyone with "access_salary" can view salary reviews
   Anyone with "manage_hr" can create or update salary reviews
 
@@ -64,7 +64,7 @@ Compute called "Calculate Team Bonus Pool":
   Requires "access_salary"
   Output confidentiality: "view_team_metrics"
   Anyone with "view_team_metrics" can execute this
-  [team_bonus = sum(employees.salary * employees.bonus_rate)]
+  `team_bonus = sum(employees.salary * employees.bonus_rate)`
 
 --- User Stories ---
 
@@ -84,7 +84,7 @@ As an hr business partner, I want to manage employee records
   so that I can maintain accurate HR data:
     Show a page called "HR Dashboard"
     Display a table of employees with columns: name, department, role, salary, bonus rate, start date
-    Highlight rows where [salary > 150000]
+    Highlight rows where `salary > 150000`
     Allow filtering by department
     Allow searching by name
 

@@ -20,9 +20,9 @@ Content called "tickets":
   Each ticket has a description which is text, required
   Each ticket has a priority which is one of: "low", "medium", "high", "critical"
   Each ticket has a category which is one of: "bug", "feature request", "question", "account issue"
-  Each ticket has a submitted by which is text, required, defaults to [User.Name]
+  Each ticket has a submitted by which is text, required, defaults to `User.Name`
   Each ticket has an assigned to which is text
-  Each ticket has a created at which is automatic, defaults to [now]
+  Each ticket has a created at which is automatic, defaults to `now`
   Anyone with "view tickets" can view tickets
   Anyone with "create tickets" can create tickets
   Anyone with "manage tickets" can update tickets
@@ -30,9 +30,9 @@ Content called "tickets":
 
 Content called "comments":
   Each comment has a ticket which references tickets, required
-  Each comment has an author which is text, required, defaults to [User.Name]
+  Each comment has an author which is text, required, defaults to `User.Name`
   Each comment has a body which is text, required
-  Each comment has a posted at which is automatic, defaults to [now]
+  Each comment has a posted at which is automatic, defaults to `now`
   Anyone with "view tickets" can view comments
   Anyone with "create tickets" can create comments
 
@@ -60,7 +60,7 @@ As a support agent, I want to see all open tickets
   so that I can work on resolving them:
     Show a page called "Ticket Queue"
     Display a table of tickets with columns: title, priority, category, status, assigned to, created at
-    Highlight rows where [priority == "critical" || priority == "high"]
+    Highlight rows where `priority == "critical" || priority == "high"`
     Allow filtering by status, priority, and category
     Allow searching by title or description
     This table subscribes to tickets changes
