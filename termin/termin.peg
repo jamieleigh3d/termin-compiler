@@ -124,6 +124,11 @@ constraint
     | 'maximum' val:number    #Maximum
     | 'defaults' 'to' expr:jexl_expr        #DefaultExpr
     | 'defaults' 'to' lit:quoted_string    #DefaultLiteral
+    | 'confidentiality' 'is' scopes:quoted_list  #Confidentiality
+    ;
+
+content_scoped_line
+    = 'Scoped' 'to' scopes:quoted_list $
     ;
 
 access_line
@@ -434,6 +439,18 @@ compute_body_jexl_line
 
 compute_body_text_line
     = text:rest_of_line $
+    ;
+
+compute_identity_line
+    = 'Identity:' mode:word $
+    ;
+
+compute_requires_conf_line
+    = 'Requires' scopes:quoted_list $
+    ;
+
+compute_output_conf_line
+    = 'Output' 'confidentiality:' scope:quoted_string $
     ;
 
 compute_access_line

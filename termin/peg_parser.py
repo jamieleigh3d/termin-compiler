@@ -50,7 +50,7 @@ def _preprocess(source: str) -> list[tuple[int, str]]:
 _PREFIXES: list[tuple[str, str]] = [
     ("Application:", "application_line"), ("Description:", "description_line"), ("Id:", "id_line"),
     ("Users authenticate with", "identity_line"), ("Scopes are", "scopes_line"),
-    ("Content called", "content_header"), ("Each ", "field_line"),
+    ("Content called", "content_header"), ("Scoped to", "content_scoped_line"), ("Each ", "field_line"),
     ("Anyone with", "access_line"), ("State for", "state_header"),
     ("When [", "event_jexl_line"), ("When a ", "event_v1_line"), ("When an ", "event_v1_line"),
     ("Create a ", "event_action_line"), ("Create an ", "event_action_line"),
@@ -76,9 +76,12 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Stream ", "stream_line"), ("Compute called", "compute_header"),
     ("Channel called", "channel_header"), ("Carries ", "channel_carries_line"),
     ("Direction:", "channel_direction_line"), ("Delivery:", "channel_delivery_line"),
-    ("Requires ", "channel_requires_line"), ("Endpoint:", "channel_endpoint_line"),
+    ("Requires ", "channel_requires_line"),  # disambiguated in _classify_line for Compute context
+    ("Endpoint:", "channel_endpoint_line"),
     ("Boundary called", "boundary_header"), ("Contains ", "boundary_contains_line"),
     ("Identity inherits", "boundary_inherits_line"), ("Identity restricts", "boundary_restricts_line"),
+    ("Identity:", "compute_identity_line"),
+    ("Output confidentiality:", "compute_output_conf_line"),
     ("Exposes property", "boundary_exposes_line"),
 ]
 _SHAPE_KW = ("Transform:", "Reduce:", "Expand:", "Correlate:", "Route:")
@@ -98,6 +101,9 @@ def _classify_line(text: str) -> str:
             # Disambiguate "For each X, show actions:" from "For each X, show Y grouped by Z"
             if rule == "show_related_line" and "show actions" in text.lower():
                 return "action_header_line"
+            # Disambiguate "Requires" — channel (has "to send/receive") vs compute confidentiality
+            if rule == "channel_requires_line" and " to send" not in text and " to receive" not in text:
+                return "compute_requires_conf_line"
             return rule
     if text.startswith('"') and " transitions to " in text: return "action_button_line"
     if text.startswith('"') and " links to " in text: return "nav_item_line"
@@ -186,8 +192,15 @@ def _jb(text: str) -> Optional[str]:
 # --- Type expression ---
 def _parse_type_text(text: str, ln: int = 0) -> TypeExpr:
     expr = TypeExpr(base_type="text", line=ln)
-    # Extract "defaults to [expr]" or 'defaults to "literal"' before other constraint stripping
+    # Extract "confidentiality is ..." before other constraint stripping
     import re
+    cm = re.search(r',?\s*confidentiality\s+is\s+("(?:[^"]*)"(?:\s+and\s+"[^"]*")*)', text, re.IGNORECASE)
+    if cm:
+        scope_str = cm.group(1)
+        expr.confidentiality_scopes = [s.strip().strip('"') for s in re.findall(r'"([^"]*)"', scope_str)]
+        text = text[:cm.start()] + text[cm.end():]
+
+    # Extract "defaults to [expr]" or 'defaults to "literal"' before other constraint stripping
     dm = re.search(r',?\s*defaults\s+to\s+\[([^\]]+)\]', text, re.IGNORECASE)
     if dm:
         expr.default_expr = dm.group(1).strip()
@@ -689,6 +702,22 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule)
         if r: return ("compute_access", _qs(r.get("role","")))
         ci = text.find(" can execute this"); return ("compute_access", text[:ci].strip().strip('"') if ci>=0 else "")
+    if rule == "compute_identity_line":
+        r = P(text, rule)
+        mode = str(r.get("mode", "")).strip().lower() if r else text.split(":", 1)[1].strip().lower()
+        return ("compute_identity", mode)
+    if rule == "compute_requires_conf_line":
+        r = P(text, rule)
+        scopes = _ql(r.get("scopes")) if r else _eqs(text)
+        return ("compute_requires_conf", scopes)
+    if rule == "compute_output_conf_line":
+        r = P(text, rule)
+        scope = _qs(r.get("scope", "")) if r else _fq(text)
+        return ("compute_output_conf", scope)
+    if rule == "content_scoped_line":
+        r = P(text, rule)
+        scopes = _ql(r.get("scopes")) if r else _eqs(text)
+        return ("content_scoped", scopes)
     if rule == "channel_header":
         r = P(text, rule); return ("channel_header", ChannelDecl(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "channel_carries_line":
@@ -754,11 +783,12 @@ def _assemble(parsed: list) -> Program:
         elif k == "role_alias": prog.role_aliases.append(item[1]); i += 1
         elif k == "content_header":
             ct = item[1]; i += 1
-            for ch in _collect(lambda x: x in ("field","access")):
+            for ch in _collect(lambda x: x in ("field","access","content_scoped")):
                 if ch[0] == "field":
                     if ch[2]: ct.singular = ch[2]
                     ct.fields.append(ch[1])
-                else: ct.access_rules.append(ch[1])
+                elif ch[0] == "access": ct.access_rules.append(ch[1])
+                elif ch[0] == "content_scoped": ct.confidentiality_scopes.extend(ch[1])
             prog.contents.append(ct)
         elif k == "state_header":
             sm = item[1]; i += 1
@@ -796,13 +826,17 @@ def _assemble(parsed: list) -> Program:
         elif k == "stream": prog.streams.append(item[1]); i += 1
         elif k == "compute_header":
             nd = item[1]; i += 1
-            for ch in _collect(lambda x: x in ("compute_shape","compute_body","compute_access","access")):
+            for ch in _collect(lambda x: x in ("compute_shape","compute_body","compute_access","access",
+                                                "compute_identity","compute_requires_conf","compute_output_conf")):
                 if ch[0] == "compute_shape":
                     sd = ch[1]; nd.shape, nd.inputs, nd.outputs = sd[0], sd[1], sd[2]; nd.input_params, nd.output_params = sd[3], sd[4]
                 elif ch[0] == "compute_body": nd.body_lines.append(ch[1])
                 elif ch[0] == "compute_access":
                     if ch[1]: nd.access_role = ch[1]
                 elif ch[0] == "access": nd.access_scope = ch[1].scope
+                elif ch[0] == "compute_identity": nd.identity_mode = ch[1]
+                elif ch[0] == "compute_requires_conf": nd.required_confidentiality_scopes.extend(ch[1])
+                elif ch[0] == "compute_output_conf": nd.output_confidentiality = ch[1]
             prog.computes.append(nd)
         elif k == "channel_header":
             ch_ = item[1]; i += 1

@@ -22,6 +22,7 @@ class TypeExpr:
     list_type: Optional[str] = None   # inner type for "list of <type>"
     default_expr: Optional[str] = None  # CEL expression or literal string for default value
     default_is_expr: bool = False       # True = CEL from [brackets]; False = literal from "quotes"
+    confidentiality_scopes: list[str] = field(default_factory=list)  # scopes required to see this field
     line: int = 0
 
 
@@ -47,6 +48,7 @@ class Content:
     singular: str
     fields: list[Field] = field(default_factory=list)
     access_rules: list[AccessRule] = field(default_factory=list)
+    confidentiality_scopes: list[str] = field(default_factory=list)  # content-level scopes
     line: int = 0
 
 
@@ -311,6 +313,9 @@ class ComputeNode:
     body_lines: list[str] = field(default_factory=list)
     access_scope: Optional[str] = None
     access_role: Optional[str] = None  # alternative: role name instead of scope
+    identity_mode: str = "delegate"              # "delegate" or "service"
+    required_confidentiality_scopes: list[str] = field(default_factory=list)
+    output_confidentiality: Optional[str] = None  # explicit reclassification
     line: int = 0
 
 

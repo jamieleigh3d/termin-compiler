@@ -54,6 +54,7 @@ class FieldSpec:
     is_auto: bool = False              # automatic timestamp
     list_type: Optional[str] = None    # inner type for JSON list columns
     default_expr: Optional[str] = None # CEL expression or literal string for default value
+    confidentiality_scopes: tuple[str, ...] = ()  # scopes required to see this field (AND)
 
 
 # Backward-compatible alias
@@ -67,6 +68,7 @@ class ContentSchema:
     storage_intent: str = "auto"
     has_state_machine: bool = False
     initial_state: Optional[str] = None
+    confidentiality_scopes: tuple[str, ...] = ()  # content-level scopes (inherited by fields)
 
 
 # Backward-compatible alias
@@ -490,6 +492,22 @@ class ComputeParamSpec:
 
 
 @dataclass(frozen=True)
+class FieldDependency:
+    """A resolved field access in a Compute body, with confidentiality metadata."""
+    content_name: str
+    field_name: str
+    confidentiality_scopes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ReclassificationPoint:
+    """Records an explicit confidentiality scope change for audit."""
+    compute_name: str
+    input_scopes: tuple[str, ...]
+    output_scope: str
+
+
+@dataclass(frozen=True)
 class ComputeSpec:
     name: QualifiedName
     shape: ComputeShape
@@ -501,6 +519,10 @@ class ComputeSpec:
     input_params: tuple[ComputeParamSpec, ...] = ()
     output_params: tuple[ComputeParamSpec, ...] = ()
     client_safe: bool = False             # compiler-inferred: safe to evaluate on client
+    identity_mode: str = "delegate"       # "delegate" or "service"
+    required_confidentiality_scopes: tuple[str, ...] = ()  # confidential field scopes accessed
+    output_confidentiality_scope: Optional[str] = None     # explicit reclassification
+    field_dependencies: tuple[FieldDependency, ...] = ()   # compiler-resolved
 
 
 # ── Channels ──
@@ -601,3 +623,4 @@ class AppSpec:
     channels: tuple[ChannelSpec, ...] = ()
     boundaries: tuple[BoundarySpec, ...] = ()
     error_handlers: tuple[ErrorHandlerSpec, ...] = ()
+    reclassification_points: tuple[ReclassificationPoint, ...] = ()
