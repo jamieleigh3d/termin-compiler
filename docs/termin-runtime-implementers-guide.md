@@ -658,13 +658,13 @@ Internally, the runtime uses an Event Bus to propagate changes:
 
 When `reflection_enabled` is `true`, the runtime should expose introspection endpoints:
 
-- `/__reflect/` — application metadata (name, description, IR version)
-- `/__reflect/content` — Content schemas
-- `/__reflect/computes` — Compute definitions
-- `/__reflect/channels` — Channel topology
-- `/__reflect/boundaries` — Boundary hierarchy
-- `/__reflect/state_machines` — State machine definitions
-- `/__reflect/error_handlers` — Error handling rules
+- `/api/reflect` — application metadata (name, description, IR version, full IR)
+- `/api/reflect/content` — Content schemas
+- `/api/reflect/compute` — Compute definitions
+- `/api/reflect/channels` — Channel topology (future)
+- `/api/reflect/boundaries` — Boundary hierarchy (future)
+- `/api/reflect/state_machines` — State machine definitions (future)
+- `/api/reflect/error_handlers` — Error handling rules (future)
 
 Reflection is read-only and used for operational visibility, debugging, and AppSec review.
 
