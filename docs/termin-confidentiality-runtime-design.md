@@ -62,6 +62,38 @@ Updates are partial — only fields present in the request body are written. If 
 
 **Implementation:** On API PUT or form POST, load current record from storage, overlay submitted fields, write merged result. Reject writes to fields where the caller lacks the required confidentiality scope.
 
+### D7: Service Identity Scopes — Deployment Configuration ✅
+
+Service identity scopes are explicitly declared as part of the **deployment configuration** (bindings/wiring), not in the `.termin` file. This is a deployment-time concern — service accounts, credentials, and scope grants don't belong in application source.
+
+**Default (reference runtime):** The implicit union of `Requires` + `Output confidentiality` scopes. The compiler knows exactly what the Compute needs, so the service identity is auto-provisioned with exactly those scopes. This means a misconfigured service account (BRD Check 1 failure mode 2) cannot occur in the default case, but *can* occur in production runtimes where the deployment config is manually wired.
+
+**Delegate identity** is also valid — the Compute runs as whoever triggered it. This is the default (`Identity: delegate`).
+
+### D8: Server-Side Compute Execution ✅
+
+Compute execution is **server-side by default**. The server is authoritative — even when a `client_safe` Compute has already been evaluated in the browser, the server re-evaluates it. The reference runtime needs a server-side Compute invocation path (e.g., `POST /api/v1/compute/{name}`) for the four confidentiality checks to have somewhere to live:
+
+- **Check 1:** Identity gate — pre-execution scope check
+- **Check 2:** Taint integrity — unredacted field detection
+- **Check 3:** CEL redaction guard — redacted marker in expression
+- **Check 4:** Output taint — reclassification enforcement
+
+Some Computes (pure CEL, no scope requirements, `client_safe: true`) can also be evaluated client-side for responsiveness, but the server-side result is the source of truth.
+
+### D9: `Requires` vs `Anyone with...can execute` — Separate Concerns ✅
+
+`Anyone with "view_reports" can execute this` gates **who can invoke** the Compute (execution authorization). `Requires "access_salary"` declares **what confidential fields are accessed** (confidentiality scope requirement). They are different:
+
+- In delegate mode, the caller needs BOTH: invoke permission AND all required confidentiality scopes.
+- In service mode, the caller needs invoke permission only. The service identity holds the confidentiality scopes.
+
+### D10: Audit Granularity — TRACE for Redaction, ERROR for Violations ✅
+
+- **TRACE:** Normal field redaction events (every API response, every WebSocket frame). Off by default, enabled for compliance auditing.
+- **ERROR:** Check 2 (taint violation) and Check 3 (redacted field access). Always on. These indicate a pipeline bug or compromise — something upstream failed to redact.
+- **INFO:** Check 1 (gate rejected) and Check 4 (output blocked). Normal access control, logged for audit trail but not alarming.
+
 ---
 
 ## 3. Implementation Plan
@@ -139,7 +171,7 @@ class FieldDependency:
     """A resolved field access in a Compute body."""
     content_name: str
     field_name: str
-    confidentiality_scope: Optional[str] = None
+    confidentiality_scopes: tuple[str, ...] = ()  # scopes on the referenced field
 
 @dataclass(frozen=True)
 class ReclassificationPoint:
@@ -164,7 +196,7 @@ class AppSpec:
 
 #### 3.1.5 JSON Schema Update
 
-Add `confidentiality_scope` to FieldSpec and ContentSchema definitions. Add `identity_mode`, `required_confidentiality_scopes`, `output_confidentiality_scope`, `field_dependencies` to ComputeSpec. Add `reclassification_points` to top-level AppSpec. Add `FieldDependency` and `ReclassificationPoint` definitions.
+Add `confidentiality_scopes` (array) to FieldSpec and ContentSchema definitions. Add `identity_mode`, `required_confidentiality_scopes`, `output_confidentiality_scope`, `field_dependencies` to ComputeSpec. Add `reclassification_points` to top-level AppSpec. Add `FieldDependency` and `ReclassificationPoint` definitions.
 
 ### Phase B2: Analyzer Static Analysis (Compiler)
 
@@ -198,8 +230,8 @@ scopes ["access_salary", "view_team_metrics"] but not all are declared.
 
 Thread new fields through `lower()`:
 
-- `FieldSpec.confidentiality_scope` from `TypeExpr.confidentiality_scope`
-- `ContentSchema.confidentiality_scope` from `Content.confidentiality_scope`
+- `FieldSpec.confidentiality_scopes` from `TypeExpr.confidentiality_scopes`
+- `ContentSchema.confidentiality_scopes` from `Content.confidentiality_scopes`
 - `ComputeSpec.identity_mode` from `ComputeNode.identity_mode`
 - `ComputeSpec.required_confidentiality_scopes` from `ComputeNode.required_confidentiality_scopes`
 - `ComputeSpec.output_confidentiality_scope` from `ComputeNode.output_confidentiality`
@@ -271,7 +303,26 @@ In page rendering, pass redacted records to templates. The Jinja2 templates chec
 - **Text components:** Same pattern as table cells
 - **Aggregations:** If any source record has redacted fields that the aggregation expression accesses, show `[RESTRICTED]`
 
-### Phase B5: Compute Invocation Gate (Runtime)
+### Phase B5: Server-Side Compute Execution + Invocation Gate (Runtime)
+
+#### 3.5.0 Compute Invocation Endpoint
+
+The reference runtime needs a server-side Compute execution path. Add:
+
+```
+POST /api/v1/compute/{name}
+  Body: { "input": { ... } }
+  Response: { "output": { ... } }
+```
+
+The endpoint:
+1. Looks up the ComputeSpec from IR by name
+2. Checks invoke permission (`required_scope`)
+3. Runs the four confidentiality checks (below)
+4. Evaluates the CEL body with the input as context
+5. Returns the output (after taint enforcement)
+
+For `client_safe` Computes, the client may also evaluate locally, but the server result is authoritative.
 
 #### 3.5.1 Pre-Execution Check
 
@@ -370,15 +421,18 @@ def enforce_output_taint(output, compute_ir, delegate_scopes):
 
 All confidentiality errors route through TerminAtor with structured context:
 
-| Error Kind | Source | HTTP Status |
-|-----------|--------|-------------|
-| `confidentiality_gate_rejected` | Compute name | 403 |
-| `taint_violation` | "confidentiality" | 500 (indicates bug) |
-| `redacted_field_access` | "expression" | 500 (indicates bug) |
-| `output_taint_blocked` | Compute name | 403 |
-| `output_scope_rejected` | Compute name | 403 |
+| Error Kind | Source | HTTP Status | Log Level |
+|-----------|--------|-------------|-----------|
+| `field_redacted` | Content name | — (inline) | TRACE |
+| `confidentiality_gate_rejected` | Compute name | 403 | INFO |
+| `taint_violation` | "confidentiality" | 500 | ERROR |
+| `redacted_field_access` | "expression" | 500 | ERROR |
+| `output_taint_blocked` | Compute name | 403 | INFO |
+| `output_scope_rejected` | Compute name | 403 | INFO |
 
-Checks 2 and 3 return 500 because they indicate a pipeline failure (something upstream is broken). Checks 1 and 4 return 403 because they are normal access control.
+- **TRACE:** Normal redaction (every field, every request). Off by default.
+- **INFO:** Access control rejections (Checks 1 and 4). Normal operation, audit trail.
+- **ERROR:** Pipeline failures (Checks 2 and 3). Always on. Indicates upstream bug or compromise.
 
 ---
 
@@ -390,9 +444,9 @@ Checks 2 and 3 return 500 because they indicate a pipeline failure (something up
 |------|---------|
 | `termin.peg` | Add `confidentiality_constraint`, `content_scope_line`, `compute_identity_line`, `compute_requires_line`, `compute_output_conf_line` rules |
 | `peg_parser.py` | Add classification + handlers for new line types, add confidentiality constraint extraction |
-| `ast_nodes.py` | Add `confidentiality_scope` to TypeExpr + Content, add `identity_mode`, `required_confidentiality_scopes`, `output_confidentiality` to ComputeNode |
+| `ast_nodes.py` | Add `confidentiality_scopes` (tuple) to TypeExpr + Content, add `identity_mode`, `required_confidentiality_scopes`, `output_confidentiality` to ComputeNode |
 | `analyzer.py` | Add scope validation, field dependency analysis, reclassification detection |
-| `ir.py` | Add `confidentiality_scope` to FieldSpec + ContentSchema, add `FieldDependency`, `ReclassificationPoint`, extend ComputeSpec + AppSpec |
+| `ir.py` | Add `confidentiality_scopes` (tuple) to FieldSpec + ContentSchema, add `FieldDependency`, `ReclassificationPoint`, extend ComputeSpec + AppSpec |
 | `lower.py` | Thread all new fields through lowering |
 
 ### Runtime (`termin_runtime/`)
@@ -400,7 +454,7 @@ Checks 2 and 3 return 500 because they indicate a pipeline failure (something up
 | File | Changes |
 |------|---------|
 | `confidentiality.py` | **NEW** — `redact_record`, `redact_records`, `effective_scopes`, `is_redacted`, `check_compute_access`, `check_taint_integrity`, `enforce_output_taint` |
-| `app.py` | Hook redaction into list/get/create/update routes, WebSocket broadcast, page rendering context. Build `schemas_by_name` lookup at startup. |
+| `app.py` | Hook redaction into list/get/create/update routes, WebSocket broadcast, page rendering context. Build `schemas_by_name` lookup at startup. Add `POST /api/v1/compute/{name}` endpoint for server-side Compute execution. |
 | `expression.py` | Add `_check_for_redacted()` wrapper around evaluate results |
 | `presentation.py` | Handle `__redacted` markers in table cells, form fields, text components, aggregations |
 | `errors.py` | Add confidentiality error kinds to TerminAtor |
