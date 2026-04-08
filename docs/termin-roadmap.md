@@ -177,12 +177,15 @@ Restructured April 2026 to prioritize end-to-end demo completeness. Confidential
 
 | # | Item | Effort | Subsystems | Design Doc |
 |---|------|--------|------------|------------|
-| D1 | Define `.termin.pkg` format (manifest, ZIP structure, checksums) | Medium | compiler (CLI) | — (new spec needed) |
-| D2 | `termin compile` outputs `.termin.pkg` instead of .py + .json | Medium | compiler (CLI, backends) | — |
-| D3 | Package revision auto-increment (monotonic, compare existing .pkg) | Small | compiler (CLI) | — |
-| D4 | Conformance suite adapter interface (deploy, authenticate, connect) | Medium | conformance | — |
-| D5 | Decouple conformance suite from reference runtime (standalone) | Medium | conformance, tests | — |
-| D6 | Ship test `.termin.pkg` files with conformance suite | Small | conformance | — |
+| D1 | Define `.termin.pkg` format (manifest, ZIP structure, checksums) | Medium | compiler (CLI) | DONE — termin-package-format.md |
+| D2 | `termin compile` outputs `.termin.pkg` + `termin serve` | Medium | compiler (CLI, backends) | DONE |
+| D3 | Package revision auto-increment (monotonic, compare existing .pkg) | Small | compiler (CLI) | DONE |
+| D4 | Conformance suite adapter interface (deploy, authenticate, connect) | Medium | conformance | DONE — github.com/jamieleigh3d/termin-conformance |
+| D5 | Decouple conformance suite from reference runtime (standalone) | Medium | conformance, tests | DONE — 189 tests, 0 runtime imports |
+| D6 | Ship test `.termin.pkg` files with conformance suite | Small | conformance | DONE — 6 packages |
+| D7 | App Id: compiler-managed UUID for deployment identity | Small | compiler, PEG, IR | DONE |
+| D8 | Testing methodology document (3 tiers) | Small | conformance | DONE — testing-methodology.md |
+| D9 | IR version bump to 0.3.0 | Small | compiler, runtime, schema | DONE |
 
 ### Block E: Research & Future
 
@@ -190,8 +193,10 @@ Restructured April 2026 to prioritize end-to-end demo completeness. Confidential
 |---|------|--------|------------|------------|
 | E1 | Multi-file apps: research how multiple .termin source files compose | Research | compiler | appserver-v2.md § Library dependencies |
 | E2 | Package signatures (cryptographic signing of .termin.pkg) | Research | compiler, runtime | — |
-| E3 | Enum constraint enforcement on API creates | Small | runtime (app) | — (xfail in conformance suite) |
+| E3 | Enum constraint enforcement on API creates | Small | runtime (app) | DONE — 422 with allowed values |
 | E4 | Min/max constraint enforcement on API creates | Small | runtime (app) | — (xfail in conformance suite) |
+| E5 | Tier 3: Behavioral round-trip tests (form submit → API verify) | Medium | conformance | testing-methodology.md § Tier 3 |
+| E6 | Automation API contract for programmatic UI interaction | Research | runtime, conformance | testing-methodology.md § Tier 3 |
 
 ---
 
@@ -217,3 +222,11 @@ Restructured April 2026 to prioritize end-to-end demo completeness. Confidential
 | 2026-04-07 | `defaults to [expr]` with User identity object | b358407 |
 | 2026-04-07 | JEXL → CEL migration (Phases 0-3) | 297073f..417da41 |
 | 2026-04-07 | A9: Conformance test suite (206 tests, 25 categories) | 5c3c4d9 |
+| 2026-04-07 | Fix 17 pre-existing test failures + enum validation | 58808db |
+| 2026-04-07 | `.termin.pkg` format spec | a921377 |
+| 2026-04-07 | App Id: compiler-managed UUID | 95475ea |
+| 2026-04-07 | `termin compile` → .termin.pkg + `termin serve` | b4fadf1 |
+| 2026-04-07 | IR version bump to 0.3.0 | 285ad37 |
+| 2026-04-07 | termin-conformance repo published (189 tests, 12 files) | github.com/jamieleigh3d/termin-conformance |
+| 2026-04-07 | Tier 2: IR-driven presentation contract tests (23 tests) | conformance repo |
+| 2026-04-07 | Fix distinct/reference filter rendering | 4838878 |
