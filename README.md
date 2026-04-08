@@ -116,7 +116,7 @@ Content-level scoping (`Scoped to "access_salary"`) gates entire content types. 
 
 ## Conformance Suite
 
-The [termin-conformance](https://github.com/clarityintelligence/termin-conformance) repository contains 249 behavioral tests that validate any conforming runtime. Tests use an adapter pattern --- swap the adapter to test your runtime without changing a single test.
+The [termin-conformance](https://github.com/jamieleigh3d/termin-conformance) repository contains 249 behavioral tests that validate any conforming runtime. Tests use an adapter pattern --- swap the adapter to test your runtime without changing a single test.
 
 ## IR and Package Format
 
@@ -153,9 +153,9 @@ python -m termin.cli serve warehouse.termin.pkg
 
 ## Authors
 
-**Jamie-Leigh Blake** --- Clarity Intelligence
+**Jamie-Leigh Blake**
 **Claude Anthropic** --- coauthor
 
 ## License
 
-Private. All rights reserved.
+Apache 2.0
