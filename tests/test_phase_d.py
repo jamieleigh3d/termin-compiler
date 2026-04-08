@@ -4,6 +4,7 @@ State on Non-Content Primitives, and Reflection endpoint.
 
 import ast
 import json
+import pytest
 from pathlib import Path
 
 from termin.peg_parser import parse_peg as parse, _classify_line
@@ -245,6 +246,7 @@ class TestStateNonContentAnalyzer:
 # Feature 4: Reflection Endpoint
 # ============================================================
 
+@pytest.mark.xfail(reason="Legacy fastapi backend requires pyjexl (deprecated)")
 class TestReflectionEndpoint:
     def _compile_to_code(self, source: str) -> str:
         from termin.backends.fastapi import FastApiBackend

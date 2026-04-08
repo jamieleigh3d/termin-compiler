@@ -208,7 +208,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
             },
         }
         return {
-            "runtime_version": "0.2.0",
+            "runtime_version": "0.3.0",
             "application": app_name,
             "boundaries": boundaries,
             "protocols": {"realtime": "websocket", "reliable": "rest"},

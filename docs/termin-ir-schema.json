@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://termin.dev/schemas/ir/0.2.0/appspec.json",
+  "$id": "https://termin.dev/schemas/ir/0.3.0/appspec.json",
   "title": "Termin AppSpec IR",
   "description": "The complete Intermediate Representation of a compiled Termin application. Produced by the Termin compiler, consumed by any conforming Termin runtime.",
   "type": "object",
@@ -9,7 +9,7 @@
   "properties": {
     "ir_version": {
       "type": "string",
-      "const": "0.2.0",
+      "const": "0.3.0",
       "description": "Semantic version of the IR schema. Runtimes should reject versions they don't support."
     },
     "reflection_enabled": {

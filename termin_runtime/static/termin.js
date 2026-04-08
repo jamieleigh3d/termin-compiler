@@ -8,7 +8,7 @@
  * No build step. No npm dependencies. CEL evaluator loaded from CDN (already in page).
  */
 
-const TERMIN_VERSION = "0.2.0";
+const TERMIN_VERSION = "0.3.0";
 
 // ── State ──
 const state = {
