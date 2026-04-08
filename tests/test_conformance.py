@@ -581,7 +581,7 @@ class TestEnumConstraints:
 class TestNumericConstraints:
     """Minimum/maximum constraints on numeric fields."""
 
-    @pytest.mark.xfail(reason="Minimum constraint not yet enforced on API creates — runtime gap")
+
     def test_minimum_constraint_respected(self):
         """Capacity with minimum 0 should reject negative values."""
         with _make_client("projectboard") as c:

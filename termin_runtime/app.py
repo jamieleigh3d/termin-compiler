@@ -429,6 +429,25 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                                     status_code=422,
                                     detail=f"Invalid value '{body[fname]}' for {fname}. "
                                            f"Must be one of: {', '.join(enum_vals)}")
+                    # Validate min/max constraints
+                    for field_def in schema.get("fields", []):
+                        fname = field_def["name"]
+                        if fname not in body or body[fname] is None or body[fname] == "":
+                            continue
+                        try:
+                            val = float(body[fname])
+                        except (ValueError, TypeError):
+                            continue
+                        fmin = field_def.get("minimum")
+                        fmax = field_def.get("maximum")
+                        if fmin is not None and val < fmin:
+                            raise HTTPException(
+                                status_code=422,
+                                detail=f"Value {val} for {fname} is below minimum {fmin}")
+                        if fmax is not None and val > fmax:
+                            raise HTTPException(
+                                status_code=422,
+                                detail=f"Value {val} for {fname} exceeds maximum {fmax}")
                     # Strip unknown fields (mass assignment protection)
                     known_fields = {f["name"] for f in schema.get("fields", [])}
                     known_fields.add("status")
