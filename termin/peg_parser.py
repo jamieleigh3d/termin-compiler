@@ -31,12 +31,48 @@ _model = tatsu.compile(_GRAMMAR_PATH.read_text(encoding="utf-8"))
 # --- Preprocessor ---
 def _preprocess(source: str) -> list[tuple[int, str]]:
     result = []
+    in_multiline = False
+    multiline_start = 0
+    multiline_prefix = ""
+    multiline_content = []
     for line_num, raw in enumerate(source.splitlines(), start=1):
         s = raw.strip()
+
+        # Handle triple-backtick multi-line blocks
+        if in_multiline:
+            if s == "```" or s.endswith("```"):
+                # Closing triple-backtick
+                if s != "```":
+                    multiline_content.append(s[:-3].rstrip())
+                joined = "\n".join(multiline_content)
+                # Emit as: prefix ```content```
+                result.append((multiline_start, f'{multiline_prefix}```{joined}```'))
+                in_multiline = False
+                multiline_content = []
+            else:
+                multiline_content.append(raw.rstrip())
+            continue
+
         if not s or s.startswith("---"):
             continue
         if s.startswith("(") and s.endswith(")"):
             continue
+
+        # Check for triple-backtick opening (not closed on same line)
+        triple_idx = s.find("```")
+        if triple_idx >= 0:
+            after = s[triple_idx + 3:]
+            close_idx = after.find("```")
+            if close_idx < 0:
+                # Opens but doesn't close — start multi-line block
+                in_multiline = True
+                multiline_start = line_num
+                multiline_prefix = s[:triple_idx]
+                if after.strip():
+                    multiline_content.append(after)
+                continue
+            # else: opens and closes on same line — pass through normally
+
         idx = s.find(" (")
         if idx > 0:
             tail = s[idx:]
@@ -110,6 +146,7 @@ def _classify_line(text: str) -> str:
     if text.startswith('"') and " links to " in text: return "nav_item_line"
     if any(text.startswith(m) or text.lstrip().startswith(m) for m in _HTTP_METHODS): return "api_endpoint_line"
     if any(text.startswith(kw) for kw in _SHAPE_KW): return "compute_shape_line"
+    if text.startswith("```") and text.endswith("```") and len(text) > 6: return "compute_body_multiline"
     if text.startswith("`") and text.endswith("`") and not text.startswith("```"): return "compute_body_expr_line"
     if text.startswith("[") and text.endswith("]"): return "compute_body_expr_line"  # legacy bracket support
     if " can execute this" in text: return "compute_access_line"
@@ -708,6 +745,7 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule); return ("compute_header", ComputeNode(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "compute_shape_line": return ("compute_shape", _build_comp_shape(text))
     if rule == "compute_body_expr_line": return ("compute_body", text[1:-1].strip())
+    if rule == "compute_body_multiline": return ("compute_body_multiline", text[3:-3].strip())
     if rule == "compute_access_line":
         r = P(text, rule)
         if r: return ("compute_access", _qs(r.get("role","")))
@@ -836,11 +874,12 @@ def _assemble(parsed: list) -> Program:
         elif k == "stream": prog.streams.append(item[1]); i += 1
         elif k == "compute_header":
             nd = item[1]; i += 1
-            for ch in _collect(lambda x: x in ("compute_shape","compute_body","compute_access","access",
+            for ch in _collect(lambda x: x in ("compute_shape","compute_body","compute_body_multiline","compute_access","access",
                                                 "compute_identity","compute_requires_conf","compute_output_conf")):
                 if ch[0] == "compute_shape":
                     sd = ch[1]; nd.shape, nd.inputs, nd.outputs = sd[0], sd[1], sd[2]; nd.input_params, nd.output_params = sd[3], sd[4]
                 elif ch[0] == "compute_body": nd.body_lines.append(ch[1])
+                elif ch[0] == "compute_body_multiline": nd.body_lines.append(ch[1])
                 elif ch[0] == "compute_access":
                     if ch[1]: nd.access_role = ch[1]
                 elif ch[0] == "access": nd.access_scope = ch[1].scope
