@@ -127,6 +127,7 @@ Termin is a governed application substrate where business software is structural
 | `termin-roadmap.md` | This document — backlog, priorities, implementation order | Living document |
 | `termin-ir-schema.json` | JSON Schema (draft 2020-12) for the IR — machine-readable contract | Current |
 | `termin-runtime-implementers-guide.md` | How to build a conforming Termin runtime from the IR schema | Current |
+| `termin-package-format.md` | `.termin.pkg` package format spec (manifest, versioning, checksums) | Draft |
 | `UI-testing.md` | Manual and automated UI testing guide | Current |
 
 ---
@@ -171,6 +172,26 @@ Restructured April 2026 to prioritize end-to-end demo completeness. Confidential
 |---|------|--------|------------|------------|
 | C1 | Boundary isolation enforcement | Large | runtime (app, storage) | appserver-v2.md § 3 Boundaries; primitives.md § Boundary |
 | C2 | Cross-boundary identity propagation | Medium | runtime (identity, app) | distributed-runtime.md § Cross-Boundary Identity Propagation |
+
+### Block D: Package Format & Conformance Distribution
+
+| # | Item | Effort | Subsystems | Design Doc |
+|---|------|--------|------------|------------|
+| D1 | Define `.termin.pkg` format (manifest, ZIP structure, checksums) | Medium | compiler (CLI) | — (new spec needed) |
+| D2 | `termin compile` outputs `.termin.pkg` instead of .py + .json | Medium | compiler (CLI, backends) | — |
+| D3 | Package revision auto-increment (monotonic, compare existing .pkg) | Small | compiler (CLI) | — |
+| D4 | Conformance suite adapter interface (deploy, authenticate, connect) | Medium | conformance | — |
+| D5 | Decouple conformance suite from reference runtime (standalone) | Medium | conformance, tests | — |
+| D6 | Ship test `.termin.pkg` files with conformance suite | Small | conformance | — |
+
+### Block E: Research & Future
+
+| # | Item | Effort | Subsystems | Design Doc |
+|---|------|--------|------------|------------|
+| E1 | Multi-file apps: research how multiple .termin source files compose | Research | compiler | appserver-v2.md § Library dependencies |
+| E2 | Package signatures (cryptographic signing of .termin.pkg) | Research | compiler, runtime | — |
+| E3 | Enum constraint enforcement on API creates | Small | runtime (app) | — (xfail in conformance suite) |
+| E4 | Min/max constraint enforcement on API creates | Small | runtime (app) | — (xfail in conformance suite) |
 
 ---
 
