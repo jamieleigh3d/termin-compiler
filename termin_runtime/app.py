@@ -419,6 +419,21 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                                 body[fname] = expr_eval.evaluate(dexpr, default_ctx)
                             except Exception:
                                 pass
+                    # Validate enum constraints
+                    for field_def in schema.get("fields", []):
+                        fname = field_def["name"]
+                        enum_vals = field_def.get("enum_values", [])
+                        if enum_vals and fname in body and body[fname]:
+                            if body[fname] not in enum_vals:
+                                raise HTTPException(
+                                    status_code=422,
+                                    detail=f"Invalid value '{body[fname]}' for {fname}. "
+                                           f"Must be one of: {', '.join(enum_vals)}")
+                    # Strip unknown fields (mass assignment protection)
+                    known_fields = {f["name"] for f in schema.get("fields", [])}
+                    known_fields.add("status")
+                    body = {k: v for k, v in body.items() if k in known_fields}
+
                     db = await get_db(db_path)
                     try:
                         record = await create_record(db, _cr, body, schema, _sm, terminator, event_bus)
@@ -429,8 +444,6 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                         if "UNIQUE constraint" in err_msg:
                             raise HTTPException(status_code=409, detail=err_msg)
                         if "NOT NULL constraint" in err_msg:
-                            raise HTTPException(status_code=400, detail=err_msg)
-                        if "no column named" in err_msg:
                             raise HTTPException(status_code=400, detail=err_msg)
                         raise HTTPException(status_code=500, detail=err_msg)
                     finally:

@@ -71,7 +71,7 @@ def seeded(client):
 
     # Tasks
     for title, points, priority in [
-        ("Build parser", 5, "high"),
+        ("PEG parser", 5, "high"),
         ("Write tests", 3, "medium"),
         ("Fix bug #42", 2, "critical"),
     ]:
@@ -132,7 +132,7 @@ class TestProjectBoardCRUD:
     def test_get_task(self, client, seeded):
         r = client.get("/api/v1/tasks/1")
         assert r.status_code == 200
-        assert r.json()["title"] == "Build parser"
+        assert r.json()["title"] == "PEG parser"
 
     def test_create_time_log(self, client, seeded):
         r = client.post("/api/v1/time-logs", json={
@@ -166,35 +166,45 @@ class TestProjectBoardCRUD:
 # ============================================================
 
 class TestTaskLifecycle:
-    def test_backlog_to_in_sprint(self, client, seeded):
-        r = client.post("/api/v1/tasks/{}/plan".format(1),
+    def test_full_lifecycle(self, client, seeded):
+        """Walk a task through the complete lifecycle: backlog → in sprint → in progress → in review → rework → in progress → in review → done."""
+        # Create a fresh task to avoid shared-state issues
+        client.cookies.set("termin_role", "project manager")
+        r = client.post("/api/v1/tasks", json={
+            "title": "Lifecycle Test", "project": 1, "sprint": 1,
+            "priority": "high", "points": 3,
+        })
+        assert r.status_code == 201
+        tid = r.json()["id"]
+        assert r.json()["status"] == "backlog"
+
+        # backlog → in sprint (project manager)
+        r = client.post(f"/api/v1/tasks/{tid}/plan",
                         cookies={"termin_role": "project manager"})
         assert r.status_code == 200
         assert r.json()["status"] == "in sprint"
 
-    def test_in_sprint_to_in_progress(self, client, seeded):
-        r = client.post("/api/v1/tasks/1/start",
+        # in sprint → in progress (developer)
+        r = client.post(f"/api/v1/tasks/{tid}/start",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 200
         assert r.json()["status"] == "in progress"
 
-    def test_in_progress_to_in_review(self, client, seeded):
-        r = client.post("/api/v1/tasks/1/review",
+        # in progress → in review (developer)
+        r = client.post(f"/api/v1/tasks/{tid}/review",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 200
         assert r.json()["status"] == "in review"
 
-    def test_rework_in_review_to_in_progress(self, client, seeded):
-        """Rework loop: reviewer sends task back."""
-        r = client.post("/api/v1/tasks/1/rework",
+        # Rework: in review → in progress
+        r = client.post(f"/api/v1/tasks/{tid}/rework",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 200
         assert r.json()["status"] == "in progress"
 
-    def test_complete_task(self, client, seeded):
-        # Move back through review -> done
-        client.post("/api/v1/tasks/1/review", cookies={"termin_role": "developer"})
-        r = client.post("/api/v1/tasks/1/complete",
+        # Back to review → done
+        client.post(f"/api/v1/tasks/{tid}/review", cookies={"termin_role": "developer"})
+        r = client.post(f"/api/v1/tasks/{tid}/complete",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 200
         assert r.json()["status"] == "done"
@@ -214,7 +224,15 @@ class TestTaskLifecycle:
 
     def test_cannot_plan_without_sprint_scope(self, client, seeded):
         """Developer can't move tasks to sprint (needs manage sprints)."""
-        r = client.post("/api/v1/tasks/2/plan",
+        # Create a fresh task as project manager
+        client.cookies.set("termin_role", "project manager")
+        r = client.post("/api/v1/tasks", json={
+            "title": "Scope Test", "project": 1, "sprint": 1,
+            "priority": "low", "points": 1,
+        })
+        tid = r.json()["id"]
+        # Developer lacks 'manage sprints' → can't plan
+        r = client.post(f"/api/v1/tasks/{tid}/plan",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 403
 
@@ -324,12 +342,12 @@ class TestProjectBoardUI:
 
     def test_board_filter_dropdowns(self, client, seeded):
         r = client.get("/sprint_board")
-        assert '<select name="status"' in r.text
-        assert '<select name="priority"' in r.text
+        assert 'data-filter="status"' in r.text
+        assert 'data-filter="priority"' in r.text
 
     def test_board_shows_tasks(self, client, seeded):
         r = client.get("/sprint_board")
-        assert "Build parser" in r.text or "Write tests" in r.text
+        assert "PEG parser" in r.text or "Write tests" in r.text
 
     def test_nav_developer(self, client, seeded):
         r = client.get("/sprint_board", cookies={"termin_role": "developer"})

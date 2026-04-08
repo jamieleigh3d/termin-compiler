@@ -243,9 +243,9 @@ class TestHelpdeskUI:
     def test_filter_dropdowns_present(self, client):
         r = client.get("/ticket_queue")
         html = r.text
-        assert '<select name="status"' in html
-        assert '<select name="priority"' in html
-        assert '<select name="category"' in html
+        assert 'data-filter="status"' in html
+        assert 'data-filter="priority"' in html
+        assert 'data-filter="category"' in html
 
     def test_status_filter_has_multi_word_states(self, client):
         r = client.get("/ticket_queue")
