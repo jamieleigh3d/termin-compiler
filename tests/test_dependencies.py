@@ -20,7 +20,7 @@ STDLIB = {
     "concurrent", "contextlib", "copy", "csv", "dataclasses", "datetime",
     "decimal", "enum", "fnmatch", "functools", "glob", "hashlib", "html",
     "http", "importlib", "inspect", "io", "itertools", "json", "logging",
-    "math", "multiprocessing", "operator", "os", "pathlib", "pickle",
+    "math", "multiprocessing", "operator", "os", "pathlib", "pickle", "zipfile",
     "platform", "pprint", "queue", "random", "re", "shutil", "signal",
     "socket", "sqlite3", "string", "struct", "subprocess", "sys",
     "tempfile", "textwrap", "threading", "time", "traceback", "types",

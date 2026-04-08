@@ -1,8 +1,10 @@
-"""Termin CLI: termin compile <file.termin> [-o output.py] [--backend fastapi]"""
+"""Termin CLI: termin compile, termin serve"""
 
+import hashlib
 import json
 import sys
 import uuid
+import zipfile
 from dataclasses import asdict
 from enum import Enum
 from pathlib import Path
@@ -12,15 +14,7 @@ import click
 from .peg_parser import parse_peg as parse
 from .analyzer import analyze
 from .lower import lower
-from .backends.fastapi import FastApiBackend
 from .backends.runtime import RuntimeBackend
-
-
-# Built-in backends
-BACKENDS = {
-    "fastapi": FastApiBackend,
-    "runtime": RuntimeBackend,
-}
 
 
 @click.group()
@@ -56,16 +50,12 @@ def _simplify_props(obj):
                 _simplify_props(item)
 
 
-@main.command()
-@click.argument("source", type=click.Path(exists=True))
-@click.option("-o", "--output", default="app.py", help="Output file path")
-@click.option("-b", "--backend", "backend_name", default="fastapi",
-              help="Backend to use for code generation (default: fastapi)")
-@click.option("--emit-ir", "ir_output", default=None, type=click.Path(),
-              help="Dump the AppSpec IR as JSON to this file")
-def compile(source: str, output: str, backend_name: str, ir_output: str | None):
-    """Compile a .termin file into an application."""
-    source_path = Path(source)
+def _sha256(data: bytes) -> str:
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def _compile_source(source_path: Path):
+    """Compile a .termin source file. Returns (program, spec, source_text)."""
     source_text = source_path.read_text(encoding="utf-8")
 
     # Parse
@@ -78,10 +68,8 @@ def compile(source: str, output: str, backend_name: str, ir_output: str | None):
     if program.application and not program.application.app_id:
         new_id = str(uuid.uuid4())
         program.application.app_id = new_id
-        # Write ID back to source file (if writable)
         try:
             if source_path.exists() and not source_path.name.startswith("<"):
-                # Find insertion point: after Description: line, or after Application: line
                 lines = source_text.splitlines(keepends=True)
                 insert_idx = None
                 for idx, line in enumerate(lines):
@@ -94,14 +82,12 @@ def compile(source: str, output: str, backend_name: str, ir_output: str | None):
                     lines.insert(insert_idx, f"Id: {new_id}\n")
                     source_path.write_text("".join(lines), encoding="utf-8")
                     click.echo(f"Generated app ID: {new_id}")
-                    # Re-read and re-parse with the ID now present
                     source_text = source_path.read_text(encoding="utf-8")
                     program, parse_errors = parse(source_text)
         except (PermissionError, OSError):
             click.echo(f"Warning: Could not write app ID back to {source_path.name} (read-only)", err=True)
             click.echo(f"Add this line to your .termin file: Id: {new_id}", err=True)
 
-    # Error if source is non-writable (stdin, pipe) and has no ID
     if program.application and not program.application.app_id:
         click.echo("Error: Source file has no Id: field and is not writable.", err=True)
         click.echo("Add an Id: line to your .termin file header (e.g., Id: " + str(uuid.uuid4()) + ")", err=True)
@@ -116,54 +102,199 @@ def compile(source: str, output: str, backend_name: str, ir_output: str | None):
     # Lower to IR
     spec = lower(program)
 
-    # Optionally dump IR
+    return program, spec, source_text
+
+
+@main.command()
+@click.argument("source", type=click.Path(exists=True))
+@click.option("-o", "--output", default=None, help="Output path (default: <name>.termin.pkg)")
+@click.option("--seed", "seed_path", default=None, type=click.Path(exists=True),
+              help="Seed data JSON file to include in package")
+@click.option("--assets", "assets_path", default=None, type=click.Path(exists=True),
+              help="Assets directory to include in package")
+@click.option("--version", "app_version", default=None, help="Set app version (semver)")
+@click.option("--emit-ir", "ir_output", default=None, type=click.Path(),
+              help="Also dump the IR JSON to this file (for debugging)")
+@click.option("--legacy", is_flag=True, help="Output legacy .py + .json instead of .termin.pkg")
+def compile(source: str, output: str | None, seed_path: str | None,
+            assets_path: str | None, app_version: str | None,
+            ir_output: str | None, legacy: bool):
+    """Compile a .termin file into a .termin.pkg package."""
+    source_path = Path(source)
+    program, spec, source_text = _compile_source(source_path)
+
+    # Build IR JSON
+    ir_dict = asdict(spec)
+    _simplify_props(ir_dict)
+    ir_json = json.dumps(ir_dict, indent=2, default=_ir_json_default)
+
+    # Optionally dump IR separately
     if ir_output:
         ir_path = Path(ir_output)
-        ir_dict = asdict(spec)
-        _simplify_props(ir_dict)
-        ir_json = json.dumps(ir_dict, indent=2, default=_ir_json_default)
         ir_path.write_text(ir_json, encoding="utf-8")
         click.echo(f"IR dumped to {ir_path.name}")
 
-    # Get backend
-    if backend_name in BACKENDS:
-        backend = BACKENDS[backend_name]()
-    else:
-        # Try plugin discovery
-        from .backend import get_backend
+    # Legacy mode: output .py + .json (backward compat)
+    # Auto-detect: if output path ends in .py, use legacy mode
+    if output and Path(output).suffix == ".py":
+        legacy = True
+    if legacy:
+        backend = RuntimeBackend()
+        code = backend.generate(spec, source_file=source_path.name)
+        output_path = Path(output or "app.py")
+        output_path.write_text(code, encoding="utf-8")
+        click.echo(f"Compiled {source_path.name} -> {output_path.name}")
+        if hasattr(backend, '_ir_json'):
+            ir_companion = output_path.with_suffix(".json")
+            ir_companion.write_text(backend._ir_json, encoding="utf-8")
+            click.echo(f"IR written to {ir_companion.name}")
+        seed_source = source_path.with_name(source_path.stem + "_seed.json")
+        if seed_source.exists():
+            seed_dest = output_path.with_name(output_path.stem + "_seed.json")
+            seed_dest.write_text(seed_source.read_text(encoding="utf-8"), encoding="utf-8")
+            click.echo(f"Seed data: {seed_dest.name}")
+        return
+
+    # ── Build .termin.pkg ──
+    stem = source_path.stem
+    pkg_path = Path(output or f"{stem}.termin.pkg")
+
+    # Determine revision: load existing .pkg if present
+    revision = 1
+    existing_version = "1.0.0"
+    if pkg_path.exists():
         try:
-            backend = get_backend(backend_name)
-        except ValueError as e:
-            click.echo(f"Error: {e}", err=True)
-            sys.exit(1)
+            with zipfile.ZipFile(pkg_path, 'r') as zf:
+                old_manifest = json.loads(zf.read("manifest.json"))
+                old_id = old_manifest.get("app", {}).get("id", "")
+                current_id = spec.app_id or ""
+                if old_id == current_id:
+                    revision = old_manifest.get("app", {}).get("revision", 0) + 1
+                    existing_version = old_manifest.get("app", {}).get("version", "1.0.0")
+        except (zipfile.BadZipFile, KeyError, json.JSONDecodeError):
+            pass  # Corrupted or non-pkg file — start fresh
 
-    # Generate
-    code = backend.generate(spec, source_file=source_path.name)
+    # Resolve version
+    version = app_version or existing_version
 
-    # Write output
-    output_path = Path(output)
-    output_path.write_text(code, encoding="utf-8")
-    click.echo(f"Compiled {source_path.name} -> {output_path.name}")
+    # Resolve seed data
+    seed_data = None
+    seed_filename = None
+    if seed_path:
+        seed_filename = Path(seed_path).name
+        seed_data = Path(seed_path).read_bytes()
+    else:
+        auto_seed = source_path.with_name(source_path.stem + "_seed.json")
+        if auto_seed.exists():
+            seed_filename = auto_seed.name
+            seed_data = auto_seed.read_bytes()
 
-    # Write companion IR JSON for runtime backend
-    if hasattr(backend, '_ir_json'):
-        ir_companion = output_path.with_suffix(".json")
-        ir_companion.write_text(backend._ir_json, encoding="utf-8")
-        click.echo(f"IR written to {ir_companion.name}")
+    # Build file contents
+    ir_filename = f"{stem}.ir.json"
+    source_filename = source_path.name
+    ir_bytes = ir_json.encode("utf-8")
+    source_bytes = source_text.encode("utf-8")
 
-    # Copy seed data file if it exists alongside the source
-    seed_source = source_path.with_name(source_path.stem + "_seed.json")
-    if seed_source.exists():
-        seed_dest = output_path.with_name(output_path.stem + "_seed.json")
-        seed_dest.write_text(seed_source.read_text(encoding="utf-8"), encoding="utf-8")
-        click.echo(f"Seed data: {seed_dest.name}")
+    # Build checksums
+    checksums = {
+        ir_filename: _sha256(ir_bytes),
+        source_filename: _sha256(source_bytes),
+    }
+    if seed_data and seed_filename:
+        checksums[seed_filename] = _sha256(seed_data)
 
-    # Write requirements.txt alongside output
-    req_path = output_path.parent / "requirements.txt"
-    if not req_path.exists():
-        deps = backend.required_dependencies()
-        req_path.write_text("\n".join(deps) + "\n", encoding="utf-8")
-        click.echo(f"Created {req_path.name}")
+    # Build manifest
+    manifest = {
+        "manifest_version": "1.0.0",
+        "app": {
+            "id": spec.app_id,
+            "name": spec.name,
+            "version": version,
+            "revision": revision,
+            "description": spec.description,
+        },
+        "ir": {
+            "version": spec.ir_version,
+            "entry": ir_filename,
+        },
+        "source": {
+            "files": [source_filename],
+            "entry": source_filename,
+        },
+        "seed": seed_filename,
+        "assets": None,
+        "checksums": checksums,
+    }
+
+    # Write ZIP
+    with zipfile.ZipFile(pkg_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", json.dumps(manifest, indent=2))
+        zf.writestr(ir_filename, ir_json)
+        zf.writestr(source_filename, source_text)
+        if seed_data and seed_filename:
+            zf.writestr(seed_filename, seed_data)
+        # TODO: assets directory
+
+    click.echo(f"Compiled {source_path.name} -> {pkg_path.name} "
+               f"(v{version} rev{revision}, id={spec.app_id[:8]}...)")
+
+
+@main.command()
+@click.argument("package", type=click.Path(exists=True))
+@click.option("-p", "--port", default=8000, type=int, help="Port to serve on (default: 8000)")
+@click.option("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
+def serve(package: str, port: int, host: str):
+    """Serve a .termin.pkg package as a running application."""
+    import uvicorn
+    from termin_runtime import create_termin_app
+
+    pkg_path = Path(package)
+
+    # Read package
+    if pkg_path.suffix == ".pkg" or pkg_path.name.endswith(".termin.pkg"):
+        # .termin.pkg format
+        with zipfile.ZipFile(pkg_path, 'r') as zf:
+            manifest = json.loads(zf.read("manifest.json"))
+            ir_json = zf.read(manifest["ir"]["entry"]).decode("utf-8")
+            seed_data = None
+            if manifest.get("seed"):
+                try:
+                    seed_json = zf.read(manifest["seed"]).decode("utf-8")
+                    seed_data = json.loads(seed_json)
+                except (KeyError, json.JSONDecodeError):
+                    pass
+
+        app_name = manifest["app"]["name"]
+        app_version = manifest["app"]["version"]
+        revision = manifest["app"]["revision"]
+        click.echo(f"[Termin] Loading {app_name} v{app_version} (rev{revision})")
+
+        # Verify checksums
+        with zipfile.ZipFile(pkg_path, 'r') as zf:
+            checksums = manifest.get("checksums", {})
+            for filename, expected in checksums.items():
+                actual = _sha256(zf.read(filename))
+                if actual != expected:
+                    click.echo(f"WARNING: Checksum mismatch for {filename}", err=True)
+
+    elif pkg_path.suffix == ".json":
+        # Raw IR JSON (backward compat)
+        ir_json = pkg_path.read_text(encoding="utf-8")
+        seed_data = None
+        seed_path = pkg_path.with_name(pkg_path.stem.replace("_ir", "") + "_seed.json")
+        if seed_path.exists():
+            seed_data = json.loads(seed_path.read_text(encoding="utf-8"))
+        ir = json.loads(ir_json)
+        click.echo(f"[Termin] Loading {ir.get('name', 'App')} from raw IR")
+    else:
+        click.echo(f"Error: Unrecognized file type: {pkg_path.name}", err=True)
+        click.echo("Expected .termin.pkg or .json", err=True)
+        sys.exit(1)
+
+    # Create and serve
+    app = create_termin_app(ir_json, seed_data=seed_data)
+    click.echo(f"[Termin] Serving on http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":
