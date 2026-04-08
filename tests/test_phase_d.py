@@ -246,7 +246,10 @@ class TestStateNonContentAnalyzer:
 # Feature 4: Reflection Endpoint
 # ============================================================
 
-@pytest.mark.xfail(reason="Legacy fastapi backend requires pyjexl (deprecated)")
+@pytest.mark.skipif(
+    not __import__("importlib").util.find_spec("pyjexl"),
+    reason="Legacy fastapi backend requires pyjexl (deprecated)"
+)
 class TestReflectionEndpoint:
     def _compile_to_code(self, source: str) -> str:
         from termin.backends.fastapi import FastApiBackend
