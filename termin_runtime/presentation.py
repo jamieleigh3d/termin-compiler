@@ -167,7 +167,7 @@ def _render_filter(node: dict) -> str:
     field = props.get("field", "")
     mode = props.get("mode", "text")
     options = props.get("options", [])
-    if not options and mode not in ("enum", "state"):
+    if not options and mode not in ("enum", "state", "distinct", "reference"):
         return ""
     parts = [f'<div class="inline-block mr-4 mb-2">']
     parts.append(f'  <label class="text-sm text-gray-600">{field}:</label>')
