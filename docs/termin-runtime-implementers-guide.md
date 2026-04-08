@@ -745,4 +745,89 @@ Termin's security thesis is structural enforcement. The IR encodes security deci
 
 5. **No information leakage through error messages.** The TerminAtor error router (in the reference runtime) sanitizes error responses — internal details are logged, not returned to callers.
 
+6. **No field leakage through API.** Every API response passes through field redaction. Fields with `confidentiality_scopes` not held by the caller are replaced with `{"__redacted": true, "scope": "..."}` markers.
+
+7. **No field leakage through Compute.** The CEL redaction guard catches redacted markers that leak into expression evaluation. Compile-time analysis catches missing scope declarations. Output taint enforcement blocks entire Compute output when the delegate lacks required scopes.
+
 These properties hold if and only if the runtime correctly implements the enforcement rules described in this guide.
+
+---
+
+## 19. Confidentiality System
+
+The confidentiality system provides field-level and content-level data protection. Restricted fields are **redacted** — replaced with markers that preserve schema shape while withholding values. This happens automatically at every API boundary.
+
+### 19.1 IR Fields
+
+| Location | Field | Type | Description |
+|----------|-------|------|-------------|
+| `FieldSpec` | `confidentiality_scopes` | `string[]` | Scopes required to see this field (AND semantics) |
+| `ContentSchema` | `confidentiality_scopes` | `string[]` | Inherited by fields without their own scopes |
+| `ComputeSpec` | `identity_mode` | `"delegate" \| "service"` | Execution identity mode |
+| `ComputeSpec` | `required_confidentiality_scopes` | `string[]` | Confidential field scopes the Compute accesses |
+| `ComputeSpec` | `output_confidentiality_scope` | `string?` | Explicit reclassification scope |
+| `ComputeSpec` | `field_dependencies` | `FieldDependency[]` | Compiler-resolved field access metadata |
+| `AppSpec` | `reclassification_points` | `ReclassificationPoint[]` | Audit trail of scope changes |
+
+### 19.2 Effective Scopes (AND Semantics)
+
+A field's effective scope is the **union** of its content-level scopes and its own scopes. The caller must hold **all** scopes in the set:
+
+```
+effective_scopes(field) = content.confidentiality_scopes ∪ field.confidentiality_scopes
+redact if: effective_scopes ≠ ∅ AND NOT effective_scopes ⊆ caller_scopes
+```
+
+### 19.3 Redaction Marker Format
+
+```json
+{"__redacted": true, "scope": "access_salary"}
+```
+
+- `__redacted: true` — the canonical detection key
+- `scope` — informational, the first missing scope (for error messages)
+- System fields (`id`) always pass through — record existence is never hidden
+- `status` and other auto fields **can** be redacted if they carry scopes
+
+### 19.4 API Endpoint Behavior
+
+| Endpoint | Redaction |
+|----------|-----------|
+| `GET /list` | Redact each field in each record |
+| `GET /{id}` | Redact each field in the single record |
+| `POST /create` | Redact fields in the **response** (not the input) |
+| `PUT /{id}` | Check write access first, then redact response |
+
+**Write protection:** If a PUT/PATCH request includes a field the caller lacks scopes for, reject with 403. Partial updates preserve existing values for fields not in the request body.
+
+### 19.5 Compute Invocation (Checks 1-4)
+
+Server-side Compute execution at `POST /api/v1/compute/{name}`:
+
+| Check | When | What | HTTP |
+|-------|------|------|------|
+| 1. Identity gate | Before execution | Delegate must hold `required_confidentiality_scopes` | 403 |
+| 2. Taint integrity | Input arrives | Detect unredacted fields for unauthorized delegate | 500 |
+| 3. CEL guard | During evaluation | Detect `__redacted` markers in expression context | 500 |
+| 4. Output taint | After execution | Block output if delegate lacks taint/reclassification scope | 403 |
+
+**Service mode:** Check 1 passes automatically (service identity is auto-provisioned). Output taint (Check 4) is checked against the **delegate's** scopes, not the service's.
+
+**Reclassification:** If `output_confidentiality_scope` is set, the output carries that scope instead of the input taint. The delegate must hold the reclassified scope.
+
+### 19.6 Presentation Rendering
+
+- **Table cells:** Show `[REDACTED]` in gray italic for redacted values
+- **Form fields:** Omit fields the user cannot see (or show disabled)
+- **Text components:** Show `[REDACTED]` for redacted expression results
+- **Aggregations:** Show `[RESTRICTED]` if source data contains redacted fields
+
+### 19.7 Audit Levels
+
+| Event | Log Level | Description |
+|-------|-----------|-------------|
+| Field redacted | TRACE | Normal operation, off by default |
+| Check 1 (gate rejected) | INFO | Normal access control |
+| Check 2 (taint violation) | ERROR | Upstream bug or compromise |
+| Check 3 (redacted access) | ERROR | Static analysis gap |
+| Check 4 (output blocked) | INFO | Normal taint enforcement |
