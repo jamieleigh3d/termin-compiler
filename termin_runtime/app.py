@@ -863,6 +863,20 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                     for sm_content, sm_data in sm_lookup.items():
                         all_transitions.update(sm_data.get("transitions", {}))
 
+                    # Build CEL context for server-side text expression evaluation
+                    cel_ctx = {
+                        "User": user.get("User", {}),
+                        "now": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+                        "today": __import__("datetime").date.today().isoformat(),
+                    }
+
+                    def _termin_eval(expression):
+                        """Evaluate a CEL expression server-side for text components."""
+                        try:
+                            return expr_eval.evaluate(expression, cel_ctx)
+                        except Exception:
+                            return "..."
+
                     ctx = {
                         "page_title": _pg["name"],
                         "current_role": user["role"],
@@ -873,6 +887,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                         "termin_compute_js": _compute_js,
                         "_sm_transitions": all_transitions,
                         "user_scopes": set(user["scopes"]),
+                        "termin_eval": _termin_eval,
                     }
 
                     # Load data sources (data_table, aggregations)

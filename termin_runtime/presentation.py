@@ -15,7 +15,12 @@ def _render_text(node: dict) -> str:
     content = node.get("props", {}).get("content", "")
     if isinstance(content, dict) and content.get("is_expr"):
         expr = content["value"]
-        return f'<div class="text-lg text-gray-800 mb-4" data-termin-expr="{expr}">...</div>'
+        # Emit Jinja call to termin_eval() which is injected into template context
+        # This evaluates the CEL expression server-side at render time
+        safe_expr = expr.replace('"', '\\"')
+        return (f'<div class="text-lg text-gray-800 mb-4" '
+                f'data-termin-expr="{safe_expr}">'
+                f'{{{{ termin_eval("{safe_expr}")|default("...") }}}}</div>')
     return f'<div class="text-lg text-gray-800 mb-4">{content}</div>'
 
 
@@ -353,7 +358,11 @@ def render_component(node: dict) -> str:
 # ── Page template builders ──
 
 def build_page_template(page: dict) -> object:
-    """Build a Jinja2 template for a page from its component tree."""
+    """Build a Jinja2 template for a page from its component tree.
+
+    Text component expressions emit {{ termin_eval("expr") }} calls
+    that are evaluated server-side at render time via the template context.
+    """
     parts = [f'<h1 class="text-2xl font-bold mb-4">{page["name"]}</h1>']
     for child in page.get("children", []):
         parts.append(render_component(child))
