@@ -21,6 +21,7 @@ from .storage import get_db, init_db, create_record, list_records, get_record, u
 from .state import do_state_transition
 from .reflection import ReflectionEngine, register_reflection_with_expr_eval
 from .presentation import build_base_template, build_nav_html, build_page_template, jinja_env
+from .confidentiality import redact_record, redact_records, check_write_access
 
 
 def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None) -> FastAPI:
@@ -392,7 +393,12 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                     try:
                         cursor = await db.execute(f"SELECT * FROM {_cr}")
                         rows = await cursor.fetchall()
-                        return [dict(r) for r in rows]
+                        records = [dict(r) for r in rows]
+                        # Redact confidential fields
+                        schema = content_lookup.get(_cr, {})
+                        user = get_current_user(request)
+                        user_scopes = set(user.get("scopes", []))
+                        return redact_records(records, schema, user_scopes)
                     finally:
                         await db.close()
             make_list_route(path, content_ref, scope)
@@ -457,7 +463,9 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                     try:
                         record = await create_record(db, _cr, body, schema, _sm, terminator, event_bus)
                         await run_event_handlers(db, _cr, "created", record)
-                        return record
+                        # Redact confidential fields in response
+                        user_scopes = set(user.get("scopes", []))
+                        return redact_record(record, schema, user_scopes)
                     except Exception as e:
                         err_msg = str(e)
                         if "UNIQUE constraint" in err_msg:
@@ -477,7 +485,12 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                     param_val = list(request.path_params.values())[0] if request.path_params else None
                     db = await get_db(db_path)
                     try:
-                        return await get_record(db, _cr, param_val, _lc)
+                        record = await get_record(db, _cr, param_val, _lc)
+                        # Redact confidential fields
+                        schema = content_lookup.get(_cr, {})
+                        user = get_current_user(request)
+                        user_scopes = set(user.get("scopes", []))
+                        return redact_record(record, schema, user_scopes)
                     finally:
                         await db.close()
             make_get_route(path, content_ref, scope, lookup_col)
@@ -489,11 +502,18 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                 async def update_route(request: Request, _cr=cr, _lc=lc):
                     param_val = list(request.path_params.values())[0] if request.path_params else None
                     body = await request.json()
+                    # Check write access to confidential fields
+                    user = get_current_user(request)
+                    user_scopes = set(user.get("scopes", []))
+                    schema = content_lookup.get(_cr, {})
+                    write_err = check_write_access(body, schema, user_scopes)
+                    if write_err:
+                        raise HTTPException(status_code=403, detail=write_err)
                     db = await get_db(db_path)
                     try:
                         record = await update_record(db, _cr, param_val, body, _lc, terminator, event_bus)
                         await run_event_handlers(db, _cr, "updated", record)
-                        return record
+                        return redact_record(record, schema, user_scopes)
                     finally:
                         await db.close()
             make_update_route(path, content_ref, scope, lookup_col)

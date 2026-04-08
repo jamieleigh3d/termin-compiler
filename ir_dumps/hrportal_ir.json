@@ -1,7 +1,7 @@
 {
   "ir_version": "0.3.0",
   "reflection_enabled": true,
-  "app_id": "a7c3e912-4b6d-48f1-9e2a-1d5f8c3b7a40",
+  "app_id": null,
   "name": "HR Portal",
   "description": "Human Resources management with field-level confidentiality",
   "auth": {
@@ -107,8 +107,8 @@
         {
           "name": "start_date",
           "display_name": "start date",
-          "business_type": "date",
-          "column_type": "DATE",
+          "business_type": "text",
+          "column_type": "TEXT",
           "required": false,
           "unique": false,
           "minimum": null,
@@ -141,8 +141,8 @@
         {
           "name": "bonus_rate",
           "display_name": "bonus rate",
-          "business_type": "number",
-          "column_type": "REAL",
+          "business_type": "text",
+          "column_type": "TEXT",
           "required": false,
           "unique": false,
           "minimum": null,
@@ -258,7 +258,7 @@
         {
           "name": "head_count",
           "display_name": "head count",
-          "business_type": "whole number",
+          "business_type": "whole_number",
           "column_type": "INTEGER",
           "required": false,
           "unique": false,
@@ -279,7 +279,7 @@
     },
     {
       "name": {
-        "display": "salary_reviews",
+        "display": "salary reviews",
         "snake": "salary_reviews",
         "pascal": "SalaryReviews"
       },
@@ -303,8 +303,8 @@
         {
           "name": "review_date",
           "display_name": "review date",
-          "business_type": "date",
-          "column_type": "DATE",
+          "business_type": "text",
+          "column_type": "TEXT",
           "required": false,
           "unique": false,
           "minimum": null,
@@ -439,9 +439,7 @@
       "content": "departments",
       "scope": "manage_hr",
       "verbs": [
-        "CREATE",
-        "UPDATE",
-        "DELETE"
+        "CREATE"
       ]
     },
     {
@@ -556,7 +554,7 @@
       "kind": "GET_ONE",
       "content_ref": "departments",
       "required_scope": "view_employees",
-      "lookup_column": "id",
+      "lookup_column": "name",
       "target_state": null
     },
     {
@@ -564,8 +562,8 @@
       "path": "/api/v1/departments/{id}",
       "kind": "UPDATE",
       "content_ref": "departments",
-      "required_scope": "manage_hr",
-      "lookup_column": "id",
+      "required_scope": null,
+      "lookup_column": "name",
       "target_state": null
     },
     {
@@ -573,8 +571,8 @@
       "path": "/api/v1/departments/{id}",
       "kind": "DELETE",
       "content_ref": "departments",
-      "required_scope": "manage_hr",
-      "lookup_column": "id",
+      "required_scope": null,
+      "lookup_column": "name",
       "target_state": null
     },
     {
@@ -612,24 +610,6 @@
       "required_scope": "manage_hr",
       "lookup_column": "id",
       "target_state": null
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/salary-reviews/{id}/approve",
-      "kind": "TRANSITION",
-      "content_ref": "salary_reviews",
-      "required_scope": null,
-      "lookup_column": "id",
-      "target_state": "approved"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/salary-reviews/{id}/apply",
-      "kind": "TRANSITION",
-      "content_ref": "salary_reviews",
-      "required_scope": null,
-      "lookup_column": "id",
-      "target_state": "applied"
     }
   ],
   "pages": [
@@ -715,11 +695,10 @@
           "children": []
         },
         {
-          "type": "aggregation",
+          "type": "stat_breakdown",
           "props": {
             "source": "employees",
-            "label": "employee count by department",
-            "agg_type": "count",
+            "label": "employees by department",
             "group_by": "department"
           },
           "style": {},
@@ -784,8 +763,7 @@
               "type": "filter",
               "props": {
                 "field": "department",
-                "mode": "field",
-                "options": []
+                "mode": "text"
               },
               "style": {},
               "layout": {},
@@ -861,7 +839,7 @@
               "props": {
                 "field": "start_date",
                 "label": "start date",
-                "input_type": "date"
+                "input_type": "text"
               },
               "style": {},
               "layout": {},
@@ -872,7 +850,8 @@
               "props": {
                 "field": "salary",
                 "label": "salary",
-                "input_type": "currency"
+                "input_type": "currency",
+                "step": "0.01"
               },
               "style": {},
               "layout": {},
@@ -883,7 +862,7 @@
               "props": {
                 "field": "bonus_rate",
                 "label": "bonus rate",
-                "input_type": "number"
+                "input_type": "text"
               },
               "style": {},
               "layout": {},
@@ -919,7 +898,7 @@
       "name": "Salary Reviews",
       "slug": "salary_reviews",
       "role": "hr business partner",
-      "required_scope": "access_salary",
+      "required_scope": null,
       "children": [
         {
           "type": "data_table",
@@ -954,6 +933,40 @@
                 "field": "approved_by",
                 "label": "approved by"
               }
+            ],
+            "row_actions": [
+              {
+                "type": "action_button",
+                "props": {
+                  "label": "Approve",
+                  "action": "transition",
+                  "target_state": "approved",
+                  "visible_when": {
+                    "value": ".state.canTransition('approved')",
+                    "is_expr": true
+                  },
+                  "unavailable_behavior": "disable"
+                },
+                "style": {},
+                "layout": {},
+                "children": []
+              },
+              {
+                "type": "action_button",
+                "props": {
+                  "label": "Apply",
+                  "action": "transition",
+                  "target_state": "applied",
+                  "visible_when": {
+                    "value": ".state.canTransition('applied')",
+                    "is_expr": true
+                  },
+                  "unavailable_behavior": "disable"
+                },
+                "style": {},
+                "layout": {},
+                "children": []
+              }
             ]
           },
           "style": {},
@@ -973,28 +986,6 @@
               "style": {},
               "layout": {},
               "children": []
-            },
-            {
-              "type": "action_button",
-              "props": {
-                "label": "Approve",
-                "target_state": "approved",
-                "content_ref": "salary_reviews"
-              },
-              "style": {},
-              "layout": {},
-              "children": []
-            },
-            {
-              "type": "action_button",
-              "props": {
-                "label": "Apply",
-                "target_state": "applied",
-                "content_ref": "salary_reviews"
-              },
-              "style": {},
-              "layout": {},
-              "children": []
             }
           ]
         }
@@ -1006,10 +997,7 @@
       "label": "Directory",
       "page_slug": "employee_directory",
       "visible_to": [
-        "employee",
-        "manager",
-        "hr business partner",
-        "executive"
+        "all"
       ],
       "badge_content": null
     },
@@ -1060,17 +1048,17 @@
         "snake": "calculate_team_bonus_pool",
         "pascal": "CalculateTeamBonusPool"
       },
-      "shape": "TRANSFORM",
+      "shape": "REDUCE",
       "input_content": [
         "employees"
       ],
       "output_content": [
-        "bonus_summary"
+        "employees"
       ],
       "body_lines": [
         "team_bonus = sum(employees.salary * employees.bonus_rate)"
       ],
-      "required_scope": "access_salary",
+      "required_scope": "view_team_metrics",
       "required_role": null,
       "input_params": [],
       "output_params": [],
@@ -1080,34 +1068,11 @@
         "access_salary"
       ],
       "output_confidentiality_scope": "view_team_metrics",
-      "field_dependencies": [
-        {
-          "content_name": "employees",
-          "field_name": "salary",
-          "confidentiality_scopes": [
-            "access_salary"
-          ]
-        },
-        {
-          "content_name": "employees",
-          "field_name": "bonus_rate",
-          "confidentiality_scopes": [
-            "access_salary"
-          ]
-        }
-      ]
-    }
-  ],
-  "reclassification_points": [
-    {
-      "compute_name": "Calculate Team Bonus Pool",
-      "input_scopes": [
-        "access_salary"
-      ],
-      "output_scope": "view_team_metrics"
+      "field_dependencies": []
     }
   ],
   "channels": [],
   "boundaries": [],
-  "error_handlers": []
+  "error_handlers": [],
+  "reclassification_points": []
 }
