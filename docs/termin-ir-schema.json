@@ -93,6 +93,12 @@
       "type": "array",
       "items": { "$ref": "#/$defs/ErrorHandlerSpec" },
       "description": "Error handling rules with retry, escalation, and notification actions."
+    },
+    "reclassification_points": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ReclassificationPoint" },
+      "default": [],
+      "description": "Declared points where data changes confidentiality level through a Compute module. The compiler extracts these from Compute definitions that have output_confidentiality_scope set. Runtimes use this list for audit logging and policy enforcement."
     }
   },
 
@@ -198,6 +204,12 @@
           "type": ["string", "null"],
           "default": null,
           "description": "Default value expression evaluated at record creation time. If from a CEL expression (DSL: defaults to [expr]), this is the raw expression string (e.g., 'User.Name', '0', 'now'). If from a literal (DSL: defaults to \"text\"), this is a CEL string literal (e.g., '\"normal\"'). The runtime evaluates this with the User object and system variables (now, today) in scope. Null means no default — the field is left empty unless provided by the caller."
+        },
+        "confidentiality_scopes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Confidentiality labels attached to this field. Data in this field is only accessible to identities holding all listed scopes. Empty means unrestricted within the Content's own access grants."
         }
       }
     },
@@ -229,6 +241,12 @@
           "type": ["string", "null"],
           "default": null,
           "description": "The starting state for new records, set automatically on create. Only meaningful when has_state_machine is true."
+        },
+        "confidentiality_scopes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Default confidentiality scopes applied to all records in this Content. Individual fields may declare additional scopes. Empty means no Content-level confidentiality restriction."
         }
       }
     },
@@ -676,6 +694,29 @@
           "type": "boolean",
           "default": false,
           "description": "Compiler-inferred flag: true when the Compute's CEL body can be safely evaluated on the client (no server-only field access, no side effects). Client runtimes may use this for optimistic local evaluation."
+        },
+        "identity_mode": {
+          "type": "string",
+          "enum": ["delegate", "service"],
+          "default": "delegate",
+          "description": "Identity propagation mode. 'delegate': the Compute executes with the caller's identity and scopes. 'service': the Compute executes with its own service identity, decoupled from the caller."
+        },
+        "required_confidentiality_scopes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Confidentiality scopes the caller must hold for all input data consumed by this Compute. The runtime must verify the caller's identity covers these scopes before execution."
+        },
+        "output_confidentiality_scope": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Confidentiality scope stamped on data produced by this Compute. Null means the output inherits scopes from the input data. Non-null enables reclassification — the Compute transforms data from one confidentiality level to another."
+        },
+        "field_dependencies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FieldDependency" },
+          "default": [],
+          "description": "Explicit field-level data dependencies. Declares which fields from which Content this Compute reads, along with the confidentiality scopes required to access them."
         }
       }
     },
@@ -881,6 +922,51 @@
           "type": "boolean",
           "default": false,
           "description": "Whether this is a catch-all handler (matches all errors in its scope)."
+        }
+      }
+    },
+
+    "FieldDependency": {
+      "type": "object",
+      "description": "A field-level data dependency for a Compute module. Declares that the Compute reads a specific field from a Content, and the confidentiality scopes required to access it.",
+      "required": ["content_name", "field_name"],
+      "additionalProperties": false,
+      "properties": {
+        "content_name": {
+          "type": "string",
+          "description": "Snake_case Content name containing the field."
+        },
+        "field_name": {
+          "type": "string",
+          "description": "Snake_case field name within the Content."
+        },
+        "confidentiality_scopes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Confidentiality scopes required to read this field. Inherited from the field's own confidentiality_scopes if not overridden here."
+        }
+      }
+    },
+
+    "ReclassificationPoint": {
+      "type": "object",
+      "description": "A declared point where data changes confidentiality level. Reclassification only happens through Compute modules — this makes confidentiality transitions explicit, auditable, and compiler-verified.",
+      "required": ["compute_name", "input_scopes", "output_scope"],
+      "additionalProperties": false,
+      "properties": {
+        "compute_name": {
+          "type": "string",
+          "description": "Snake_case name of the Compute module performing the reclassification."
+        },
+        "input_scopes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Confidentiality scopes of the input data consumed by this Compute."
+        },
+        "output_scope": {
+          "type": "string",
+          "description": "Confidentiality scope assigned to the output data produced by this Compute."
         }
       }
     }
