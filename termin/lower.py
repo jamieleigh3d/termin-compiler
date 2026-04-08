@@ -13,7 +13,7 @@ from .ast_nodes import (
     ShowRelated, HighlightRows, AllowFilter, AllowSearch, SubscribeTo,
     AcceptInput, ValidateUnique, CreateAs, AfterSave, ShowChart,
     DisplayAggregation, DisplayText, StructuredAggregation, SectionStart,
-    ActionHeader, ActionButtonDef,
+    ActionHeader, ActionButtonDef, LinkColumn,
     ComputeNode, ChannelDecl, BoundaryDecl,
     BoundaryProperty, ErrorHandler, ErrorAction,
 )
@@ -451,6 +451,14 @@ def lower(program: Program) -> AppSpec:
                         props={"source": _snake(d.content_name), "columns": cols},
                         children=(),
                     )
+
+            elif isinstance(d, LinkColumn):
+                if cur_data_table:
+                    col_key = _snake(d.column)
+                    for col in cur_data_table.props.get("columns", []):
+                        if col.get("field") == col_key:
+                            col["link_template"] = d.link_template
+                            break
 
             elif isinstance(d, AllowFilter):
                 if cur_data_table and d.fields:

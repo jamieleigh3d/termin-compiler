@@ -169,6 +169,11 @@ class AllowSearch(Directive):
 
 
 @dataclass
+class LinkColumn(Directive):
+    column: str = ""
+    link_template: str = ""
+
+@dataclass
 class SubscribeTo(Directive):
     content_name: str = ""
 

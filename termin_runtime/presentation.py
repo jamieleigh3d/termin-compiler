@@ -88,16 +88,33 @@ def _render_data_table(node: dict) -> str:
         parts.append('    {% for item in items %}<tr class="border-t" data-termin-row-id="{{ item.id }}">')
     for col in cols:
         key = col.get("field", "")
+        link_tpl = col.get("link_template")
         # Handle redacted values: show [REDACTED] in gray italic
-        parts.append(
-            f'      <td class="px-4 py-2 text-sm" data-termin-field="{key}">'
-            f'{{% if item.{key} is mapping and item.{key}.__redacted %}}'
-            f'<span class="text-gray-400 italic">[REDACTED]</span>'
-            f'{{% else %}}'
-            f'{{{{ item.{key}|default("") }}}}'
-            f'{{% endif %}}'
-            f'</td>'
-        )
+        if link_tpl:
+            # Linked column: wrap value in <a> with interpolated href
+            # Convert {field} to Jinja {{ item.field }}
+            import re as _re
+            jinja_href = _re.sub(r'\{(\w+)\}', r'{{ item.\1 }}', link_tpl)
+            parts.append(
+                f'      <td class="px-4 py-2 text-sm" data-termin-field="{key}">'
+                f'{{% if item.{key} is mapping and item.{key}.__redacted %}}'
+                f'<span class="text-gray-400 italic">[REDACTED]</span>'
+                f'{{% else %}}'
+                f'<a href="{jinja_href}" class="text-indigo-600 hover:text-indigo-800 underline">'
+                f'{{{{ item.{key}|default("") }}}}</a>'
+                f'{{% endif %}}'
+                f'</td>'
+            )
+        else:
+            parts.append(
+                f'      <td class="px-4 py-2 text-sm" data-termin-field="{key}">'
+                f'{{% if item.{key} is mapping and item.{key}.__redacted %}}'
+                f'<span class="text-gray-400 italic">[REDACTED]</span>'
+                f'{{% else %}}'
+                f'{{{{ item.{key}|default("") }}}}'
+                f'{{% endif %}}'
+                f'</td>'
+            )
 
     # Action buttons per row — rendered conditionally based on state + scope
     if row_actions:

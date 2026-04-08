@@ -20,7 +20,7 @@ from .ast_nodes import (
     StructuredAggregation, SectionStart, ActionHeader, ActionButtonDef,
     NavBar, NavItem, ApiSection, ApiEndpoint, Stream, Directive,
     ComputeNode, ComputeParam, ChannelDecl, ChannelRequirement, BoundaryDecl,
-    BoundaryProperty, DisplayText, ErrorHandler, ErrorAction,
+    BoundaryProperty, DisplayText, ErrorHandler, ErrorAction, LinkColumn,
 )
 from .errors import ParseError, CompileResult
 
@@ -98,6 +98,7 @@ _PREFIXES: list[tuple[str, str]] = [
     ("For each ", "show_related_line"),  # also handles action_header_line — disambiguated in _classify_line
     ("Highlight rows where", "highlight_rows_line"),
     ("Allow filtering by", "allow_filtering_line"), ("Allow searching by", "allow_searching_line"),
+    ("Link ", "link_column_line"),
     ("This table subscribes to", "subscribes_to_line"), ("Accept input for", "accept_input_line"),
     ("Validate that", "validate_unique_line"), ("Create the ", "create_as_line"),
     ("After saving,", "after_saving_line"), ("Show a chart of", "show_chart_line"),
@@ -637,6 +638,17 @@ def _parse_line(text: str, rule: str, ln: int):
             rest = text[len("Allow searching by "):].strip()
             fs = [f.strip() for f in rest.split(" or ") if f.strip()]
         return ("directive", AllowSearch(fields=fs, line=ln))
+    if rule == "link_column_line":
+        r = P(text, rule)
+        if r:
+            col = _qs(r.get("col", ""))
+            template = _qs(r.get("template", ""))
+        else:
+            # Fallback: Link "col" to "template"
+            parts = _eqs(text)
+            col = parts[0] if parts else ""
+            template = parts[1] if len(parts) > 1 else ""
+        return ("directive", LinkColumn(column=col, link_template=template, line=ln))
     if rule == "subscribes_to_line":
         rest = text[25:].strip()
         if rest.endswith(" changes"): rest = rest[:-8].strip()

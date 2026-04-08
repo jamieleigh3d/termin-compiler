@@ -300,6 +300,10 @@ allow_searching_line
     = 'Allow' 'searching' 'by' fields:or_list $
     ;
 
+link_column_line
+    = 'Link' col:quoted_string 'to' template:quoted_string $
+    ;
+
 subscribes_to_line
     = 'This' 'table' 'subscribes' 'to' content:words_before_changes 'changes' $
     ;
