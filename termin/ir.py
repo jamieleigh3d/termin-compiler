@@ -523,6 +523,12 @@ class ComputeSpec:
     required_confidentiality_scopes: tuple[str, ...] = ()  # confidential field scopes accessed
     output_confidentiality_scope: Optional[str] = None     # explicit reclassification
     field_dependencies: tuple[FieldDependency, ...] = ()   # compiler-resolved
+    provider: Optional[str] = None                         # "cel" (default), "ai-agent", CCP name
+    preconditions: tuple[str, ...] = ()                    # CEL expressions checked before execution
+    postconditions: tuple[str, ...] = ()                   # CEL expressions checked after execution
+    objective: Optional[str] = None                        # multi-line prompt (ai-agent provider)
+    strategy: Optional[str] = None                         # multi-line execution plan (ai-agent)
+    trigger: Optional[str] = None                          # "schedule <interval>" or "event <name>"
 
 
 # ── Channels ──

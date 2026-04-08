@@ -316,6 +316,12 @@ class ComputeNode:
     identity_mode: str = "delegate"              # "delegate" or "service"
     required_confidentiality_scopes: list[str] = field(default_factory=list)
     output_confidentiality: Optional[str] = None  # explicit reclassification
+    provider: Optional[str] = None                # "cel" (default), "ai-agent", CCP package name
+    preconditions: list[str] = field(default_factory=list)   # CEL expressions
+    postconditions: list[str] = field(default_factory=list)  # CEL expressions
+    objective: Optional[str] = None               # multi-line LLM prompt (ai-agent)
+    strategy: Optional[str] = None                # multi-line execution plan (ai-agent)
+    trigger: Optional[str] = None                 # "schedule <interval>" or "event <name>"
     line: int = 0
 
 

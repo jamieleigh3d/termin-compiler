@@ -780,6 +780,12 @@ def lower(program: Program) -> AppSpec:
             identity_mode=comp.identity_mode,
             required_confidentiality_scopes=tuple(comp.required_confidentiality_scopes),
             output_confidentiality_scope=comp.output_confidentiality,
+            provider=comp.provider,
+            preconditions=tuple(comp.preconditions),
+            postconditions=tuple(comp.postconditions),
+            objective=comp.objective,
+            strategy=comp.strategy,
+            trigger=comp.trigger,
         ))
 
     # ── Lower channels ──

@@ -118,7 +118,13 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Boundary called", "boundary_header"), ("Contains ", "boundary_contains_line"),
     ("Identity inherits", "boundary_inherits_line"), ("Identity restricts", "boundary_restricts_line"),
     ("Identity:", "compute_identity_line"),
+    ("Provider is", "compute_provider_line"),
     ("Output confidentiality:", "compute_output_conf_line"),
+    ("Trigger on", "compute_trigger_line"),
+    ("Preconditions are:", "compute_preconditions_line"),
+    ("Postconditions are:", "compute_postconditions_line"),
+    ("Objective is", "compute_objective_line"),
+    ("Strategy is", "compute_strategy_line"),
     ("Exposes property", "boundary_exposes_line"),
 ]
 _SHAPE_KW = ("Transform:", "Reduce:", "Expand:", "Correlate:", "Route:")
@@ -762,6 +768,29 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule)
         scope = _qs(r.get("scope", "")) if r else _fq(text)
         return ("compute_output_conf", scope)
+    if rule == "compute_provider_line":
+        r = P(text, rule)
+        provider = _qs(r.get("provider", "")) if r else _fq(text)
+        return ("compute_provider", provider)
+    if rule == "compute_trigger_line":
+        rest = text[11:].strip()  # after "Trigger on "
+        return ("compute_trigger", rest)
+    if rule == "compute_preconditions_line":
+        return ("compute_preconditions_header",)
+    if rule == "compute_postconditions_line":
+        return ("compute_postconditions_header",)
+    if rule == "compute_objective_line":
+        # Content may be inline ```...``` or just text after "Objective is "
+        rest = text[13:].strip()  # after "Objective is "
+        # Strip triple-backtick wrapper if present
+        if rest.startswith("```") and rest.endswith("```"):
+            rest = rest[3:-3].strip()
+        return ("compute_objective", rest)
+    if rule == "compute_strategy_line":
+        rest = text[12:].strip()  # after "Strategy is "
+        if rest.startswith("```") and rest.endswith("```"):
+            rest = rest[3:-3].strip()
+        return ("compute_strategy", rest)
     if rule == "content_scoped_line":
         r = P(text, rule)
         scopes = _ql(r.get("scopes")) if r else _eqs(text)
@@ -874,18 +903,37 @@ def _assemble(parsed: list) -> Program:
         elif k == "stream": prog.streams.append(item[1]); i += 1
         elif k == "compute_header":
             nd = item[1]; i += 1
-            for ch in _collect(lambda x: x in ("compute_shape","compute_body","compute_body_multiline","compute_access","access",
-                                                "compute_identity","compute_requires_conf","compute_output_conf")):
+            _compute_child_kinds = ("compute_shape","compute_body","compute_body_multiline",
+                "compute_access","access","compute_identity","compute_requires_conf",
+                "compute_output_conf","compute_provider","compute_trigger",
+                "compute_preconditions_header","compute_postconditions_header",
+                "compute_objective","compute_strategy")
+            collecting_pre = False
+            collecting_post = False
+            for ch in _collect(lambda x: x in _compute_child_kinds):
+                if ch[0] == "compute_preconditions_header":
+                    collecting_pre = True; collecting_post = False; continue
+                elif ch[0] == "compute_postconditions_header":
+                    collecting_post = True; collecting_pre = False; continue
+                elif ch[0] in ("compute_body", "compute_body_multiline") and collecting_pre:
+                    nd.preconditions.append(ch[1]); continue
+                elif ch[0] in ("compute_body", "compute_body_multiline") and collecting_post:
+                    nd.postconditions.append(ch[1]); continue
+                else:
+                    collecting_pre = False; collecting_post = False
                 if ch[0] == "compute_shape":
                     sd = ch[1]; nd.shape, nd.inputs, nd.outputs = sd[0], sd[1], sd[2]; nd.input_params, nd.output_params = sd[3], sd[4]
-                elif ch[0] == "compute_body": nd.body_lines.append(ch[1])
-                elif ch[0] == "compute_body_multiline": nd.body_lines.append(ch[1])
+                elif ch[0] in ("compute_body", "compute_body_multiline"): nd.body_lines.append(ch[1])
                 elif ch[0] == "compute_access":
                     if ch[1]: nd.access_role = ch[1]
                 elif ch[0] == "access": nd.access_scope = ch[1].scope
                 elif ch[0] == "compute_identity": nd.identity_mode = ch[1]
                 elif ch[0] == "compute_requires_conf": nd.required_confidentiality_scopes.extend(ch[1])
                 elif ch[0] == "compute_output_conf": nd.output_confidentiality = ch[1]
+                elif ch[0] == "compute_provider": nd.provider = ch[1]
+                elif ch[0] == "compute_trigger": nd.trigger = ch[1]
+                elif ch[0] == "compute_objective": nd.objective = ch[1]
+                elif ch[0] == "compute_strategy": nd.strategy = ch[1]
             prog.computes.append(nd)
         elif k == "channel_header":
             ch_ = item[1]; i += 1

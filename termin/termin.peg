@@ -445,12 +445,36 @@ compute_identity_line
     = 'Identity:' mode:word $
     ;
 
+compute_provider_line
+    = 'Provider' 'is' provider:quoted_string $
+    ;
+
 compute_requires_conf_line
     = 'Requires' scopes:quoted_list $
     ;
 
 compute_output_conf_line
     = 'Output' 'confidentiality:' scope:quoted_string $
+    ;
+
+compute_trigger_line
+    = 'Trigger' 'on' rest:rest_of_line $
+    ;
+
+compute_preconditions_line
+    = 'Preconditions' 'are:' $
+    ;
+
+compute_postconditions_line
+    = 'Postconditions' 'are:' $
+    ;
+
+compute_objective_line
+    = 'Objective' 'is' rest:rest_of_line $
+    ;
+
+compute_strategy_line
+    = 'Strategy' 'is' rest:rest_of_line $
     ;
 
 compute_access_line
