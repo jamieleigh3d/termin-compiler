@@ -384,6 +384,7 @@ class ErrorHandler:
 class Application:
     name: str
     description: str = ""
+    app_id: Optional[str] = None  # UUID, compiler-managed
     line: int = 0
 
 

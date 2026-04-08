@@ -2,6 +2,7 @@
 
 import json
 import sys
+import uuid
 from dataclasses import asdict
 from enum import Enum
 from pathlib import Path
@@ -71,6 +72,39 @@ def compile(source: str, output: str, backend_name: str, ir_output: str | None):
     program, parse_errors = parse(source_text)
     if not parse_errors.ok:
         click.echo(parse_errors.format(), err=True)
+        sys.exit(1)
+
+    # Generate and write back app ID if missing
+    if program.application and not program.application.app_id:
+        new_id = str(uuid.uuid4())
+        program.application.app_id = new_id
+        # Write ID back to source file (if writable)
+        try:
+            if source_path.exists() and not source_path.name.startswith("<"):
+                # Find insertion point: after Description: line, or after Application: line
+                lines = source_text.splitlines(keepends=True)
+                insert_idx = None
+                for idx, line in enumerate(lines):
+                    stripped = line.strip().lower()
+                    if stripped.startswith("description:"):
+                        insert_idx = idx + 1
+                    elif stripped.startswith("application:") and insert_idx is None:
+                        insert_idx = idx + 1
+                if insert_idx is not None:
+                    lines.insert(insert_idx, f"Id: {new_id}\n")
+                    source_path.write_text("".join(lines), encoding="utf-8")
+                    click.echo(f"Generated app ID: {new_id}")
+                    # Re-read and re-parse with the ID now present
+                    source_text = source_path.read_text(encoding="utf-8")
+                    program, parse_errors = parse(source_text)
+        except (PermissionError, OSError):
+            click.echo(f"Warning: Could not write app ID back to {source_path.name} (read-only)", err=True)
+            click.echo(f"Add this line to your .termin file: Id: {new_id}", err=True)
+
+    # Error if source is non-writable (stdin, pipe) and has no ID
+    if program.application and not program.application.app_id:
+        click.echo("Error: Source file has no Id: field and is not writable.", err=True)
+        click.echo("Add an Id: line to your .termin file header (e.g., Id: " + str(uuid.uuid4()) + ")", err=True)
         sys.exit(1)
 
     # Analyze

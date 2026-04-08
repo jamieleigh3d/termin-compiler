@@ -1,6 +1,7 @@
 {
   "ir_version": "0.2.0",
   "reflection_enabled": true,
+  "app_id": "cb4aef7b-1f54-41a2-8999-55d9367a9304",
   "name": "Hello User",
   "description": "A slightly personalized Hello World.",
   "auth": {

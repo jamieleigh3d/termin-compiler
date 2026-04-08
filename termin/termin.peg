@@ -30,6 +30,10 @@ description_line
     = 'Description:' desc:rest_of_line $
     ;
 
+id_line
+    = 'Id:' id:rest_of_line $
+    ;
+
 
 # ==================================================================
 # IDENTITY

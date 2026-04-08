@@ -48,7 +48,7 @@ def _preprocess(source: str) -> list[tuple[int, str]]:
 
 # --- Line classifier ---
 _PREFIXES: list[tuple[str, str]] = [
-    ("Application:", "application_line"), ("Description:", "description_line"),
+    ("Application:", "application_line"), ("Description:", "description_line"), ("Id:", "id_line"),
     ("Users authenticate with", "identity_line"), ("Scopes are", "scopes_line"),
     ("Content called", "content_header"), ("Each ", "field_line"),
     ("Anyone with", "access_line"), ("State for", "state_header"),
@@ -421,6 +421,8 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule); return ("application", Application(name=str(r["name"]).strip() if r else text[12:].strip(), line=ln))
     if rule == "description_line":
         r = P(text, rule); return ("description", str(r["desc"]).strip() if r else text[12:].strip())
+    if rule == "id_line":
+        r = P(text, rule); return ("app_id", str(r["id"]).strip() if r else text[3:].strip())
     if rule == "identity_line":
         r = P(text, rule); return ("identity", Identity(provider=str(r["provider"]).strip() if r else text.split("with",1)[1].strip(), line=ln))
     if rule == "scopes_line":
@@ -734,9 +736,14 @@ def _assemble(parsed: list) -> Program:
             app = item[1]; i += 1
             if i < n and parsed[i] is not None and parsed[i][0] == "description":
                 app.description = parsed[i][1]; i += 1
+            if i < n and parsed[i] is not None and parsed[i][0] == "app_id":
+                app.app_id = parsed[i][1]; i += 1
             prog.application = app
         elif k == "description":
             if prog.application: prog.application.description = item[1]
+            i += 1
+        elif k == "app_id":
+            if prog.application: prog.application.app_id = item[1]
             i += 1
         elif k == "identity": prog.identity = item[1]; i += 1
         elif k == "scopes":

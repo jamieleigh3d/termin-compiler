@@ -1,5 +1,6 @@
 Application: Hello World
   Description: The simplest possible Termin application
+Id: c7151224-0ec6-45dd-a5a7-d0e5620f3650
 
 As anonymous, I want to see a page "Hello" so that I can be greeted:
   Display text "Hello, World"

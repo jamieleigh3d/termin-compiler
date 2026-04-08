@@ -874,6 +874,7 @@ def lower(program: Program) -> AppSpec:
 
     return AppSpec(
         reflection_enabled=True,
+        app_id=program.application.app_id if program.application else None,
         name=program.application.name if program.application else "App",
         description=program.application.description if program.application else "",
         auth=auth,

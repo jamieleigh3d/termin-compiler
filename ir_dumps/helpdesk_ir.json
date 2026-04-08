@@ -1,6 +1,7 @@
 {
   "ir_version": "0.2.0",
   "reflection_enabled": true,
+  "app_id": "9d81658f-b642-437f-8f39-ffe31faa7701",
   "name": "Help Desk Ticket Tracker",
   "description": "Track support tickets from submission to resolution",
   "auth": {

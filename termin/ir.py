@@ -585,6 +585,7 @@ class AppSpec:
     """The complete intermediate representation of a Termin application."""
     ir_version: str = "0.2.0"
     reflection_enabled: bool = True
+    app_id: Optional[str] = None    # UUID, compiler-managed, source of truth for deployment identity
     name: str = ""
     description: str = ""
     auth: AuthSpec = None

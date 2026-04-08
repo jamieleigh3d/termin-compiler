@@ -1,6 +1,7 @@
 {
   "ir_version": "0.2.0",
   "reflection_enabled": true,
+  "app_id": "3e157422-d10c-4a2b-b6c3-9f80fc80f27b",
   "name": "Warehouse Inventory Manager",
   "description": "Track products and stock levels across warehouses",
   "auth": {
