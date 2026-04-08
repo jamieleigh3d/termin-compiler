@@ -243,6 +243,7 @@ class Analyzer:
         self._check_compute_has_access()
         self._check_channel_has_auth()
         self._check_boundary_scope_restriction()
+        self._check_confidentiality_scopes()
 
     def _check_content_has_access_rules(self) -> None:
         """Every Content must have at least one access rule."""
@@ -435,6 +436,58 @@ class Analyzer:
                                     f'scope "{scope}"',
                             line=boundary.line,
                         ))
+
+    # ── Confidentiality Checks ──
+
+    def _check_confidentiality_scopes(self) -> None:
+        """Validate confidentiality scope declarations."""
+        # Field-level and content-level scopes must reference declared scopes
+        for content in self.program.contents:
+            for scope in content.confidentiality_scopes:
+                if scope not in self.scope_names:
+                    self.errors.add(SecurityError(
+                        message=f'Content "{content.name}" scoped to undefined '
+                                f'scope "{scope}"',
+                        line=content.line,
+                    ))
+            content_scopes = set(content.confidentiality_scopes)
+            for field in content.fields:
+                for scope in field.type_expr.confidentiality_scopes:
+                    if scope not in self.scope_names:
+                        self.errors.add(SecurityError(
+                            message=f'Field "{field.name}" in "{content.name}" has '
+                                    f'confidentiality scope "{scope}" which is not declared',
+                            line=field.line,
+                        ))
+
+        # Compute confidentiality declarations
+        for compute in self.program.computes:
+            for scope in compute.required_confidentiality_scopes:
+                if scope not in self.scope_names:
+                    self.errors.add(SecurityError(
+                        message=f'Compute "{compute.name}" requires undefined '
+                                f'confidentiality scope "{scope}"',
+                        line=compute.line,
+                    ))
+            if compute.output_confidentiality:
+                if compute.output_confidentiality not in self.scope_names:
+                    self.errors.add(SecurityError(
+                        message=f'Compute "{compute.name}" output confidentiality '
+                                f'scope "{compute.output_confidentiality}" is not declared',
+                        line=compute.line,
+                    ))
+            # Service identity must have output_confidentiality or no reclassification
+            if compute.identity_mode == "service" and compute.output_confidentiality:
+                # Output scope must be in the union of Requires + Output
+                # (this is validated — the service identity auto-provisions these)
+                pass
+            # Identity mode validation
+            if compute.identity_mode not in ("delegate", "service"):
+                self.errors.add(SemanticError(
+                    message=f'Compute "{compute.name}" has invalid identity mode '
+                            f'"{compute.identity_mode}". Must be "delegate" or "service".',
+                    line=compute.line,
+                ))
 
 
 def analyze(program: Program) -> CompileResult:

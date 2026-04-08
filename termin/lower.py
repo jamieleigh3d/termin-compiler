@@ -27,6 +27,7 @@ from .ir import (
     ComputeShape, ComputeSpec, ComputeParamSpec, ChannelDirection,
     ChannelDelivery, ChannelRequirementSpec, ChannelSpec, BoundarySpec,
     BoundaryPropertySpec, ErrorHandlerSpec, ErrorActionSpec,
+    FieldDependency, ReclassificationPoint,
 )
 
 
@@ -219,6 +220,7 @@ def lower(program: Program) -> AppSpec:
                 is_auto=f.type_expr.base_type == "automatic",
                 list_type=f.type_expr.list_type,
                 default_expr=default_ir,
+                confidentiality_scopes=tuple(f.type_expr.confidentiality_scopes),
             ))
         has_sm = c.name in sm_by_content
         content_schemas.append(ContentSchema(
@@ -226,6 +228,7 @@ def lower(program: Program) -> AppSpec:
             fields=tuple(fields),
             has_state_machine=has_sm,
             initial_state=sm_by_content[c.name].initial_state if has_sm else None,
+            confidentiality_scopes=tuple(c.confidentiality_scopes),
         ))
 
     # ── Lower auth ──
@@ -774,6 +777,9 @@ def lower(program: Program) -> AppSpec:
                 for p in comp.output_params
             ),
             client_safe=is_client_safe,
+            identity_mode=comp.identity_mode,
+            required_confidentiality_scopes=tuple(comp.required_confidentiality_scopes),
+            output_confidentiality_scope=comp.output_confidentiality,
         ))
 
     # ── Lower channels ──

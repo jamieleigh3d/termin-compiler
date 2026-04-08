@@ -51,18 +51,19 @@ Content called "salary reviews":
 --- State ---
 
 State for salary reviews called "review lifecycle":
-  A salary review starts as "pending"
-  A salary review can also be "approved" or "applied"
-  A pending salary review can become approved if the user has "manage_hr"
-  An approved salary review can become applied if the user has "manage_hr"
+  A review starts as "pending"
+  A review can also be "approved" or "applied"
+  A pending review can become approved if the user has "manage_hr"
+  An approved review can become applied if the user has "manage_hr"
 
 --- Compute ---
 
 Compute called "Calculate Team Bonus Pool":
-  Transform: takes employees, produces bonus_summary
+  Reduce: takes employees, produces employees
   Identity: service
   Requires "access_salary"
   Output confidentiality: "view_team_metrics"
+  Anyone with "view_team_metrics" can execute this
   [team_bonus = sum(employees.salary * employees.bonus_rate)]
 
 --- User Stories ---
