@@ -1,6 +1,6 @@
 # Termin CEL Types Reference
 
-**Version:** 0.1.0 (draft)
+**Version:** 0.2.0
 **Date:** April 2026
 **Status:** Open for iteration
 
@@ -8,17 +8,91 @@
 
 ## Overview
 
-Termin uses [CEL (Common Expression Language)](https://github.com/google/cel-spec) for all expressions in the DSL. This document defines the system types available in the CEL evaluation context. These types are injected by the runtime and are available in all CEL expressions unless otherwise scoped.
+Termin uses [CEL (Common Expression Language)](https://github.com/google/cel-spec) for all expressions in the DSL. This document defines the expression delimiter syntax, system types available in the CEL evaluation context, and system functions.
 
 CEL is non-Turing-complete, formally specified, and has matching implementations in Python, JavaScript, Rust, and Go. Termin expressions use standard function-call syntax: `sum(items)`, `upper(User.Name)`, `size(employees)`.
 
 ---
 
-## 1. System Types
+## 1. Expression Delimiters
 
-### 1.1 User
+### 1.1 Inline Expressions (backtick)
 
-The current caller's identity. Available in all CEL expressions. Injected by the runtime from the authentication provider.
+Single backticks delimit inline expressions:
+
+```termin
+Each ticket has a submitted by which is text, defaults to `User.Name`
+Highlight rows where `priority == "critical" || priority == "high"`
+```
+
+The content between backticks is a CEL expression evaluated by the runtime. The compiler captures it as an opaque string.
+
+### 1.2 Multi-Line Expressions (triple backtick)
+
+Triple backticks delimit multi-line sub-language blocks:
+
+```termin
+Objective is ```
+  You are a security scanning agent for the your application.
+  Scan all deployed apps for IAM policy drift, dependency CVEs,
+  confidentiality violations, and stale secrets.
+```
+```
+
+Triple-backtick blocks can appear on the same line or on a following line:
+
+```termin
+Strategy is ```multi-line content here```
+
+Strategy is
+```
+multi-line
+content
+here
+```
+```
+
+### 1.3 Sub-Language Semantics
+
+Backticks mean "here is content in a different language." The Termin compiler treats the content as **opaque** — it captures the raw text without parsing it. The **provider** determines how to interpret the content:
+
+| Provider | Inline (`` ` ``) | Multi-line (` ``` `) |
+|----------|------------------|-----------------------|
+| Default (CEL) | CEL expression | Multi-line CEL |
+| `"ai-agent"` | Short prompt | System prompt / strategy |
+| CCP package | Config expression | Provider-specific DSL |
+
+The compiler does not validate the content of backtick expressions beyond capturing the text. Validation is the provider's responsibility at runtime.
+
+### 1.4 Compute Body Lines
+
+A line consisting entirely of a backtick expression is a Compute body line:
+
+```termin
+Compute called "SayHelloTo":
+  Transform: takes name : text, produces greeting : text
+  `greeting = "Hello, " + name + "!"`
+  "user" can execute this
+```
+
+### 1.5 Array Index Safety
+
+Backticks resolve the parsing ambiguity with array indices that brackets had:
+
+```termin
+`User.Scopes[0]`           — unambiguous, no conflict with delimiter
+`items.filter(x, x.tags[0] == "urgent")`  — nested brackets work naturally
+```
+
+With the old `[bracket]` syntax, `[User.Scopes[0]]` was ambiguous because the parser couldn't distinguish the inner `]` from the outer `]`.
+
+---
+
+## 2. System Types
+
+### 2.1 User
+
+The current caller's identity. Available in **all** CEL expressions. Injected by the runtime from the authentication provider.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -27,38 +101,41 @@ The current caller's identity. Available in all CEL expressions. Injected by the
 | `User.FirstName` | string | First name portion of display name |
 | `User.Role` | string | Current role name (e.g., "hr business partner") |
 | `User.Scopes` | list[string] | Scopes granted by the current role |
-| `User.Authenticated` | bool | `true` if the user has authenticated, `false` for anonymous |
+| `User.Authenticated` | bool | `true` if authenticated, `false` for anonymous |
 
 **Usage:**
 ```termin
-Each ticket has a submitted by which is text, defaults to [User.Name]
-Display text [upper(User.FirstName)]
+Each ticket has a submitted by which is text, defaults to `User.Name`
+Display text `upper(User.FirstName)`
 ```
 
 **Provider contract:** Every auth provider (stub, OAuth, JWT, OIDC, etc.) must produce a `User` object with all six fields. The runtime normalizes provider-specific identity into this shape. `User.Username` is opaque — it may be an email, a login name, or an internal ID depending on the provider.
 
 **Replaces:** `CurrentUser`, `LoggedInUser.CurrentUser`, `UserProfile`. These are deprecated and will be removed.
 
-### 1.2 Agent
+### 2.2 Compute
 
-The currently executing Compute's identity. Available in Compute CEL bodies, preconditions, and postconditions. Not available in non-Compute expressions (field defaults, highlights, etc.).
+The currently executing Compute's execution context. Available in Compute CEL bodies, preconditions, and postconditions. Not available in non-Compute expressions (field defaults, highlights, etc.).
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `Agent.Name` | string | Compute name (e.g., "scanner") |
-| `Agent.Provider` | string | Provider type: "cel", "ai-agent", or CCP package name |
-| `Agent.IdentityMode` | string | "delegate" or "service" |
-| `Agent.Scopes` | list[string] | Effective scopes for this execution |
-| `Agent.ExecutionId` | string | Unique ID for this invocation (UUID, for audit/correlation) |
+| `Compute.Name` | string | Compute name (e.g., "scanner") |
+| `Compute.Provider` | string | Provider type: "cel", "ai-agent", or CCP package name |
+| `Compute.IdentityMode` | string | "delegate" or "service" |
+| `Compute.Scopes` | list[string] | Effective scopes for this execution |
+| `Compute.ExecutionId` | string | Unique ID for this invocation (UUID, for audit/correlation) |
+| `Compute.Trigger` | string | How this execution was initiated: "api", "schedule", "event" |
+| `Compute.StartedAt` | string | ISO 8601 timestamp of execution start |
 
 **Usage:**
 ```termin
 Preconditions are:
-  [Agent.Scopes.contains("triage")]
-  [Agent.IdentityMode == "service"]
+  `Compute.Scopes.contains("triage")`
+  `Compute.IdentityMode == "service"`
+  `Compute.Trigger == "schedule"`
 ```
 
-### 1.3 Before / After (Postcondition-scoped)
+### 2.3 Before / After (Postcondition-Scoped)
 
 Snapshots of the environment before and after Compute execution. **Only available inside `Postconditions are:` blocks.** The compiler rejects `Before` or `After` references in any other context.
 
@@ -72,23 +149,26 @@ Both `Before` and `After` wrap the same shape — the full environment accessibl
 | `After.{content}.{field}` | varies | Field value after execution |
 | `Before.App.IR` | object | Application IR before execution |
 | `Before.App.Permissions` | object | IAM/scope configuration before execution |
-| `After.App.IR` | object | Application IR after execution |
 
 **Usage:**
 ```termin
 Postconditions are:
-  [Before.App.IR == After.App.IR]
-  [Before.App.Permissions >= After.App.Permissions]
-  [After.findings.size() <= Before.findings.size() + 100]
+  `Before.App.IR == After.App.IR`
+  `Before.App.Permissions >= After.App.Permissions`
+  `After.findings.size() <= Before.findings.size() + 100`
 ```
 
-**Comparison semantics:** `Before.X >= After.X` means "the before value is a superset of or equal to the after value." For permissions, this means the agent cannot add permissions it didn't have before. For content collections, `size()` comparisons bound the number of records created.
+**Comparison semantics:** `>=` for structured types means "superset of or equal to." For permissions, `Before.App.Permissions >= After.App.Permissions` means the Compute cannot add permissions. For content collections, `size()` comparisons bound creation.
+
+**Transaction model:** Compute execution operates on a staging copy of the environment (snapshot isolation). Reads go to production unless the transaction has written that value. Writes go to staging. After completion, postconditions are evaluated against the staging state. If all pass, the staging writes are committed to production in write order (journaling). If any postcondition fails, the entire staging area is discarded — no side effects.
+
+Computes can explicitly commit mid-execution via `transaction.commit()` (evaluates postconditions, writes to prod if pass) or roll back via `transaction.rollback()` (discards staging). This enables long-running Computes to make incremental progress.
 
 ---
 
-## 2. Dynamic Context Variables
+## 3. Dynamic Context Variables
 
-These are plain values (not structured types) injected fresh on each evaluation.
+Plain values (not structured types) injected fresh on each evaluation.
 
 | Variable | Type | Description |
 |----------|------|-------------|
@@ -97,7 +177,7 @@ These are plain values (not structured types) injected fresh on each evaluation.
 
 ---
 
-## 3. System Functions
+## 4. System Functions
 
 Registered on the CEL environment by the runtime. Available in all expressions.
 
@@ -153,40 +233,35 @@ Registered on the CEL environment by the runtime. Available in all expressions.
 
 ---
 
-## 4. Content Context
+## 5. Content Context
 
 In expressions that operate on content data (highlights, compute bodies, event conditions), the content records are available by their snake_case name:
 
 ```termin
-Highlight rows where [priority == "critical" || priority == "high"]
-[team_bonus = sum(employees.salary * employees.bonus_rate)]
-When [findings.severity == "critical"]:
+Highlight rows where `priority == "critical" || priority == "high"`
+`team_bonus = sum(employees.salary * employees.bonus_rate)`
+When `findings.severity == "critical"`:
 ```
 
 Field access uses dot notation. The runtime injects content records into the CEL context before evaluation.
 
 ---
 
-## 5. Deprecated Syntax
-
-The following legacy syntax is deprecated and will be removed:
+## 6. Deprecated Syntax
 
 | Deprecated | Replacement | Notes |
 |-----------|-------------|-------|
+| `[expr]` | `` `expr` `` | Backtick delimiter (IR 0.4.0) |
 | `LoggedInUser.CurrentUser` | `User` | Direct access via `User.Name`, `User.FirstName` |
 | `CurrentUser` | `User` | Same object, cleaner name |
 | `UserProfile` (as type name) | `User` | Not a separate type |
-| `SayHelloTo(LoggedInUser.CurrentUser)` | `SayHelloTo(User.FirstName)` | Pass specific field, not entire profile |
 
 ---
 
-## 6. Future Types (Planned)
-
-These types are referenced in the agent design (thread 001) but not yet implemented:
+## 7. Future Types (Planned)
 
 | Type | Scope | Description |
 |------|-------|-------------|
-| `App` | Reflection | Current application metadata (`App.Status`, `App.IR`) |
-| `Fabric` | Reflection | Application fabric metadata (multi-app environments) |
-
-These will likely be accessed via reflection calls (`reflect.currentApp()`, `reflect.fabric()`) rather than reserved global names. Design is open.
+| `App` | Reflection | Current application metadata — likely accessed via `reflect.currentApp()` |
+| `Fabric` | Reflection | Application fabric metadata — likely accessed via `reflect.fabric()` |
+| Role reflection | Reflection | Query role definitions — `reflect.role("engineer").Scopes` |

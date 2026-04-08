@@ -197,6 +197,13 @@ Restructured April 2026 to prioritize end-to-end demo completeness. Confidential
 | E4 | Min/max constraint enforcement on API creates | Small | runtime (app) | — (xfail in conformance suite) |
 | E5 | Tier 3: Behavioral round-trip tests (form submit → API verify) | Medium | conformance | testing-methodology.md § Tier 3 |
 | E6 | Automation API contract for programmatic UI interaction | Research | runtime, conformance | testing-methodology.md § Tier 3 |
+| E7 | Role reflection in CEL: `reflect.role("engineer").Scopes` | Small | runtime (reflection) | termin-cel-types.md § 7 |
+| E8 | Triple-backtick multi-line expression parser support | Medium | compiler (grammar, parser) | termin-cel-types.md § 1.2 |
+| E9 | AI agent support: `[[ ]]` Provider, Preconditions, Postconditions | Large | compiler, runtime | msgs/001-ai-agents.md |
+| E10 | Transaction staging (snapshot isolation for Compute execution) | Large | runtime | msgs/001-ai-agents.md |
+| E11 | Compiler CEL body analysis (field dependencies, reclassification points) | Medium | compiler (analyzer) | termin-confidentiality-runtime-design.md § B2 |
+| E12 | `link_template` on data_table columns | Small | compiler, runtime (presentation) | msgs/002-data-table-links.md |
+| E13 | Server-side CEL evaluation for text components | Small | runtime (presentation) | msgs/002-data-table-links.md |
 
 ---
 
@@ -230,3 +237,10 @@ Restructured April 2026 to prioritize end-to-end demo completeness. Confidential
 | 2026-04-07 | termin-conformance repo published (189 tests, 12 files) | github.com/jamieleigh3d/termin-conformance |
 | 2026-04-07 | Tier 2: IR-driven presentation contract tests (23 tests) | conformance repo |
 | 2026-04-07 | Fix distinct/reference filter rendering | 4838878 |
+| 2026-04-08 | Phase 3 CEL migration: rename JEXL→CEL in comments, retire stale test_conformance.py | 0af7d0a |
+| 2026-04-08 | Block B (B1-B11): Confidentiality system — grammar, parser, analyzer, lowering, runtime redaction, Compute endpoint, CEL guard, output taint, presentation, JSON Schema, Implementer's Guide | fa3c96d..61bcf87 |
+| 2026-04-08 | HR Portal example app + 48 confidentiality conformance tests | 7368c6d, 96037e3 |
+| 2026-04-08 | CEL types reference doc (User, Compute, Before, After) | c67c5fb |
+| 2026-04-08 | Migrate hello_user from CurrentUser to User.* | c67c5fb |
+| 2026-04-08 | Expression delimiter: [bracket] → backtick, IR 0.4.0 | 3420606..c274217 |
+| 2026-04-08 | Conformance suite: 249 tests, 7 fixtures, IR 0.4.0 changelog | conformance repo |
