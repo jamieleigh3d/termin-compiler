@@ -130,128 +130,74 @@ def bump_json_schema(path: Path, version: str, dry_run: bool):
     return True
 
 
-def regenerate_ir_dumps(dry_run: bool):
-    """Compile all examples and write IR dumps."""
-    sys.path.insert(0, str(COMPILER_ROOT))
-    old_limit = sys.getrecursionlimit()
-    sys.setrecursionlimit(10000)
-    # Suppress TatSu GC RecursionError at exit
-    import atexit, gc
-    atexit.register(lambda: (gc.disable(), os._exit(0)))
+def compile_examples(dry_run: bool):
+    """Compile all examples using `termin compile`, producing .termin.pkg and IR dumps.
 
-    from dataclasses import asdict
-    from termin.peg_parser import parse_peg
-    from termin.analyzer import analyze
-    from termin.lower import lower
+    Uses the actual compiler CLI to build .termin.pkg files (the same tool
+    users run). IR dumps are extracted from the packages via --emit-ir.
+    This ensures the release artifacts are identical to what users produce.
+    """
+    # Note: TatSu grammar objects cause a cosmetic RecursionError during Python
+    # GC at exit. This is a known TatSu issue and does not affect correctness.
 
     count = 0
     for fn in sorted(os.listdir(EXAMPLES_DIR)):
         if not fn.endswith(".termin"):
             continue
         name = fn.replace(".termin", "")
-        try:
-            source = (EXAMPLES_DIR / fn).read_text(encoding="utf-8")
-            prog, errors = parse_peg(source)
-            if not errors.ok:
-                print(f"  FAIL (parse): {name}")
-                continue
-            result = analyze(prog)
-            if not result.ok:
-                print(f"  FAIL (analyze): {name}")
-                continue
-            spec = lower(prog)
+        src = EXAMPLES_DIR / fn
+        pkg_out = CONFORMANCE_PKG_DIR / f"{name}.termin.pkg"
+        ir_out = IR_DUMPS_DIR / f"{name}_ir.json"
 
-            out_path = IR_DUMPS_DIR / f"{name}_ir.json"
-            if not dry_run:
-                ir_dict = asdict(spec)
-                with open(out_path, "w", encoding="utf-8") as f:
-                    json.dump(ir_dict, f, indent=2, ensure_ascii=False, cls=TerminEncoder)
-                    f.write("\n")
-            print(f"  REGEN: {name}_ir.json")
+        # Build seed arg if companion seed file exists
+        seed_path = EXAMPLES_DIR / f"{name}_seed.json"
+        seed_args = ["--seed", str(seed_path)] if seed_path.exists() else []
+
+        if dry_run:
+            print(f"  COMPILE: {name}.termin -> {name}.termin.pkg + {name}_ir.json")
             count += 1
-        except RecursionError:
-            print(f"  FAIL (recursion): {name} — try increasing sys.setrecursionlimit")
+            continue
+
+        try:
+            cmd = [
+                sys.executable, "-m", "termin.cli", "compile",
+                str(src),
+                "-o", str(pkg_out),
+                "--emit-ir", str(ir_out),
+            ] + seed_args
+
+            result = subprocess.run(cmd, cwd=COMPILER_ROOT, capture_output=True, text=True)
+            if result.returncode != 0:
+                print(f"  FAIL: {name} — {result.stderr.strip()}")
+                continue
+            print(f"  COMPILE: {name}.termin -> .termin.pkg + _ir.json")
+            count += 1
         except Exception as e:
             print(f"  FAIL ({type(e).__name__}): {name} — {e}")
 
-    sys.setrecursionlimit(old_limit)
-    return count
-
-
-def rebuild_packages(dry_run: bool):
-    """Rebuild .termin.pkg files for the conformance suite."""
-    count = 0
-    for fn in sorted(os.listdir(EXAMPLES_DIR)):
-        if not fn.endswith(".termin"):
-            continue
-        name = fn.replace(".termin", "")
-        ir_path = IR_DUMPS_DIR / f"{name}_ir.json"
-        src_path = EXAMPLES_DIR / fn
-
-        if not ir_path.exists():
-            continue
-
-        ir_bytes = ir_path.read_bytes()
-        src_bytes = src_path.read_bytes()
-        ir = json.loads(ir_bytes)
-
-        manifest = {
-            "manifest_version": "1.0.0",
-            "app": {
-                "id": ir.get("app_id", ""),
-                "name": ir.get("name", ""),
-                "version": "1.0.0",
-                "revision": 1,
-                "description": ir.get("description", ""),
-            },
-            "ir": {
-                "version": ir.get("ir_version", ""),
-                "entry": f"{name}.ir.json",
-            },
-            "source": {"files": [fn], "entry": fn},
-            "seed": None,
-            "assets": None,
-            "checksums": {
-                f"{name}.ir.json": "sha256:" + hashlib.sha256(ir_bytes).hexdigest(),
-                fn: "sha256:" + hashlib.sha256(src_bytes).hexdigest(),
-            },
-        }
-
-        # Check for seed data
-        seed_path = EXAMPLES_DIR / f"{name}_seed.json"
-        if seed_path.exists():
-            seed_bytes = seed_path.read_bytes()
-            manifest["seed"] = f"{name}_seed.json"
-            manifest["checksums"][f"{name}_seed.json"] = "sha256:" + hashlib.sha256(seed_bytes).hexdigest()
-
-        pkg_path = CONFORMANCE_PKG_DIR / f"{name}.termin.pkg"
-        if not dry_run:
-            with zipfile.ZipFile(pkg_path, "w", zipfile.ZIP_DEFLATED) as zf:
-                zf.writestr("manifest.json", json.dumps(manifest, indent=2))
-                zf.writestr(f"{name}.ir.json", ir_bytes)
-                zf.writestr(fn, src_bytes)
-                if seed_path.exists():
-                    zf.writestr(f"{name}_seed.json", seed_path.read_bytes())
-
-        print(f"  BUILD: {name}.termin.pkg")
-        count += 1
     return count
 
 
 def copy_to_conformance(dry_run: bool):
-    """Copy IR dumps and schema to conformance repo."""
+    """Copy IR dumps and schema to conformance repo.
+
+    The .termin.pkg files are already written directly to the conformance
+    fixtures dir by compile_examples(). This function copies the remaining
+    artifacts: IR JSON dumps (for runtimes without .pkg support) and the
+    IR JSON Schema spec.
+    """
     import shutil
     count = 0
 
-    # IR dumps
+    # IR dumps -> fixtures/ir/
     for f in IR_DUMPS_DIR.glob("*_ir.json"):
         dest = CONFORMANCE_IR_DIR / f.name
         if not dry_run:
             shutil.copy2(f, dest)
-        print(f"  COPY: ir/{f.name}")
+        print(f"  COPY: fixtures/ir/{f.name}")
         count += 1
 
-    # Schema
+    # Schema -> specs/
     schema_src = COMPILER_ROOT / "docs" / "termin-ir-schema.json"
     schema_dst = CONFORMANCE_SPECS_DIR / "termin-ir-schema.json"
     if schema_src.exists():
@@ -329,18 +275,15 @@ def main():
                 if bump_file(path, pattern, replacement, args.ir_version, args.dry_run):
                     changed.append(path)
 
-        # ── Regenerate IR dumps ──
-        print(f"\nRegenerating IR dumps...")
-        n = regenerate_ir_dumps(args.dry_run)
-        print(f"  {n} IR dumps regenerated")
+        # ── Compile all examples ──
+        # Uses `termin compile` to produce both .termin.pkg and IR dumps.
+        # Packages are written directly to the conformance fixtures dir.
+        print(f"\nCompiling all examples...")
+        n = compile_examples(args.dry_run)
+        print(f"  {n} examples compiled")
 
         if conformance_ok:
-            # ── Rebuild packages ──
-            print(f"\nRebuilding .termin.pkg fixtures...")
-            n = rebuild_packages(args.dry_run)
-            print(f"  {n} packages rebuilt")
-
-            # ── Copy to conformance ──
+            # ── Copy IR dumps + schema to conformance ──
             print(f"\nCopying artifacts to conformance repo...")
             n = copy_to_conformance(args.dry_run)
             print(f"  {n} files copied")
@@ -380,8 +323,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    # TatSu grammar objects cause RecursionError during Python GC at exit.
-    # Disable GC and force-exit to avoid the misleading error message.
-    import gc
-    gc.disable()
-    os._exit(0)

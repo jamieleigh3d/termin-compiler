@@ -66,12 +66,10 @@ This is the sequence of steps performed manually during recent releases (0.3.0 &
    python -m pytest tests/ -v
    ```
 4. **Fix version assertions** in `tests/test_runtime.py` (reflection endpoint check)
-5. **Regenerate all IR dumps** from examples:
-   ```python
+5. **Recompile all examples** to regenerate IR dumps and packages:
+   ```bash
    # For each .termin in examples/:
-   #   parse -> analyze -> lower -> asdict -> json.dump to ir_dumps/
-   # Requires custom JSON encoder for Enum and frozenset types
-   # Requires sys.setrecursionlimit(5000) for large examples
+   termin compile examples/X.termin -o fixtures/X.termin.pkg --emit-ir ir_dumps/X_ir.json
    ```
 6. **Run tests again** &mdash; should be all green now
 7. **Update `docs/termin-ir-schema.json`**:
@@ -86,13 +84,8 @@ This is the sequence of steps performed manually during recent releases (0.3.0 &
 ### 3.2 Conformance repo (termin-conformance)
 
 1. **Copy all IR dumps** from `termin/ir_dumps/` to `conformance/fixtures/ir/`
-2. **Rebuild all `.termin.pkg`** files:
-   ```python
-   # For each example:
-   #   read IR JSON + source .termin + optional seed JSON
-   #   build manifest with checksums
-   #   write ZIP archive to fixtures/
-   ```
+2. **Rebuild all `.termin.pkg`** files (already done by the compile step above &mdash;
+   `termin compile` writes packages directly to the conformance fixtures dir)
 3. **Copy `termin-ir-schema.json`** to `conformance/specs/`
 4. **Update `tests/test_reflection.py`** &mdash; version assertion
 5. **Update `README.md`**:
@@ -110,8 +103,8 @@ These are the steps where mistakes happen:
 
 | Step | What goes wrong |
 |------|----------------|
-| IR dump regeneration | Enum serialization fails, recursion limit, encoding issues |
-| `.termin.pkg` rebuild | Windows vs Unix paths, missing seed data, stale checksums |
+| IR dump regeneration | Forgetting an example, stale dumps from previous version |
+| `.termin.pkg` rebuild | Now handled by `termin compile` &mdash; no manual ZIP construction |
 | Version string grep | Missing one of 8+ files that contain version references |
 | Schema update | Adding new fields but forgetting to validate JSON |
 | Cross-repo copy | Wrong direction, stale files, forgotten files |
@@ -143,15 +136,10 @@ This script would:
    - `README.md` &mdash; IR version reference
    - `docs/termin-runtime-implementers-guide.md` &mdash; version header
 
-3. **Regenerate all IR dumps**
-   - Compile each `examples/*.termin` through the full pipeline
-   - Serialize with proper Enum/frozenset handling
-   - Write to `ir_dumps/`
-
-4. **Rebuild all `.termin.pkg` fixtures**
-   - Read IR + source + seed data
-   - Build manifest with SHA-256 checksums
-   - Write ZIP archives
+3. **Recompile all examples** using `termin compile`
+   - Produces both `.termin.pkg` (to conformance fixtures) and IR JSON dumps
+   - Uses the same compiler path users run &mdash; no manual ZIP construction
+   - Handles seed data, checksums, manifests, revision tracking automatically
 
 5. **Run compiler tests** &mdash; fail fast if anything breaks
 
