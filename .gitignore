@@ -26,3 +26,4 @@ venv/
 .idea/
 
 # Note: ir_dumps/*.json and examples/*_seed.json are intentionally tracked
+/*.termin.pkg
