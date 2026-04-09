@@ -271,6 +271,76 @@ Channel called "hook":
     assert any("invalid delivery" in str(e).lower() for e in result.errors)
 
 
+# ── Channel Action checks ──
+
+def test_channel_action_valid():
+    result = _analyze(VALID_BASE + '''
+Content called "items":
+  Each item has a name which is text
+  Anyone with "read" can view items
+
+Channel called "tools":
+  Direction: outbound
+  Delivery: reliable
+  Action called "do-thing":
+    Takes name which is text
+    Returns result which is text
+    Requires "read" to invoke
+''')
+    assert result.ok
+
+
+def test_channel_action_undefined_scope():
+    result = _analyze(VALID_BASE + '''
+Content called "items":
+  Each item has a name which is text
+  Anyone with "read" can view items
+
+Channel called "tools":
+  Direction: outbound
+  Delivery: reliable
+  Action called "do-thing":
+    Takes name which is text
+    Returns result which is text
+    Requires "nonexistent" to invoke
+''')
+    assert not result.ok
+    assert any("undefined scope" in str(e).lower() for e in result.errors)
+
+
+def test_channel_empty_no_carries_no_actions():
+    result = _analyze(VALID_BASE + '''
+Content called "items":
+  Each item has a name which is text
+  Anyone with "read" can view items
+
+Channel called "nothing":
+  Direction: outbound
+  Delivery: reliable
+  Requires "read" to send
+''')
+    assert not result.ok
+    assert any("no data" in str(e).lower() or "no actions" in str(e).lower() for e in result.errors)
+
+
+def test_channel_action_only_satisfies_auth():
+    """A Channel with only action scopes (no channel-level requirements) still passes auth check."""
+    result = _analyze(VALID_BASE + '''
+Content called "items":
+  Each item has a name which is text
+  Anyone with "read" can view items
+
+Channel called "tools":
+  Direction: outbound
+  Delivery: reliable
+  Action called "do-thing":
+    Takes name which is text
+    Returns result which is text
+    Requires "read" to invoke
+''')
+    assert result.ok
+
+
 # ── Boundary checks ──
 
 def test_boundary_undefined_content():

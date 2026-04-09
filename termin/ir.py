@@ -136,8 +136,10 @@ class EventConditionSpec:
 
 @dataclass(frozen=True)
 class EventActionSpec:
-    target_content: str                                  # resolved snake_case
-    column_mapping: tuple[tuple[str, str], ...]        # (target_col, source_col) pairs
+    target_content: str = ""                             # resolved snake_case (for create actions)
+    column_mapping: tuple[tuple[str, str], ...] = ()   # (target_col, source_col) pairs
+    send_content: str = ""                               # content to send (for channel send actions)
+    send_channel: str = ""                               # channel name (for channel send actions)
 
 
 @dataclass(frozen=True)
@@ -550,17 +552,32 @@ class ChannelDelivery(Enum):
 @dataclass(frozen=True)
 class ChannelRequirementSpec:
     scope: str
-    direction: str  # "send" or "receive"
+    direction: str  # "send", "receive", or "invoke"
+
+
+@dataclass(frozen=True)
+class ChannelActionParamSpec:
+    name: str
+    param_type: str  # "text", "number", "yes or no", content name
+
+
+@dataclass(frozen=True)
+class ChannelActionSpec:
+    name: QualifiedName
+    takes: tuple[ChannelActionParamSpec, ...] = ()
+    returns: tuple[ChannelActionParamSpec, ...] = ()
+    required_scopes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class ChannelSpec:
     name: QualifiedName
-    carries_content: str                               # resolved snake_case table name
+    carries_content: str = ""                          # resolved snake_case table name (data Channels)
     direction: ChannelDirection = ChannelDirection.INBOUND
     delivery: ChannelDelivery = ChannelDelivery.AUTO
     endpoint: Optional[str] = None
     requirements: tuple[ChannelRequirementSpec, ...] = ()
+    actions: tuple[ChannelActionSpec, ...] = ()        # typed RPC verbs (action Channels)
 
 
 # ── Boundaries ──

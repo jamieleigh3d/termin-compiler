@@ -1,0 +1,107 @@
+{
+  "incidents": [
+    {
+      "title": "API latency spike on checkout-service",
+      "severity": "critical",
+      "source": "monitoring",
+      "affected_service": "checkout-service",
+      "summary": "p99 latency at 4200ms (threshold: 500ms). Started 14:23 UTC after deploy v2.8.1.",
+      "assigned_to": "Morgan Chen"
+    },
+    {
+      "title": "Memory leak in recommendation-engine",
+      "severity": "high",
+      "source": "monitoring",
+      "affected_service": "recommendation-engine",
+      "summary": "RSS growing 50MB/hour. OOM kill expected within 6 hours at current rate.",
+      "assigned_to": "Priya Patel"
+    },
+    {
+      "title": "Stale DNS cache causing intermittent 503s",
+      "severity": "medium",
+      "source": "manual",
+      "affected_service": "api-gateway",
+      "summary": "~2% of requests hitting stale backend IPs after last infrastructure rotation.",
+      "assigned_to": ""
+    },
+    {
+      "title": "SSL cert expiring in 7 days on payments-service",
+      "severity": "low",
+      "source": "monitoring",
+      "affected_service": "payments-service",
+      "summary": "Certificate for payments.internal.acme.com expires 2026-04-16. Auto-renewal failed.",
+      "assigned_to": ""
+    },
+    {
+      "title": "Disk usage at 92% on search-indexer",
+      "severity": "high",
+      "source": "monitoring",
+      "affected_service": "search-indexer",
+      "summary": "Index shard growth exceeding provisioned volume. ETA to 100%: 48 hours.",
+      "assigned_to": "Morgan Chen"
+    }
+  ],
+  "deployments": [
+    {
+      "service": "checkout-service",
+      "version": "v2.8.1",
+      "commit_sha": "a3f7c21",
+      "deployed_by": "ci-pipeline",
+      "status": "succeeded"
+    },
+    {
+      "service": "checkout-service",
+      "version": "v2.8.0",
+      "commit_sha": "e91b4d8",
+      "deployed_by": "ci-pipeline",
+      "status": "succeeded"
+    },
+    {
+      "service": "recommendation-engine",
+      "version": "v1.4.3",
+      "commit_sha": "7d2e0f1",
+      "deployed_by": "ci-pipeline",
+      "status": "succeeded"
+    },
+    {
+      "service": "api-gateway",
+      "version": "v5.1.0",
+      "commit_sha": "bc83a92",
+      "deployed_by": "Morgan Chen",
+      "status": "succeeded"
+    },
+    {
+      "service": "search-indexer",
+      "version": "v3.0.0-rc2",
+      "commit_sha": "f4a1c77",
+      "deployed_by": "ci-pipeline",
+      "status": "failed"
+    }
+  ],
+  "alerts": [
+    {
+      "monitor_name": "checkout-service-latency",
+      "metric": "p99_latency_ms",
+      "threshold": 500,
+      "current_value": 4200
+    },
+    {
+      "monitor_name": "recommendation-engine-memory",
+      "metric": "rss_mb",
+      "threshold": 2048,
+      "current_value": 1820
+    },
+    {
+      "monitor_name": "search-indexer-disk",
+      "metric": "disk_usage_percent",
+      "threshold": 85,
+      "current_value": 92
+    },
+    {
+      "monitor_name": "payments-service-cert",
+      "metric": "days_until_expiry",
+      "threshold": 14,
+      "current_value": 7
+    }
+  ]
+}

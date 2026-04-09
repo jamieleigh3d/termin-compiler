@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://termin.dev/schemas/deploy/0.1.0/config.json",
+  "title": "Termin Deployment Config",
+  "description": "Deployment configuration for a Termin application. Provides runtime-specific settings: Channel endpoints, authentication, identity providers, and database configuration. The .termin file declares WHAT exists; this file declares WHERE it connects and HOW it authenticates.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "0.1.0",
+      "description": "Schema version for this deployment config."
+    },
+    "app_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUID matching the compiled .termin application. Must match the app_id in the IR."
+    },
+    "channels": {
+      "type": "object",
+      "description": "Channel connection configuration. Keys are Channel names matching declarations in the .termin file.",
+      "additionalProperties": {
+        "$ref": "#/$defs/ChannelConfig"
+      }
+    },
+    "identity": {
+      "$ref": "#/$defs/IdentityConfig",
+      "description": "Identity provider configuration. Maps to 'Users authenticate with' in the .termin file."
+    },
+    "runtime": {
+      "type": "object",
+      "description": "Runtime-specific configuration. Freeform — each runtime defines its own schema. Common keys: database, log_level, port.",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "ChannelConfig": {
+      "type": "object",
+      "description": "Connection configuration for a single Channel.",
+      "required": ["url", "protocol"],
+      "additionalProperties": true,
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Base URL for this Channel. Supports ${ENV_VAR} substitution."
+        },
+        "protocol": {
+          "type": "string",
+          "enum": ["http", "websocket", "grpc"],
+          "description": "Transport protocol. 'http' for REST/webhook, 'websocket' for persistent streaming, 'grpc' for gRPC."
+        },
+        "auth": {
+          "$ref": "#/$defs/AuthConfig",
+          "description": "Authentication configuration for connecting to this Channel."
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 30000,
+          "description": "Request timeout in milliseconds (HTTP/gRPC). Ignored for WebSocket."
+        },
+        "retry": {
+          "$ref": "#/$defs/RetryConfig",
+          "description": "Retry configuration for failed requests (reliable delivery)."
+        },
+        "reconnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-reconnect on connection loss (WebSocket only)."
+        },
+        "heartbeat_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 30000,
+          "description": "Heartbeat interval in milliseconds (WebSocket only)."
+        }
+      }
+    },
+    "AuthConfig": {
+      "type": "object",
+      "description": "Authentication configuration. All credential values support ${ENV_VAR} substitution.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["bearer", "api_key", "mtls", "oauth2", "hmac", "none"],
+          "description": "Authentication type. 'bearer': Authorization header with token. 'api_key': X-API-Key header. 'mtls': mutual TLS certificates. 'oauth2': OAuth2 client credentials flow. 'hmac': webhook signature verification. 'none': no authentication (internal only)."
+        },
+        "token": {
+          "type": "string",
+          "description": "Bearer token or API key. Supports ${ENV_VAR}."
+        },
+        "header": {
+          "type": "string",
+          "default": "Authorization",
+          "description": "Custom header name for api_key auth."
+        },
+        "cert_path": {
+          "type": "string",
+          "description": "Path to client certificate (mTLS)."
+        },
+        "key_path": {
+          "type": "string",
+          "description": "Path to client key (mTLS)."
+        },
+        "client_id": {
+          "type": "string",
+          "description": "OAuth2 client ID."
+        },
+        "client_secret": {
+          "type": "string",
+          "description": "OAuth2 client secret. Supports ${ENV_VAR}."
+        },
+        "token_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "OAuth2 token endpoint."
+        },
+        "secret": {
+          "type": "string",
+          "description": "HMAC shared secret for webhook signature verification. Supports ${ENV_VAR}."
+        },
+        "algorithm": {
+          "type": "string",
+          "default": "sha256",
+          "description": "HMAC algorithm (sha256, sha512)."
+        }
+      }
+    },
+    "RetryConfig": {
+      "type": "object",
+      "description": "Retry configuration for reliable delivery.",
+      "additionalProperties": false,
+      "properties": {
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 3,
+          "description": "Maximum retry attempts. 0 = no retries."
+        },
+        "backoff_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 1000,
+          "description": "Initial backoff interval in milliseconds. Doubles on each retry."
+        }
+      }
+    },
+    "IdentityConfig": {
+      "type": "object",
+      "description": "Identity provider configuration.",
+      "required": ["provider"],
+      "additionalProperties": true,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Identity provider name matching 'Users authenticate with' in .termin."
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Provider-specific configuration (realm, issuer URL, JWKS endpoint, etc.)."
+        }
+      }
+    }
+  }
+}

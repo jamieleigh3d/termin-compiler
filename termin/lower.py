@@ -25,7 +25,8 @@ from .ir import (
     PropValue, ComponentNode, PageEntry,
     NavItemSpec, StreamSpec, AppSpec,
     ComputeShape, ComputeSpec, ComputeParamSpec, ChannelDirection,
-    ChannelDelivery, ChannelRequirementSpec, ChannelSpec, BoundarySpec,
+    ChannelDelivery, ChannelRequirementSpec, ChannelActionParamSpec,
+    ChannelActionSpec, ChannelSpec, BoundarySpec,
     BoundaryPropertySpec, ErrorHandlerSpec, ErrorActionSpec,
     FieldDependency, ReclassificationPoint,
 )
@@ -327,29 +328,37 @@ def lower(program: Program) -> AppSpec:
             )
         action = None
         if ev.action:
-            target_content_obj = content_by_name.get(ev.action.create_content)
-            if not target_content_obj:
-                target_content_obj = content_by_singular.get(ev.action.create_content)
-            source_content_obj = resolved_content
-            mapping = []
-            if target_content_obj and source_content_obj:
-                source_cols = {_snake(f.name) for f in source_content_obj.fields}
-                for target_field_name in ev.action.fields:
-                    tcol = _snake(target_field_name)
-                    # Direct match in source
-                    if tcol in source_cols:
-                        mapping.append((tcol, tcol))
-                    elif tcol == "current_quantity":
-                        mapping.append((tcol, "quantity"))
-                    elif tcol == "threshold":
-                        mapping.append((tcol, "reorder_threshold"))
-                    else:
-                        mapping.append((tcol, tcol))
+            if ev.action.send_channel:
+                # Channel send action: "Send X to "channel""
+                action = EventActionSpec(
+                    send_content=ev.action.send_content,
+                    send_channel=ev.action.send_channel,
+                )
+            elif ev.action.create_content:
+                # Content create action: "Create a X with fields"
+                target_content_obj = content_by_name.get(ev.action.create_content)
+                if not target_content_obj:
+                    target_content_obj = content_by_singular.get(ev.action.create_content)
+                source_content_obj = resolved_content
+                mapping = []
+                if target_content_obj and source_content_obj:
+                    source_cols = {_snake(f.name) for f in source_content_obj.fields}
+                    for target_field_name in ev.action.fields:
+                        tcol = _snake(target_field_name)
+                        # Direct match in source
+                        if tcol in source_cols:
+                            mapping.append((tcol, tcol))
+                        elif tcol == "current_quantity":
+                            mapping.append((tcol, "quantity"))
+                        elif tcol == "threshold":
+                            mapping.append((tcol, "reorder_threshold"))
+                        else:
+                            mapping.append((tcol, tcol))
 
-            action = EventActionSpec(
-                target_content=_snake(target_content_obj.name) if target_content_obj else _snake(ev.action.create_content),
-                column_mapping=tuple(mapping),
-            )
+                action = EventActionSpec(
+                    target_content=_snake(target_content_obj.name) if target_content_obj else _snake(ev.action.create_content),
+                    column_mapping=tuple(mapping),
+                )
         events.append(EventSpec(
             source_content=source_content,
             trigger=ev.trigger,
@@ -842,6 +851,21 @@ def lower(program: Program) -> AppSpec:
     for ch in program.channels:
         direction = DIRECTION_MAP.get(ch.direction, ChannelDirection.INBOUND)
         delivery = DELIVERY_MAP.get(ch.delivery, ChannelDelivery.AUTO)
+        # Lower actions
+        actions = []
+        for act in ch.actions:
+            actions.append(ChannelActionSpec(
+                name=_qname(act.name),
+                takes=tuple(
+                    ChannelActionParamSpec(name=p.name, param_type=p.type_name)
+                    for p in act.takes
+                ),
+                returns=tuple(
+                    ChannelActionParamSpec(name=p.name, param_type=p.type_name)
+                    for p in act.returns
+                ),
+                required_scopes=tuple(act.required_scopes),
+            ))
         channels.append(ChannelSpec(
             name=_qname(ch.name),
             carries_content=_resolve_to_content(ch.carries) if ch.carries else "",
@@ -852,6 +876,7 @@ def lower(program: Program) -> AppSpec:
                 ChannelRequirementSpec(scope=r.scope, direction=r.direction)
                 for r in ch.requirements
             ),
+            actions=tuple(actions),
         ))
 
     # ── Lower boundaries ──

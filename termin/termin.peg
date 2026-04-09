@@ -205,6 +205,10 @@ event_action_line
       'with' ['the'] fields:comma_list $
     ;
 
+event_send_line
+    = 'Send' content:word_or_quoted 'to' channel:quoted_string $
+    ;
+
 log_level_line
     = 'Log' 'level:' level:log_level $
     ;
@@ -502,7 +506,36 @@ channel_endpoint_line = 'Endpoint:' path:api_path $                     ;
 
 direction = 'inbound' | 'outbound' | 'bidirectional' | 'internal' ;
 delivery = 'realtime' | 'reliable' | 'batch' | 'auto' ;
-send_recv = 'send' | 'receive' ;
+send_recv = 'send' | 'receive' | 'invoke' ;
+
+# Channel Actions (typed RPC verbs)
+action_header
+    = 'Action' 'called' name:quoted_string ':' $
+    ;
+
+action_takes_line
+    = 'Takes' params:action_param_list $
+    ;
+
+action_returns_line
+    = 'Returns' params:action_param_list $
+    ;
+
+action_requires_line
+    = 'Requires' scope:quoted_string 'to' 'invoke' $
+    ;
+
+action_param_list
+    = first:action_param {',' rest:action_param}*
+    ;
+
+action_param
+    = name:word 'which' 'is' type:words_before_comma_or_eol
+    ;
+
+words_before_comma_or_eol
+    = /\w+(?:\s+(?!,)\w+)*/
+    ;
 
 
 # ==================================================================

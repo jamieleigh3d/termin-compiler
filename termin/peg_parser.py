@@ -19,7 +19,7 @@ from .ast_nodes import (
     ValidateUnique, CreateAs, AfterSave, ShowChart, DisplayAggregation,
     StructuredAggregation, SectionStart, ActionHeader, ActionButtonDef,
     NavBar, NavItem, ApiSection, ApiEndpoint, Stream, Directive,
-    ComputeNode, ComputeParam, ChannelDecl, ChannelRequirement, BoundaryDecl,
+    ComputeNode, ComputeParam, ChannelDecl, ChannelRequirement, ActionDecl, ActionParam, BoundaryDecl,
     BoundaryProperty, DisplayText, ErrorHandler, ErrorAction, LinkColumn,
 )
 from .errors import ParseError, CompileResult
@@ -91,6 +91,7 @@ _PREFIXES: list[tuple[str, str]] = [
     ("When `", "event_expr_line"), ("When [", "event_expr_line"),  # backtick first, bracket legacy
     ("When a ", "event_v1_line"), ("When an ", "event_v1_line"),
     ("Create a ", "event_action_line"), ("Create an ", "event_action_line"),
+    ("Send ", "event_send_line"),
     ("Log level:", "log_level_line"), ("On error from", "error_from_line"),
     ("On any error:", "error_catch_all_line"), ("Retry ", "error_retry_line"),
     ("Then ", "error_then_line"), ("As ", "story_header"), ("so that ", "so_that_line"),
@@ -116,6 +117,8 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Direction:", "channel_direction_line"), ("Delivery:", "channel_delivery_line"),
     ("Requires ", "channel_requires_line"),  # disambiguated in _classify_line for Compute context
     ("Endpoint:", "channel_endpoint_line"),
+    ("Action called", "action_header"),
+    ("Takes ", "action_takes_line"), ("Returns ", "action_returns_line"),
     ("Boundary called", "boundary_header"), ("Contains ", "boundary_contains_line"),
     ("Identity inherits", "boundary_inherits_line"), ("Identity restricts", "boundary_restricts_line"),
     ("Identity:", "compute_identity_line"),
@@ -145,8 +148,8 @@ def _classify_line(text: str) -> str:
             # Disambiguate "For each X, show actions:" from "For each X, show Y grouped by Z"
             if rule == "show_related_line" and "show actions" in text.lower():
                 return "action_header_line"
-            # Disambiguate "Requires" — channel (has "to send/receive") vs compute confidentiality
-            if rule == "channel_requires_line" and " to send" not in text and " to receive" not in text:
+            # Disambiguate "Requires" — channel/action (has "to send/receive/invoke") vs compute confidentiality
+            if rule == "channel_requires_line" and " to send" not in text and " to receive" not in text and " to invoke" not in text:
                 return "compute_requires_conf_line"
             return rule
     if text.startswith('"') and " transitions to " in text: return "action_button_line"
@@ -480,6 +483,25 @@ def _parse_tp(text) -> list[ComputeParam]:
         else: result.append(ComputeParam(name=p.strip(), type_name=""))
     return result
 
+
+def _parse_action_params(text: str, prefix: str, ln: int) -> list[ActionParam]:
+    """Parse 'Takes role which is text, policy which is text' into ActionParam list."""
+    body = text[len(prefix):].strip()
+    params = []
+    for part in body.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        # Parse "name which is type"
+        if " which is " in part:
+            name, type_name = part.split(" which is ", 1)
+            params.append(ActionParam(name=name.strip(), type_name=type_name.strip(), line=ln))
+        else:
+            # Fallback: just a name
+            params.append(ActionParam(name=part.strip(), type_name="text", line=ln))
+    return params
+
+
 # --- Per-line parse dispatch ---
 def _parse_line(text: str, rule: str, ln: int):
     P = _try_parse  # alias
@@ -579,6 +601,21 @@ def _parse_line(text: str, rule: str, ln: int):
             if ft.startswith("the "): ft = ft[4:]
             return ("event_action", EventAction(create_content=n, fields=_scal(ft), line=ln))
         return ("event_action", EventAction(create_content=rest.strip().strip('"'), line=ln))
+    if rule == "event_send_line":
+        r = P(text, rule)
+        if r:
+            content = str(r.get("content","")).strip()
+            channel = _qs(r.get("channel",""))
+        else:
+            # Fallback: "Send X to "Y""
+            parts = text[5:].strip()  # strip "Send "
+            if " to " in parts:
+                content, channel = parts.split(" to ", 1)
+                content = content.strip()
+                channel = channel.strip().strip('"')
+            else:
+                content = parts; channel = ""
+        return ("event_action", EventAction(send_content=content, send_channel=channel, line=ln))
     if rule == "log_level_line":
         r = P(text, rule); return ("log_level", str(r.get("level","")).strip() if r else text.split(":",1)[1].strip())
     if rule == "error_from_line":
@@ -817,10 +854,25 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule); return ("channel_prop", "delivery", str(r.get("del","")).strip().lower() if r else text.split(":",1)[1].strip().lower())
     if rule == "channel_requires_line":
         r = P(text, rule)
-        if r: return ("channel_prop", "requires", ChannelRequirement(scope=_qs(r.get("scope","")), direction=str(r.get("dir","")).strip(), line=ln))
-        return ("channel_prop", "requires", ChannelRequirement(scope=_fq(text), direction="send" if " to send" in text else "receive", line=ln))
+        if r:
+            direction = str(r.get("dir","")).strip()
+            return ("channel_prop", "requires", ChannelRequirement(scope=_qs(r.get("scope","")), direction=direction, line=ln))
+        direction = "send" if " to send" in text else ("invoke" if " to invoke" in text else "receive")
+        return ("channel_prop", "requires", ChannelRequirement(scope=_fq(text), direction=direction, line=ln))
     if rule == "channel_endpoint_line":
         r = P(text, rule); return ("channel_prop", "endpoint", str(r.get("path","")).strip() if r else text.split(":",1)[1].strip())
+    if rule == "action_header":
+        r = P(text, rule); return ("action_header", ActionDecl(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
+    if rule == "action_takes_line":
+        params = _parse_action_params(text, "Takes ", ln)
+        return ("action_prop", "takes", params)
+    if rule == "action_returns_line":
+        params = _parse_action_params(text, "Returns ", ln)
+        return ("action_prop", "returns", params)
+    if rule == "action_requires_line":
+        r = P(text, rule)
+        scope = _qs(r.get("scope","")) if r else _fq(text)
+        return ("action_prop", "requires", scope)
     if rule == "boundary_header":
         r = P(text, rule); return ("boundary_header", BoundaryDecl(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "boundary_contains_line":
@@ -949,13 +1001,30 @@ def _assemble(parsed: list) -> Program:
             prog.computes.append(nd)
         elif k == "channel_header":
             ch_ = item[1]; i += 1
-            for child in _collect(lambda x: x == "channel_prop"):
-                p, v = child[1], child[2]
-                if p == "carries": ch_.carries = v
-                elif p == "direction": ch_.direction = v
-                elif p == "delivery": ch_.delivery = v
-                elif p == "endpoint": ch_.endpoint = v
-                elif p == "requires": ch_.requirements.append(v)
+            current_action = None
+            for child in _collect(lambda x: x in ("channel_prop", "action_header", "action_prop")):
+                if child[0] == "action_header":
+                    current_action = child[1]
+                    ch_.actions.append(current_action)
+                    continue
+                if child[0] == "action_prop" and current_action is not None:
+                    p, v = child[1], child[2]
+                    if p == "takes": current_action.takes = v
+                    elif p == "returns": current_action.returns = v
+                    elif p == "requires": current_action.required_scopes.append(v)
+                    continue
+                if child[0] == "channel_prop":
+                    p, v = child[1], child[2]
+                    # "Requires ... to invoke" inside an action block → route to action
+                    if p == "requires" and current_action is not None and hasattr(v, 'direction') and v.direction == "invoke":
+                        current_action.required_scopes.append(v.scope)
+                        continue
+                    current_action = None  # non-action channel prop resets context
+                    if p == "carries": ch_.carries = v
+                    elif p == "direction": ch_.direction = v
+                    elif p == "delivery": ch_.delivery = v
+                    elif p == "endpoint": ch_.endpoint = v
+                    elif p == "requires": ch_.requirements.append(v)
             prog.channels.append(ch_)
         elif k == "boundary_header":
             bnd = item[1]; i += 1

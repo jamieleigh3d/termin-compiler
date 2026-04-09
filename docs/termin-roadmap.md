@@ -132,83 +132,92 @@ Termin is a governed application substrate where business software is structural
 
 ---
 
-## Immediate Priority Queue (Next 4-6 Weeks)
+## Immediate Priority Queue
 
-Restructured April 2026 to prioritize end-to-end demo completeness. Confidentiality system deferred to a later block after working demos prove the architecture.
+Restructured April 9, 2026. Blocks A, B, D are complete. Channel runtime and AI agent support are the critical path to v0.5.0 for an AWS-native Termin runtime. Everything else is lower priority.
 
-### Block A: End-to-End Demo Completeness
+### Priority 1: Block F — Channel Runtime (v0.5.0 blocker)
 
-| # | Item | Effort | Subsystems | Design Doc |
-|---|------|--------|------------|------------|
-| A1 | State transition scope-gating in runtime | Medium | runtime | primitives.md § State; implementers-guide.md § 4 State Machines |
-| A2 | System-defined CEL functions (sum, count, now, identity.has_scope) | Medium | runtime, compiler | appserver-v2.md § 7 System-Defined Functions |
-| A3 | `client_safe` inference logic in compiler | Small | compiler | distributed-runtime.md § 3 Client-Side Compute |
-| A4 | Richer example app (helpdesk or HR) demonstrating all primitives | Medium | examples | presentation-ir-v2.md § DSL to IR Examples |
-| A5 | Highlight row rendering in presentation | Small | runtime (presentation) | presentation-ir-v2.md § Data Table Sub-Components (highlight) |
-| A6 | Related data display in presentation | Small | runtime (presentation, storage) | presentation-ir-v2.md § Data Table Sub-Components (related) |
-| A7 | `validate_unique` on form field_input | Small | runtime (app, storage) | presentation-ir-v2.md § Input Components (field_input) |
-| A8 | After-save navigation (`after_save` prop on form) | Small | runtime (presentation) | presentation-ir-v2.md § Input Components (form) |
-| A9 | Conformance test suite seed (20+ tests) | Medium | tests | product-strategy.md § Tier 1 Guarantees |
+**Why first:** Channels are declared in the compiler and IR, but the reference runtime doesn't implement them. an AWS-native Termin runtime needs working channels for external integrations. We need to validate the Channel model in the reference runtime before shipping v0.5.0 to an AWS-native Termin runtime.
 
-### Block B: Confidentiality System
+| # | Item | Effort | Subsystems | Notes |
+|---|------|--------|------------|-------|
+| F1 | Deploy config loader: read `termin.deploy.json`, resolve `${ENV_VAR}` | Small | runtime (new module) | New file: `termin_runtime/channels.py`. Loads config at startup, maps channel names → URL + auth + protocol. |
+| F2 | Outbound channel dispatcher (HTTP): `channel_send()` for reliable delivery | Medium | runtime (channels) | HTTP client (httpx). POST to configured URL. Retry with exponential backoff. Scope check against ChannelRequirementSpec. |
+| F3 | Outbound channel dispatcher (WebSocket): persistent connections for realtime | Medium | runtime (channels) | WebSocket client manager. Auto-reconnect, heartbeat. Scope check on send. |
+| F4 | Event action handler: wire `send_channel` in `run_event_handlers()` | Small | runtime (app, channels) | Currently dead code. When EventActionSpec has `send_channel`, call the channel dispatcher. |
+| F5 | Action invocation endpoint: `POST /api/v1/channels/{name}/actions/{action}` | Medium | runtime (app, channels) | Validate params against ChannelActionSpec.takes, check scopes, forward to external service, validate response against returns. |
+| F6 | Inbound webhook handler: register endpoints from IR, validate payloads | Medium | runtime (app, channels) | For inbound reliable channels: register route at channel endpoint (or `/webhooks/{name}`), validate against carries_content schema, create content record, fire events. |
+| F7 | Inbound WebSocket handler: accept persistent connections for realtime channels | Medium | runtime (app, channels) | For inbound realtime channels: dedicated WebSocket endpoint, message validation, content creation, event firing. |
+| F8 | Channel reflection: expose connection status, send/receive metrics | Small | runtime (reflection, channels) | Extend existing reflection with live connection state (connected/disconnected/error), message counts, last activity. |
+| F9 | Channel demo end-to-end test: channel_demo.termin with mock external services | Medium | tests | TestClient + mock HTTP/WS servers. Verify: outbound send, inbound webhook → content created, action invocation → response, event → channel send. |
+| F10 | Deploy config JSON Schema: `termin.deploy.schema.json` | Small | docs | DONE — `docs/termin-deploy-schema.json` |
 
-| # | Item | Effort | Subsystems | Design Doc |
-|---|------|--------|------------|------------|
-| B1 | Add `confidentiality_scope` to FieldSpec + ContentSchema | Small | IR | confidentiality-spec.md § 2 IR Changes |
-| B2 | Add `confidentiality is` to PEG grammar + parser + lowering | Medium | compiler (PEG, parser, lower) | confidentiality-spec.md § 1 DSL Syntax |
-| B3 | Add `Identity: service/delegate` to Compute DSL + IR | Small | compiler, IR | confidentiality-spec.md § 1 DSL Syntax (identity_mode) |
-| B4 | Add `Output confidentiality:` to Compute DSL + IR | Small | compiler, IR | confidentiality-spec.md § 1 DSL Syntax (output_confidentiality) |
-| B5 | Implement `redact_record()` in runtime | Medium | runtime (storage, app) | confidentiality-spec.md § 4 Runtime Changes; BRD § 6 Check 1 |
-| B6 | Implement Compute invocation gate at Channel boundary | Medium | runtime (app) | confidentiality-spec.md § 4 Runtime Changes; BRD § 6 Check 2 |
-| B7 | Implement CEL field dependency static analysis | Large | compiler (analyzer) | confidentiality-spec.md § 3 Compiler Static Analysis |
-| B8 | Implement taint propagation + reclassification in lowering | Medium | compiler (lower) | confidentiality-spec.md § 3 Compiler Static Analysis |
-| B9 | Add `ReclassificationPoint` to IR + Reflection | Small | IR, runtime | confidentiality-spec.md § 2 IR Changes |
-| B10 | Implement runtime CEL redaction guard | Medium | runtime (expression) | confidentiality-spec.md § 4 Runtime Changes; BRD § 6 Check 3 |
-| B11 | Add example with confidentiality (HR app or medical records) | Small | examples | confidentiality-BRD.md § 4 User Stories |
+**Exit criteria:** `channel_demo.termin` works end-to-end. Outbound sends hit configured URLs. Inbound webhooks create content records. Action invocations dispatch and return typed responses. Events trigger channel sends. All behind scope enforcement.
 
-### Block C: Boundary Enforcement
+### Priority 2: Block G — AI Agent Runtime
 
-| # | Item | Effort | Subsystems | Design Doc |
-|---|------|--------|------------|------------|
-| C1 | Boundary isolation enforcement | Large | runtime (app, storage) | appserver-v2.md § 3 Boundaries; primitives.md § Boundary |
-| C2 | Cross-boundary identity propagation | Medium | runtime (identity, app) | distributed-runtime.md § Cross-Boundary Identity Propagation |
+**Why second:** Depends on channels (agents call `channel.invoke()`). an AWS-native Termin runtime is building agent support. We need a working AI agent demo to prove the model before v0.5.0.
 
-### Block D: Package Format & Conformance Distribution
+| # | Item | Effort | Subsystems | Notes |
+|---|------|--------|------------|-------|
+| G1 | Wire Compute system type into runtime CEL context | Small | runtime (app, expression) | `Compute.Name`, `Compute.Scopes`, `Compute.Provider`, `Compute.Trigger`, `Compute.StartedAt`. Needed for precondition evaluation. |
+| G2 | Full Before/After snapshots backed by transaction staging | Medium | runtime (transaction) | `Before.content_query()` → snapshot at transaction start. `After.content_query()` → staged writes merged with snapshot. Needed for postcondition evaluation. |
+| G3 | Agent tool API: ComputeContext with `content.*`, `state.*`, `channel.*`, `reflect.*` | Large | runtime (new module: `agent.py`) | Python class wrapping transaction + channel dispatcher. Methods: `content_query()`, `content_create()`, `content_update()`, `content_delete()`, `state_transition()`, `channel_invoke()`, `channel_send()`, `reflect_app()`. |
+| G4 | AI agent provider: Claude API integration | Large | runtime (agent) | Call Claude API with objective + strategy + available tools. Map tool_use responses to ComputeContext method calls. Loop until agent signals done or token/turn limit reached. |
+| G5 | Runtime scheduler for `Trigger on schedule` Computes | Medium | runtime (new module: `scheduler.py`) | APScheduler or asyncio-based. Read trigger specs from IR. Execute Compute on schedule via the existing Compute endpoint. |
+| G6 | Runtime event trigger for `Trigger on event` Computes | Medium | runtime (app, events) | When event fires matching a Compute's trigger spec, auto-invoke that Compute with the triggering record. |
+| G7 | AI agent demo app: `.termin` example with working agent | Medium | examples | Simple enough to demo: e.g., a support bot that triages tickets, or a content moderator. Must exercise: agent Compute, channel.invoke, pre/postconditions, state transitions. |
+| G8 | Agent observability: execution log, tool call trace, token usage | Small | runtime (agent, reflection) | Log each tool call with args/result. Expose via reflection. Track token usage per invocation. |
 
-| # | Item | Effort | Subsystems | Design Doc |
-|---|------|--------|------------|------------|
-| D1 | Define `.termin.pkg` format (manifest, ZIP structure, checksums) | Medium | compiler (CLI) | DONE — termin-package-format.md |
-| D2 | `termin compile` outputs `.termin.pkg` + `termin serve` | Medium | compiler (CLI, backends) | DONE |
-| D3 | Package revision auto-increment (monotonic, compare existing .pkg) | Small | compiler (CLI) | DONE |
-| D4 | Conformance suite adapter interface (deploy, authenticate, connect) | Medium | conformance | DONE — github.com/jamieleigh3d/termin-conformance |
-| D5 | Decouple conformance suite from reference runtime (standalone) | Medium | conformance, tests | DONE — 189 tests, 0 runtime imports |
-| D6 | Ship test `.termin.pkg` files with conformance suite | Small | conformance | DONE — 6 packages |
-| D7 | App Id: compiler-managed UUID for deployment identity | Small | compiler, PEG, IR | DONE |
-| D8 | Testing methodology document (3 tiers) | Small | conformance | DONE — testing-methodology.md |
-| D9 | IR version bump to 0.3.0 | Small | compiler, runtime, schema | DONE |
+**Exit criteria:** A `.termin` app with `Provider is "ai-agent"` actually calls Claude, executes tool calls through ComputeContext, respects pre/postconditions with rollback, and the whole thing is observable.
 
-### Block E: Research & Future
+### Priority 3: Block E — Remaining Quick Wins & Research
 
-| # | Item | Effort | Subsystems | Design Doc | Status |
-|---|------|--------|------------|------------|--------|
-| E1 | Multi-file apps: research how multiple .termin source files compose | Research | compiler | appserver-v2.md § Library dependencies | |
-| E2 | Package signatures (cryptographic signing of .termin.pkg) | Research | compiler, runtime | — | |
-| E3 | Enum constraint enforcement on API creates | Small | runtime (app) | — | DONE |
-| E4 | Min/max constraint enforcement on API creates | Small | runtime (app) | — | DONE |
-| E5 | Tier 3: Behavioral round-trip tests (form submit → API verify) | Medium | conformance | testing-methodology.md § Tier 3 | DONE |
-| E6 | Automation API contract for programmatic UI interaction | Research | runtime, conformance | testing-methodology.md § Tier 3 | |
+Previously "Block E: Research & Future." Items not yet done, reprioritized.
+
+| # | Item | Effort | Subsystems | Notes | Status |
+|---|------|--------|------------|-------|--------|
 | E7 | Role reflection in CEL: `reflect.role("engineer").Scopes` | Small | runtime (reflection) | termin-cel-types.md § 7 | |
-| E8 | Triple-backtick multi-line expression parser support | Medium | compiler (grammar, parser) | termin-cel-types.md § 1.2 | DONE |
-| E9 | AI agent support: Provider, Preconditions, Postconditions | Large | compiler, runtime | msgs/001-ai-agents.md | DONE (grammar/IR) |
-| E10 | Transaction staging (snapshot isolation for Compute execution) | Large | runtime | msgs/001-ai-agents.md | DONE (basic) |
-| E11 | Compiler CEL body analysis (field dependencies, reclassification points) | Medium | compiler (analyzer) | termin-confidentiality-runtime-design.md § B2 | |
-| E12 | `link_template` on data_table columns | Small | compiler, runtime (presentation) | msgs/002-data-table-links.md | DONE |
-| E13 | Server-side CEL evaluation for text components | Small | runtime (presentation) | msgs/002-data-table-links.md | DONE |
-| E14 | Wire Compute system type into runtime CEL context | Small | runtime (app, expression) | termin-cel-types.md § 2.2 | |
-| E15 | Full Before/After snapshots backed by transaction staging | Medium | runtime (transaction) | termin-cel-types.md § 2.3 | |
-| E16 | Runtime scheduler for `Trigger on schedule` Computes | Medium | runtime (new module) | msgs/001-ai-agents.md | |
-| E17 | Agent tool API: content.query, state.transition, channel.send, reflect.* | Large | runtime (new module) | msgs/001-ai-agents.md | |
-| E18 | CCP/ECP package system: `Uses "pkg" version "1.0"`, package resolution | Large | compiler, runtime | msgs/001-ai-agents.md | |
+| E11 | Compiler CEL body analysis (field dependencies, reclassification) | Medium | compiler (analyzer) | termin-confidentiality-runtime-design.md § B2 | |
+| E1 | Multi-file apps: research composition of .termin sources | Research | compiler | appserver-v2.md § Library dependencies | |
+| E2 | Package signatures (cryptographic signing of .termin.pkg) | Research | compiler, runtime | — | |
+| E6 | Automation API contract for programmatic UI interaction | Research | runtime, conformance | testing-methodology.md § Tier 3 | |
+
+### Priority 4: Block C — Boundary Enforcement
+
+Deferred until channels and agents are working. Boundaries are metadata-only in the current runtime.
+
+| # | Item | Effort | Subsystems | Notes |
+|---|------|--------|------------|-------|
+| C1 | Boundary isolation enforcement | Large | runtime (app, storage) | Cross-boundary data only through declared Channels. Depends on F1-F7. |
+| C2 | Cross-boundary identity propagation | Medium | runtime (identity, app) | Identity context flows through Channel crossings. |
+
+### Completed Blocks
+
+**Block A: End-to-End Demo Completeness** — DONE (A1-A9)
+
+**Block B: Confidentiality System** — DONE (B1-B11). Grammar, parser, analyzer, lowering, runtime redaction, Compute endpoint, CEL guard, output taint, presentation, HR Portal example.
+
+**Block D: Package Format & Conformance** — DONE (D1-D9). `.termin.pkg`, `termin compile/serve`, conformance suite (251 tests), App Id, IR 0.4.0.
+
+**Block E (completed items):**
+
+| # | Item | Status |
+|---|------|--------|
+| E3 | Enum constraint enforcement | DONE |
+| E4 | Min/max constraint enforcement | DONE |
+| E5 | Tier 3: Behavioral round-trip tests | DONE |
+| E8 | Triple-backtick multi-line expression parser | DONE |
+| E9 | AI agent support: Provider, Preconditions, Postconditions (grammar/IR) | DONE |
+| E10 | Transaction staging (snapshot isolation, basic) | DONE |
+| E12 | `link_template` on data_table columns | DONE |
+| E13 | Server-side CEL evaluation for text components | DONE |
+| E14 | Channel Actions: typed RPC verbs in DSL, parser, IR, analyzer | DONE |
+| E15 | Event channel sends: `Send X to "channel"` in DSL, parser, IR | DONE |
+| E16 | Deploy config schema: `termin.deploy.schema.json` | DONE |
+| E17 | Channel demo example: `channel_demo.termin` exercising all patterns | DONE |
+| E18 | ~~CCP/ECP package system~~ | KILLED — replaced by Channel Actions (F5) |
 
 ---
 
@@ -249,3 +258,9 @@ Restructured April 2026 to prioritize end-to-end demo completeness. Confidential
 | 2026-04-08 | Migrate hello_user from CurrentUser to User.* | c67c5fb |
 | 2026-04-08 | Expression delimiter: [bracket] → backtick, IR 0.4.0 | 3420606..c274217 |
 | 2026-04-08 | Conformance suite: 249 tests, 7 fixtures, IR 0.4.0 changelog | conformance repo |
+| 2026-04-09 | Channel Actions: grammar, parser, AST, IR, lowering, analyzer for typed RPC verbs on Channels | — |
+| 2026-04-09 | Event channel sends: `Send X to "channel"` grammar, parser, IR, lowering | — |
+| 2026-04-09 | Deploy config schema: `termin.deploy.schema.json` (v0.1.0) | — |
+| 2026-04-09 | `security_agent.termin` example (action channels, agent computes, event sends) | — |
+| 2026-04-09 | `channel_demo.termin` example (all 6 channel patterns + seed data) | — |
+| 2026-04-09 | Roadmap restructured: Blocks F (Channel Runtime) and G (Agent Runtime) as v0.5.0 critical path | — |

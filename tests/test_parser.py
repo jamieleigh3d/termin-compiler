@@ -270,6 +270,86 @@ def test_parse_channel_internal():
     assert len(ch.requirements) == 0
 
 
+# ── Channel Action parsing ──
+
+def test_parse_channel_action_basic():
+    program, errors = parse('''Channel called "tools":
+  Direction: outbound
+  Delivery: reliable
+  Action called "do-thing":
+    Takes name which is text, count which is number
+    Returns result which is text
+    Requires "admin" to invoke''')
+    assert errors.ok
+    ch = program.channels[0]
+    assert ch.name == "tools"
+    assert ch.direction == "outbound"
+    assert len(ch.actions) == 1
+    act = ch.actions[0]
+    assert act.name == "do-thing"
+    assert len(act.takes) == 2
+    assert act.takes[0].name == "name"
+    assert act.takes[0].type_name == "text"
+    assert act.takes[1].name == "count"
+    assert act.takes[1].type_name == "number"
+    assert len(act.returns) == 1
+    assert act.returns[0].name == "result"
+    assert act.returns[0].type_name == "text"
+    assert act.required_scopes == ["admin"]
+
+
+def test_parse_channel_multiple_actions():
+    program, errors = parse('''Channel called "security-tools":
+  Direction: outbound
+  Delivery: reliable
+  Action called "restrict-policy":
+    Takes role which is text, policy which is text
+    Returns result which is text
+    Requires "remediate" to invoke
+  Action called "rotate-secret":
+    Takes arn which is text
+    Returns confirmation which is text
+    Requires "remediate" to invoke''')
+    assert errors.ok
+    ch = program.channels[0]
+    assert len(ch.actions) == 2
+    assert ch.actions[0].name == "restrict-policy"
+    assert ch.actions[1].name == "rotate-secret"
+    assert ch.actions[0].takes[0].name == "role"
+    assert ch.actions[1].takes[0].name == "arn"
+
+
+def test_parse_channel_data_and_actions():
+    """Channel can carry Content AND expose Actions."""
+    program, errors = parse('''Channel called "slack":
+  Direction: bidirectional
+  Delivery: realtime
+  Carries messages
+  Requires "read" to receive
+  Action called "post-message":
+    Takes channel which is text, text which is text
+    Returns ok which is yes or no
+    Requires "send" to invoke''')
+    assert errors.ok
+    ch = program.channels[0]
+    assert ch.carries == "messages"
+    assert len(ch.requirements) == 1
+    assert ch.requirements[0].direction == "receive"
+    assert len(ch.actions) == 1
+    assert ch.actions[0].name == "post-message"
+
+
+def test_parse_event_send_to_channel():
+    program, errors = parse('''When `finding.severity == "critical"`:
+  Send finding to "slack-alerts"
+  Log level: WARN''')
+    assert errors.ok
+    ev = program.events[0]
+    assert ev.action.send_content == "finding"
+    assert ev.action.send_channel == "slack-alerts"
+    assert ev.log_level == "WARN"
+
+
 # ── Boundary parsing ──
 
 def test_parse_boundary_inherit():

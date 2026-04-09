@@ -108,8 +108,10 @@ class EventCondition:
 
 @dataclass
 class EventAction:
-    create_content: str  # Content name to create
+    create_content: str = ""     # Content name to create
     fields: list[str] = field(default_factory=list)  # field names to copy
+    send_content: str = ""       # Content to send via Channel
+    send_channel: str = ""       # Channel name to send to
     line: int = 0
 
 
@@ -335,7 +337,23 @@ class ComputeNode:
 @dataclass
 class ChannelRequirement:
     scope: str
-    direction: str  # "send" or "receive"
+    direction: str  # "send", "receive", or "invoke"
+    line: int = 0
+
+
+@dataclass
+class ActionParam:
+    name: str
+    type_name: str  # "text", "number", "yes or no", content name, etc.
+    line: int = 0
+
+
+@dataclass
+class ActionDecl:
+    name: str
+    takes: list[ActionParam] = field(default_factory=list)
+    returns: list[ActionParam] = field(default_factory=list)
+    required_scopes: list[str] = field(default_factory=list)
     line: int = 0
 
 
@@ -347,6 +365,7 @@ class ChannelDecl:
     delivery: str = ""          # "realtime", "reliable", "batch", "auto"
     endpoint: Optional[str] = None
     requirements: list[ChannelRequirement] = field(default_factory=list)
+    actions: list[ActionDecl] = field(default_factory=list)
     line: int = 0
 
 

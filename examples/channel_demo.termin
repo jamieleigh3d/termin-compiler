@@ -1,0 +1,244 @@
+Application: Incident Response Hub
+  Description: Demonstrates all Channel patterns — data, action, hybrid, streaming, and event-driven sends
+Id: e4f29a81-6c33-4f2d-b1a9-2c8e5d73f410
+
+--- Identity ---
+
+Users authenticate with stub
+Scopes are "incidents.view", "incidents.manage", "infra.operate", "alerts.send", and "deploy.read"
+
+--- Roles ---
+
+A "responder" has "incidents.view", "incidents.manage", and "alerts.send"
+An "operator" has "incidents.view", "incidents.manage", "infra.operate", "alerts.send", and "deploy.read"
+A "viewer" has "incidents.view"
+
+--- Content ---
+
+Content called "incidents":
+  Each incident has a title which is text, required
+  Each incident has a severity which is one of: "critical", "high", "medium", "low"
+  Each incident has a source which is text
+  Each incident has an affected service which is text, required
+  Each incident has a summary which is text
+  Each incident has an assigned to which is text
+  Each incident has an opened at which is automatic
+  Anyone with "incidents.view" can view incidents
+  Anyone with "incidents.manage" can create, update, or delete incidents
+
+Content called "deployments":
+  Each deployment has a service which is text, required
+  Each deployment has a version which is text, required
+  Each deployment has a commit sha which is text
+  Each deployment has a deployed at which is automatic
+  Each deployment has a deployed by which is text
+  Each deployment has a status which is one of: "in-progress", "succeeded", "failed", "rolled-back"
+  Anyone with "deploy.read" can view deployments
+  Anyone with "incidents.manage" can create or update deployments
+
+Content called "alerts":
+  Each alert has a monitor name which is text, required
+  Each alert has a metric which is text
+  Each alert has a threshold which is number
+  Each alert has a current value which is number
+  Each alert has a triggered at which is automatic
+  Anyone with "incidents.view" can view alerts
+  Anyone with "incidents.manage" can create alerts
+
+--- State ---
+
+State for incidents called "response lifecycle":
+  An incident starts as "opened"
+  An incident can also be "investigating", "mitigating", "resolved", or "closed"
+  An opened incident can become investigating if the user has "incidents.manage"
+  An investigating incident can become mitigating if the user has "incidents.manage"
+  A mitigating incident can become resolved if the user has "incidents.manage"
+  A resolved incident can become closed if the user has "incidents.manage"
+  An investigating incident can become resolved if the user has "incidents.manage"
+
+--- Channels: Data (inbound) ---
+
+Channel called "github-webhooks":
+  Carries deployments
+  Direction: inbound
+  Delivery: reliable
+  Requires "deploy.read" to send
+
+Channel called "monitoring-feed":
+  Carries alerts
+  Direction: inbound
+  Delivery: realtime
+  Requires "incidents.manage" to send
+
+--- Channels: Data (outbound) ---
+
+Channel called "pagerduty":
+  Carries incidents
+  Direction: outbound
+  Delivery: reliable
+  Requires "alerts.send" to send
+
+--- Channels: Action (external service verbs) ---
+
+Channel called "cloud-provider":
+  Direction: outbound
+  Delivery: reliable
+
+  Action called "restart-service":
+    Takes service which is text, region which is text
+    Returns status which is text
+    Requires "infra.operate" to invoke
+
+  Action called "scale-service":
+    Takes service which is text, replicas which is number
+    Returns status which is text
+    Requires "infra.operate" to invoke
+
+  Action called "rollback-deployment":
+    Takes service which is text, target version which is text
+    Returns deployment id which is text
+    Requires "infra.operate" to invoke
+
+--- Channels: Hybrid (data + actions) ---
+
+Channel called "slack":
+  Direction: bidirectional
+  Delivery: realtime
+  Carries incidents
+  Requires "incidents.view" to receive
+
+  Action called "post-message":
+    Takes channel which is text, text which is text
+    Returns ok which is yes or no
+    Requires "alerts.send" to invoke
+
+  Action called "update-status":
+    Takes channel which is text, thread which is text, text which is text
+    Returns ok which is yes or no
+    Requires "alerts.send" to invoke
+
+--- Channels: Internal (no auth required) ---
+
+Channel called "incident-bus":
+  Carries incidents
+  Direction: internal
+  Delivery: auto
+
+--- Compute ---
+
+Compute called "classify-alert":
+  Transform: takes alert : alerts, produces incident : incidents
+  `incident.title = alert.monitor_name + " threshold breached"`
+  `incident.severity = alert.current_value > alert.threshold * 2 ? "critical" : alert.current_value > alert.threshold * 1.5 ? "high" : "medium"`
+  `incident.source = "monitoring"`
+  `incident.affected_service = alert.monitor_name`
+  `incident.summary = alert.metric + " at " + string(alert.current_value) + " (threshold: " + string(alert.threshold) + ")"`
+  Anyone with "incidents.manage" can execute this
+
+Compute called "auto-mitigate":
+  Transform: takes incident : incidents, produces incident : incidents
+  Provider is "ai-agent"
+  Identity: service
+  Trigger on event "incident.created"
+  Objective is ```
+    You are an incident response agent. For critical and high severity
+    incidents, attempt automated mitigation: restart the affected
+    service, or roll back to the last known-good deployment. For
+    medium and low, just classify and assign.
+  ```
+  Strategy is ```
+    1. Read the incident severity and affected service
+    2. If critical or high:
+       a. Use channel.invoke("cloud-provider", "restart-service")
+       b. If restart fails, use channel.invoke("cloud-provider", "rollback-deployment")
+       c. Transition to "mitigating"
+    3. If medium or low:
+       a. Assign to on-call responder
+       b. Transition to "investigating"
+    4. Use channel.invoke("slack", "post-message") to notify #incidents
+  ```
+  Preconditions are:
+    `Compute.Scopes.contains("incidents.manage")`
+  Postconditions are:
+    `After.content_query("incidents").filter(i, i.response_lifecycle == "opened").size() <= Before.content_query("incidents").filter(i, i.response_lifecycle == "opened").size()`
+  Anyone with "incidents.manage" can execute this
+
+--- Events ---
+
+When `incident.severity == "critical"`:
+  Send incident to "pagerduty"
+  Log level: ERROR
+
+When `incident.response_lifecycle.enters("resolved")`:
+  Send incident to "slack"
+  Log level: INFO
+
+When `deployment.status == "failed"`:
+  Send deployment to "incident-bus"
+  Log level: WARN
+
+--- User Stories ---
+
+As a responder, I want to see and manage active incidents
+  so that I can respond to production issues:
+    Show a page called "Incident Dashboard"
+    Display count of incidents grouped by severity
+    Display a table of incidents with columns: title, severity, affected service, response lifecycle, assigned to, opened at
+    For each incident, show actions:
+      "Investigate" transitions to "investigating" if available
+      "Mitigate" transitions to "mitigating" if available
+      "Resolve" transitions to "resolved" if available
+      "Close" transitions to "closed" if available
+    Allow filtering by severity and response lifecycle
+    Allow searching by title and affected service
+    This table subscribes to incidents changes
+    Accept input for title, severity, affected service, summary, assigned to
+
+As an operator, I want to see infrastructure status and create incidents
+  so that I can manage the full response lifecycle:
+    Show a page called "Operations Center"
+    Display count of incidents grouped by severity
+    Display a table of incidents with columns: title, severity, source, affected service, response lifecycle, assigned to, opened at
+    For each incident, show actions:
+      "Investigate" transitions to "investigating" if available
+      "Mitigate" transitions to "mitigating" if available
+      "Resolve" transitions to "resolved" if available
+      "Close" transitions to "closed" if available
+    Allow filtering by severity and response lifecycle
+    Section "Deployments":
+      Display a table of deployments with columns: service, version, status, deployed by, deployed at
+      Allow filtering by status
+    Section "Alerts":
+      Display a table of alerts with columns: monitor name, metric, current value, threshold, triggered at
+    This table subscribes to incidents changes
+
+As a viewer, I want to see incident history
+  so that I can understand reliability trends:
+    Show a page called "Incident History"
+    Display a table of incidents with columns: title, severity, affected service, response lifecycle, assigned to, opened at
+    Allow filtering by severity and response lifecycle
+    Allow searching by title and affected service
+
+--- Navigation ---
+
+Navigation bar:
+  "Incidents" links to "Incident Dashboard" visible to all
+  "Operations" links to "Operations Center" visible to operator
+  "History" links to "Incident History" visible to all
+
+--- API ---
+
+Expose a REST API at /api/v1:
+  GET    /incidents                    lists incidents
+  POST   /incidents                    creates an incident
+  GET    /incidents/{id}               gets an incident
+  PUT    /incidents/{id}               updates an incident
+  POST   /incidents/{id}/investigate   transitions to investigating
+  POST   /incidents/{id}/mitigate      transitions to mitigating
+  POST   /incidents/{id}/resolve       transitions to resolved
+  POST   /incidents/{id}/close         transitions to closed
+  GET    /deployments                  lists deployments
+  POST   /deployments                  creates a deployment
+  GET    /deployments/{id}             gets a deployment
+  GET    /alerts                       lists alerts
+  POST   /alerts                       creates an alert

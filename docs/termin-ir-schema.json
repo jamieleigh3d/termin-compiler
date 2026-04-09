@@ -392,13 +392,13 @@
 
     "EventActionSpec": {
       "type": "object",
-      "description": "Action to take when an event fires: create a record in target Content with mapped column values.",
-      "required": ["target_content", "column_mapping"],
+      "description": "Action to take when an event fires: create a record in target Content, or send data to a Channel.",
       "additionalProperties": false,
       "properties": {
         "target_content": {
           "type": "string",
-          "description": "Snake_case Content name to create a record in."
+          "default": "",
+          "description": "Snake_case Content name to create a record in (for create actions)."
         },
         "column_mapping": {
           "type": "array",
@@ -408,7 +408,18 @@
             "minItems": 2,
             "maxItems": 2
           },
-          "description": "Array of [target_column, source_column] pairs."
+          "default": [],
+          "description": "Array of [target_column, source_column] pairs (for create actions)."
+        },
+        "send_content": {
+          "type": "string",
+          "default": "",
+          "description": "Content/record to send (for Channel send actions)."
+        },
+        "send_channel": {
+          "type": "string",
+          "default": "",
+          "description": "Channel name to send data to (for Channel send actions)."
         }
       }
     },
@@ -767,29 +778,69 @@
 
     "ChannelRequirementSpec": {
       "type": "object",
-      "description": "A scope requirement on a Channel endpoint: who can send or receive on this Channel.",
+      "description": "A scope requirement on a Channel endpoint: who can send, receive, or invoke on this Channel.",
       "required": ["scope", "direction"],
       "additionalProperties": false,
       "properties": {
         "scope": { "type": "string" },
         "direction": {
           "type": "string",
-          "enum": ["send", "receive"],
-          "description": "Whether this scope is required for sending or receiving."
+          "enum": ["send", "receive", "invoke"],
+          "description": "Whether this scope is required for sending, receiving, or invoking actions."
+        }
+      }
+    },
+
+    "ChannelActionParamSpec": {
+      "type": "object",
+      "description": "A typed parameter on a Channel Action (input or output).",
+      "required": ["name", "param_type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "Parameter name." },
+        "param_type": { "type": "string", "description": "Type: text, number, yes or no, or a Content name." }
+      }
+    },
+
+    "ChannelActionSpec": {
+      "type": "object",
+      "description": "A typed RPC verb exposed by a Channel. Actions have typed inputs, typed outputs, and scope requirements. They represent side-effectful operations on external services.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/QualifiedName" },
+        "takes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ChannelActionParamSpec" },
+          "default": [],
+          "description": "Input parameters for this action."
+        },
+        "returns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ChannelActionParamSpec" },
+          "default": [],
+          "description": "Output parameters from this action."
+        },
+        "required_scopes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Scopes required to invoke this action."
         }
       }
     },
 
     "ChannelSpec": {
       "type": "object",
-      "description": "A Channel — a declared data flow path. Channels make data movement explicit and enforceable. Every piece of data that crosses a Boundary must go through a Channel.",
-      "required": ["name", "carries_content"],
+      "description": "A Channel — a declared data flow path with optional typed actions. Channels make data movement explicit and enforceable. Data Channels carry Content records. Action Channels expose typed RPC verbs to external services. A Channel can do both.",
+      "required": ["name"],
       "additionalProperties": false,
       "properties": {
         "name": { "$ref": "#/$defs/QualifiedName" },
         "carries_content": {
           "type": "string",
-          "description": "Snake_case Content name describing the shape of data this Channel transports."
+          "default": "",
+          "description": "Snake_case Content name describing the shape of data this Channel transports. Empty for action-only Channels."
         },
         "direction": {
           "$ref": "#/$defs/ChannelDirection",
@@ -802,13 +853,19 @@
         "endpoint": {
           "type": ["string", "null"],
           "default": null,
-          "description": "Explicit endpoint path (e.g., '/webhooks/orders', '/ws/orders'). Null means no dedicated endpoint (internal routing)."
+          "description": "Explicit endpoint path. Deprecated — use deployment config instead."
         },
         "requirements": {
           "type": "array",
           "items": { "$ref": "#/$defs/ChannelRequirementSpec" },
           "default": [],
           "description": "Scope requirements for sending/receiving on this Channel."
+        },
+        "actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ChannelActionSpec" },
+          "default": [],
+          "description": "Typed RPC verbs this Channel exposes. Actions have typed I/O and scope requirements."
         }
       }
     },

@@ -1,0 +1,175 @@
+Application: Security Agent
+  Description: Autonomous agent that patrols the app fabric for security issues, auto-remediates safe fixes, and escalates findings that require human judgment
+Id: 33902654-92f7-460e-9002-64e0a5a07d16
+
+Users authenticate with oidc
+Scopes are "findings.view", "findings.triage", "findings.remediate", and "alerts.send"
+
+A "platform engineer" has "findings.view", "findings.triage", "findings.remediate", and "alerts.send"
+A "security reviewer" has "findings.view" and "findings.triage"
+An "app owner" has "findings.view"
+
+Content called "findings":
+  Each finding has an app name which is text, required
+  Each finding has a finding type which is one of: "iam-drift", "cve", "confidentiality-violation", "stale-secret", "state-deadlock", "error-spike"
+  Each finding has a severity which is one of: "critical", "high", "medium", "low"
+  Each finding has a summary which is text, required
+  Each finding has details which is text
+  Each finding has an affected resource which is text, required
+  Each finding has a detected at which is automatic
+  Each finding has a remediation action which is text
+  Anyone with "findings.view" can view findings
+  Anyone with "findings.triage" can create findings
+  Anyone with "findings.remediate" can update or delete findings
+
+Content called "scan runs":
+  Each scan run has a scan type which is one of: "iam-audit", "cve-scan", "confidentiality-check", "secret-rotation-check"
+  Each scan run has a started at which is automatic
+  Each scan run has an apps scanned which is number
+  Each scan run has a findings count which is number
+  Each scan run has a status which is one of: "running", "completed", "failed"
+  Anyone with "findings.view" can view scan runs
+  Anyone with "findings.triage" can create or update scan runs
+
+State for findings called "remediation":
+  A finding starts as "detected"
+  A finding can also be "analyzing", "auto-fix-applied", "verified", "flagged-for-human", or "closed"
+  A detected finding can become analyzing if the user has "findings.triage"
+  An analyzing finding can become auto-fix-applied if the user has "findings.remediate"
+  An analyzing finding can become flagged-for-human if the user has "findings.triage"
+  An auto-fix-applied finding can become verified if the user has "findings.remediate"
+  An auto-fix-applied finding can become flagged-for-human if the user has "findings.triage"
+  A verified finding can become closed if the user has "findings.triage"
+  A flagged-for-human finding can become closed if the user has "findings.remediate"
+
+Channel called "security-tools":
+  Direction: outbound
+  Delivery: reliable
+
+  Action called "restrict-policy":
+    Takes role which is text, policy which is text
+    Returns result which is text
+    Requires "findings.remediate" to invoke
+
+  Action called "rotate-secret":
+    Takes arn which is text
+    Returns confirmation which is text
+    Requires "findings.remediate" to invoke
+
+  Action called "describe-iam-policy":
+    Takes role which is text
+    Returns policy which is text
+    Requires "findings.view" to invoke
+
+Channel called "slack":
+  Direction: bidirectional
+  Delivery: realtime
+  Carries findings
+  Requires "alerts.send" to send
+
+  Action called "post-message":
+    Takes channel id which is text, text which is text
+    Returns ok which is yes or no
+    Requires "alerts.send" to invoke
+
+Compute called "scanner":
+  Transform: takes findings, produces findings
+  Provider is "ai-agent"
+  Identity: service
+  Trigger on schedule every 1 hour
+  Objective is ```
+    You are a security scanning agent for the app fabric.
+    Scan all deployed apps for IAM policy drift, dependency CVEs,
+    confidentiality violations, and stale secrets. Create a finding
+    for each issue detected. Prioritize internet-facing apps over
+    internal, production over beta.
+  ```
+  Strategy is ```
+    1. Use reflect.apps() to list all active apps
+    2. For each app:
+       a. Use reflect.app(name).definition to load its definition
+       b. Use channel.invoke("security-tools", "describe-iam-policy") to get current policy
+       c. Compare expected vs actual IAM policy
+       d. Check dependency CVEs and secret rotation age
+    3. Use content.create("findings", ...) for each issue found
+    4. Use content.create("scan-runs", ...) to record this execution
+  ```
+  Preconditions are:
+    `Compute.Scopes.contains("findings.triage")`
+  Postconditions are:
+    `After.content_query("findings").size() <= Before.content_query("findings").size() + 100`
+  Anyone with "findings.remediate" can execute this
+
+Compute called "remediator":
+  Transform: takes finding : findings, produces finding : findings
+  Provider is "ai-agent"
+  Identity: service
+  Trigger on event "finding.created"
+  Objective is ```
+    You are a remediation agent. Attempt safe auto-remediation for
+    security findings. Only act where the fix is deterministic and
+    reversible. Flag for human review if judgment is needed.
+  ```
+  Strategy is ```
+    1. Read the finding and classify:
+       - iam-drift: use channel.invoke("security-tools", "restrict-policy")
+         to narrow the IAM policy to expected permissions
+       - stale-secret: use channel.invoke("security-tools", "rotate-secret")
+         to rotate the expired credential
+       - confidentiality-violation: flag for human (requires definition change)
+       - cve, state-deadlock, error-spike: flag for human
+    2. For auto-remediable: state.transition(finding, "auto-fix-applied")
+    3. For human-required: state.transition(finding, "flagged-for-human")
+  ```
+  Preconditions are:
+    `Compute.Scopes.contains("findings.remediate")`
+  Postconditions are:
+    `After.content_query("findings").filter(f, f.remediation == "detected").size() <= Before.content_query("findings").filter(f, f.remediation == "detected").size()`
+  Anyone with "findings.remediate" can execute this
+
+When `finding.remediation.enters("flagged-for-human")`:
+  Send finding to "slack"
+  Log level: INFO
+
+When `finding.created && finding.severity == "critical"`:
+  Send finding to "slack"
+  Log level: WARN
+
+As a platform engineer, I want to see all active findings
+  so that I can monitor fabric security posture:
+    Show a page called "Security Dashboard"
+    Display count of findings grouped by severity
+    Display a table of findings with columns: app name, finding type, severity, remediation, detected at, remediation action
+    Allow filtering by finding type, severity, and remediation
+    This table subscribes to findings changes
+
+As a security reviewer, I want to review flagged findings
+  so that I can handle cases the agent cannot:
+    Show a page called "Review Queue"
+    Display a table of findings with columns: app name, finding type, severity, summary, details, remediation action
+    Allow filtering by finding type and severity
+
+As an app owner, I want to see findings for my apps
+  so that I can understand my security posture:
+    Show a page called "My Apps"
+    Display a table of findings with columns: finding type, severity, remediation, summary, detected at
+    Allow filtering by finding type and severity
+
+Navigation bar:
+  "Dashboard" links to "Security Dashboard" visible to platform engineer
+  "Review" links to "Review Queue" visible to platform engineer, security reviewer
+  "My Apps" links to "My Apps" visible to all
+
+Expose a REST API at /api/v1:
+  GET    /findings                    lists findings
+  POST   /findings                    creates a finding
+  GET    /findings/{id}               gets a finding
+  PUT    /findings/{id}               updates a finding
+  POST   /findings/{id}/analyze       transitions to analyzing
+  POST   /findings/{id}/auto-fix      transitions to auto-fix-applied
+  POST   /findings/{id}/flag          transitions to flagged-for-human
+  POST   /findings/{id}/verify        transitions to verified
+  POST   /findings/{id}/close         transitions to closed
+  GET    /scan-runs                   lists scan runs
+  POST   /scan-runs                   creates a scan run
+  GET    /scan-runs/{id}              gets a scan run

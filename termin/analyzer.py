@@ -383,6 +383,22 @@ class Analyzer:
                                 f'scope "{req.scope}"',
                         line=req.line,
                     ))
+            # Validate actions
+            for action in channel.actions:
+                for scope in action.required_scopes:
+                    if scope not in self.scope_names:
+                        self.errors.add(SemanticError(
+                            message=f'Action "{action.name}" on Channel "{channel.name}" '
+                                    f'references undefined scope "{scope}"',
+                            line=action.line,
+                        ))
+            # Warn if Channel has neither carries nor actions
+            if not channel.carries and not channel.actions:
+                self.errors.add(SemanticError(
+                    message=f'Channel "{channel.name}" has no data (Carries) and no Actions. '
+                            f'A Channel must carry content, expose actions, or both.',
+                    line=channel.line,
+                ))
 
     def _is_channel_internal(self, channel) -> bool:
         """Check if a channel is internal."""
@@ -391,7 +407,11 @@ class Analyzer:
     def _check_channel_has_auth(self) -> None:
         """Every non-internal Channel must have auth requirements."""
         for channel in self.program.channels:
-            if not self._is_channel_internal(channel) and not channel.requirements:
+            if self._is_channel_internal(channel):
+                continue
+            has_channel_reqs = bool(channel.requirements)
+            has_action_scopes = any(act.required_scopes for act in channel.actions)
+            if not has_channel_reqs and not has_action_scopes:
                 self.errors.add(SecurityError(
                     message=f'Channel "{channel.name}" has no authentication requirements. '
                             f'Every external Channel must declare required scopes.',

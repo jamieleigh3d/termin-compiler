@@ -505,6 +505,160 @@ class TestComputeDemoIR:
 
 
 # ============================================================
+# Channel Demo: all Channel patterns
+# ============================================================
+
+class TestChannelDemoIR:
+    @classmethod
+    def setup_class(cls):
+        cls.spec = _load_and_lower("channel_demo.termin")
+
+    def test_six_channels(self):
+        assert len(self.spec.channels) == 6
+
+    def test_inbound_reliable_data_channel(self):
+        ch = next(c for c in self.spec.channels if c.name.snake == "github_webhooks")
+        assert ch.direction == ChannelDirection.INBOUND
+        assert ch.delivery == ChannelDelivery.RELIABLE
+        assert ch.carries_content == "deployments"
+        assert len(ch.actions) == 0
+
+    def test_inbound_realtime_data_channel(self):
+        ch = next(c for c in self.spec.channels if c.name.snake == "monitoring_feed")
+        assert ch.direction == ChannelDirection.INBOUND
+        assert ch.delivery == ChannelDelivery.REALTIME
+        assert ch.carries_content == "alerts"
+
+    def test_outbound_reliable_data_channel(self):
+        ch = next(c for c in self.spec.channels if c.name.snake == "pagerduty")
+        assert ch.direction == ChannelDirection.OUTBOUND
+        assert ch.delivery == ChannelDelivery.RELIABLE
+        assert ch.carries_content == "incidents"
+
+    def test_action_only_channel(self):
+        ch = next(c for c in self.spec.channels if c.name.snake == "cloud_provider")
+        assert ch.carries_content == ""
+        assert ch.direction == ChannelDirection.OUTBOUND
+        assert len(ch.actions) == 3
+
+    def test_action_channel_verb_types(self):
+        ch = next(c for c in self.spec.channels if c.name.snake == "cloud_provider")
+        restart = next(a for a in ch.actions if a.name.snake == "restart_service")
+        assert restart.takes[0].name == "service"
+        assert restart.takes[0].param_type == "text"
+        assert restart.takes[1].name == "region"
+        scale = next(a for a in ch.actions if a.name.snake == "scale_service")
+        assert scale.takes[1].name == "replicas"
+        assert scale.takes[1].param_type == "number"
+        rollback = next(a for a in ch.actions if a.name.snake == "rollback_deployment")
+        assert rollback.returns[0].name == "deployment id"
+
+    def test_hybrid_channel(self):
+        ch = next(c for c in self.spec.channels if c.name.snake == "slack")
+        assert ch.carries_content == "incidents"
+        assert ch.direction == ChannelDirection.BIDIRECTIONAL
+        assert ch.delivery == ChannelDelivery.REALTIME
+        assert len(ch.actions) == 2
+        assert len(ch.requirements) == 1
+
+    def test_internal_channel_no_auth(self):
+        ch = next(c for c in self.spec.channels if c.name.snake == "incident_bus")
+        assert ch.direction == ChannelDirection.INTERNAL
+        assert ch.delivery == ChannelDelivery.AUTO
+        assert len(ch.requirements) == 0
+
+    def test_three_event_channel_sends(self):
+        sends = [e for e in self.spec.events if e.action and e.action.send_channel]
+        assert len(sends) == 3
+        channels = {e.action.send_channel for e in sends}
+        assert channels == {"pagerduty", "slack", "incident-bus"}
+
+    def test_event_send_log_levels(self):
+        sends = [e for e in self.spec.events if e.action and e.action.send_channel]
+        pager = next(e for e in sends if e.action.send_channel == "pagerduty")
+        assert pager.log_level == "ERROR"
+        slack = next(e for e in sends if e.action.send_channel == "slack")
+        assert slack.log_level == "INFO"
+        bus = next(e for e in sends if e.action.send_channel == "incident-bus")
+        assert bus.log_level == "WARN"
+
+    def test_agent_compute_with_trigger(self):
+        comp = next(c for c in self.spec.computes if c.name.snake == "auto_mitigate")
+        assert comp.provider == "ai-agent"
+        assert comp.trigger == 'event "incident.created"'
+        assert len(comp.preconditions) == 1
+        assert len(comp.postconditions) == 1
+
+
+# ============================================================
+# Security Agent: Channel Actions + Event Send
+# ============================================================
+
+class TestSecurityAgentIR:
+    @classmethod
+    def setup_class(cls):
+        cls.spec = _load_and_lower("security_agent.termin")
+
+    def test_two_channels(self):
+        assert len(self.spec.channels) == 2
+
+    def test_security_tools_action_channel(self):
+        ch = next(c for c in self.spec.channels if c.name.snake == "security_tools")
+        assert ch.carries_content == ""  # action-only, no data carry
+        assert ch.direction == ChannelDirection.OUTBOUND
+        assert ch.delivery == ChannelDelivery.RELIABLE
+        assert len(ch.actions) == 3
+
+    def test_restrict_policy_action(self):
+        ch = next(c for c in self.spec.channels if c.name.snake == "security_tools")
+        act = next(a for a in ch.actions if a.name.snake == "restrict_policy")
+        assert len(act.takes) == 2
+        assert act.takes[0].name == "role"
+        assert act.takes[0].param_type == "text"
+        assert act.takes[1].name == "policy"
+        assert act.takes[1].param_type == "text"
+        assert len(act.returns) == 1
+        assert act.returns[0].name == "result"
+        assert ("findings.remediate",) == act.required_scopes
+
+    def test_rotate_secret_action(self):
+        ch = next(c for c in self.spec.channels if c.name.snake == "security_tools")
+        act = next(a for a in ch.actions if a.name.snake == "rotate_secret")
+        assert len(act.takes) == 1
+        assert act.takes[0].name == "arn"
+        assert ("findings.remediate",) == act.required_scopes
+
+    def test_slack_hybrid_channel(self):
+        """Slack carries data AND exposes actions."""
+        ch = next(c for c in self.spec.channels if c.name.snake == "slack")
+        assert ch.carries_content == "findings"
+        assert ch.direction == ChannelDirection.BIDIRECTIONAL
+        assert ch.delivery == ChannelDelivery.REALTIME
+        assert len(ch.actions) == 1
+        assert ch.actions[0].name.snake == "post_message"
+
+    def test_event_send_to_channel(self):
+        """Events with 'Send X to channel' produce EventActionSpec with send_channel."""
+        send_events = [e for e in self.spec.events if e.action and e.action.send_channel]
+        assert len(send_events) == 2
+        for ev in send_events:
+            assert ev.action.send_channel == "slack"
+            assert ev.action.send_content == "finding"
+
+    def test_agent_computes(self):
+        scanner = next(c for c in self.spec.computes if c.name.snake == "scanner")
+        assert scanner.provider == "ai-agent"
+        assert scanner.trigger == "schedule every 1 hour"
+        assert len(scanner.preconditions) == 1
+        assert len(scanner.postconditions) == 1
+
+    def test_remediator_compute(self):
+        rem = next(c for c in self.spec.computes if c.name.snake == "remediator")
+        assert rem.provider == "ai-agent"
+        assert rem.trigger == 'event "finding.created"'
+
+
+# ============================================================
 # Presentation v2: Component tree tests
 # ============================================================
 
