@@ -189,21 +189,26 @@ Restructured April 2026 to prioritize end-to-end demo completeness. Confidential
 
 ### Block E: Research & Future
 
-| # | Item | Effort | Subsystems | Design Doc |
-|---|------|--------|------------|------------|
-| E1 | Multi-file apps: research how multiple .termin source files compose | Research | compiler | appserver-v2.md § Library dependencies |
-| E2 | Package signatures (cryptographic signing of .termin.pkg) | Research | compiler, runtime | — |
-| E3 | Enum constraint enforcement on API creates | Small | runtime (app) | DONE — 422 with allowed values |
-| E4 | Min/max constraint enforcement on API creates | Small | runtime (app) | — (xfail in conformance suite) |
-| E5 | Tier 3: Behavioral round-trip tests (form submit → API verify) | Medium | conformance | testing-methodology.md § Tier 3 |
-| E6 | Automation API contract for programmatic UI interaction | Research | runtime, conformance | testing-methodology.md § Tier 3 |
-| E7 | Role reflection in CEL: `reflect.role("engineer").Scopes` | Small | runtime (reflection) | termin-cel-types.md § 7 |
-| E8 | Triple-backtick multi-line expression parser support | Medium | compiler (grammar, parser) | termin-cel-types.md § 1.2 |
-| E9 | AI agent support: `[[ ]]` Provider, Preconditions, Postconditions | Large | compiler, runtime | msgs/001-ai-agents.md |
-| E10 | Transaction staging (snapshot isolation for Compute execution) | Large | runtime | msgs/001-ai-agents.md |
-| E11 | Compiler CEL body analysis (field dependencies, reclassification points) | Medium | compiler (analyzer) | termin-confidentiality-runtime-design.md § B2 |
-| E12 | `link_template` on data_table columns | Small | compiler, runtime (presentation) | msgs/002-data-table-links.md |
-| E13 | Server-side CEL evaluation for text components | Small | runtime (presentation) | msgs/002-data-table-links.md |
+| # | Item | Effort | Subsystems | Design Doc | Status |
+|---|------|--------|------------|------------|--------|
+| E1 | Multi-file apps: research how multiple .termin source files compose | Research | compiler | appserver-v2.md § Library dependencies | |
+| E2 | Package signatures (cryptographic signing of .termin.pkg) | Research | compiler, runtime | — | |
+| E3 | Enum constraint enforcement on API creates | Small | runtime (app) | — | DONE |
+| E4 | Min/max constraint enforcement on API creates | Small | runtime (app) | — | DONE |
+| E5 | Tier 3: Behavioral round-trip tests (form submit → API verify) | Medium | conformance | testing-methodology.md § Tier 3 | DONE |
+| E6 | Automation API contract for programmatic UI interaction | Research | runtime, conformance | testing-methodology.md § Tier 3 | |
+| E7 | Role reflection in CEL: `reflect.role("engineer").Scopes` | Small | runtime (reflection) | termin-cel-types.md § 7 | |
+| E8 | Triple-backtick multi-line expression parser support | Medium | compiler (grammar, parser) | termin-cel-types.md § 1.2 | DONE |
+| E9 | AI agent support: Provider, Preconditions, Postconditions | Large | compiler, runtime | msgs/001-ai-agents.md | DONE (grammar/IR) |
+| E10 | Transaction staging (snapshot isolation for Compute execution) | Large | runtime | msgs/001-ai-agents.md | DONE (basic) |
+| E11 | Compiler CEL body analysis (field dependencies, reclassification points) | Medium | compiler (analyzer) | termin-confidentiality-runtime-design.md § B2 | |
+| E12 | `link_template` on data_table columns | Small | compiler, runtime (presentation) | msgs/002-data-table-links.md | DONE |
+| E13 | Server-side CEL evaluation for text components | Small | runtime (presentation) | msgs/002-data-table-links.md | DONE |
+| E14 | Wire Compute system type into runtime CEL context | Small | runtime (app, expression) | termin-cel-types.md § 2.2 | |
+| E15 | Full Before/After snapshots backed by transaction staging | Medium | runtime (transaction) | termin-cel-types.md § 2.3 | |
+| E16 | Runtime scheduler for `Trigger on schedule` Computes | Medium | runtime (new module) | msgs/001-ai-agents.md | |
+| E17 | Agent tool API: content.query, state.transition, channel.send, reflect.* | Large | runtime (new module) | msgs/001-ai-agents.md | |
+| E18 | CCP/ECP package system: `Uses "pkg" version "1.0"`, package resolution | Large | compiler, runtime | msgs/001-ai-agents.md | |
 
 ---
 
