@@ -113,6 +113,21 @@ Termin is a governed application substrate where business software is structural
 
 ---
 
+### v1.0 Backlog (Post-Phase 3)
+
+Items deferred to v1.0 or later. Not prioritized, not scheduled. Captured here so they don't get lost.
+
+| Item | Source | Notes |
+|------|--------|-------|
+| Multi-file apps: composition of multiple .termin source files | appserver-v2.md § Library dependencies | Research needed: import syntax, namespace resolution, cross-file Content/Channel references, compilation order |
+| Confidentiality scope hierarchies | appserver-v2.md | Tree-walk scope resolution (e.g., `hr.salary` implies `hr`) |
+| Row-level security filters | appserver-v2.md | Per-identity record filtering (only see your own records) |
+| Agent-authored application deployment | product-strategy.md | Agent writes .termin, compiles, deploys — requires stable agent runtime first |
+| Agent prompt versioning and rollback | product-strategy.md | Treat prompts as deployable artifacts |
+| Delegate identity mode for agents | confidentiality-spec.md | Agent acts on behalf of caller (vs service identity) |
+
+---
+
 ## Documentation Index
 
 | Document | Purpose | Status |
@@ -180,7 +195,6 @@ Previously "Block E: Research & Future." Items not yet done, reprioritized.
 |---|------|--------|------------|-------|--------|
 | E7 | Role reflection in CEL: `reflect.role("engineer").Scopes` | Small | runtime (reflection) | termin-cel-types.md § 7 | |
 | E11 | Compiler CEL body analysis (field dependencies, reclassification) | Medium | compiler (analyzer) | termin-confidentiality-runtime-design.md § B2 | |
-| E1 | Multi-file apps: research composition of .termin sources | Research | compiler | appserver-v2.md § Library dependencies | |
 | E2 | Package signatures (cryptographic signing of .termin.pkg) | Research | compiler, runtime | — | |
 | E6 | Automation API contract for programmatic UI interaction | Research | runtime, conformance | testing-methodology.md § Tier 3 | |
 

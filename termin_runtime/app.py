@@ -27,15 +27,17 @@ from .confidentiality import (
     check_for_redacted_values, is_redacted,
 )
 from .transaction import Transaction
+from .channels import ChannelDispatcher, ChannelError, ChannelScopeError, ChannelValidationError, load_deploy_config
 
 
-def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None) -> FastAPI:
+def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None, deploy_config: dict = None) -> FastAPI:
     """Create a fully configured FastAPI app from an IR JSON string.
 
     Args:
         ir_json: The IR JSON string.
         db_path: Path to the SQLite database file.
         seed_data: Optional dict of {content_name: [record_dicts]} to seed on first run.
+        deploy_config: Optional deploy config dict. If None, loads from termin.deploy.json.
     """
     ir = json.loads(ir_json)
     app_name = ir.get("name", "Termin App")
@@ -45,6 +47,11 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
     terminator = TerminAtor()
     event_bus = EventBus()
     reflection = ReflectionEngine(ir_json)
+
+    # Channel dispatcher
+    if deploy_config is None:
+        deploy_config = load_deploy_config()
+    channel_dispatcher = ChannelDispatcher(ir, deploy_config)
 
     # Identity
     roles = {}
@@ -156,6 +163,13 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
             finally:
                 await db.close()
         print(f"[Termin] Phase 4: Registering primitives")
+        # Channel dispatcher startup
+        await channel_dispatcher.startup()
+        configured_channels = [ch["name"]["display"] for ch in ir.get("channels", []) if channel_dispatcher.is_configured(ch["name"]["display"])]
+        if configured_channels:
+            print(f"[Termin] Phase 4a: Channels connected: {', '.join(configured_channels)}")
+        elif ir.get("channels"):
+            print(f"[Termin] Phase 4a: {len(ir['channels'])} channel(s) declared (no deploy config)")
         print(f"[Termin] Phase 5a: Starting WebSocket forwarder")
 
         async def _ws_forwarder():
@@ -175,6 +189,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
         print(f"[Termin] Phase 5: Ready to serve")
         yield
         forwarder.cancel()
+        await channel_dispatcher.shutdown()
         print(f"[Termin] Shutting down...")
 
     app = FastAPI(title=app_name, lifespan=lifespan)
@@ -364,6 +379,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                         if expr_eval.evaluate(ev["condition_expr"], ctx):
                             action = ev.get("action")
                             if action and action.get("column_mapping"):
+                                # Create action: insert into target content
                                 cols = [p[0] for p in action["column_mapping"]]
                                 vals = [record.get(p[1], "") for p in action["column_mapping"]]
                                 placeholders = ", ".join("?" for _ in cols)
@@ -373,6 +389,16 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
                                     tuple(vals)
                                 )
                                 await db.commit()
+                            elif action and action.get("send_channel"):
+                                # Channel send action: dispatch record to channel
+                                try:
+                                    await channel_dispatcher.channel_send(
+                                        action["send_channel"], record, user_scopes=None
+                                    )
+                                    log = ev.get("log_level", "INFO")
+                                    print(f"[Termin] [{log}] Event sent {action.get('send_content', 'record')} to channel '{action['send_channel']}'")
+                                except ChannelError as ce:
+                                    print(f"[Termin] [ERROR] Channel send failed: {ce}")
                             await event_bus.publish({"type": f"{ev.get('source_content', '')}_event", "log_level": ev.get("log_level", "INFO")})
                     except Exception:
                         pass
@@ -1001,5 +1027,135 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
             make_form_post(page, slug, reqs["form_target"],
                           sm_lookup.get(reqs["form_target"]), reqs["create_as"],
                           reqs["unique_fields"], reqs["after_save"])
+
+    # ── Channel action invocation endpoint ──
+    @app.post("/api/v1/channels/{channel_name}/actions/{action_name}")
+    async def invoke_channel_action(channel_name: str, action_name: str, request: Request):
+        """Invoke a typed action on an external channel."""
+        user = get_current_user(request)
+        user_scopes = set(user.get("scopes", []))
+
+        spec = channel_dispatcher.get_spec(channel_name)
+        if not spec:
+            raise HTTPException(status_code=404, detail=f"Channel '{channel_name}' not found")
+
+        action_spec = channel_dispatcher.get_action_spec(channel_name, action_name)
+        if not action_spec:
+            raise HTTPException(status_code=404, detail=f"Action '{action_name}' not found on channel '{channel_name}'")
+
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+
+        try:
+            result = await channel_dispatcher.channel_invoke(
+                channel_name, action_name, body, user_scopes=user_scopes
+            )
+            return result
+        except ChannelScopeError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except ChannelValidationError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        except ChannelError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+
+    # ── Channel send endpoint ──
+    @app.post("/api/v1/channels/{channel_name}/send")
+    async def channel_send_endpoint(channel_name: str, request: Request):
+        """Send data through an outbound channel."""
+        user = get_current_user(request)
+        user_scopes = set(user.get("scopes", []))
+
+        spec = channel_dispatcher.get_spec(channel_name)
+        if not spec:
+            raise HTTPException(status_code=404, detail=f"Channel '{channel_name}' not found")
+
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+
+        try:
+            result = await channel_dispatcher.channel_send(
+                channel_name, body, user_scopes=user_scopes
+            )
+            return result
+        except ChannelScopeError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except ChannelError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+
+    # ── Inbound webhook handler ──
+    for ch in ir.get("channels", []):
+        ch_direction = ch.get("direction", "")
+        if ch_direction not in ("INBOUND", "BIDIRECTIONAL"):
+            continue
+        ch_display = ch["name"]["display"]
+        ch_snake = ch["name"]["snake"]
+        ch_carries = ch.get("carries_content", "")
+        if not ch_carries:
+            continue  # action-only channels don't receive data
+
+        webhook_path = f"/webhooks/{ch_snake}"
+
+        def _make_webhook(ch_name=ch_display, ch_content=ch_carries, ch_spec=ch):
+            @app.post(webhook_path, name=f"webhook_{ch_snake}")
+            async def webhook_receive(request: Request):
+                # Scope check: use send requirements (sender must have scope to push data)
+                user = get_current_user(request)
+                user_scopes = set(user.get("scopes", []))
+                for req in ch_spec.get("requirements", []):
+                    if req["direction"] == "send" and req["scope"] not in user_scopes:
+                        raise HTTPException(
+                            status_code=403,
+                            detail=f"Scope '{req['scope']}' required to send to channel '{ch_name}'"
+                        )
+
+                try:
+                    body = await request.json()
+                except Exception:
+                    raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+                # Create record in the carried content table
+                schema = content_lookup.get(ch_content)
+                if not schema:
+                    raise HTTPException(status_code=500, detail=f"Content '{ch_content}' not found")
+
+                # Filter body to known columns
+                known_cols = set()
+                for f in schema.get("fields", []):
+                    fname = f.get("name", "")
+                    if isinstance(fname, dict):
+                        known_cols.add(fname.get("snake", ""))
+                    else:
+                        known_cols.add(str(fname))
+                record_data = {k: v for k, v in body.items() if k in known_cols}
+
+                if not record_data:
+                    raise HTTPException(status_code=422, detail="No valid fields in payload")
+
+                db = await get_db(db_path)
+                try:
+                    record = await create_record(db, ch_content, record_data, sm_lookup.get(ch_content))
+                    await run_event_handlers(db, ch_content, "created", record)
+
+                    # Update channel metrics
+                    channel_dispatcher._metrics.get(ch_name, {})["received"] = \
+                        channel_dispatcher._metrics.get(ch_name, {}).get("received", 0) + 1
+
+                    # Publish to event bus for WebSocket subscribers
+                    await event_bus.publish({
+                        "channel_id": f"content.{ch_content}.created",
+                        "data": record,
+                    })
+
+                    print(f"[Termin] Webhook '{ch_name}': created {ch_content} record (id={record.get('id', '?')})")
+                    return {"ok": True, "id": record.get("id"), "channel": ch_name}
+                finally:
+                    await db.close()
+
+        _make_webhook()
+        print(f"[Termin] Registered webhook: POST {webhook_path} -> {ch_carries}")
 
     return app

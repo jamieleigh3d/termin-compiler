@@ -19,6 +19,7 @@ setup(
         "jinja2>=3.1.0",
         "python-multipart>=0.0.6",
         "cel-python>=0.5.0",
+        "httpx>=0.25.0",
     ],
     package_data={
         "termin": ["termin.peg"],
