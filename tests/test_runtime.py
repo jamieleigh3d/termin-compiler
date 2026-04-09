@@ -601,7 +601,7 @@ class TestStateTransitionScopeGating:
         """A user with the right scope can perform a valid transition."""
         with _make_client("warehouse") as client:
             sku = self._create_product(client)
-            # warehouse manager has "write inventory" scope -> can activate
+            # warehouse manager has "inventory.write" scope -> can activate
             client.cookies.set("termin_role", "warehouse manager")
             r = client.post(f"/api/v1/products/{sku}/activate")
             assert r.status_code == 200
@@ -620,7 +620,7 @@ class TestStateTransitionScopeGating:
         """A user without the required scope gets 403."""
         with _make_client("warehouse") as client:
             sku = self._create_product(client)
-            # executive has "read inventory" only — cannot activate (needs "write inventory")
+            # executive has "inventory.read" only — cannot activate (needs "inventory.write")
             client.cookies.set("termin_role", "executive")
             r = client.post(f"/api/v1/products/{sku}/activate")
             assert r.status_code == 403

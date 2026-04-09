@@ -5,9 +5,9 @@ Id: cb4aef7b-1f54-41a2-8999-55d9367a9304
 (This is a comment.)
 
 Users authenticate with stub
-Scopes are "view app"
-Anonymous has "view app"
-A "user" has "view app"
+Scopes are "app.view"
+Anonymous has "app.view"
+A "user" has "app.view"
 
 As Anonymous, I want to see a page "Hello" so that I can be greeted:
   Display text "Anon, Hello!"

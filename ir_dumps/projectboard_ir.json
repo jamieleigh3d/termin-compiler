@@ -7,32 +7,32 @@
   "auth": {
     "provider": "stub",
     "scopes": [
-      "view projects",
-      "manage tasks",
-      "manage sprints",
-      "admin projects"
+      "projects.view",
+      "tasks.manage",
+      "sprints.manage",
+      "projects.admin"
     ],
     "roles": [
       {
         "name": "developer",
         "scopes": [
-          "view projects",
-          "manage tasks"
+          "projects.view",
+          "tasks.manage"
         ]
       },
       {
         "name": "project manager",
         "scopes": [
-          "view projects",
-          "manage tasks",
-          "manage sprints",
-          "admin projects"
+          "projects.view",
+          "tasks.manage",
+          "sprints.manage",
+          "projects.admin"
         ]
       },
       {
         "name": "stakeholder",
         "scopes": [
-          "view projects"
+          "projects.view"
         ]
       }
     ]
@@ -473,14 +473,14 @@
   "access_grants": [
     {
       "content": "projects",
-      "scope": "view projects",
+      "scope": "projects.view",
       "verbs": [
         "VIEW"
       ]
     },
     {
       "content": "projects",
-      "scope": "admin projects",
+      "scope": "projects.admin",
       "verbs": [
         "CREATE",
         "UPDATE"
@@ -488,21 +488,21 @@
     },
     {
       "content": "projects",
-      "scope": "admin projects",
+      "scope": "projects.admin",
       "verbs": [
         "DELETE"
       ]
     },
     {
       "content": "team_members",
-      "scope": "view projects",
+      "scope": "projects.view",
       "verbs": [
         "VIEW"
       ]
     },
     {
       "content": "team_members",
-      "scope": "admin projects",
+      "scope": "projects.admin",
       "verbs": [
         "CREATE",
         "UPDATE"
@@ -510,14 +510,14 @@
     },
     {
       "content": "sprints",
-      "scope": "view projects",
+      "scope": "projects.view",
       "verbs": [
         "VIEW"
       ]
     },
     {
       "content": "sprints",
-      "scope": "manage sprints",
+      "scope": "sprints.manage",
       "verbs": [
         "CREATE",
         "UPDATE"
@@ -525,14 +525,14 @@
     },
     {
       "content": "tasks",
-      "scope": "view projects",
+      "scope": "projects.view",
       "verbs": [
         "VIEW"
       ]
     },
     {
       "content": "tasks",
-      "scope": "manage tasks",
+      "scope": "tasks.manage",
       "verbs": [
         "CREATE",
         "UPDATE"
@@ -540,21 +540,21 @@
     },
     {
       "content": "tasks",
-      "scope": "admin projects",
+      "scope": "projects.admin",
       "verbs": [
         "DELETE"
       ]
     },
     {
       "content": "time_logs",
-      "scope": "view projects",
+      "scope": "projects.view",
       "verbs": [
         "VIEW"
       ]
     },
     {
       "content": "time_logs",
-      "scope": "manage tasks",
+      "scope": "tasks.manage",
       "verbs": [
         "CREATE"
       ]
@@ -576,32 +576,32 @@
         {
           "from_state": "backlog",
           "to_state": "in sprint",
-          "required_scope": "manage sprints"
+          "required_scope": "sprints.manage"
         },
         {
           "from_state": "in sprint",
           "to_state": "in progress",
-          "required_scope": "manage tasks"
+          "required_scope": "tasks.manage"
         },
         {
           "from_state": "in progress",
           "to_state": "in review",
-          "required_scope": "manage tasks"
+          "required_scope": "tasks.manage"
         },
         {
           "from_state": "in review",
           "to_state": "done",
-          "required_scope": "manage tasks"
+          "required_scope": "tasks.manage"
         },
         {
           "from_state": "in review",
           "to_state": "in progress",
-          "required_scope": "manage tasks"
+          "required_scope": "tasks.manage"
         },
         {
           "from_state": "done",
           "to_state": "in progress",
-          "required_scope": "manage tasks"
+          "required_scope": "tasks.manage"
         }
       ],
       "primitive_type": "content"
@@ -614,7 +614,7 @@
       "path": "/api/v1/projects",
       "kind": "LIST",
       "content_ref": "projects",
-      "required_scope": "view projects",
+      "required_scope": "projects.view",
       "lookup_column": "id",
       "target_state": null
     },
@@ -623,7 +623,7 @@
       "path": "/api/v1/projects",
       "kind": "CREATE",
       "content_ref": "projects",
-      "required_scope": "admin projects",
+      "required_scope": "projects.admin",
       "lookup_column": "id",
       "target_state": null
     },
@@ -632,7 +632,7 @@
       "path": "/api/v1/projects/{id}",
       "kind": "GET_ONE",
       "content_ref": "projects",
-      "required_scope": "view projects",
+      "required_scope": "projects.view",
       "lookup_column": "name",
       "target_state": null
     },
@@ -641,7 +641,7 @@
       "path": "/api/v1/projects/{id}",
       "kind": "UPDATE",
       "content_ref": "projects",
-      "required_scope": "admin projects",
+      "required_scope": "projects.admin",
       "lookup_column": "name",
       "target_state": null
     },
@@ -650,7 +650,7 @@
       "path": "/api/v1/projects/{id}",
       "kind": "DELETE",
       "content_ref": "projects",
-      "required_scope": "admin projects",
+      "required_scope": "projects.admin",
       "lookup_column": "name",
       "target_state": null
     },
@@ -659,7 +659,7 @@
       "path": "/api/v1/team-members",
       "kind": "LIST",
       "content_ref": "team_members",
-      "required_scope": "view projects",
+      "required_scope": "projects.view",
       "lookup_column": "id",
       "target_state": null
     },
@@ -668,7 +668,7 @@
       "path": "/api/v1/team-members",
       "kind": "CREATE",
       "content_ref": "team_members",
-      "required_scope": "admin projects",
+      "required_scope": "projects.admin",
       "lookup_column": "id",
       "target_state": null
     },
@@ -677,7 +677,7 @@
       "path": "/api/v1/sprints",
       "kind": "LIST",
       "content_ref": "sprints",
-      "required_scope": "view projects",
+      "required_scope": "projects.view",
       "lookup_column": "id",
       "target_state": null
     },
@@ -686,7 +686,7 @@
       "path": "/api/v1/sprints",
       "kind": "CREATE",
       "content_ref": "sprints",
-      "required_scope": "manage sprints",
+      "required_scope": "sprints.manage",
       "lookup_column": "id",
       "target_state": null
     },
@@ -695,7 +695,7 @@
       "path": "/api/v1/sprints/{id}",
       "kind": "UPDATE",
       "content_ref": "sprints",
-      "required_scope": "manage sprints",
+      "required_scope": "sprints.manage",
       "lookup_column": "id",
       "target_state": null
     },
@@ -704,7 +704,7 @@
       "path": "/api/v1/tasks",
       "kind": "LIST",
       "content_ref": "tasks",
-      "required_scope": "view projects",
+      "required_scope": "projects.view",
       "lookup_column": "id",
       "target_state": null
     },
@@ -713,7 +713,7 @@
       "path": "/api/v1/tasks",
       "kind": "CREATE",
       "content_ref": "tasks",
-      "required_scope": "manage tasks",
+      "required_scope": "tasks.manage",
       "lookup_column": "id",
       "target_state": null
     },
@@ -722,7 +722,7 @@
       "path": "/api/v1/tasks/{id}",
       "kind": "GET_ONE",
       "content_ref": "tasks",
-      "required_scope": "view projects",
+      "required_scope": "projects.view",
       "lookup_column": "id",
       "target_state": null
     },
@@ -731,7 +731,7 @@
       "path": "/api/v1/tasks/{id}",
       "kind": "UPDATE",
       "content_ref": "tasks",
-      "required_scope": "manage tasks",
+      "required_scope": "tasks.manage",
       "lookup_column": "id",
       "target_state": null
     },
@@ -740,7 +740,7 @@
       "path": "/api/v1/tasks/{id}",
       "kind": "DELETE",
       "content_ref": "tasks",
-      "required_scope": "admin projects",
+      "required_scope": "projects.admin",
       "lookup_column": "id",
       "target_state": null
     },
@@ -794,7 +794,7 @@
       "path": "/api/v1/time-logs",
       "kind": "LIST",
       "content_ref": "time_logs",
-      "required_scope": "view projects",
+      "required_scope": "projects.view",
       "lookup_column": "id",
       "target_state": null
     },
@@ -803,7 +803,7 @@
       "path": "/api/v1/time-logs",
       "kind": "CREATE",
       "content_ref": "time_logs",
-      "required_scope": "manage tasks",
+      "required_scope": "tasks.manage",
       "lookup_column": "id",
       "target_state": null
     }
@@ -916,13 +916,13 @@
       "name": "Log Time",
       "slug": "log_time",
       "role": "developer",
-      "required_scope": "manage tasks",
+      "required_scope": "tasks.manage",
       "children": [
         {
           "type": "form",
           "props": {
             "target": "time_logs",
-            "submit_scope": "manage tasks"
+            "submit_scope": "tasks.manage"
           },
           "style": {},
           "layout": {},
@@ -976,13 +976,13 @@
       "name": "Create Task",
       "slug": "create_task",
       "role": "project manager",
-      "required_scope": "manage tasks",
+      "required_scope": "tasks.manage",
       "children": [
         {
           "type": "form",
           "props": {
             "target": "tasks",
-            "submit_scope": "manage tasks"
+            "submit_scope": "tasks.manage"
           },
           "style": {},
           "layout": {},
@@ -1119,13 +1119,13 @@
       "name": "New Project",
       "slug": "new_project",
       "role": "project manager",
-      "required_scope": "admin projects",
+      "required_scope": "projects.admin",
       "children": [
         {
           "type": "form",
           "props": {
             "target": "projects",
-            "submit_scope": "admin projects"
+            "submit_scope": "projects.admin"
           },
           "style": {},
           "layout": {},
@@ -1177,13 +1177,13 @@
       "name": "Sprint Planning",
       "slug": "sprint_planning",
       "role": "project manager",
-      "required_scope": "manage sprints",
+      "required_scope": "sprints.manage",
       "children": [
         {
           "type": "form",
           "props": {
             "target": "sprints",
-            "submit_scope": "manage sprints"
+            "submit_scope": "sprints.manage"
           },
           "style": {},
           "layout": {},
@@ -1246,13 +1246,13 @@
       "name": "Team Management",
       "slug": "team_management",
       "role": "project manager",
-      "required_scope": "admin projects",
+      "required_scope": "projects.admin",
       "children": [
         {
           "type": "form",
           "props": {
             "target": "team_members",
-            "submit_scope": "admin projects"
+            "submit_scope": "projects.admin"
           },
           "style": {},
           "layout": {},

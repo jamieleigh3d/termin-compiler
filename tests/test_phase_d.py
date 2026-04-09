@@ -22,22 +22,22 @@ Application: Phase D Test
   Description: Tests for Phase D features
 
 Users authenticate with stub
-Scopes are "read orders", "write orders", and "admin orders"
+Scopes are "orders.read", "orders.write", and "orders.admin"
 
-An "order clerk" has "read orders" and "write orders"
-An "order manager" has "read orders", "write orders", and "admin orders"
+An "order clerk" has "orders.read" and "orders.write"
+An "order manager" has "orders.read", "orders.write", and "orders.admin"
 
 Content called "orders":
   Each order has a customer which is text, required
   Each order has a total which is currency
-  Anyone with "read orders" can view orders
-  Anyone with "write orders" can create or update orders
+  Anyone with "orders.read" can view orders
+  Anyone with "orders.write" can create or update orders
 
 Content called "order lines":
   Each order line has a parent order which references orders, required
   Each order line has a quantity which is a whole number, minimum 1
-  Anyone with "read orders" can view order lines
-  Anyone with "write orders" can create or update order lines
+  Anyone with "orders.read" can view order lines
+  Anyone with "orders.write" can create or update order lines
 '''
 
 
@@ -193,12 +193,12 @@ class TestStateNonContentParser:
             '  Direction: inbound\n'
             '  Delivery: reliable\n'
             '  Endpoint: /webhooks/orders\n'
-            '  Requires "write orders" to send\n\n'
+            '  Requires "orders.write" to send\n\n'
             'State for channel "order webhook" called "lifecycle":\n'
             '  A webhook starts as "active"\n'
             '  A webhook can also be "paused" or "disabled"\n'
-            '  An active webhook can become paused if the user has "admin orders"\n'
-            '  A paused webhook can become active if the user has "admin orders"\n'
+            '  An active webhook can become paused if the user has "orders.admin"\n'
+            '  A paused webhook can become active if the user has "orders.admin"\n'
         )
         program, errors = parse(source)
         assert errors.ok, errors.format()
@@ -219,11 +219,11 @@ class TestStateNonContentAnalyzer:
             '  Direction: inbound\n'
             '  Delivery: reliable\n'
             '  Endpoint: /webhooks/orders\n'
-            '  Requires "write orders" to send\n\n'
+            '  Requires "orders.write" to send\n\n'
             'State for channel "order webhook" called "lifecycle":\n'
             '  A webhook starts as "active"\n'
             '  A webhook can also be "paused"\n'
-            '  An active webhook can become paused if the user has "admin orders"\n'
+            '  An active webhook can become paused if the user has "orders.admin"\n'
         )
         program, errors = parse(source)
         assert errors.ok, errors.format()
@@ -274,8 +274,8 @@ class TestReflectionEndpoint:
 
     def test_reflection_endpoint_scope_guarded(self):
         code = self._compile_to_code(VALID_BASE)
-        # Should be guarded by the first view scope: "read orders"
-        assert 'require_scope("read orders")' in code
+        # Should be guarded by the first view scope: "orders.read"
+        assert 'require_scope("orders.read")' in code
 
     def test_reflection_endpoint_returns_json(self):
         """Compile, import, and verify the /api/reflect endpoint returns valid JSON."""
@@ -331,11 +331,11 @@ class TestPhaseD_Integration:
         '  Direction: inbound\n'
         '  Delivery: reliable\n'
         '  Endpoint: /webhooks/orders\n'
-        '  Requires "write orders" to send\n\n'
+        '  Requires "orders.write" to send\n\n'
         'State for channel "order webhook" called "lifecycle":\n'
         '  A webhook starts as "active"\n'
         '  A webhook can also be "paused"\n'
-        '  An active webhook can become paused if the user has "admin orders"\n\n'
+        '  An active webhook can become paused if the user has "orders.admin"\n\n'
         'Boundary called "order processing":\n'
         '  Contains orders, order lines\n'
         '  Identity inherits from application\n'

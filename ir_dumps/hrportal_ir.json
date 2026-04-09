@@ -7,43 +7,43 @@
   "auth": {
     "provider": "stub",
     "scopes": [
-      "view_employees",
-      "manage_employees",
-      "access_salary",
-      "access_pii",
-      "view_team_metrics",
-      "manage_hr"
+      "employees.view",
+      "employees.manage",
+      "salary.access",
+      "pii.access",
+      "team_metrics.view",
+      "hr.manage"
     ],
     "roles": [
       {
         "name": "employee",
         "scopes": [
-          "view_employees"
+          "employees.view"
         ]
       },
       {
         "name": "manager",
         "scopes": [
-          "view_employees",
-          "view_team_metrics"
+          "employees.view",
+          "team_metrics.view"
         ]
       },
       {
         "name": "hr business partner",
         "scopes": [
-          "view_employees",
-          "manage_employees",
-          "access_salary",
-          "access_pii",
-          "view_team_metrics",
-          "manage_hr"
+          "employees.view",
+          "employees.manage",
+          "salary.access",
+          "pii.access",
+          "team_metrics.view",
+          "hr.manage"
         ]
       },
       {
         "name": "executive",
         "scopes": [
-          "view_employees",
-          "view_team_metrics"
+          "employees.view",
+          "team_metrics.view"
         ]
       }
     ]
@@ -135,7 +135,7 @@
           "list_type": null,
           "default_expr": null,
           "confidentiality_scopes": [
-            "access_salary"
+            "salary.access"
           ]
         },
         {
@@ -153,7 +153,7 @@
           "list_type": null,
           "default_expr": null,
           "confidentiality_scopes": [
-            "access_salary"
+            "salary.access"
           ]
         },
         {
@@ -171,7 +171,7 @@
           "list_type": null,
           "default_expr": null,
           "confidentiality_scopes": [
-            "access_pii"
+            "pii.access"
           ]
         },
         {
@@ -189,7 +189,7 @@
           "list_type": null,
           "default_expr": null,
           "confidentiality_scopes": [
-            "access_pii"
+            "pii.access"
           ]
         },
         {
@@ -252,7 +252,7 @@
           "list_type": null,
           "default_expr": null,
           "confidentiality_scopes": [
-            "access_salary"
+            "salary.access"
           ]
         },
         {
@@ -401,21 +401,21 @@
       "has_state_machine": true,
       "initial_state": "pending",
       "confidentiality_scopes": [
-        "access_salary"
+        "salary.access"
       ]
     }
   ],
   "access_grants": [
     {
       "content": "employees",
-      "scope": "view_employees",
+      "scope": "employees.view",
       "verbs": [
         "VIEW"
       ]
     },
     {
       "content": "employees",
-      "scope": "manage_employees",
+      "scope": "employees.manage",
       "verbs": [
         "CREATE",
         "UPDATE"
@@ -423,35 +423,35 @@
     },
     {
       "content": "employees",
-      "scope": "manage_hr",
+      "scope": "hr.manage",
       "verbs": [
         "DELETE"
       ]
     },
     {
       "content": "departments",
-      "scope": "view_employees",
+      "scope": "employees.view",
       "verbs": [
         "VIEW"
       ]
     },
     {
       "content": "departments",
-      "scope": "manage_hr",
+      "scope": "hr.manage",
       "verbs": [
         "CREATE"
       ]
     },
     {
       "content": "salary_reviews",
-      "scope": "access_salary",
+      "scope": "salary.access",
       "verbs": [
         "VIEW"
       ]
     },
     {
       "content": "salary_reviews",
-      "scope": "manage_hr",
+      "scope": "hr.manage",
       "verbs": [
         "CREATE",
         "UPDATE"
@@ -472,12 +472,12 @@
         {
           "from_state": "pending",
           "to_state": "approved",
-          "required_scope": "manage_hr"
+          "required_scope": "hr.manage"
         },
         {
           "from_state": "approved",
           "to_state": "applied",
-          "required_scope": "manage_hr"
+          "required_scope": "hr.manage"
         }
       ],
       "primitive_type": "content"
@@ -490,7 +490,7 @@
       "path": "/api/v1/employees",
       "kind": "LIST",
       "content_ref": "employees",
-      "required_scope": "view_employees",
+      "required_scope": "employees.view",
       "lookup_column": "id",
       "target_state": null
     },
@@ -499,7 +499,7 @@
       "path": "/api/v1/employees",
       "kind": "CREATE",
       "content_ref": "employees",
-      "required_scope": "manage_employees",
+      "required_scope": "employees.manage",
       "lookup_column": "id",
       "target_state": null
     },
@@ -508,7 +508,7 @@
       "path": "/api/v1/employees/{id}",
       "kind": "GET_ONE",
       "content_ref": "employees",
-      "required_scope": "view_employees",
+      "required_scope": "employees.view",
       "lookup_column": "id",
       "target_state": null
     },
@@ -517,7 +517,7 @@
       "path": "/api/v1/employees/{id}",
       "kind": "UPDATE",
       "content_ref": "employees",
-      "required_scope": "manage_employees",
+      "required_scope": "employees.manage",
       "lookup_column": "id",
       "target_state": null
     },
@@ -526,7 +526,7 @@
       "path": "/api/v1/employees/{id}",
       "kind": "DELETE",
       "content_ref": "employees",
-      "required_scope": "manage_hr",
+      "required_scope": "hr.manage",
       "lookup_column": "id",
       "target_state": null
     },
@@ -535,7 +535,7 @@
       "path": "/api/v1/departments",
       "kind": "LIST",
       "content_ref": "departments",
-      "required_scope": "view_employees",
+      "required_scope": "employees.view",
       "lookup_column": "id",
       "target_state": null
     },
@@ -544,7 +544,7 @@
       "path": "/api/v1/departments",
       "kind": "CREATE",
       "content_ref": "departments",
-      "required_scope": "manage_hr",
+      "required_scope": "hr.manage",
       "lookup_column": "id",
       "target_state": null
     },
@@ -553,7 +553,7 @@
       "path": "/api/v1/departments/{id}",
       "kind": "GET_ONE",
       "content_ref": "departments",
-      "required_scope": "view_employees",
+      "required_scope": "employees.view",
       "lookup_column": "name",
       "target_state": null
     },
@@ -580,7 +580,7 @@
       "path": "/api/v1/salary-reviews",
       "kind": "LIST",
       "content_ref": "salary_reviews",
-      "required_scope": "access_salary",
+      "required_scope": "salary.access",
       "lookup_column": "id",
       "target_state": null
     },
@@ -589,7 +589,7 @@
       "path": "/api/v1/salary-reviews",
       "kind": "CREATE",
       "content_ref": "salary_reviews",
-      "required_scope": "manage_hr",
+      "required_scope": "hr.manage",
       "lookup_column": "id",
       "target_state": null
     },
@@ -598,7 +598,7 @@
       "path": "/api/v1/salary-reviews/{id}",
       "kind": "GET_ONE",
       "content_ref": "salary_reviews",
-      "required_scope": "access_salary",
+      "required_scope": "salary.access",
       "lookup_column": "id",
       "target_state": null
     },
@@ -607,7 +607,7 @@
       "path": "/api/v1/salary-reviews/{id}",
       "kind": "UPDATE",
       "content_ref": "salary_reviews",
-      "required_scope": "manage_hr",
+      "required_scope": "hr.manage",
       "lookup_column": "id",
       "target_state": null
     }
@@ -788,13 +788,13 @@
       "name": "Add Employee",
       "slug": "add_employee",
       "role": "hr business partner",
-      "required_scope": "manage_employees",
+      "required_scope": "employees.manage",
       "children": [
         {
           "type": "form",
           "props": {
             "target": "employees",
-            "submit_scope": "manage_employees"
+            "submit_scope": "employees.manage"
           },
           "style": {},
           "layout": {},
@@ -1058,29 +1058,29 @@
       "body_lines": [
         "team_bonus = sum(employees.salary * employees.bonus_rate)"
       ],
-      "required_scope": "view_team_metrics",
+      "required_scope": "team_metrics.view",
       "required_role": null,
       "input_params": [],
       "output_params": [],
       "client_safe": false,
       "identity_mode": "service",
       "required_confidentiality_scopes": [
-        "access_salary"
+        "salary.access"
       ],
-      "output_confidentiality_scope": "view_team_metrics",
+      "output_confidentiality_scope": "team_metrics.view",
       "field_dependencies": [
         {
           "content_name": "employees",
           "field_name": "salary",
           "confidentiality_scopes": [
-            "access_salary"
+            "salary.access"
           ]
         },
         {
           "content_name": "employees",
           "field_name": "bonus_rate",
           "confidentiality_scopes": [
-            "access_salary"
+            "salary.access"
           ]
         }
       ],
@@ -1099,9 +1099,9 @@
     {
       "compute_name": "Calculate Team Bonus Pool",
       "input_scopes": [
-        "access_salary"
+        "salary.access"
       ],
-      "output_scope": "view_team_metrics"
+      "output_scope": "team_metrics.view"
     }
   ]
 }

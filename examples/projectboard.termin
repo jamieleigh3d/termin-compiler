@@ -5,13 +5,13 @@ Id: 98883884-b402-42a0-858f-20defd9f1184
 --- Identity ---
 
 Users authenticate with stub
-Scopes are "view projects", "manage tasks", "manage sprints", and "admin projects"
+Scopes are "projects.view", "tasks.manage", "sprints.manage", and "projects.admin"
 
 --- Roles ---
 
-A "developer" has "view projects" and "manage tasks"
-A "project manager" has "view projects", "manage tasks", "manage sprints", and "admin projects"
-A "stakeholder" has "view projects"
+A "developer" has "projects.view" and "tasks.manage"
+A "project manager" has "projects.view", "tasks.manage", "sprints.manage", and "projects.admin"
+A "stakeholder" has "projects.view"
 
 --- Content ---
 
@@ -19,25 +19,25 @@ Content called "projects":
   Each project has a name which is unique text, required
   Each project has a description which is text
   Each project has a status which is one of: "active", "on hold", "completed"
-  Anyone with "view projects" can view projects
-  Anyone with "admin projects" can create or update projects
-  Anyone with "admin projects" can delete projects
+  Anyone with "projects.view" can view projects
+  Anyone with "projects.admin" can create or update projects
+  Anyone with "projects.admin" can delete projects
 
 Content called "team members":
   Each team member has a name which is text, required
   Each team member has an email which is unique text, required
   Each team member has a role which is one of: "developer", "designer", "qa", "devops"
   Each team member has a project which references projects, required
-  Anyone with "view projects" can view team members
-  Anyone with "admin projects" can create or update team members
+  Anyone with "projects.view" can view team members
+  Anyone with "projects.admin" can create or update team members
 
 Content called "sprints":
   Each sprint has a name which is text, required
   Each sprint has a project which references projects, required
   Each sprint has a goal which is text
   Each sprint has a capacity which is a whole number, minimum 0
-  Anyone with "view projects" can view sprints
-  Anyone with "manage sprints" can create or update sprints
+  Anyone with "projects.view" can view sprints
+  Anyone with "sprints.manage" can create or update sprints
 
 Content called "tasks":
   Each task has a title which is text, required
@@ -47,29 +47,29 @@ Content called "tasks":
   Each task has an assignee which references team members
   Each task has a points which is a whole number, minimum 0
   Each task has a priority which is one of: "low", "medium", "high", "critical"
-  Anyone with "view projects" can view tasks
-  Anyone with "manage tasks" can create or update tasks
-  Anyone with "admin projects" can delete tasks
+  Anyone with "projects.view" can view tasks
+  Anyone with "tasks.manage" can create or update tasks
+  Anyone with "projects.admin" can delete tasks
 
 Content called "time logs":
   Each time log has a task which references tasks, required
   Each time log has a team member which references team members, required
   Each time log has a hours which is currency
   Each time log has a logged at which is automatic
-  Anyone with "view projects" can view time logs
-  Anyone with "manage tasks" can create time logs
+  Anyone with "projects.view" can view time logs
+  Anyone with "tasks.manage" can create time logs
 
 --- State ---
 
 State for tasks called "task lifecycle":
   A task starts as "backlog"
   A task can also be "in sprint", "in progress", "in review", or "done"
-  A backlog task can become in sprint if the user has "manage sprints"
-  An in sprint task can become in progress if the user has "manage tasks"
-  An in progress task can become in review if the user has "manage tasks"
-  An in review task can become done if the user has "manage tasks"
-  An in review task can become in progress if the user has "manage tasks"
-  A done task can become in progress if the user has "manage tasks"
+  A backlog task can become in sprint if the user has "sprints.manage"
+  An in sprint task can become in progress if the user has "tasks.manage"
+  An in progress task can become in review if the user has "tasks.manage"
+  An in review task can become done if the user has "tasks.manage"
+  An in review task can become in progress if the user has "tasks.manage"
+  A done task can become in progress if the user has "tasks.manage"
 
 --- User Stories ---
 

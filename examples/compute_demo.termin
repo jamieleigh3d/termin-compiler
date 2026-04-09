@@ -5,12 +5,12 @@ Id: 7bc65103-25fd-43c1-a8b0-7a5905bcc38b
 --- Identity ---
 
 Users authenticate with stub
-Scopes are "read orders", "write orders", and "admin orders"
+Scopes are "orders.read", "orders.write", and "orders.admin"
 
 --- Roles ---
 
-An "order clerk" has "read orders" and "write orders"
-An "order manager" has "read orders", "write orders", and "admin orders"
+An "order clerk" has "orders.read" and "orders.write"
+An "order manager" has "orders.read", "orders.write", and "orders.admin"
 
 --- Content ---
 
@@ -18,58 +18,58 @@ Content called "orders":
   Each order has a customer which is text, required
   Each order has a total which is currency
   Each order has a priority which is one of: "low", "medium", "high"
-  Anyone with "read orders" can view orders
-  Anyone with "write orders" can create or update orders
-  Anyone with "admin orders" can delete orders
+  Anyone with "orders.read" can view orders
+  Anyone with "orders.write" can create or update orders
+  Anyone with "orders.admin" can delete orders
 
 Content called "order lines":
   Each order line has a parent order which references orders, required
   Each order line has a product name which is text, required
   Each order line has a quantity which is a whole number, minimum 1
   Each order line has a unit price which is currency
-  Anyone with "read orders" can view order lines
-  Anyone with "write orders" can create or update order lines
+  Anyone with "orders.read" can view order lines
+  Anyone with "orders.write" can create or update order lines
 
 Content called "reports":
   Each report has a total count which is a whole number
   Each report has a total revenue which is currency
-  Anyone with "read orders" can view reports
+  Anyone with "orders.read" can view reports
 
 --- State ---
 
 State for orders called "order lifecycle":
   An order starts as "pending"
   An order can also be "confirmed" or "shipped" or "cancelled"
-  A pending order can become confirmed if the user has "write orders"
-  A confirmed order can become shipped if the user has "write orders"
-  A pending order can become cancelled if the user has "admin orders"
+  A pending order can become confirmed if the user has "orders.write"
+  A confirmed order can become shipped if the user has "orders.write"
+  A pending order can become cancelled if the user has "orders.admin"
 
 --- Compute ---
 
 Compute called "calculate order total":
   Transform: takes an order, produces an order
   `order.total = order.lines.reduce((acc, line) => acc + line.quantity * line.unit_price, 0)`
-  Anyone with "write orders" can execute this
+  Anyone with "orders.write" can execute this
 
 Compute called "revenue report":
   Reduce: takes orders, produces a report
   `report.total_count = orders.length; report.total_revenue = orders.reduce((acc, o) => acc + o.total, 0)`
-  Anyone with "read orders" can execute this
+  Anyone with "orders.read" can execute this
 
 Compute called "split order into lines":
   Expand: takes an order, produces order lines
   `order.lines.map(line => ({ parent_order: order.id, product_name: line.product_name, quantity: line.quantity, unit_price: line.unit_price }))`
-  Anyone with "write orders" can execute this
+  Anyone with "orders.write" can execute this
 
 Compute called "match orders to lines":
   Correlate: takes orders and order lines, produces reports
   `orders.join(order_lines, (o, l) => o.id == l.parent_order)`
-  Anyone with "read orders" can execute this
+  Anyone with "orders.read" can execute this
 
 Compute called "triage order":
   Route: takes an order, produces one of orders or reports
   `order.priority == "high" ? "orders" : "reports"`
-  Anyone with "write orders" can execute this
+  Anyone with "orders.write" can execute this
 
 --- Channels ---
 
@@ -78,20 +78,20 @@ Channel called "order webhook":
   Direction: inbound
   Delivery: reliable
   Endpoint: /webhooks/orders
-  Requires "write orders" to send
+  Requires "orders.write" to send
 
 Channel called "order updates stream":
   Carries orders
   Direction: outbound
   Delivery: realtime
-  Requires "read orders" to receive
+  Requires "orders.read" to receive
 
 Channel called "order notifications":
   Carries orders
   Direction: bidirectional
   Delivery: realtime
   Endpoint: /ws/orders
-  Requires "read orders" to receive
+  Requires "orders.read" to receive
 
 Channel called "internal order bus":
   Carries orders
@@ -106,7 +106,7 @@ Boundary called "order processing":
 
 Boundary called "order reporting":
   Contains reports
-  Identity restricts to "read orders"
+  Identity restricts to "orders.read"
 
 --- User Stories ---
 

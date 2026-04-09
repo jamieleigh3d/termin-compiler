@@ -344,7 +344,9 @@ class AIAgentProvider(ComputeProvider):
 
 ## Provider Registration
 
-Providers are registered at runtime startup with opaque state:
+### In-Process (Python Reference Runtime)
+
+For the reference runtime, providers are Python classes registered at startup:
 
 ```python
 app.compute_providers = {
@@ -352,15 +354,54 @@ app.compute_providers = {
     "ai-agent": AIAgentProvider(state={
         "model": "claude-sonnet-4-20250514",
         "region": "us-west-2",
-        "client_type": "bedrock",  # or "anthropic", "local"
-    }),
-    "an AWS-native runtime-security-tools": SecurityToolsProvider(state={
-        "endpoint": "https://security-tools.internal",
+        "client_type": "bedrock",
     }),
 }
 ```
 
 The runtime dispatches: `provider = providers[spec.get("provider") or "cel"]`.
+
+### Language-Agnostic Protocol (Any Runtime)
+
+The Python class is syntactic sugar. The canonical provider interface is a **JSON-RPC protocol over stdin/stdout** — the same pattern used by LSP and MCP. Any runtime in any language can host providers written in any other language.
+
+**Protocol flow:**
+
+```
+Runtime                          Provider (subprocess)
+  │                                  │
+  │──── initialize ─────────────────►│  (spec JSON + state JSON)
+  │◄─── initialized ────────────────│
+  │                                  │
+  │◄─── verb_call ──────────────────│  (content.query, state.transition, etc.)
+  │──── verb_result ────────────────►│  (JSON result or error)
+  │                                  │
+  │◄─── verb_call ──────────────────│  (may call many verbs)
+  │──── verb_result ────────────────►│
+  │                                  │
+  │◄─── complete ───────────────────│  (result JSON)
+  │                                  │
+```
+
+Each message is a JSON object on a single line (newline-delimited JSON):
+
+```json
+{"jsonrpc": "2.0", "method": "initialize", "params": {"spec": {...}, "state": {...}}, "id": 1}
+{"jsonrpc": "2.0", "method": "verb_call", "params": {"verb": "content.query", "args": {"content_name": "findings"}}, "id": 2}
+{"jsonrpc": "2.0", "result": [{"id": 1, "summary": "..."}], "id": 2}
+{"jsonrpc": "2.0", "method": "complete", "params": {"result": {"turns": 5}}, "id": 3}
+```
+
+A Rust runtime spawns the provider subprocess, sends `initialize`, handles `verb_call` requests by executing against its own storage/access-control layer, and receives the `complete` result. No Python required.
+
+### Which to Use
+
+| Situation | Approach |
+|-----------|----------|
+| Python provider in Python runtime | In-process class (fastest) |
+| Any provider in any runtime | Subprocess JSON-RPC (portable) |
+| Provider needs isolation | Subprocess (separate process, separate memory) |
+| Provider is untrusted | Subprocess + restricted verb set + resource limits |
 
 ---
 
@@ -401,19 +442,26 @@ Rationale: `/api/internal/schedules` lists all scheduled Computes with their int
 
 ---
 
-## Open Design Questions
+## Design Decisions
 
-### Scope Naming Convention
+### Scope Naming Convention — Dot Notation (Resolved)
 
-Should scopes use a naming convention for namespacing?
+Scopes use **dot notation** as a convention: `resource.verb` or `resource.qualifier`.
 
-Options:
-- Dot notation: `findings.view`, `findings.create`, `salary.access`
-- Underscores: `view_findings`, `create_findings`, `access_salary` (current)
-- Hierarchical: `content.findings.view`, `field.salary.access`
+```
+employees.view          — can view employee records
+employees.manage        — can create/update employees
+salary.access           — can see salary fields (confidentiality)
+team_metrics.view       — can see aggregated metrics
+findings.triage         — can create/manage findings
+```
 
-Current examples use flat underscored names. A convention should be decided and documented.
+**Important:** Dot notation is a convention, not parsed syntax. The runtime treats scopes as **opaque strings**. `"employees.view"` and `"view_employees"` are equally valid — the dots carry no semantic meaning to the runtime. The convention exists for human readability and organizational consistency.
 
-### Read-Only Scopes
+### Read-Only Scopes (Resolved)
 
-The current scope system is verb-based (`view`, `create`, `update`, `delete`). There is no explicit "read-only" scope modifier. A scope that grants only `view` is effectively read-only. Should we formalize this with a `readonly` flag on access grants, or is the verb-based system sufficient?
+The verb-based access grant system is sufficient. A scope that grants only `view` is read-only by construction — no separate `readonly` modifier needed. The access rule `Anyone with "employees.view" can view employees` grants read access without write, create, or delete.
+
+### Provider Portability (Resolved)
+
+The Python `ComputeProvider` class is the reference implementation, not the canonical interface. The canonical interface is the **JSON-RPC protocol over stdin/stdout** (see Provider Registration above). A Rust, Go, or TypeScript runtime can host providers written in any language via subprocess communication. No Python dependency required.

@@ -7,24 +7,24 @@
   "auth": {
     "provider": "stub",
     "scopes": [
-      "read orders",
-      "write orders",
-      "admin orders"
+      "orders.read",
+      "orders.write",
+      "orders.admin"
     ],
     "roles": [
       {
         "name": "order clerk",
         "scopes": [
-          "read orders",
-          "write orders"
+          "orders.read",
+          "orders.write"
         ]
       },
       {
         "name": "order manager",
         "scopes": [
-          "read orders",
-          "write orders",
-          "admin orders"
+          "orders.read",
+          "orders.write",
+          "orders.admin"
         ]
       }
     ]
@@ -221,14 +221,14 @@
   "access_grants": [
     {
       "content": "orders",
-      "scope": "read orders",
+      "scope": "orders.read",
       "verbs": [
         "VIEW"
       ]
     },
     {
       "content": "orders",
-      "scope": "write orders",
+      "scope": "orders.write",
       "verbs": [
         "CREATE",
         "UPDATE"
@@ -236,21 +236,21 @@
     },
     {
       "content": "orders",
-      "scope": "admin orders",
+      "scope": "orders.admin",
       "verbs": [
         "DELETE"
       ]
     },
     {
       "content": "order_lines",
-      "scope": "read orders",
+      "scope": "orders.read",
       "verbs": [
         "VIEW"
       ]
     },
     {
       "content": "order_lines",
-      "scope": "write orders",
+      "scope": "orders.write",
       "verbs": [
         "CREATE",
         "UPDATE"
@@ -258,7 +258,7 @@
     },
     {
       "content": "reports",
-      "scope": "read orders",
+      "scope": "orders.read",
       "verbs": [
         "VIEW"
       ]
@@ -279,17 +279,17 @@
         {
           "from_state": "pending",
           "to_state": "confirmed",
-          "required_scope": "write orders"
+          "required_scope": "orders.write"
         },
         {
           "from_state": "confirmed",
           "to_state": "shipped",
-          "required_scope": "write orders"
+          "required_scope": "orders.write"
         },
         {
           "from_state": "pending",
           "to_state": "cancelled",
-          "required_scope": "admin orders"
+          "required_scope": "orders.admin"
         }
       ],
       "primitive_type": "content"
@@ -302,7 +302,7 @@
       "name": "Order Dashboard",
       "slug": "order_dashboard",
       "role": "order clerk",
-      "required_scope": "write orders",
+      "required_scope": "orders.write",
       "children": [
         {
           "type": "data_table",
@@ -367,7 +367,7 @@
           "type": "form",
           "props": {
             "target": "orders",
-            "submit_scope": "write orders"
+            "submit_scope": "orders.write"
           },
           "style": {},
           "layout": {},
@@ -476,7 +476,7 @@
       "body_lines": [
         "order.total = order.lines.reduce((acc, line) => acc + line.quantity * line.unit_price, 0)"
       ],
-      "required_scope": "write orders",
+      "required_scope": "orders.write",
       "required_role": null,
       "input_params": [],
       "output_params": [],
@@ -484,7 +484,13 @@
       "identity_mode": "delegate",
       "required_confidentiality_scopes": [],
       "output_confidentiality_scope": null,
-      "field_dependencies": []
+      "field_dependencies": [],
+      "provider": null,
+      "preconditions": [],
+      "postconditions": [],
+      "objective": null,
+      "strategy": null,
+      "trigger": null
     },
     {
       "name": {
@@ -502,7 +508,7 @@
       "body_lines": [
         "report.total_count = orders.length; report.total_revenue = orders.reduce((acc, o) => acc + o.total, 0)"
       ],
-      "required_scope": "read orders",
+      "required_scope": "orders.read",
       "required_role": null,
       "input_params": [],
       "output_params": [],
@@ -510,7 +516,13 @@
       "identity_mode": "delegate",
       "required_confidentiality_scopes": [],
       "output_confidentiality_scope": null,
-      "field_dependencies": []
+      "field_dependencies": [],
+      "provider": null,
+      "preconditions": [],
+      "postconditions": [],
+      "objective": null,
+      "strategy": null,
+      "trigger": null
     },
     {
       "name": {
@@ -528,7 +540,7 @@
       "body_lines": [
         "order.lines.map(line => ({ parent_order: order.id, product_name: line.product_name, quantity: line.quantity, unit_price: line.unit_price }))"
       ],
-      "required_scope": "write orders",
+      "required_scope": "orders.write",
       "required_role": null,
       "input_params": [],
       "output_params": [],
@@ -536,7 +548,13 @@
       "identity_mode": "delegate",
       "required_confidentiality_scopes": [],
       "output_confidentiality_scope": null,
-      "field_dependencies": []
+      "field_dependencies": [],
+      "provider": null,
+      "preconditions": [],
+      "postconditions": [],
+      "objective": null,
+      "strategy": null,
+      "trigger": null
     },
     {
       "name": {
@@ -555,7 +573,7 @@
       "body_lines": [
         "orders.join(order_lines, (o, l) => o.id == l.parent_order)"
       ],
-      "required_scope": "read orders",
+      "required_scope": "orders.read",
       "required_role": null,
       "input_params": [],
       "output_params": [],
@@ -563,7 +581,13 @@
       "identity_mode": "delegate",
       "required_confidentiality_scopes": [],
       "output_confidentiality_scope": null,
-      "field_dependencies": []
+      "field_dependencies": [],
+      "provider": null,
+      "preconditions": [],
+      "postconditions": [],
+      "objective": null,
+      "strategy": null,
+      "trigger": null
     },
     {
       "name": {
@@ -582,7 +606,7 @@
       "body_lines": [
         "order.priority == \"high\" ? \"orders\" : \"reports\""
       ],
-      "required_scope": "write orders",
+      "required_scope": "orders.write",
       "required_role": null,
       "input_params": [],
       "output_params": [],
@@ -590,7 +614,13 @@
       "identity_mode": "delegate",
       "required_confidentiality_scopes": [],
       "output_confidentiality_scope": null,
-      "field_dependencies": []
+      "field_dependencies": [],
+      "provider": null,
+      "preconditions": [],
+      "postconditions": [],
+      "objective": null,
+      "strategy": null,
+      "trigger": null
     }
   ],
   "channels": [
@@ -606,7 +636,7 @@
       "endpoint": "/webhooks/orders",
       "requirements": [
         {
-          "scope": "write orders",
+          "scope": "orders.write",
           "direction": "send"
         }
       ]
@@ -623,7 +653,7 @@
       "endpoint": null,
       "requirements": [
         {
-          "scope": "read orders",
+          "scope": "orders.read",
           "direction": "receive"
         }
       ]
@@ -640,7 +670,7 @@
       "endpoint": "/ws/orders",
       "requirements": [
         {
-          "scope": "read orders",
+          "scope": "orders.read",
           "direction": "receive"
         }
       ]
@@ -689,7 +719,7 @@
       "contains_boundaries": [],
       "identity_mode": "restrict",
       "identity_scopes": [
-        "read orders"
+        "orders.read"
       ],
       "properties": []
     }

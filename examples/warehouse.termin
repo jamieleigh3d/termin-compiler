@@ -5,13 +5,13 @@ Id: 3e157422-d10c-4a2b-b6c3-9f80fc80f27b
 --- Identity ---
 
 Users authenticate with stub
-Scopes are "read inventory", "write inventory", and "admin inventory"
+Scopes are "inventory.read", "inventory.write", and "inventory.admin"
 
 --- Roles ---
 
-A "warehouse clerk" has "read inventory" and "write inventory"
-A "warehouse manager" has "read inventory", "write inventory", and "admin inventory"
-An "executive" has "read inventory"
+A "warehouse clerk" has "inventory.read" and "inventory.write"
+A "warehouse manager" has "inventory.read", "inventory.write", and "inventory.admin"
+An "executive" has "inventory.read"
 
 --- Content ---
 
@@ -21,17 +21,17 @@ Content called "products":
   Each product has a description which is text
   Each product has a unit cost which is currency
   Each product has a category which is one of: "raw material", "finished good", "packaging"
-  Anyone with "read inventory" can view products
-  Anyone with "write inventory" can create or update products
-  Anyone with "admin inventory" can delete products
+  Anyone with "inventory.read" can view products
+  Anyone with "inventory.write" can create or update products
+  Anyone with "inventory.admin" can delete products
 
 Content called "stock levels":
   Each stock level has a product which references products, required
   Each stock level has a warehouse which is text, required
   Each stock level has a quantity which is a whole number, minimum 0
   Each stock level has a reorder threshold which is a whole number, minimum 0
-  Anyone with "read inventory" can view stock levels
-  Anyone with "write inventory" can create or update stock levels
+  Anyone with "inventory.read" can view stock levels
+  Anyone with "inventory.write" can create or update stock levels
 
 Content called "reorder alerts":
   Each reorder alert has a product which references products, required
@@ -39,18 +39,18 @@ Content called "reorder alerts":
   Each reorder alert has a current quantity which is a whole number
   Each reorder alert has a threshold which is a whole number
   Each reorder alert has a created at which is automatic
-  Anyone with "read inventory" can view reorder alerts
-  Anyone with "write inventory" can create reorder alerts
-  Anyone with "admin inventory" can update reorder alerts
+  Anyone with "inventory.read" can view reorder alerts
+  Anyone with "inventory.write" can create reorder alerts
+  Anyone with "inventory.admin" can update reorder alerts
 
 --- State ---
 
 State for products called "product lifecycle":
   A product starts as "draft"
   A product can also be "active" or "discontinued"
-  A draft product can become active if the user has "write inventory"
-  An active product can become discontinued if the user has "admin inventory"
-  A discontinued product can become active again if the user has "admin inventory"
+  A draft product can become active if the user has "inventory.write"
+  An active product can become discontinued if the user has "inventory.admin"
+  A discontinued product can become active again if the user has "inventory.admin"
 
 --- Events ---
 

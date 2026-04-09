@@ -7,34 +7,34 @@
   "auth": {
     "provider": "stub",
     "scopes": [
-      "view tickets",
-      "create tickets",
-      "manage tickets",
-      "admin tickets"
+      "tickets.view",
+      "tickets.create",
+      "tickets.manage",
+      "tickets.admin"
     ],
     "roles": [
       {
         "name": "customer",
         "scopes": [
-          "view tickets",
-          "create tickets"
+          "tickets.view",
+          "tickets.create"
         ]
       },
       {
         "name": "support agent",
         "scopes": [
-          "view tickets",
-          "create tickets",
-          "manage tickets"
+          "tickets.view",
+          "tickets.create",
+          "tickets.manage"
         ]
       },
       {
         "name": "support manager",
         "scopes": [
-          "view tickets",
-          "create tickets",
-          "manage tickets",
-          "admin tickets"
+          "tickets.view",
+          "tickets.create",
+          "tickets.manage",
+          "tickets.admin"
         ]
       }
     ]
@@ -256,42 +256,38 @@
   "access_grants": [
     {
       "content": "tickets",
-      "scope": "view tickets",
-      "verbs": [
-        "VIEW"
-      ]
+      "scope": "tickets.view",
+      "verbs": []
     },
     {
       "content": "tickets",
-      "scope": "create tickets",
-      "verbs": [
-        "CREATE"
-      ]
+      "scope": "tickets.create",
+      "verbs": []
     },
     {
       "content": "tickets",
-      "scope": "manage tickets",
+      "scope": "tickets.manage",
       "verbs": [
         "UPDATE"
       ]
     },
     {
       "content": "tickets",
-      "scope": "admin tickets",
+      "scope": "tickets.admin",
       "verbs": [
         "DELETE"
       ]
     },
     {
       "content": "comments",
-      "scope": "view tickets",
+      "scope": "tickets.view",
       "verbs": [
         "VIEW"
       ]
     },
     {
       "content": "comments",
-      "scope": "create tickets",
+      "scope": "tickets.create",
       "verbs": [
         "CREATE"
       ]
@@ -313,32 +309,32 @@
         {
           "from_state": "open",
           "to_state": "in progress",
-          "required_scope": "manage tickets"
+          "required_scope": "tickets.manage"
         },
         {
           "from_state": "in progress",
           "to_state": "waiting on customer",
-          "required_scope": "manage tickets"
+          "required_scope": "tickets.manage"
         },
         {
           "from_state": "waiting on customer",
           "to_state": "in progress",
-          "required_scope": "create tickets"
+          "required_scope": "tickets.create"
         },
         {
           "from_state": "in progress",
           "to_state": "resolved",
-          "required_scope": "manage tickets"
+          "required_scope": "tickets.manage"
         },
         {
           "from_state": "resolved",
           "to_state": "closed",
-          "required_scope": "admin tickets"
+          "required_scope": "tickets.admin"
         },
         {
           "from_state": "resolved",
           "to_state": "in progress",
-          "required_scope": "create tickets"
+          "required_scope": "tickets.create"
         }
       ],
       "primitive_type": "content"
@@ -351,7 +347,7 @@
       "path": "/api/v1/tickets",
       "kind": "LIST",
       "content_ref": "tickets",
-      "required_scope": "view tickets",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     },
@@ -360,7 +356,7 @@
       "path": "/api/v1/tickets",
       "kind": "CREATE",
       "content_ref": "tickets",
-      "required_scope": "create tickets",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     },
@@ -369,7 +365,7 @@
       "path": "/api/v1/tickets/{id}",
       "kind": "GET_ONE",
       "content_ref": "tickets",
-      "required_scope": "view tickets",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     },
@@ -378,7 +374,7 @@
       "path": "/api/v1/tickets/{id}",
       "kind": "UPDATE",
       "content_ref": "tickets",
-      "required_scope": "manage tickets",
+      "required_scope": "tickets.manage",
       "lookup_column": "id",
       "target_state": null
     },
@@ -387,7 +383,7 @@
       "path": "/api/v1/tickets/{id}",
       "kind": "DELETE",
       "content_ref": "tickets",
-      "required_scope": "admin tickets",
+      "required_scope": "tickets.admin",
       "lookup_column": "id",
       "target_state": null
     },
@@ -441,7 +437,7 @@
       "path": "/api/v1/comments",
       "kind": "LIST",
       "content_ref": "comments",
-      "required_scope": "view tickets",
+      "required_scope": "tickets.view",
       "lookup_column": "id",
       "target_state": null
     },
@@ -450,7 +446,7 @@
       "path": "/api/v1/comments",
       "kind": "CREATE",
       "content_ref": "comments",
-      "required_scope": "create tickets",
+      "required_scope": "tickets.create",
       "lookup_column": "id",
       "target_state": null
     }
@@ -460,14 +456,13 @@
       "name": "Submit Ticket",
       "slug": "submit_ticket",
       "role": "customer",
-      "required_scope": "create tickets",
+      "required_scope": null,
       "children": [
         {
           "type": "form",
           "props": {
             "target": "tickets",
-            "create_as": "open",
-            "submit_scope": "create tickets"
+            "create_as": "open"
           },
           "style": {},
           "layout": {},

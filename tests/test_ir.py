@@ -97,15 +97,15 @@ class TestWarehouseIR:
 
     def test_auth(self):
         assert self.spec.auth.provider == "stub"
-        assert "read inventory" in self.spec.auth.scopes
+        assert "inventory.read" in self.spec.auth.scopes
         assert len(self.spec.auth.roles) == 3
 
     def test_access_grants(self):
         product_grants = [g for g in self.spec.access_grants if g.content == "products"]
         view_grant = next(g for g in product_grants if Verb.VIEW in g.verbs)
-        assert view_grant.scope == "read inventory"
+        assert view_grant.scope == "inventory.read"
         delete_grant = next(g for g in product_grants if Verb.DELETE in g.verbs)
-        assert delete_grant.scope == "admin inventory"
+        assert delete_grant.scope == "inventory.admin"
 
     def test_state_machine(self):
         sm = next(s for s in self.spec.state_machines if s.content_ref == "products")
@@ -113,8 +113,8 @@ class TestWarehouseIR:
         assert "active" in sm.states
         assert "discontinued" in sm.states
         trans = {(t.from_state, t.to_state): t.required_scope for t in sm.transitions}
-        assert trans[("draft", "active")] == "write inventory"
-        assert trans[("active", "discontinued")] == "admin inventory"
+        assert trans[("draft", "active")] == "inventory.write"
+        assert trans[("active", "discontinued")] == "inventory.admin"
 
     def test_state_machine_primitive_type(self):
         sm = next(s for s in self.spec.state_machines if s.content_ref == "products")
@@ -143,7 +143,7 @@ class TestWarehouseIR:
         create_route = next(r for r in self.spec.routes
                            if r.path == "/api/v1/products" and r.method == HttpMethod.POST)
         assert create_route.kind == RouteKind.CREATE
-        assert create_route.required_scope == "write inventory"
+        assert create_route.required_scope == "inventory.write"
 
     def test_pages(self):
         slugs = [p.slug for p in self.spec.pages]
@@ -394,7 +394,7 @@ class TestComputeDemoIR:
         assert c.shape == ComputeShape.TRANSFORM
         assert "orders" in c.input_content
         assert "orders" in c.output_content
-        assert c.required_scope == "write orders"
+        assert c.required_scope == "orders.write"
 
     def test_compute_reduce(self):
         c = next(c for c in self.spec.computes if c.name.snake == "revenue_report")
@@ -487,7 +487,7 @@ class TestComputeDemoIR:
         b = next(b for b in self.spec.boundaries if b.name.snake == "order_reporting")
         assert "reports" in b.contains_content
         assert b.identity_mode == "restrict"
-        assert "read orders" in b.identity_scopes
+        assert "orders.read" in b.identity_scopes
 
     def test_business_types(self):
         orders = next(t for t in self.spec.content if t.name.snake == "orders")

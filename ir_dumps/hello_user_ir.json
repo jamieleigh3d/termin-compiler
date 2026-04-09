@@ -7,19 +7,19 @@
   "auth": {
     "provider": "stub",
     "scopes": [
-      "view app"
+      "app.view"
     ],
     "roles": [
       {
         "name": "Anonymous",
         "scopes": [
-          "view app"
+          "app.view"
         ]
       },
       {
         "name": "user",
         "scopes": [
-          "view app"
+          "app.view"
         ]
       }
     ]
@@ -105,7 +105,13 @@
       "identity_mode": "delegate",
       "required_confidentiality_scopes": [],
       "output_confidentiality_scope": null,
-      "field_dependencies": []
+      "field_dependencies": [],
+      "provider": null,
+      "preconditions": [],
+      "postconditions": [],
+      "objective": null,
+      "strategy": null,
+      "trigger": null
     }
   ],
   "channels": [],

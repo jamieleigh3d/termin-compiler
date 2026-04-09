@@ -5,14 +5,14 @@ Id: f98a6e5e-a535-4212-adc4-a6f0e2707e5b
 --- Identity ---
 
 Users authenticate with stub
-Scopes are "view_employees", "manage_employees", "access_salary", "access_pii", "view_team_metrics", and "manage_hr"
+Scopes are "employees.view", "employees.manage", "salary.access", "pii.access", "team_metrics.view", and "hr.manage"
 
 --- Roles ---
 
-An "employee" has "view_employees"
-A "manager" has "view_employees" and "view_team_metrics"
-An "hr business partner" has "view_employees", "manage_employees", "access_salary", "access_pii", "view_team_metrics", and "manage_hr"
-An "executive" has "view_employees" and "view_team_metrics"
+An "employee" has "employees.view"
+A "manager" has "employees.view" and "team_metrics.view"
+An "hr business partner" has "employees.view", "employees.manage", "salary.access", "pii.access", "team_metrics.view", and "hr.manage"
+An "executive" has "employees.view" and "team_metrics.view"
 
 --- Content ---
 
@@ -21,24 +21,24 @@ Content called "employees":
   Each employee has a department which is text, required
   Each employee has a role which is text
   Each employee has a start date which is a date
-  Each employee has a salary which is currency, confidentiality is "access_salary"
-  Each employee has a bonus rate which is a number, confidentiality is "access_salary"
-  Each employee has a ssn which is text, confidentiality is "access_pii"
-  Each employee has a phone which is text, confidentiality is "access_pii"
+  Each employee has a salary which is currency, confidentiality is "salary.access"
+  Each employee has a bonus rate which is a number, confidentiality is "salary.access"
+  Each employee has a ssn which is text, confidentiality is "pii.access"
+  Each employee has a phone which is text, confidentiality is "pii.access"
   Each employee has a added by which is text, defaults to `User.Name`
-  Anyone with "view_employees" can view employees
-  Anyone with "manage_employees" can create or update employees
-  Anyone with "manage_hr" can delete employees
+  Anyone with "employees.view" can view employees
+  Anyone with "employees.manage" can create or update employees
+  Anyone with "hr.manage" can delete employees
 
 Content called "departments":
   Each department has a name which is text, required, unique
-  Each department has a budget which is currency, confidentiality is "access_salary"
+  Each department has a budget which is currency, confidentiality is "salary.access"
   Each department has a head count which is a whole number
-  Anyone with "view_employees" can view departments
-  Anyone with "manage_hr" can create, update, or delete departments
+  Anyone with "employees.view" can view departments
+  Anyone with "hr.manage" can create, update, or delete departments
 
 Content called "salary reviews":
-  Scoped to "access_salary"
+  Scoped to "salary.access"
   Each salary review has an employee which references employees, required
   Each salary review has a review date which is a date
   Each salary review has an old salary which is currency
@@ -46,25 +46,25 @@ Content called "salary reviews":
   Each salary review has a reason which is text
   Each salary review has an approved by which is text, defaults to `User.Name`
   Each salary review has a created at which is automatic, defaults to `now`
-  Anyone with "access_salary" can view salary reviews
-  Anyone with "manage_hr" can create or update salary reviews
+  Anyone with "salary.access" can view salary reviews
+  Anyone with "hr.manage" can create or update salary reviews
 
 --- State ---
 
 State for salary reviews called "review lifecycle":
   A review starts as "pending"
   A review can also be "approved" or "applied"
-  A pending review can become approved if the user has "manage_hr"
-  An approved review can become applied if the user has "manage_hr"
+  A pending review can become approved if the user has "hr.manage"
+  An approved review can become applied if the user has "hr.manage"
 
 --- Compute ---
 
 Compute called "Calculate Team Bonus Pool":
   Reduce: takes employees, produces employees
   Identity: service
-  Requires "access_salary"
-  Output confidentiality: "view_team_metrics"
-  Anyone with "view_team_metrics" can execute this
+  Requires "salary.access"
+  Output confidentiality: "team_metrics.view"
+  Anyone with "team_metrics.view" can execute this
   `team_bonus = sum(employees.salary * employees.bonus_rate)`
 
 --- User Stories ---

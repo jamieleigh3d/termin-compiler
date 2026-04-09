@@ -5,13 +5,13 @@ Id: 9d81658f-b642-437f-8f39-ffe31faa7701
 --- Identity ---
 
 Users authenticate with stub
-Scopes are "view tickets", "create tickets", "manage tickets", and "admin tickets"
+Scopes are "tickets.view", "tickets.create", "tickets.manage", and "tickets.admin"
 
 --- Roles ---
 
-A "customer" has "view tickets" and "create tickets"
-A "support agent" has "view tickets", "create tickets", and "manage tickets"
-A "support manager" has "view tickets", "create tickets", "manage tickets", and "admin tickets"
+A "customer" has "tickets.view" and "tickets.create"
+A "support agent" has "tickets.view", "tickets.create", and "tickets.manage"
+A "support manager" has "tickets.view", "tickets.create", "tickets.manage", and "tickets.admin"
 
 --- Content ---
 
@@ -23,30 +23,30 @@ Content called "tickets":
   Each ticket has a submitted by which is text, required, defaults to `User.Name`
   Each ticket has an assigned to which is text
   Each ticket has a created at which is automatic, defaults to `now`
-  Anyone with "view tickets" can view tickets
-  Anyone with "create tickets" can create tickets
-  Anyone with "manage tickets" can update tickets
-  Anyone with "admin tickets" can delete tickets
+  Anyone with "tickets.view" can tickets.view
+  Anyone with "tickets.create" can tickets.create
+  Anyone with "tickets.manage" can update tickets
+  Anyone with "tickets.admin" can delete tickets
 
 Content called "comments":
   Each comment has a ticket which references tickets, required
   Each comment has an author which is text, required, defaults to `User.Name`
   Each comment has a body which is text, required
   Each comment has a posted at which is automatic, defaults to `now`
-  Anyone with "view tickets" can view comments
-  Anyone with "create tickets" can create comments
+  Anyone with "tickets.view" can view comments
+  Anyone with "tickets.create" can create comments
 
 --- State ---
 
 State for tickets called "ticket lifecycle":
   A ticket starts as "open"
   A ticket can also be "in progress", "waiting on customer", "resolved", or "closed"
-  An open ticket can become in progress if the user has "manage tickets"
-  An in progress ticket can become waiting on customer if the user has "manage tickets"
-  A waiting on customer ticket can become in progress if the user has "create tickets"
-  An in progress ticket can become resolved if the user has "manage tickets"
-  A resolved ticket can become closed if the user has "admin tickets"
-  A resolved ticket can become in progress if the user has "create tickets"
+  An open ticket can become in progress if the user has "tickets.manage"
+  An in progress ticket can become waiting on customer if the user has "tickets.manage"
+  A waiting on customer ticket can become in progress if the user has "tickets.create"
+  An in progress ticket can become resolved if the user has "tickets.manage"
+  A resolved ticket can become closed if the user has "tickets.admin"
+  A resolved ticket can become in progress if the user has "tickets.create"
 
 --- User Stories ---
 
