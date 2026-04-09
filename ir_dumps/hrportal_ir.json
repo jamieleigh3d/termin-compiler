@@ -1,7 +1,7 @@
 {
   "ir_version": "0.4.0",
   "reflection_enabled": true,
-  "app_id": null,
+  "app_id": "f98a6e5e-a535-4212-adc4-a6f0e2707e5b",
   "name": "HR Portal",
   "description": "Human Resources management with field-level confidentiality",
   "auth": {
@@ -1068,11 +1068,40 @@
         "access_salary"
       ],
       "output_confidentiality_scope": "view_team_metrics",
-      "field_dependencies": []
+      "field_dependencies": [
+        {
+          "content_name": "employees",
+          "field_name": "salary",
+          "confidentiality_scopes": [
+            "access_salary"
+          ]
+        },
+        {
+          "content_name": "employees",
+          "field_name": "bonus_rate",
+          "confidentiality_scopes": [
+            "access_salary"
+          ]
+        }
+      ],
+      "provider": null,
+      "preconditions": [],
+      "postconditions": [],
+      "objective": null,
+      "strategy": null,
+      "trigger": null
     }
   ],
   "channels": [],
   "boundaries": [],
   "error_handlers": [],
-  "reclassification_points": []
+  "reclassification_points": [
+    {
+      "compute_name": "Calculate Team Bonus Pool",
+      "input_scopes": [
+        "access_salary"
+      ],
+      "output_scope": "view_team_metrics"
+    }
+  ]
 }

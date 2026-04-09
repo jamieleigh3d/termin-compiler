@@ -747,6 +747,34 @@ def lower(program: Program) -> AppSpec:
             return _snake(c.name)
         return _snake(name)
 
+    # ── Field dependency resolution for Compute bodies ──
+    # Build a lookup: snake_content_name -> ContentSchema
+    _cs_by_snake = {cs.name.snake: cs for cs in content_schemas}
+
+    def _resolve_field_dependencies(comp_node, schemas):
+        """Extract content.field references from CEL body lines and resolve confidentiality."""
+        deps = []
+        seen = set()
+        for body_line in comp_node.body_lines:
+            # Find content_name.field_name patterns in the CEL expression
+            for m in re.finditer(r'(\w+)\.(\w+)', body_line):
+                content_ref, field_ref = m.group(1), m.group(2)
+                cs = _cs_by_snake.get(content_ref)
+                if not cs:
+                    continue
+                for f in cs.fields:
+                    if f.name == field_ref:
+                        key = (content_ref, field_ref)
+                        if key not in seen:
+                            seen.add(key)
+                            deps.append(FieldDependency(
+                                content_name=content_ref,
+                                field_name=field_ref,
+                                confidentiality_scopes=f.confidentiality_scopes,
+                            ))
+                        break
+        return tuple(deps)
+
     # ── Lower computes ──
     SHAPE_MAP = {
         "transform": ComputeShape.TRANSFORM,
@@ -788,6 +816,7 @@ def lower(program: Program) -> AppSpec:
             identity_mode=comp.identity_mode,
             required_confidentiality_scopes=tuple(comp.required_confidentiality_scopes),
             output_confidentiality_scope=comp.output_confidentiality,
+            field_dependencies=_resolve_field_dependencies(comp, content_schemas),
             provider=comp.provider,
             preconditions=tuple(comp.preconditions),
             postconditions=tuple(comp.postconditions),
@@ -892,6 +921,17 @@ def lower(program: Program) -> AppSpec:
             is_catch_all=eh.is_catch_all,
         ))
 
+    # ── Build reclassification points from Compute specs ──
+    reclass_points = []
+    for cs in computes:
+        if cs.output_confidentiality_scope and cs.required_confidentiality_scopes:
+            # Output scope differs from input scopes — this is a reclassification
+            reclass_points.append(ReclassificationPoint(
+                compute_name=cs.name.display,
+                input_scopes=cs.required_confidentiality_scopes,
+                output_scope=cs.output_confidentiality_scope,
+            ))
+
     return AppSpec(
         reflection_enabled=True,
         app_id=program.application.app_id if program.application else None,
@@ -910,4 +950,5 @@ def lower(program: Program) -> AppSpec:
         channels=tuple(channels),
         boundaries=tuple(boundaries),
         error_handlers=tuple(error_handlers),
+        reclassification_points=tuple(reclass_points),
     )
