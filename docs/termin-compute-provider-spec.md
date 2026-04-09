@@ -1,6 +1,6 @@
 # Termin Compute Provider Specification
 
-**Version:** 0.2.0 (draft)
+**Version:** 0.3.0
 **Date:** April 2026
 **Status:** Open for iteration
 
@@ -8,7 +8,7 @@
 
 ## Overview
 
-A Compute Provider is a pluggable execution engine for Termin Compute nodes. The runtime dispatches to the appropriate provider based on the `provider` field in the ComputeSpec. Providers execute within the runtime's confidentiality, access control, transaction, and pre/postcondition framework.
+A Compute Provider is an execution engine for Termin Compute nodes. The runtime ships with built-in providers. External integrations use Channels (the existing primitive for cross-boundary communication), not custom providers.
 
 ---
 
@@ -16,50 +16,73 @@ A Compute Provider is a pluggable execution engine for Termin Compute nodes. The
 
 | Term | Meaning |
 |------|---------|
-| **Runtime** | The Termin execution engine (creates apps, enforces rules) |
+| **Runtime** | The Termin execution engine |
 | **AppFabric** | The deployed application environment (all content, state, configuration) |
-| **Transaction** | A snapshot-isolated execution boundary with journal and rollback |
-| **Provider** | A pluggable execution engine (CEL, AI agent, CCP package) |
+| **Provider** | A built-in execution engine (CEL or ai-agent) |
+| **Channel** | The primitive for external communication (HTTP, WebSocket, webhook) |
 | **ComputeContext** | The scoped API a provider uses to interact with the AppFabric |
+
+---
+
+## Provider Model
+
+There are exactly two provider types. Both are built into the runtime.
+
+| Provider | DSL | Execution | Use case |
+|----------|-----|-----------|----------|
+| **CEL** | `Provider is "cel"` (default) | In-process CEL evaluation | Data transforms, aggregations, derivations |
+| **AI Agent** | `Provider is "ai-agent"` | In-process LLM reasoning with runtime API access | Autonomous workflows, scanning, remediation |
+
+External integrations (Slack notifications, AWS API calls, third-party services) are not providers — they are **Channels**:
+
+```termin
+Channel called "slack-alerts":
+  Carries findings
+  Direction: outbound
+  Delivery: reliable
+  Endpoint: https://slack-notify.internal/webhook
+  Requires "alerts.send" to send
+```
+
+An AI agent that needs to call Slack does: `ctx.channel_send("slack-alerts", data)`. The runtime handles HTTP, authentication, retries. The agent never executes arbitrary code or spawns processes.
+
+### Why Not Custom Providers?
+
+Custom providers would require either:
+- **Local executables** — arbitrary code execution risk, supply chain attacks, OS-specific binaries
+- **Remote callback protocol** — reinventing what Channels already do
+
+Channels are the structural answer to external integration. They are declared in the DSL, enforced at compile time, scoped by identity, and delivered via the runtime's transport layer. A Channel with `Endpoint: https://...` is a webhook. A Channel with `Delivery: realtime` is a WebSocket. No new abstraction needed.
 
 ---
 
 ## Provider Interface
 
-Every provider implements a single method:
+Both providers implement the same interface:
 
 ```python
 class ComputeProvider:
-    """Base class for Compute providers."""
+    """Base class for built-in Compute providers."""
 
-    def __init__(self, state: dict = None):
-        """Initialize with opaque provider configuration.
+    def __init__(self, config: dict = None):
+        """Initialize with runtime-provided configuration.
 
-        The `state` dict is provider-specific. Examples:
-        - CEL provider: {} (no config needed)
-        - AI agent: {"model": "claude-sonnet-4-20250514", "region": "us-west-2"}
-        - CCP package: {"endpoint": "https://...", "credentials": "..."}
-
-        The runtime does not inspect state. The provider decides how to use it.
+        Args:
+            config: Provider-specific settings from deployment config.
+              CEL: {} (none needed)
+              AI Agent: {"model": "claude-sonnet-4-20250514", "region": "us-west-2"}
         """
-        self.state = state or {}
+        self.config = config or {}
 
     async def execute(self, spec: dict, ctx: 'ComputeContext') -> dict:
         """Execute a Compute node.
 
         Args:
-            spec: The ComputeSpec IR dict (name, shape, body_lines,
-                  objective, strategy, preconditions, postconditions, etc.)
-            ctx: Transaction-scoped API for interacting with the AppFabric.
-                 All reads and writes go through this context.
+            spec: The ComputeSpec IR dict
+            ctx: Transaction-scoped API for interacting with the AppFabric
 
         Returns:
-            Arbitrary dict — the Compute's output. Returned to the caller
-            after output taint enforcement. The shape is provider-defined.
-
-        The runtime handles pre/postconditions, transaction commit/rollback,
-        and output taint enforcement around this call. The provider does not
-        need to manage these — just execute and return.
+            Arbitrary dict — the Compute's output.
         """
         raise NotImplementedError
 ```
@@ -75,8 +98,8 @@ The `ctx` object is the provider's scoped window into the AppFabric. Every opera
 1. **All writes are staged.** Nothing touches the AppFabric until `commit()`.
 2. **All reads are transaction-aware.** Staged writes are visible, staged deletes are hidden.
 3. **All operations are access-controlled.** Scopes and confidentiality enforced on every call.
-4. **Writing to a confidential field the identity cannot access terminates execution.** This is a hard stop — rollback + TerminAtor error. Not a 403, a termination.
-5. **No direct storage access.** The only way to interact with the AppFabric is through these methods.
+4. **Writing to a confidential field the identity cannot access terminates execution.** Rollback + TerminAtor error.
+5. **No direct storage access.** The ComputeContext is the only interface.
 
 ```python
 class ComputeContext:
@@ -85,21 +108,17 @@ class ComputeContext:
 
     @property
     def input(self) -> dict:
-        """The input data provided by the caller (from the HTTP request body)."""
+        """The input data provided by the caller."""
 
     # ── Identity ──
 
     @property
     def user(self) -> dict:
-        """The effective identity (delegate = caller, service = auto-provisioned).
-        {"Username": "...", "Name": "...", "Role": "...", "Scopes": [...]}"""
+        """The effective identity (delegate or service)."""
 
     @property
     def compute(self) -> dict:
-        """The Compute execution metadata.
-        {"Name": "...", "Provider": "...", "IdentityMode": "...",
-         "Scopes": [...], "ExecutionId": "...", "Trigger": "...",
-         "StartedAt": "..."}"""
+        """The Compute execution metadata (Name, Provider, ExecutionId, Trigger, etc.)."""
 
     # ── Content Operations ──
 
@@ -107,39 +126,16 @@ class ComputeContext:
                             filters: dict = None,
                             limit: int = None,
                             offset: int = 0) -> list[dict]:
-        """Query records from a content type (transaction-aware).
-
-        Staged writes are visible, staged deletes are hidden.
-        Confidential fields are redacted based on effective identity.
-
-        Args:
-            content_name: snake_case content type name
-            filters: field equality filters {"status": "active", "severity": "critical"}
-            limit: max records to return (None = all)
-            offset: skip N records (for pagination)
-        """
+        """Query records (transaction-aware, redacted per identity)."""
 
     async def content_get(self, content_name: str, record_id: int) -> dict | None:
-        """Get a single record by ID (transaction-aware, redacted)."""
+        """Get a single record by ID."""
 
     async def content_create(self, content_name: str, data: dict) -> dict:
-        """Create a record (staged).
-
-        Checks: access grants, confidentiality write access, required fields,
-        enum constraints, default expressions. Sets initial state if state
-        machine is attached. Returns the created record with generated id.
-
-        Raises ComputeTerminated if writing to a confidential field
-        the identity cannot access.
-        """
+        """Create a record (staged). Terminates on confidentiality violation."""
 
     async def content_update(self, content_name: str, record_id: int, data: dict) -> dict:
-        """Update a record (staged).
-
-        Raises ComputeTerminated if writing to a confidential field
-        the identity cannot access. Partial update — only fields in `data`
-        are modified, others are preserved.
-        """
+        """Update a record (staged). Terminates on confidentiality violation."""
 
     async def content_delete(self, content_name: str, record_id: int) -> bool:
         """Delete a record (staged)."""
@@ -149,123 +145,73 @@ class ComputeContext:
     async def state_transition(self, content_name: str,
                                record_id: int,
                                target_state: str) -> dict:
-        """Transition a record's state (staged).
-
-        Validates the transition is legal from the current state.
-        Checks the required scope for the transition.
-        Returns the updated record.
-        """
+        """Transition a record's state (staged, scope-checked)."""
 
     # ── Events ──
 
     async def event_emit(self, event_name: str, payload: dict = None):
-        """Emit an event to the EventBus.
-
-        Triggers any matching event handlers defined in the application.
-        The event is staged — handlers run after transaction commit.
-        """
+        """Emit an event (staged — handlers run after commit)."""
 
     # ── Channels ──
 
     async def channel_send(self, channel_name: str, data: dict):
-        """Send data through a Channel (staged).
+        """Send data through a Channel (scope-checked, delivery-enforced).
 
-        The Channel's direction, delivery, and scope requirements are enforced.
+        This is how providers interact with external services.
+        The Channel's endpoint, authentication, and retry policy
+        are configured in the DSL and deployment config.
         """
 
     # ── Reflection (read-only) ──
 
     def reflect_app(self) -> dict:
-        """Return application metadata (not raw IR).
-        {"name": "...", "description": "...", "id": "...", "version": "..."}"""
+        """Application metadata (name, description, id, version)."""
 
     def reflect_content(self, name: str) -> dict:
-        """Return schema metadata for a content type.
-        {"fields": [...], "has_state_machine": bool, "confidentiality_scopes": [...]}"""
+        """Schema metadata for a content type."""
 
     def reflect_compute(self, name: str) -> dict:
-        """Return Compute metadata (shape, inputs, outputs, provider)."""
+        """Compute metadata (shape, inputs, outputs, provider)."""
 
     def reflect_role(self, name: str) -> dict:
-        """Return role definition {"Name": "...", "Scopes": [...]}."""
+        """Role definition (name + scopes)."""
 
     def reflect_roles(self) -> list[str]:
-        """Return all role names."""
+        """All role names."""
 
     def reflect_channels(self) -> list[str]:
-        """Return all channel names."""
+        """All channel names."""
 
     def reflect_boundaries(self) -> list[str]:
-        """Return all boundary names."""
+        """All boundary names."""
 
     # ── Expression Evaluation (read-only, no side effects) ──
 
     def evaluate(self, expression: str, extra_ctx: dict = None) -> any:
-        """Evaluate a CEL expression.
-
-        CEL is non-Turing-complete and has no side effects by design.
-        It cannot write to storage, make network calls, or modify state.
-        A malformed expression raises a syntax error, not arbitrary execution.
-
-        The evaluation context includes: User, Compute, and any extra_ctx
-        provided. Reads are transaction-aware (sees staged data).
-        Registered functions are all read-only.
-
-        String injection produces a CEL syntax error, not code execution.
-        """
+        """Evaluate a CEL expression. Non-Turing-complete, no side effects.
+        Transaction-aware reads. String injection = syntax error, not execution."""
 
     # ── Transaction Control ──
 
     async def commit(self) -> bool:
-        """Commit the current transaction.
-
-        Evaluates postconditions against Before/After snapshots.
-        If all pass: writes staged changes to the AppFabric in journal order.
-        If any fail: rolls back all staged changes, raises PostconditionError.
-
-        After a successful commit, a new transaction begins automatically
-        for subsequent operations. Use this for long-running providers
-        that want to commit intermediate progress.
-        """
+        """Commit: evaluate postconditions, write to AppFabric if pass, rollback if fail.
+        After commit, a new transaction begins for subsequent operations."""
 
     def rollback(self):
-        """Rollback the current transaction. Discards all staged changes."""
+        """Rollback: discard all staged changes."""
 
     # ── Logging ──
 
     def log(self, level: str, message: str):
-        """Log a message through the TerminAtor event bus.
-
-        Levels: TRACE, DEBUG, INFO, WARN, ERROR.
-        ERROR-level logs are always persisted and trigger TerminAtor routing.
-        """
+        """Log through TerminAtor. Levels: TRACE, DEBUG, INFO, WARN, ERROR."""
 ```
 
 ---
 
-## Before / After Snapshots
-
-Postconditions compare the AppFabric state before and after execution. `Before` and `After` are **not** materialized data dicts — they are query-able objects with the same interface as `ctx`:
-
-```python
-# In postcondition CEL expressions:
-Before.content_query("findings").size()   # count before execution
-After.content_query("findings").size()    # count after (includes staged creates)
-```
-
-- **Before** is a frozen snapshot captured when preconditions pass (just before `execute()`)
-- **After** is the transaction's staged view (production + staged writes - staged deletes)
-
-The postcondition evaluator wraps both as CEL-accessible objects. The provider never accesses Before/After directly — only postcondition expressions do.
-
----
-
-## Example: CEL Provider (Default)
+## CEL Provider (Default)
 
 ```python
 class CELProvider(ComputeProvider):
-    """Default: evaluates the CEL body line."""
-
     async def execute(self, spec: dict, ctx: ComputeContext) -> dict:
         body = spec.get("body_lines", [])[0]
         cel_ctx = {}
@@ -277,64 +223,45 @@ class CELProvider(ComputeProvider):
 
 ---
 
-## Example: AI Agent Provider
+## AI Agent Provider
 
 ```python
 class AIAgentProvider(ComputeProvider):
-    """Autonomous reasoning with runtime API access."""
-
     async def execute(self, spec: dict, ctx: ComputeContext) -> dict:
         objective = spec.get("objective", "")
         strategy = spec.get("strategy", "")
 
-        # The provider manages its own LLM client using opaque state.
-        # This could be Anthropic API, Bedrock via boto3, a local model, etc.
-        # The runtime does not provide LLM services — the provider brings its own.
-        llm = self._make_client()  # uses self.state for config
+        # Provider manages its own LLM client using self.config
+        # Could be Anthropic API, Bedrock via boto3, local model, etc.
+        llm = self._make_client()
 
-        # Define runtime API verbs available to the agent
-        verbs = [
-            {"name": "content_query", "params": {"content_name": "str", "filters": "dict?", "limit": "int?"}},
-            {"name": "content_create", "params": {"content_name": "str", "data": "dict"}},
-            {"name": "content_update", "params": {"content_name": "str", "record_id": "int", "data": "dict"}},
-            {"name": "state_transition", "params": {"content_name": "str", "record_id": "int", "target_state": "str"}},
-            {"name": "event_emit", "params": {"event_name": "str", "payload": "dict?"}},
-            {"name": "commit", "params": {}},
-            {"name": "reflect_app", "params": {}},
-            {"name": "reflect_content", "params": {"name": "str"}},
-        ]
-
-        # Verb dispatch
-        dispatch = {
-            "content_query": lambda a: ctx.content_query(a["content_name"], a.get("filters"), a.get("limit")),
-            "content_create": lambda a: ctx.content_create(a["content_name"], a["data"]),
-            "content_update": lambda a: ctx.content_update(a["content_name"], a["record_id"], a["data"]),
-            "state_transition": lambda a: ctx.state_transition(a["content_name"], a["record_id"], a["target_state"]),
-            "event_emit": lambda a: ctx.event_emit(a["event_name"], a.get("payload")),
-            "commit": lambda a: ctx.commit(),
-            "reflect_app": lambda a: ctx.reflect_app(),
-            "reflect_content": lambda a: ctx.reflect_content(a["name"]),
+        # Runtime API verbs available to the agent
+        verbs = {
+            "content.query": lambda a: ctx.content_query(a["content_name"], a.get("filters"), a.get("limit")),
+            "content.create": lambda a: ctx.content_create(a["content_name"], a["data"]),
+            "content.update": lambda a: ctx.content_update(a["content_name"], a["record_id"], a["data"]),
+            "state.transition": lambda a: ctx.state_transition(a["content_name"], a["record_id"], a["target_state"]),
+            "channel.send": lambda a: ctx.channel_send(a["channel_name"], a["data"]),
+            "event.emit": lambda a: ctx.event_emit(a["event_name"], a.get("payload")),
+            "reflect.app": lambda a: ctx.reflect_app(),
+            "reflect.content": lambda a: ctx.reflect_content(a["name"]),
+            "transaction.commit": lambda a: ctx.commit(),
         }
 
-        # Agent execution loop — provider-managed, not runtime-managed
+        # Agent loop
         messages = [{"role": "system", "content": f"{objective}\n\nStrategy:\n{strategy}"}]
-
         for turn in range(50):
-            response = await llm.generate(messages=messages, verbs=verbs)
-
+            response = await llm.generate(messages=messages, tools=list(verbs.keys()))
             if response.done:
                 return {"result": response.content, "turns": turn + 1}
-
-            for verb_call in response.verb_calls:
-                handler = dispatch.get(verb_call.name)
-                if not handler:
-                    ctx.log("WARN", f"Unknown verb: {verb_call.name}")
-                    continue
-                try:
-                    result = await handler(verb_call.arguments)
-                    messages.append({"role": "verb_result", "verb_id": verb_call.id, "content": str(result)})
-                except Exception as e:
-                    messages.append({"role": "verb_result", "verb_id": verb_call.id, "content": f"Error: {e}", "is_error": True})
+            for call in response.calls:
+                handler = verbs.get(call.name)
+                if handler:
+                    try:
+                        result = await handler(call.args)
+                        messages.append({"role": "result", "id": call.id, "content": str(result)})
+                    except Exception as e:
+                        messages.append({"role": "result", "id": call.id, "content": f"Error: {e}", "is_error": True})
 
         ctx.log("WARN", "Agent reached max turns")
         return {"result": "max turns reached", "turns": 50}
@@ -342,126 +269,56 @@ class AIAgentProvider(ComputeProvider):
 
 ---
 
-## Provider Registration
-
-### In-Process (Python Reference Runtime)
-
-For the reference runtime, providers are Python classes registered at startup:
-
-```python
-app.compute_providers = {
-    "cel": CELProvider(),
-    "ai-agent": AIAgentProvider(state={
-        "model": "claude-sonnet-4-20250514",
-        "region": "us-west-2",
-        "client_type": "bedrock",
-    }),
-}
-```
-
-The runtime dispatches: `provider = providers[spec.get("provider") or "cel"]`.
-
-### Language-Agnostic Protocol (Any Runtime)
-
-The Python class is syntactic sugar. The canonical provider interface is a **JSON-RPC protocol over stdin/stdout** — the same pattern used by LSP and MCP. Any runtime in any language can host providers written in any other language.
-
-**Protocol flow:**
-
-```
-Runtime                          Provider (subprocess)
-  │                                  │
-  │──── initialize ─────────────────►│  (spec JSON + state JSON)
-  │◄─── initialized ────────────────│
-  │                                  │
-  │◄─── verb_call ──────────────────│  (content.query, state.transition, etc.)
-  │──── verb_result ────────────────►│  (JSON result or error)
-  │                                  │
-  │◄─── verb_call ──────────────────│  (may call many verbs)
-  │──── verb_result ────────────────►│
-  │                                  │
-  │◄─── complete ───────────────────│  (result JSON)
-  │                                  │
-```
-
-Each message is a JSON object on a single line (newline-delimited JSON):
-
-```json
-{"jsonrpc": "2.0", "method": "initialize", "params": {"spec": {...}, "state": {...}}, "id": 1}
-{"jsonrpc": "2.0", "method": "verb_call", "params": {"verb": "content.query", "args": {"content_name": "findings"}}, "id": 2}
-{"jsonrpc": "2.0", "result": [{"id": 1, "summary": "..."}], "id": 2}
-{"jsonrpc": "2.0", "method": "complete", "params": {"result": {"turns": 5}}, "id": 3}
-```
-
-A Rust runtime spawns the provider subprocess, sends `initialize`, handles `verb_call` requests by executing against its own storage/access-control layer, and receives the `complete` result. No Python required.
-
-### Which to Use
-
-| Situation | Approach |
-|-----------|----------|
-| Python provider in Python runtime | In-process class (fastest) |
-| Any provider in any runtime | Subprocess JSON-RPC (portable) |
-| Provider needs isolation | Subprocess (separate process, separate memory) |
-| Provider is untrusted | Subprocess + restricted verb set + resource limits |
-
----
-
 ## Internal API Security
-
-The runtime exposes two API surfaces:
 
 | Path | Audience | Authentication |
 |------|----------|---------------|
-| `/api/v1/*` | Users, external clients | Identity provider (stub, OAuth, JWT, OIDC) |
-| `/api/internal/*` | Scheduler, workers, services | Service token (`X-Termin-Service-Token` header) |
+| `/api/v1/*` | Users, external clients | Identity provider (stub, OAuth, JWT) |
+| `/api/internal/*` | Scheduler, workers | Service token (`X-Termin-Service-Token` header) |
 
 Internal endpoints:
-- `GET /api/internal/schedules` — list all `Trigger on schedule` Computes
-- `POST /api/internal/compute/{name}` — invoke a Compute as service identity
+- `GET /api/internal/schedules` — list `Trigger on schedule` Computes
+- `POST /api/internal/compute/{name}` — invoke as service identity
 
-The service token is a deployment-time secret (environment variable, Secrets Manager). It is never in the `.termin` file. The runtime rejects requests to `/api/internal/*` without a valid token.
+Service token is a deployment-time secret (env var, Secrets Manager). Never in the `.termin` file.
 
-Rationale: `/api/internal/schedules` lists all scheduled Computes with their intervals and providers — this leaks implementation details. Only the innermost trusted services should have this access.
+---
+
+## Before / After Snapshots
+
+Postconditions compare AppFabric state before and after execution. `Before` and `After` are query-able objects with the same interface as `ctx`:
+
+```
+Before.content_query("findings").size()   # count before execution
+After.content_query("findings").size()    # count after (includes staged)
+```
+
+- **Before**: frozen snapshot at precondition pass
+- **After**: production + staged writes - staged deletes
 
 ---
 
 ## Security Properties
 
-1. **Every runtime API verb is access-controlled.** `ctx.content_create("findings", ...)` checks the identity's scopes against the access grants for "findings".
-
-2. **Every read is redacted.** `ctx.content_query("employees")` returns records with confidential fields redacted based on the effective identity.
-
-3. **Writing to a confidential field the identity cannot access terminates execution.** Rollback + TerminAtor error. Not a soft failure.
-
-4. **All writes are staged.** Nothing touches the AppFabric until `commit()` or successful postcondition evaluation.
-
-5. **Postconditions are enforced.** The runtime checks postconditions against Before/After snapshots. Failure rolls back everything since the last commit.
-
-6. **CEL evaluation has no side effects.** `ctx.evaluate()` cannot write to storage, make network calls, or modify state. String injection produces a syntax error.
-
-7. **The provider cannot bypass the runtime.** No direct database access, no raw SQL, no file I/O. The ComputeContext is the only interface.
+1. **Every runtime API verb is access-controlled.**
+2. **Every read is redacted per effective identity.**
+3. **Writing to a confidential field terminates execution.**
+4. **All writes are staged until commit.**
+5. **Postconditions are enforced with rollback.**
+6. **CEL evaluation has no side effects.**
+7. **External I/O only through Channels (declared, scoped, authenticated).**
+8. **No arbitrary code execution.** Only two providers, both built into the runtime.
 
 ---
 
-## Design Decisions
+## Scope Naming Convention
 
-### Scope Naming Convention — Dot Notation (Resolved)
-
-Scopes use **dot notation** as a convention: `resource.verb` or `resource.qualifier`.
+Dot notation: `resource.verb` or `resource.qualifier`.
 
 ```
-employees.view          — can view employee records
-employees.manage        — can create/update employees
-salary.access           — can see salary fields (confidentiality)
-team_metrics.view       — can see aggregated metrics
-findings.triage         — can create/manage findings
+employees.view       — can view employee records
+salary.access        — can see salary fields
+findings.triage      — can create/manage findings
 ```
 
-**Important:** Dot notation is a convention, not parsed syntax. The runtime treats scopes as **opaque strings**. `"employees.view"` and `"view_employees"` are equally valid — the dots carry no semantic meaning to the runtime. The convention exists for human readability and organizational consistency.
-
-### Read-Only Scopes (Resolved)
-
-The verb-based access grant system is sufficient. A scope that grants only `view` is read-only by construction — no separate `readonly` modifier needed. The access rule `Anyone with "employees.view" can view employees` grants read access without write, create, or delete.
-
-### Provider Portability (Resolved)
-
-The Python `ComputeProvider` class is the reference implementation, not the canonical interface. The canonical interface is the **JSON-RPC protocol over stdin/stdout** (see Provider Registration above). A Rust, Go, or TypeScript runtime can host providers written in any language via subprocess communication. No Python dependency required.
+Dot notation is a convention — scopes are opaque strings to the runtime.
