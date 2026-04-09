@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from termin_runtime import create_termin_app
 from termin_runtime.channels import (
-    ChannelDispatcher, ChannelError, ChannelScopeError, ChannelValidationError,
+    ChannelDispatcher, ChannelConfig, ChannelError, ChannelScopeError, ChannelValidationError,
     load_deploy_config, _resolve_env_vars,
 )
 
@@ -333,3 +333,94 @@ class TestChannelReflection:
             assert "pagerduty" in names
             assert "cloud-provider" in names
             assert "slack" in names
+
+    def test_reflect_channels_endpoint(self):
+        """GET /api/reflect/channels returns live status for all channels."""
+        with _make_channel_client() as client:
+            r = client.get("/api/reflect/channels")
+            assert r.status_code == 200
+            channels = r.json()
+            assert len(channels) == 6
+
+            # Configured channels
+            pagerduty = next(ch for ch in channels if ch["name"] == "pagerduty")
+            assert pagerduty["configured"] is True
+            assert pagerduty["protocol"] == "http"
+            assert pagerduty["state"] == "connected"
+            assert pagerduty["direction"] == "OUTBOUND"
+            assert pagerduty["metrics"]["sent"] == 0
+
+            # Unconfigured channels
+            github = next(ch for ch in channels if ch["name"] == "github-webhooks")
+            assert github["configured"] is False
+            assert github["state"] == "not_configured"
+
+            # Internal channels
+            bus = next(ch for ch in channels if ch["name"] == "incident-bus")
+            assert bus["configured"] is False
+            assert bus["direction"] == "INTERNAL"
+
+            # Action-only channel
+            cloud = next(ch for ch in channels if ch["name"] == "cloud-provider")
+            assert cloud["actions"] == 3
+            assert cloud["carries"] == ""
+
+    def test_reflect_single_channel(self):
+        """GET /api/reflect/channels/{name} returns detailed status."""
+        with _make_channel_client() as client:
+            r = client.get("/api/reflect/channels/cloud-provider")
+            assert r.status_code == 200
+            ch = r.json()
+            assert ch["name"] == "cloud-provider"
+            assert ch["configured"] is True
+            assert len(ch["actions"]) == 3
+            assert "restart-service" in ch["actions"]
+
+    def test_reflect_channel_not_found(self):
+        with _make_channel_client() as client:
+            r = client.get("/api/reflect/channels/nonexistent")
+            assert r.status_code == 404
+
+
+# ── WebSocket dispatcher unit tests ──
+
+class TestWebSocketDispatcher:
+    def test_ws_connection_state_initial(self):
+        from termin_runtime.channels import WebSocketConnection
+        config = ChannelConfig(url="ws://localhost:9999", protocol="websocket")
+        ws = WebSocketConnection("test", config)
+        assert ws.state == "disconnected"
+
+    def test_dispatcher_routes_ws_protocol(self):
+        """Channels with protocol=websocket should use WS connections, not HTTP."""
+        ir = json.loads(_load_ir("channel_demo"))
+        ws_config = {
+            "channels": {
+                "slack": {
+                    "url": "wss://mock-slack.test/ws",
+                    "protocol": "websocket",
+                    "auth": {"type": "bearer", "token": "test"},
+                },
+            },
+        }
+        dispatcher = ChannelDispatcher(ir, ws_config)
+        config = dispatcher.get_config("slack")
+        assert config.protocol == "websocket"
+
+    def test_get_full_status_includes_protocol(self):
+        ir = json.loads(_load_ir("channel_demo"))
+        dispatcher = ChannelDispatcher(ir, MOCK_DEPLOY_CONFIG)
+        status = dispatcher.get_full_status()
+        pagerduty = next(s for s in status if s["name"] == "pagerduty")
+        assert pagerduty["protocol"] == "http"
+        assert pagerduty["configured"] is True
+
+    def test_get_connection_state_http_always_connected(self):
+        ir = json.loads(_load_ir("channel_demo"))
+        dispatcher = ChannelDispatcher(ir, MOCK_DEPLOY_CONFIG)
+        assert dispatcher.get_connection_state("pagerduty") == "connected"
+
+    def test_get_connection_state_unconfigured(self):
+        ir = json.loads(_load_ir("channel_demo"))
+        dispatcher = ChannelDispatcher(ir, {"channels": {}})
+        assert dispatcher.get_connection_state("pagerduty") == "not_configured"

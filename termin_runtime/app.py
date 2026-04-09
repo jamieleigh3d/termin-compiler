@@ -164,6 +164,34 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                 await db.close()
         print(f"[Termin] Phase 4: Registering primitives")
         # Channel dispatcher startup
+        # Register inbound WebSocket message handler — creates content records
+        async def _handle_inbound_ws(channel_name: str, data: dict):
+            spec = channel_dispatcher.get_spec(channel_name)
+            if not spec:
+                return
+            carries = spec.get("carries_content", "")
+            if not carries:
+                return  # action-only channel, no content creation
+            schema = content_lookup.get(carries)
+            if not schema:
+                return
+            known_cols = set()
+            for f in schema.get("fields", []):
+                fname = f.get("name", "")
+                known_cols.add(fname if isinstance(fname, str) else fname.get("snake", ""))
+            record_data = {k: v for k, v in data.items() if k in known_cols}
+            if not record_data:
+                return
+            db = await get_db(db_path)
+            try:
+                record = await create_record(db, carries, record_data, sm_lookup.get(carries))
+                await run_event_handlers(db, carries, "created", record)
+                await event_bus.publish({"channel_id": f"content.{carries}.created", "data": record})
+                print(f"[Termin] Inbound WS '{channel_name}': created {carries} record (id={record.get('id', '?')})")
+            finally:
+                await db.close()
+
+        channel_dispatcher.on_ws_message(_handle_inbound_ws)
         await channel_dispatcher.startup()
         configured_channels = [ch["name"]["display"] for ch in ir.get("channels", []) if channel_dispatcher.is_configured(ch["name"]["display"])]
         if configured_channels:
@@ -604,6 +632,30 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         if not role:
             raise HTTPException(status_code=404, detail=f"Role '{role_name}' not found")
         return role
+
+    @app.get("/api/reflect/channels")
+    async def api_reflect_channels():
+        """Live channel status: connection state, protocol, metrics."""
+        return channel_dispatcher.get_full_status()
+
+    @app.get("/api/reflect/channels/{channel_name}")
+    async def api_reflect_channel(channel_name: str):
+        spec = channel_dispatcher.get_spec(channel_name)
+        if not spec:
+            raise HTTPException(status_code=404, detail=f"Channel '{channel_name}' not found")
+        display = spec["name"]["display"]
+        config = channel_dispatcher.get_config(channel_name)
+        return {
+            "name": display,
+            "direction": spec.get("direction", ""),
+            "delivery": spec.get("delivery", ""),
+            "carries": spec.get("carries_content", ""),
+            "actions": [a["name"]["display"] for a in spec.get("actions", [])],
+            "configured": channel_dispatcher.is_configured(channel_name),
+            "state": channel_dispatcher.get_connection_state(channel_name),
+            "protocol": config.protocol if config else "none",
+            "metrics": channel_dispatcher.get_metrics(channel_name),
+        }
 
     @app.get("/api/errors")
     async def api_errors():
