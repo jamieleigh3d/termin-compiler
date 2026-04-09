@@ -694,10 +694,30 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
 
         output = {"result": result, "transaction_id": tx.id}
 
+        # Build Before/After snapshots for postcondition evaluation
+        # Before: content data as it was before execution
+        # After: content data with staged changes applied + compute result
+        before_snapshot = {"result": None}
+        after_snapshot = {"result": result}
+
+        # Load content data for input/output content types referenced by this Compute
+        try:
+            db = await get_db(db_path)
+            for content_name in set(comp.get("input_content", []) + comp.get("output_content", [])):
+                cursor = await db.execute(f"SELECT * FROM {content_name}")
+                rows = await cursor.fetchall()
+                records = [dict(r) for r in rows]
+                before_snapshot[content_name] = records
+                # After = same as before + any staged writes (currently CEL-only = no writes)
+                after_snapshot[content_name] = await tx.read_all(content_name, records)
+            await db.close()
+        except Exception:
+            pass  # If content loading fails, postconditions use simplified snapshots
+
         # Evaluate postconditions
         post_ctx = dict(compute_ctx)
-        post_ctx["After"] = {"result": result}
-        post_ctx["Before"] = {"result": None}  # simplified — full snapshot in E10 phase 2
+        post_ctx["After"] = after_snapshot
+        post_ctx["Before"] = before_snapshot
         for i, postcond in enumerate(comp.get("postconditions", [])):
             try:
                 check = expr_eval.evaluate(postcond, post_ctx)
