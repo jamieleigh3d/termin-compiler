@@ -568,6 +568,17 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None)
     async def api_reflect_compute():
         return reflection.compute_functions()
 
+    @app.get("/api/reflect/roles")
+    async def api_reflect_roles():
+        return reflection.roles()
+
+    @app.get("/api/reflect/roles/{role_name}")
+    async def api_reflect_role(role_name: str):
+        role = reflection.role(role_name)
+        if not role:
+            raise HTTPException(status_code=404, detail=f"Role '{role_name}' not found")
+        return role
+
     @app.get("/api/errors")
     async def api_errors():
         return terminator.get_error_log()

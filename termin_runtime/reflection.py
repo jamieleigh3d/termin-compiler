@@ -70,6 +70,17 @@ class ReflectionEngine:
             'isAnonymous': user.get('role', 'anonymous') == 'anonymous',
         }
 
+    def roles(self):
+        """Return list of role names."""
+        return [r["name"] for r in self._spec.get("auth", {}).get("roles", [])]
+
+    def role(self, name):
+        """Return role details by name (case-insensitive)."""
+        for r in self._spec.get("auth", {}).get("roles", []):
+            if r["name"].lower() == name.lower():
+                return {"Name": r["name"], "Scopes": r.get("scopes", [])}
+        return None
+
     def boundary_info(self, name):
         for b in self._spec.get('boundaries', []):
             if b['name']['display'] == name or b['name']['snake'] == name:
@@ -118,3 +129,18 @@ def register_reflection_with_expr_eval(reflection: ReflectionEngine, expr_eval):
             'hasScope': staticmethod(lambda scope: False),
         })(),
     })())
+
+    # Role reflection: reflect_role("engineer") -> {"Name": "...", "Scopes": [...]}
+    from celpy.celtypes import StringType
+    def _reflect_role(name):
+        role = reflection.role(str(name))
+        if role:
+            from celpy import json_to_cel
+            return json_to_cel(role)
+        return json_to_cel({"Name": str(name), "Scopes": []})
+    expr_eval.register_function('reflect_role', _reflect_role)
+
+    def _reflect_roles():
+        from celpy import json_to_cel
+        return json_to_cel(reflection.roles())
+    expr_eval.register_function('reflect_roles', _reflect_roles)
