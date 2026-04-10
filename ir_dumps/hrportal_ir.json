@@ -1090,9 +1090,15 @@
       "provider": null,
       "preconditions": [],
       "postconditions": [],
+      "directive": null,
       "objective": null,
       "strategy": null,
-      "trigger": null
+      "trigger": null,
+      "trigger_where": null,
+      "accesses": [],
+      "input_fields": [],
+      "output_fields": [],
+      "output_creates": null
     }
   ],
   "channels": [],

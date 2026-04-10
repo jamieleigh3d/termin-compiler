@@ -798,9 +798,15 @@
       "postconditions": [
         "After.content_query(\"findings\").size() <= Before.content_query(\"findings\").size() + 100"
       ],
+      "directive": null,
       "objective": "You are a security scanning agent for the app fabric.\n    Scan all deployed apps for IAM policy drift, dependency CVEs,\n    confidentiality violations, and stale secrets. Create a finding\n    for each issue detected. Prioritize internet-facing apps over\n    internal, production over beta.",
       "strategy": "1. Use reflect.apps() to list all active apps\n    2. For each app:\n       a. Use reflect.app(name).definition to load its definition\n       b. Use channel.invoke(\"security-tools\", \"describe-iam-policy\") to get current policy\n       c. Compare expected vs actual IAM policy\n       d. Check dependency CVEs and secret rotation age\n    3. Use content.create(\"findings\", ...) for each issue found\n    4. Use content.create(\"scan-runs\", ...) to record this execution",
-      "trigger": "schedule every 1 hour"
+      "trigger": "schedule every 1 hour",
+      "trigger_where": null,
+      "accesses": [],
+      "input_fields": [],
+      "output_fields": [],
+      "output_creates": null
     },
     {
       "name": {
@@ -842,9 +848,15 @@
       "postconditions": [
         "After.content_query(\"findings\").filter(f, f.remediation == \"detected\").size() <= Before.content_query(\"findings\").filter(f, f.remediation == \"detected\").size()"
       ],
+      "directive": null,
       "objective": "You are a remediation agent. Attempt safe auto-remediation for\n    security findings. Only act where the fix is deterministic and\n    reversible. Flag for human review if judgment is needed.",
       "strategy": "1. Read the finding and classify:\n       - iam-drift: use channel.invoke(\"security-tools\", \"restrict-policy\")\n         to narrow the IAM policy to expected permissions\n       - stale-secret: use channel.invoke(\"security-tools\", \"rotate-secret\")\n         to rotate the expired credential\n       - confidentiality-violation: flag for human (requires definition change)\n       - cve, state-deadlock, error-spike: flag for human\n    2. For auto-remediable: state.transition(finding, \"auto-fix-applied\")\n    3. For human-required: state.transition(finding, \"flagged-for-human\")",
-      "trigger": "event \"finding.created\""
+      "trigger": "event \"finding.created\"",
+      "trigger_where": null,
+      "accesses": [],
+      "input_fields": [],
+      "output_fields": [],
+      "output_creates": null
     }
   ],
   "channels": [

@@ -1069,9 +1069,15 @@
       "provider": null,
       "preconditions": [],
       "postconditions": [],
+      "directive": null,
       "objective": null,
       "strategy": null,
-      "trigger": null
+      "trigger": null,
+      "trigger_where": null,
+      "accesses": [],
+      "input_fields": [],
+      "output_fields": [],
+      "output_creates": null
     },
     {
       "name": {
@@ -1113,9 +1119,15 @@
       "postconditions": [
         "After.content_query(\"incidents\").filter(i, i.response_lifecycle == \"opened\").size() <= Before.content_query(\"incidents\").filter(i, i.response_lifecycle == \"opened\").size()"
       ],
+      "directive": null,
       "objective": "You are an incident response agent. For critical and high severity\n    incidents, attempt automated mitigation: restart the affected\n    service, or roll back to the last known-good deployment. For\n    medium and low, just classify and assign.",
       "strategy": "1. Read the incident severity and affected service\n    2. If critical or high:\n       a. Use channel.invoke(\"cloud-provider\", \"restart-service\")\n       b. If restart fails, use channel.invoke(\"cloud-provider\", \"rollback-deployment\")\n       c. Transition to \"mitigating\"\n    3. If medium or low:\n       a. Assign to on-call responder\n       b. Transition to \"investigating\"\n    4. Use channel.invoke(\"slack\", \"post-message\") to notify #incidents",
-      "trigger": "event \"incident.created\""
+      "trigger": "event \"incident.created\"",
+      "trigger_where": null,
+      "accesses": [],
+      "input_fields": [],
+      "output_fields": [],
+      "output_creates": null
     }
   ],
   "channels": [

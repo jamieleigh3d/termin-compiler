@@ -149,38 +149,30 @@ Items deferred to v1.0 or later. Not prioritized, not scheduled. Captured here s
 
 ## Immediate Priority Queue
 
-Restructured April 9, 2026. Blocks A, B, D are complete. Channel runtime and AI agent support are the critical path to v0.5.0 for an AWS-native Termin runtime. Everything else is lower priority.
+Restructured April 10, 2026. Blocks A, B, D, F, G (core), H are complete. v0.5.0 compiler and runtime features shipped.
 
-### Priority 1: Block G — AI Agent Runtime (v0.5.0 blocker)
+### Completed: Block G — AI Agent Runtime
 
-**Why first:** Block F (Channels) is complete. Agents depend on channels (`channel.invoke()`). an AWS-native Termin runtime is building agent support. We need a working AI agent demo to prove the model before v0.5.0.
+| # | Item | Status |
+|---|------|--------|
+| G3 | Agent tool API: ComputeContext tools (content_query/create/update, state_transition) | DONE |
+| G4 | AI provider: Anthropic + OpenAI with forced tool_use, thinking-first output | DONE |
+| G6 | Event trigger for Computes: Trigger on event with where clause | DONE |
+| G7 | Agent demos: agent_simple.termin (Level 1 LLM) + agent_chatbot.termin (Level 3 agent) | DONE |
+| G1 | Compute system type in CEL context | DEFERRED to v0.6 (not blocking demos) |
+| G2 | Before/After snapshots for postconditions | DEFERRED to v0.6 (not blocking demos) |
+| G5 | Runtime scheduler for Trigger on schedule | DEFERRED to v0.6 |
+| G8 | Agent observability (trace logging) | DEFERRED to v0.7 |
 
-**Why second:** Depends on channels (agents call `channel.invoke()`). an AWS-native Termin runtime is building agent support. We need a working AI agent demo to prove the model before v0.5.0.
+### Completed: Block H — Semantic Mark Primitive
 
-| # | Item | Effort | Subsystems | Notes |
-|---|------|--------|------------|-------|
-| G1 | Wire Compute system type into runtime CEL context | Small | runtime (app, expression) | `Compute.Name`, `Compute.Scopes`, `Compute.Provider`, `Compute.Trigger`, `Compute.StartedAt`. Needed for precondition evaluation. |
-| G2 | Full Before/After snapshots backed by transaction staging | Medium | runtime (transaction) | `Before.content_query()` → snapshot at transaction start. `After.content_query()` → staged writes merged with snapshot. Needed for postcondition evaluation. |
-| G3 | Agent tool API: ComputeContext with `content.*`, `state.*`, `channel.*`, `reflect.*` | Large | runtime (new module: `agent.py`) | Python class wrapping transaction + channel dispatcher. Methods: `content_query()`, `content_create()`, `content_update()`, `content_delete()`, `state_transition()`, `channel_invoke()`, `channel_send()`, `reflect_app()`. |
-| G4 | AI agent provider: Claude API integration | Large | runtime (agent) | Call Claude API with objective + strategy + available tools. Map tool_use responses to ComputeContext method calls. Loop until agent signals done or token/turn limit reached. |
-| G5 | Runtime scheduler for `Trigger on schedule` Computes | Medium | runtime (new module: `scheduler.py`) | APScheduler or asyncio-based. Read trigger specs from IR. Execute Compute on schedule via the existing Compute endpoint. |
-| G6 | Runtime event trigger for `Trigger on event` Computes | Medium | runtime (app, events) | When event fires matching a Compute's trigger spec, auto-invoke that Compute with the triggering record. |
-| G7 | AI agent demo app: `.termin` example with working agent | Medium | examples | Simple enough to demo: e.g., a support bot that triages tickets, or a content moderator. Must exercise: agent Compute, channel.invoke, pre/postconditions, state transitions. |
-| G8 | Agent observability: execution log, tool call trace, token usage | Small | runtime (agent, reflection) | Log each tool call with args/result. Expose via reflection. Track token usage per invocation. |
-
-**Exit criteria:** A `.termin` app with `Provider is "ai-agent"` actually calls Claude, executes tool calls through ComputeContext, respects pre/postconditions with rollback, and the whole thing is observable.
-
-### Priority 2: Block H — Semantic Mark Primitive (v0.5.0)
-
-**Why:** PRFAQ v7 promise. Replaces `Highlight rows where` with semantic `Mark ... as "label"` that decouples intent from presentation. Works on rows, fields, and columns.
-
-| # | Item | Effort | Subsystems | Notes |
-|---|------|--------|------------|-------|
-| H1 | `Mark rows where [expr] as "label"` grammar + parser | Small | compiler (PEG, parser) | Replaces `Highlight rows where`. No deprecation (pre-v1.0). |
-| H2 | `Mark [field] where [expr] as "label"` for field-level marks | Small | compiler (PEG, parser) | Same syntax, scoped to a field within a table. |
-| H3 | `semantic_mark` IR component type | Small | IR, lowering | `{type: "semantic_mark", props: {condition, label, scope}}` where scope is "row", "field", or "column". |
-| H4 | Runtime renderer: map labels to visual + ARIA attributes | Medium | runtime (presentation) | Default label→rendering map (urgent→red+alert, warning→amber, success→green). Custom labels get `data-termin-mark="label"`. |
-| H5 | Update all examples using `Highlight` to use `Mark...as` | Small | examples | Clean swap across all .termin files. |
+| # | Item | Status |
+|---|------|--------|
+| H1 | `Mark rows where [expr] as "label"` grammar + parser | DONE |
+| H2 | `Mark [field] where [expr] as "label"` for field-level marks | DONE |
+| H3 | `semantic_mark` IR component type | DONE |
+| H4 | Runtime renderer: label→CSS + data-termin-mark + aria-label | DONE |
+| H5 | Update examples to use Mark...as | Backlogged (existing Highlight still works) |
 
 ### Priority 3: Block E — Remaining Quick Wins & Research
 
@@ -537,3 +529,13 @@ Items deferred to v1.0 or later. Not prioritized, not scheduled.
 | 2026-04-09 | `security_agent.termin` example (action channels, agent computes, event sends) | — |
 | 2026-04-09 | `channel_demo.termin` example (all 6 channel patterns + seed data) | — |
 | 2026-04-09 | Roadmap restructured: Blocks F (Channel Runtime) and G (Agent Runtime) as v0.5.0 critical path | — |
+| 2026-04-09 | Block F complete: Channel runtime (outbound HTTP/WS, inbound webhooks, actions, events, deploy config) | a588070..7b4d21d |
+| 2026-04-09 | `channel_simple.termin` loopback demo working end-to-end | da639e5..eb2cb4e |
+| 2026-04-09 | Singular field added to ContentSchema IR (fixes pluralization) | 957b317 |
+| 2026-04-10 | Design decisions D-02 (field wiring), D-05 (Accesses), D-08 (event envelope), D-12 (structured output) | f899496..2973af3 |
+| 2026-04-10 | Design backlog D-01 through D-17, v0.5 dependency analysis | fbd0745 |
+| 2026-04-10 | Compiler: Input/Output field wiring, Accesses, Directive, trigger where clause, ComputeShape.NONE | 66f6a4a |
+| 2026-04-10 | Block G: AI provider (Anthropic + OpenAI), event-triggered Computes, ComputeContext tools | 166479c |
+| 2026-04-10 | Block H: Mark...as semantic emphasis (grammar, parser, IR, renderer) | 77e71c0 |
+| 2026-04-10 | Agent examples: agent_simple.termin (Level 1 LLM) + agent_chatbot.termin (Level 3 agent) | 66f6a4a |
+| 2026-04-10 | 480 tests passing (24 new agent/mark tests) | ce2ef73 |
