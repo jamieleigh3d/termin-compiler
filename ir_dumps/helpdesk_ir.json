@@ -170,6 +170,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "ticket",
       "storage_intent": "auto",
       "has_state_machine": true,
       "initial_state": "open",
@@ -247,6 +248,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "comment",
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,

@@ -80,10 +80,14 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     # Content schemas for storage
     schemas = []
     content_lookup = {}  # snake_name -> schema dict
+    singular_lookup = {}  # snake_name -> singular (e.g. "echoes" -> "echo")
     sm_lookup = {}  # content_ref -> {"initial": str, "transitions": {(from,to): scope}}
     for cs in ir.get("content", []):
         schemas.append(cs)
-        content_lookup[cs["name"]["snake"]] = cs
+        snake = cs["name"]["snake"]
+        content_lookup[snake] = cs
+        if cs.get("singular"):
+            singular_lookup[snake] = cs["singular"]
     for sm in ir.get("state_machines", []):
         # Normalize transitions array into {(from, to): scope} dict
         trans_dict = {}
@@ -417,7 +421,10 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                         parts = k.split("_")
                         camel = parts[0] + "".join(w.capitalize() for w in parts[1:])
                         ctx[camel] = v
-                    snake_singular = content_name.rstrip("s") if content_name.endswith("s") else content_name
+                    # Use authoritative singular from IR, fall back to naive strip
+                    snake_singular = singular_lookup.get(content_name, "")
+                    if not snake_singular:
+                        snake_singular = content_name.rstrip("s") if content_name.endswith("s") else content_name
                     parts = snake_singular.split("_")
                     camel_prefix = parts[0] + "".join(w.capitalize() for w in parts[1:])
                     prefixed = dict(ctx)

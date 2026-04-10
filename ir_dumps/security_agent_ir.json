@@ -186,6 +186,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "finding",
       "storage_intent": "auto",
       "has_state_machine": true,
       "initial_state": "detected",
@@ -288,6 +289,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "scan_run",
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,

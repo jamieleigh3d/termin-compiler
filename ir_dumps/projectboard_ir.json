@@ -98,6 +98,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "project",
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,
@@ -180,6 +181,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "team_member",
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,
@@ -257,6 +259,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "sprint",
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,
@@ -387,6 +390,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "task",
       "storage_intent": "auto",
       "has_state_machine": true,
       "initial_state": "backlog",
@@ -464,6 +468,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "time_log",
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,

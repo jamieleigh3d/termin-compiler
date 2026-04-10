@@ -90,6 +90,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "order",
       "storage_intent": "auto",
       "has_state_machine": true,
       "initial_state": "pending",
@@ -167,6 +168,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "order_line",
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,
@@ -212,6 +214,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "report",
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,
@@ -639,7 +642,8 @@
           "scope": "orders.write",
           "direction": "send"
         }
-      ]
+      ],
+      "actions": []
     },
     {
       "name": {
@@ -656,7 +660,8 @@
           "scope": "orders.read",
           "direction": "receive"
         }
-      ]
+      ],
+      "actions": []
     },
     {
       "name": {
@@ -673,7 +678,8 @@
           "scope": "orders.read",
           "direction": "receive"
         }
-      ]
+      ],
+      "actions": []
     },
     {
       "name": {
@@ -685,7 +691,8 @@
       "direction": "INTERNAL",
       "delivery": "AUTO",
       "endpoint": null,
-      "requirements": []
+      "requirements": [],
+      "actions": []
     }
   ],
   "boundaries": [

@@ -209,6 +209,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "employee",
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,
@@ -272,6 +273,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "department",
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,
@@ -397,6 +399,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "salary_review",
       "storage_intent": "auto",
       "has_state_machine": true,
       "initial_state": "pending",

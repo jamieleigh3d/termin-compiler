@@ -65,6 +65,7 @@ Column = FieldSpec
 class ContentSchema:
     name: QualifiedName
     fields: tuple[FieldSpec, ...]
+    singular: str = ""                               # e.g. "echo" for Content "echoes"
     storage_intent: str = "auto"
     has_state_machine: bool = False
     initial_state: Optional[str] = None

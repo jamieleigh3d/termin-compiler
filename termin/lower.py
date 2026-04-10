@@ -226,6 +226,7 @@ def lower(program: Program) -> AppSpec:
         has_sm = c.name in sm_by_content
         content_schemas.append(ContentSchema(
             name=_qname(c.name),
+            singular=_snake(c.singular) if c.singular else "",
             fields=tuple(fields),
             has_state_machine=has_sm,
             initial_state=sm_by_content[c.name].initial_state if has_sm else None,

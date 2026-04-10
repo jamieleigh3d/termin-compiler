@@ -59,6 +59,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "note",
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,
@@ -104,6 +105,7 @@
           "confidentiality_scopes": []
         }
       ],
+      "singular": "echo",
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,
