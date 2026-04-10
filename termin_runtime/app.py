@@ -28,6 +28,7 @@ from .confidentiality import (
 )
 from .transaction import Transaction
 from .channels import ChannelDispatcher, ChannelError, ChannelScopeError, ChannelValidationError, ChannelConfigError, load_deploy_config, check_deploy_config_warnings
+from .ai_provider import AIProvider, AIProviderError, build_output_tool, build_agent_tools
 
 
 def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
@@ -65,6 +66,17 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     elif deploy_config is None:
         deploy_config = {}
     channel_dispatcher = ChannelDispatcher(ir, deploy_config)
+
+    # AI provider
+    ai_provider = AIProvider(deploy_config)
+
+    # Build Compute lookup with trigger index
+    compute_specs = {}  # snake_name -> compute IR dict
+    trigger_computes = []  # computes with event triggers
+    for comp in ir.get("computes", []):
+        compute_specs[comp["name"]["snake"]] = comp
+        if (comp.get("trigger") or "").startswith("event "):
+            trigger_computes.append(comp)
 
     # Identity
     roles = {}
@@ -210,6 +222,12 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
 
         channel_dispatcher.on_ws_message(_handle_inbound_ws)
         await channel_dispatcher.startup(strict=strict_channels)
+        # AI provider startup
+        ai_provider.startup()
+        if ai_provider.is_configured:
+            print(f"[Termin] Phase 4b: AI provider ready ({ai_provider.service}/{ai_provider.model})")
+        elif trigger_computes:
+            print(f"[Termin] Phase 4b: AI provider not configured — {len(trigger_computes)} LLM Compute(s) will be skipped")
         # Warn about unset env vars or uncustomized placeholders
         config_warnings = check_deploy_config_warnings(deploy_config, ir)
         for w in config_warnings:
@@ -469,6 +487,227 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                             await event_bus.publish({"type": f"{ev.get('source_content', '')}_event", "log_level": ev.get("log_level", "INFO")})
                     except Exception as _ev_err:
                         print(f"[Termin] [WARN] Event handler error: {_ev_err}")
+
+        # Check event-triggered Computes (G6)
+        event_type = f"{content_name.rstrip('s') if content_name.endswith('s') else content_name}.{trigger}"
+        # Also use authoritative singular
+        singular = singular_lookup.get(content_name, "")
+        if singular:
+            event_type_singular = f"{singular}.{trigger}"
+        else:
+            event_type_singular = event_type
+
+        for comp in trigger_computes:
+            trigger_spec = comp.get("trigger", "")
+            # Parse "event "X.Y"" to match
+            if trigger_spec.startswith("event "):
+                trigger_event = trigger_spec[6:].strip().strip('"')
+                if trigger_event == event_type or trigger_event == event_type_singular or trigger_event == f"{content_name}.{trigger}":
+                    # Check where clause
+                    where_expr = comp.get("trigger_where")
+                    if where_expr:
+                        ctx = dict(record)
+                        snake_sing = singular_lookup.get(content_name, content_name.rstrip("s") if content_name.endswith("s") else content_name)
+                        prefixed = dict(ctx)
+                        prefixed["created"] = True
+                        prefixed["updated"] = True
+                        ctx[snake_sing] = prefixed
+                        try:
+                            if not expr_eval.evaluate(where_expr, ctx):
+                                continue  # Where clause filtered this event
+                        except Exception:
+                            continue  # Expression error — skip
+
+                    # Fire the Compute in a background thread
+                    import threading
+                    def _run_compute(_comp=comp, _record=dict(record), _content=content_name):
+                        import asyncio as _aio
+                        loop = _aio.new_event_loop()
+                        try:
+                            loop.run_until_complete(_execute_compute(_comp, _record, _content))
+                        except Exception as e:
+                            print(f"[Termin] [ERROR] Compute '{_comp['name']['display']}' failed: {e}")
+                        finally:
+                            loop.close()
+                    threading.Thread(target=_run_compute, daemon=True).start()
+
+    async def _execute_compute(comp: dict, record: dict, content_name: str):
+        """Execute a Compute triggered by an event."""
+        comp_name = comp["name"]["display"]
+        provider = comp.get("provider", "cel")
+
+        if provider == "llm":
+            await _execute_llm_compute(comp, record, content_name)
+        elif provider == "ai-agent":
+            await _execute_agent_compute(comp, record, content_name)
+        else:
+            print(f"[Termin] Compute '{comp_name}': provider '{provider}' not supported for event triggers")
+
+    async def _execute_llm_compute(comp: dict, record: dict, content_name: str):
+        """Execute a Level 1 LLM Compute — field-to-field completion."""
+        comp_name = comp["name"]["display"]
+
+        if not ai_provider.is_configured:
+            print(f"[Termin] Compute '{comp_name}': AI provider not configured, skipped")
+            return
+
+        # Read input fields from record
+        input_values = {}
+        for content_ref, field_name in comp.get("input_fields", []):
+            if field_name in record:
+                input_values[field_name] = record[field_name]
+
+        # Build prompts
+        directive = comp.get("directive", "You are a helpful assistant.")
+        objective = comp.get("objective", "")
+
+        # Interpolate inline expressions in objective (field references)
+        for fname, fval in input_values.items():
+            # Simple interpolation: replace field references in objective
+            singular = singular_lookup.get(content_name, content_name.rstrip("s") if content_name.endswith("s") else content_name)
+            objective = objective.replace(f"{singular}.{fname}", str(fval))
+
+        # Build user message from input fields
+        if input_values:
+            user_msg = objective + "\n\n" + "\n".join(f"{k}: {v}" for k, v in input_values.items())
+        else:
+            user_msg = objective
+
+        # Build output tool
+        output_fields = comp.get("output_fields", [])
+        output_tool = build_output_tool(output_fields, content_lookup)
+
+        print(f"[Termin] Compute '{comp_name}': calling {ai_provider.service} (record {record.get('id', '?')})")
+
+        try:
+            result = await ai_provider.complete(directive, user_msg, output_tool)
+            thinking = result.pop("thinking", "")
+            if thinking:
+                print(f"[Termin] Compute '{comp_name}' thinking: {thinking[:100]}")
+
+            # Write output fields back to the record
+            if output_fields and record.get("id"):
+                update_data = {}
+                for content_ref, field_name in output_fields:
+                    if field_name in result:
+                        update_data[field_name] = result[field_name]
+                if update_data:
+                    db = await get_db(db_path)
+                    try:
+                        sets = ", ".join(f"{k} = ?" for k in update_data)
+                        vals = list(update_data.values()) + [record["id"]]
+                        await db.execute(f"UPDATE {content_name} SET {sets} WHERE id = ?", tuple(vals))
+                        await db.commit()
+                        print(f"[Termin] Compute '{comp_name}': updated record {record['id']}")
+                        # Publish update event for WebSocket subscribers
+                        updated_record = dict(record)
+                        updated_record.update(update_data)
+                        await event_bus.publish({
+                            "channel_id": f"content.{content_name}.updated",
+                            "data": updated_record,
+                        })
+                    finally:
+                        await db.close()
+        except AIProviderError as e:
+            print(f"[Termin] [ERROR] Compute '{comp_name}': {e}")
+
+    async def _execute_agent_compute(comp: dict, record: dict, content_name: str):
+        """Execute a Level 3 Agent Compute — autonomous with tool calls."""
+        comp_name = comp["name"]["display"]
+
+        if not ai_provider.is_configured:
+            print(f"[Termin] Compute '{comp_name}': AI provider not configured, skipped")
+            return
+
+        # Build prompts
+        directive = comp.get("directive", "You are a helpful AI agent.")
+        objective = comp.get("objective", "")
+        accesses = comp.get("accesses", [])
+
+        # Build tools
+        agent_tools = build_agent_tools(accesses, content_lookup)
+        # Add set_output tool for completion signal
+        set_output = {
+            "name": "set_output",
+            "description": "Signal that you have completed the task. Call this when done.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "thinking": {"type": "string", "description": "Brief summary of what you did."},
+                    "summary": {"type": "string", "description": "Result summary."},
+                },
+                "required": ["thinking"],
+            }
+        }
+        all_tools = agent_tools + [set_output]
+
+        # Build user message with context
+        user_msg = f"{objective}\n\nTriggering record:\n{json.dumps(record, indent=2, default=str)}"
+
+        # Tool execution function
+        async def execute_tool(tool_name: str, tool_input: dict) -> dict:
+            db = await get_db(db_path)
+            try:
+                if tool_name == "content_query":
+                    cname = tool_input.get("content_name", "")
+                    if cname not in accesses:
+                        return {"error": f"Access denied: {cname} not in Accesses"}
+                    filters = tool_input.get("filters", {})
+                    if filters:
+                        where = " AND ".join(f"{k} = ?" for k in filters)
+                        cursor = await db.execute(f"SELECT * FROM {cname} WHERE {where}", tuple(filters.values()))
+                    else:
+                        cursor = await db.execute(f"SELECT * FROM {cname}")
+                    return [dict(r) for r in await cursor.fetchall()]
+
+                elif tool_name == "content_create":
+                    cname = tool_input.get("content_name", "")
+                    if cname not in accesses:
+                        return {"error": f"Access denied: {cname} not in Accesses"}
+                    data = tool_input.get("data", {})
+                    sm_info = sm_lookup.get(cname)
+                    if sm_info:
+                        data["status"] = sm_info.get("initial", "")
+                    schema = content_lookup.get(cname, {})
+                    rec = await create_record(db, cname, data, schema, sm_info, terminator, event_bus)
+                    # DON'T call run_event_handlers here to avoid recursive agent invocation
+                    await event_bus.publish({"channel_id": f"content.{cname}.created", "data": rec})
+                    return rec
+
+                elif tool_name == "content_update":
+                    cname = tool_input.get("content_name", "")
+                    if cname not in accesses:
+                        return {"error": f"Access denied: {cname} not in Accesses"}
+                    rid = tool_input.get("record_id")
+                    data = tool_input.get("data", {})
+                    await update_record(db, cname, rid, data, "id", terminator, event_bus)
+                    return {"ok": True, "id": rid}
+
+                elif tool_name == "state_transition":
+                    cname = tool_input.get("content_name", "")
+                    if cname not in accesses:
+                        return {"error": f"Access denied: {cname} not in Accesses"}
+                    rid = tool_input.get("record_id")
+                    target = tool_input.get("target_state")
+                    result = await do_state_transition(db, cname, rid, target,
+                                                       {"role": "service", "scopes": list(scope_for_content_verb(cname, "update") or [])},
+                                                       sm_lookup, terminator, event_bus)
+                    return result
+
+                else:
+                    return {"error": f"Unknown tool: {tool_name}"}
+            finally:
+                await db.close()
+
+        print(f"[Termin] Compute '{comp_name}': starting agent loop ({ai_provider.service})")
+
+        try:
+            result = await ai_provider.agent_loop(directive, user_msg, all_tools, execute_tool)
+            thinking = result.get("thinking", "")
+            if thinking:
+                print(f"[Termin] Compute '{comp_name}' completed: {thinking[:100]}")
+        except AIProviderError as e:
+            print(f"[Termin] [ERROR] Compute '{comp_name}': {e}")
 
     # ── API routes from IR ──
     for route in ir.get("routes", []):

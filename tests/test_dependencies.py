@@ -108,11 +108,15 @@ class TestCompilerDependencies:
 class TestRuntimeDependencies:
     """All third-party imports in termin_runtime/ must be in setup.py."""
 
+    # Optional AI provider packages — imported lazily, only needed when configured
+    OPTIONAL_RUNTIME_DEPS = {"anthropic", "openai"}
+
     def test_runtime_deps_declared(self):
         declared = _get_setup_requires()
         imported = _scan_imports(PROJECT_ROOT / "termin_runtime")
-        # Remove self-references
+        # Remove self-references and optional deps
         imported -= {"termin", "termin_runtime"}
+        imported -= self.OPTIONAL_RUNTIME_DEPS
 
         missing = []
         for pkg in sorted(imported):
