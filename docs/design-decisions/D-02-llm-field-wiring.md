@@ -83,7 +83,13 @@ The runtime evaluates the inline expressions against the triggering record befor
 Trigger on event "message.created" where `message.role == "user"`
 ```
 
-This is belt-and-suspenders with the Strategy's "if role is assistant, stop" — the filter prevents the Compute from even being invoked, rather than relying on the LLM to check. The CEL expression is evaluated by the runtime before invoking the provider.
+This is event routing, not a safety check. It prevents the Compute from being invoked for irrelevant events. The CEL expression is evaluated by the runtime before invoking the provider.
+
+**Where clause vs Precondition:** Both filter invocations, but they serve different purposes:
+- `where` on a trigger = routing. "This event isn't relevant." Silent skip, no error. Only applies to the trigger it's on.
+- `Preconditions are:` on a Compute = safety gate. "This invocation is not allowed." Returns 412 on API calls. Applies to ALL invocations (API, event, schedule).
+
+A Compute can have both. The where clause filters events before the Compute is invoked. Preconditions check invariants after the Compute is invoked but before execution.
 
 Without the where clause, every matching event triggers the Compute:
 
