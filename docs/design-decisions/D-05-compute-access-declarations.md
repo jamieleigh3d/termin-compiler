@@ -194,3 +194,17 @@ class ComputeAccessSpec:
 - Cross-check `Input from field` / `Output into field` references against Accesses
 - Cross-check CEL body content references against Accesses (when body analysis is implemented)
 - Error if a Compute has no `Accesses` line
+
+## Transform Shapes Superseded
+
+The five Compute shapes (Transform, Reduce, Expand, Correlate, Route) are superseded by the combination of `Accesses`, `Input from field`, `Output into field`, and `Output creates`. The shapes attempted to describe data flow patterns that are now expressed more precisely by explicit field wiring:
+
+| Old shape | New equivalent |
+|-----------|---------------|
+| `Transform: takes X, produces X` | `Accesses X` + `Input from field X.a` + `Output into field X.b` |
+| `Reduce: takes Xs, produces Y` | `Accesses Xs and Ys` + `Output into field Y.total` |
+| `Expand: takes X, produces Ys` | `Accesses X and Ys` + `Input from field X.a` + `Output creates Y` |
+| `Correlate: takes Xs and Ys, produces Zs` | `Accesses Xs, Ys, and Zs` + `Output creates Z` |
+| `Route: takes X, produces one of Y or Z` | `Accesses X, Y, and Z` + CEL body + conditional output |
+
+The old `Transform:` line is retained in the grammar for backward compatibility during the pre-v1.0 period but is no longer required. New examples should use `Accesses` + field wiring instead. The `Transform:` line will be removed before v1.0.
