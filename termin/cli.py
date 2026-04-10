@@ -285,7 +285,7 @@ def compile(source: str, output: str | None, seed_path: str | None,
     click.echo(f"Compiled {source_path.name} -> {pkg_path.name} "
                f"(v{version} rev{revision}, id={spec.app_id[:8]}...)")
 
-    # Auto-generate deploy config template if app has external channels
+    # Auto-generate deploy config template if app needs one
     deploy_filename = f"{stem}.deploy.json"
     deploy_path = Path(deploy_filename)
     external_channels = [
@@ -293,14 +293,31 @@ def compile(source: str, output: str | None, seed_path: str | None,
         if str(ch.get("direction", "")).replace("ChannelDirection.", "") != "INTERNAL"
         and "INTERNAL" not in str(ch.get("direction", ""))
     ]
-    if external_channels and not deploy_path.exists():
+    llm_computes = [
+        c for c in ir_dict.get("computes", [])
+        if (c.get("provider") or "") in ("llm", "ai-agent")
+    ]
+    needs_deploy = bool(external_channels or llm_computes)
+    if needs_deploy and not deploy_path.exists():
         deploy_template = _generate_deploy_template(ir_dict, external_channels)
+        # Add ai_provider section if there are LLM/agent computes
+        if llm_computes:
+            deploy_template["ai_provider"] = {
+                "service": "anthropic",
+                "model": "claude-sonnet-4-20250514",
+                "api_key": "${ANTHROPIC_API_KEY}",
+            }
         deploy_path.write_text(
             json.dumps(deploy_template, indent=2),
             encoding="utf-8",
         )
+        parts = []
+        if external_channels:
+            parts.append(f"{len(external_channels)} channel(s)")
+        if llm_computes:
+            parts.append(f"{len(llm_computes)} AI compute(s)")
         click.echo(f"Generated deploy config: {deploy_filename} "
-                   f"({len(external_channels)} channel(s) — edit before serving)")
+                   f"({', '.join(parts)} — edit before serving)")
 
 
 @main.command()
