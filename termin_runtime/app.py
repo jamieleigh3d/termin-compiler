@@ -522,32 +522,35 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                         except Exception:
                             continue  # Expression error — skip
 
-                    # Fire the Compute in a background thread
+                    # Fire the Compute in a background thread.
+                    # Capture the main event loop so the background thread can
+                    # publish events back to WebSocket subscribers.
                     import threading
-                    def _run_compute(_comp=comp, _record=dict(record), _content=content_name):
+                    _main_loop = asyncio.get_event_loop()
+                    def _run_compute(_comp=comp, _record=dict(record), _content=content_name, _loop=_main_loop):
                         import asyncio as _aio
-                        loop = _aio.new_event_loop()
+                        bg_loop = _aio.new_event_loop()
                         try:
-                            loop.run_until_complete(_execute_compute(_comp, _record, _content))
+                            bg_loop.run_until_complete(_execute_compute(_comp, _record, _content, _loop))
                         except Exception as e:
                             print(f"[Termin] [ERROR] Compute '{_comp['name']['display']}' failed: {e}")
                         finally:
-                            loop.close()
+                            bg_loop.close()
                     threading.Thread(target=_run_compute, daemon=True).start()
 
-    async def _execute_compute(comp: dict, record: dict, content_name: str):
+    async def _execute_compute(comp: dict, record: dict, content_name: str, main_loop=None):
         """Execute a Compute triggered by an event."""
         comp_name = comp["name"]["display"]
         provider = comp.get("provider", "cel")
 
         if provider == "llm":
-            await _execute_llm_compute(comp, record, content_name)
+            await _execute_llm_compute(comp, record, content_name, main_loop)
         elif provider == "ai-agent":
-            await _execute_agent_compute(comp, record, content_name)
+            await _execute_agent_compute(comp, record, content_name, main_loop)
         else:
             print(f"[Termin] Compute '{comp_name}': provider '{provider}' not supported for event triggers")
 
-    async def _execute_llm_compute(comp: dict, record: dict, content_name: str):
+    async def _execute_llm_compute(comp: dict, record: dict, content_name: str, main_loop=None):
         """Execute a Level 1 LLM Compute — field-to-field completion."""
         comp_name = comp["name"]["display"]
 
@@ -603,19 +606,26 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                         await db.execute(f"UPDATE {content_name} SET {sets} WHERE id = ?", tuple(vals))
                         await db.commit()
                         print(f"[Termin] Compute '{comp_name}': updated record {record['id']}")
-                        # Publish update event for WebSocket subscribers
+                        # Publish update event for WebSocket subscribers.
+                        # Use the main event loop since we're in a background thread.
                         updated_record = dict(record)
                         updated_record.update(update_data)
-                        await event_bus.publish({
+                        event_data = {
                             "channel_id": f"content.{content_name}.updated",
                             "data": updated_record,
-                        })
+                        }
+                        if main_loop and main_loop.is_running():
+                            asyncio.run_coroutine_threadsafe(
+                                event_bus.publish(event_data), main_loop
+                            )
+                        else:
+                            await event_bus.publish(event_data)
                     finally:
                         await db.close()
         except AIProviderError as e:
             print(f"[Termin] [ERROR] Compute '{comp_name}': {e}")
 
-    async def _execute_agent_compute(comp: dict, record: dict, content_name: str):
+    async def _execute_agent_compute(comp: dict, record: dict, content_name: str, main_loop=None):
         """Execute a Level 3 Agent Compute — autonomous with tool calls."""
         comp_name = comp["name"]["display"]
 
@@ -675,7 +685,12 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                     schema = content_lookup.get(cname, {})
                     rec = await create_record(db, cname, data, schema, sm_info, terminator, event_bus)
                     # DON'T call run_event_handlers here to avoid recursive agent invocation
-                    await event_bus.publish({"channel_id": f"content.{cname}.created", "data": rec})
+                    # Publish to main loop for WebSocket subscribers
+                    event_data = {"channel_id": f"content.{cname}.created", "data": rec}
+                    if main_loop and main_loop.is_running():
+                        asyncio.run_coroutine_threadsafe(event_bus.publish(event_data), main_loop)
+                    else:
+                        await event_bus.publish(event_data)
                     return rec
 
                 elif tool_name == "content_update":
