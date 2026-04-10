@@ -7,23 +7,13 @@
   "auth": {
     "provider": "stub",
     "scopes": [
-      "messages.read",
-      "messages.write",
-      "messages.sync"
+      "messages.all"
     ],
     "roles": [
       {
-        "name": "user",
+        "name": "anonymous",
         "scopes": [
-          "messages.read",
-          "messages.write",
-          "messages.sync"
-        ]
-      },
-      {
-        "name": "viewer",
-        "scopes": [
-          "messages.read"
+          "messages.all"
         ]
       }
     ]
@@ -112,22 +102,6 @@
           "list_type": null,
           "default_expr": null,
           "confidentiality_scopes": []
-        },
-        {
-          "name": "origin",
-          "display_name": "origin",
-          "business_type": "text",
-          "column_type": "TEXT",
-          "required": false,
-          "unique": false,
-          "minimum": null,
-          "maximum": null,
-          "enum_values": [],
-          "foreign_key": null,
-          "is_auto": false,
-          "list_type": null,
-          "default_expr": null,
-          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
@@ -139,31 +113,16 @@
   "access_grants": [
     {
       "content": "notes",
-      "scope": "messages.read",
-      "verbs": [
-        "VIEW"
-      ]
-    },
-    {
-      "content": "notes",
-      "scope": "messages.write",
-      "verbs": [
-        "CREATE",
-        "UPDATE"
-      ]
-    },
-    {
-      "content": "echoes",
-      "scope": "messages.read",
+      "scope": "messages.all",
       "verbs": [
         "VIEW"
       ]
     },
     {
       "content": "echoes",
-      "scope": "messages.sync",
+      "scope": "messages.all",
       "verbs": [
-        "CREATE"
+        "VIEW"
       ]
     }
   ],
@@ -189,7 +148,7 @@
       "path": "/api/v1/notes",
       "kind": "LIST",
       "content_ref": "notes",
-      "required_scope": "messages.read",
+      "required_scope": "messages.all",
       "lookup_column": "id",
       "target_state": null
     },
@@ -198,7 +157,7 @@
       "path": "/api/v1/notes",
       "kind": "CREATE",
       "content_ref": "notes",
-      "required_scope": "messages.write",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     },
@@ -207,7 +166,7 @@
       "path": "/api/v1/notes/{id}",
       "kind": "GET_ONE",
       "content_ref": "notes",
-      "required_scope": "messages.read",
+      "required_scope": "messages.all",
       "lookup_column": "id",
       "target_state": null
     },
@@ -216,7 +175,7 @@
       "path": "/api/v1/notes/{id}",
       "kind": "UPDATE",
       "content_ref": "notes",
-      "required_scope": "messages.write",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     },
@@ -225,7 +184,7 @@
       "path": "/api/v1/echoes",
       "kind": "LIST",
       "content_ref": "echoes",
-      "required_scope": "messages.read",
+      "required_scope": "messages.all",
       "lookup_column": "id",
       "target_state": null
     },
@@ -234,7 +193,7 @@
       "path": "/api/v1/echoes",
       "kind": "CREATE",
       "content_ref": "echoes",
-      "required_scope": "messages.sync",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     }
@@ -243,8 +202,8 @@
     {
       "name": "Notes",
       "slug": "notes",
-      "role": "user",
-      "required_scope": "messages.write",
+      "role": "anonymous",
+      "required_scope": null,
       "children": [
         {
           "type": "data_table",
@@ -265,17 +224,6 @@
           "layout": {},
           "children": [
             {
-              "type": "search",
-              "props": {
-                "fields": [
-                  "title"
-                ]
-              },
-              "style": {},
-              "layout": {},
-              "children": []
-            },
-            {
               "type": "subscribe",
               "props": {
                 "content": "notes"
@@ -289,8 +237,7 @@
         {
           "type": "form",
           "props": {
-            "target": "notes",
-            "submit_scope": "messages.write"
+            "target": "notes"
           },
           "style": {},
           "layout": {},
@@ -325,7 +272,7 @@
     {
       "name": "Echoes",
       "slug": "echoes",
-      "role": "viewer",
+      "role": "anonymous",
       "required_scope": null,
       "children": [
         {
@@ -340,10 +287,6 @@
               {
                 "field": "body",
                 "label": "body"
-              },
-              {
-                "field": "origin",
-                "label": "origin"
               }
             ]
           },
@@ -397,7 +340,7 @@
       "endpoint": null,
       "requirements": [
         {
-          "scope": "messages.sync",
+          "scope": "messages.all",
           "direction": "send"
         }
       ],
@@ -415,7 +358,7 @@
       "endpoint": null,
       "requirements": [
         {
-          "scope": "messages.sync",
+          "scope": "messages.all",
           "direction": "send"
         }
       ],
