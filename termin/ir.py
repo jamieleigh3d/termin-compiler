@@ -481,6 +481,7 @@ class StreamSpec:
 # ── Compute ──
 
 class ComputeShape(Enum):
+    NONE = auto()       # No shape — LLM/agent Computes with field wiring
     TRANSFORM = auto()
     REDUCE = auto()
     EXPAND = auto()
@@ -526,12 +527,18 @@ class ComputeSpec:
     required_confidentiality_scopes: tuple[str, ...] = ()  # confidential field scopes accessed
     output_confidentiality_scope: Optional[str] = None     # explicit reclassification
     field_dependencies: tuple[FieldDependency, ...] = ()   # compiler-resolved
-    provider: Optional[str] = None                         # "cel" (default), "ai-agent", CCP name
+    provider: Optional[str] = None                         # "cel" (default), "llm", "ai-agent"
     preconditions: tuple[str, ...] = ()                    # CEL expressions checked before execution
     postconditions: tuple[str, ...] = ()                   # CEL expressions checked after execution
-    objective: Optional[str] = None                        # multi-line prompt (ai-agent provider)
-    strategy: Optional[str] = None                         # multi-line execution plan (ai-agent)
+    directive: Optional[str] = None                        # system prompt (strong prior)
+    objective: Optional[str] = None                        # task prompt (what to accomplish)
+    strategy: Optional[str] = None                         # legacy: execution plan (folded into objective)
     trigger: Optional[str] = None                          # "schedule <interval>" or "event <name>"
+    trigger_where: Optional[str] = None                    # CEL expression for trigger filtering
+    accesses: tuple[str, ...] = ()                         # content types this Compute can touch
+    input_fields: tuple[tuple[str, str], ...] = ()         # (content_ref, field_name) pairs
+    output_fields: tuple[tuple[str, str], ...] = ()        # (content_ref, field_name) pairs
+    output_creates: Optional[str] = None                   # content type for "Output creates X"
 
 
 # ── Channels ──

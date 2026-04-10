@@ -123,7 +123,12 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Identity inherits", "boundary_inherits_line"), ("Identity restricts", "boundary_restricts_line"),
     ("Identity:", "compute_identity_line"),
     ("Provider is", "compute_provider_line"),
+    ("Accesses ", "compute_accesses_line"),
+    ("Input from field", "compute_input_field_line"),
+    ("Output into field", "compute_output_field_line"),
+    ("Output creates", "compute_output_creates_line"),
     ("Output confidentiality:", "compute_output_conf_line"),
+    ("Directive is", "compute_directive_line"),
     ("Trigger on", "compute_trigger_line"),
     ("Preconditions are:", "compute_preconditions_line"),
     ("Postconditions are:", "compute_postconditions_line"),
@@ -823,7 +828,13 @@ def _parse_line(text: str, rule: str, ln: int):
         return ("compute_provider", provider)
     if rule == "compute_trigger_line":
         rest = text[11:].strip()  # after "Trigger on "
-        return ("compute_trigger", rest)
+        # Parse optional "where `expr`" clause
+        where_expr = None
+        if " where " in rest:
+            trigger_part, where_part = rest.split(" where ", 1)
+            rest = trigger_part.strip()
+            where_expr = _eb(where_part)  # extract backtick expression
+        return ("compute_trigger", rest, where_expr)
     if rule == "compute_preconditions_line":
         return ("compute_preconditions_header",)
     if rule == "compute_postconditions_line":
@@ -840,6 +851,32 @@ def _parse_line(text: str, rule: str, ln: int):
         if rest.startswith("```") and rest.endswith("```"):
             rest = rest[3:-3].strip()
         return ("compute_strategy", rest)
+    if rule == "compute_directive_line":
+        rest = text[13:].strip()  # after "Directive is "
+        if rest.startswith("```") and rest.endswith("```"):
+            rest = rest[3:-3].strip()
+        return ("compute_directive", rest)
+    if rule == "compute_accesses_line":
+        rest = text[9:].strip()  # after "Accesses "
+        # Parse comma/and-separated list: "messages, findings, and alerts"
+        items = [w.strip().strip('"') for w in rest.replace(" and ", ",").split(",") if w.strip()]
+        return ("compute_accesses", items)
+    if rule == "compute_input_field_line":
+        rest = text[17:].strip()  # after "Input from field "
+        # Parse "content.field" dot notation
+        if "." in rest:
+            parts = rest.split(".", 1)
+            return ("compute_input_field", (parts[0].strip(), parts[1].strip()))
+        return ("compute_input_field", (rest, ""))
+    if rule == "compute_output_field_line":
+        rest = text[18:].strip()  # after "Output into field "
+        if "." in rest:
+            parts = rest.split(".", 1)
+            return ("compute_output_field", (parts[0].strip(), parts[1].strip()))
+        return ("compute_output_field", (rest, ""))
+    if rule == "compute_output_creates_line":
+        rest = text[15:].strip()  # after "Output creates "
+        return ("compute_output_creates", rest.strip().strip('"'))
     if rule == "content_scoped_line":
         r = P(text, rule)
         scopes = _ql(r.get("scopes")) if r else _eqs(text)
@@ -971,7 +1008,9 @@ def _assemble(parsed: list) -> Program:
                 "compute_access","access","compute_identity","compute_requires_conf",
                 "compute_output_conf","compute_provider","compute_trigger",
                 "compute_preconditions_header","compute_postconditions_header",
-                "compute_objective","compute_strategy")
+                "compute_objective","compute_strategy","compute_directive",
+                "compute_accesses","compute_input_field","compute_output_field",
+                "compute_output_creates")
             collecting_pre = False
             collecting_post = False
             for ch in _collect(lambda x: x in _compute_child_kinds):
@@ -995,9 +1034,17 @@ def _assemble(parsed: list) -> Program:
                 elif ch[0] == "compute_requires_conf": nd.required_confidentiality_scopes.extend(ch[1])
                 elif ch[0] == "compute_output_conf": nd.output_confidentiality = ch[1]
                 elif ch[0] == "compute_provider": nd.provider = ch[1]
-                elif ch[0] == "compute_trigger": nd.trigger = ch[1]
+                elif ch[0] == "compute_trigger":
+                    nd.trigger = ch[1]
+                    if len(ch) > 2 and ch[2]:  # where clause
+                        nd.trigger_where = ch[2]
                 elif ch[0] == "compute_objective": nd.objective = ch[1]
                 elif ch[0] == "compute_strategy": nd.strategy = ch[1]
+                elif ch[0] == "compute_directive": nd.directive = ch[1]
+                elif ch[0] == "compute_accesses": nd.accesses.extend(ch[1])
+                elif ch[0] == "compute_input_field": nd.input_fields.append(ch[1])
+                elif ch[0] == "compute_output_field": nd.output_fields.append(ch[1])
+                elif ch[0] == "compute_output_creates": nd.output_creates = ch[1]
             prog.computes.append(nd)
         elif k == "channel_header":
             ch_ = item[1]; i += 1

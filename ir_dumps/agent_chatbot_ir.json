@@ -1,0 +1,224 @@
+{
+  "ir_version": "0.4.0",
+  "reflection_enabled": true,
+  "app_id": "0d0e2358-ffc7-4f3f-bc89-1af5ca363b1f",
+  "name": "Agent Chatbot",
+  "description": "Conversational AI chatbot with message history",
+  "auth": {
+    "provider": "stub",
+    "scopes": [
+      "chat.use"
+    ],
+    "roles": [
+      {
+        "name": "anonymous",
+        "scopes": [
+          "chat.use"
+        ]
+      }
+    ]
+  },
+  "content": [
+    {
+      "name": {
+        "display": "messages",
+        "snake": "messages",
+        "pascal": "Messages"
+      },
+      "fields": [
+        {
+          "name": "role",
+          "display_name": "role",
+          "business_type": "enum",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [
+            "user",
+            "assistant"
+          ],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": "\"user\"",
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "body",
+          "display_name": "body",
+          "business_type": "text",
+          "column_type": "TEXT",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        }
+      ],
+      "singular": "message",
+      "storage_intent": "auto",
+      "has_state_machine": false,
+      "initial_state": null,
+      "confidentiality_scopes": []
+    }
+  ],
+  "access_grants": [
+    {
+      "content": "messages",
+      "scope": "chat.use",
+      "verbs": [
+        "VIEW"
+      ]
+    }
+  ],
+  "state_machines": [],
+  "events": [],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/v1/messages",
+      "kind": "LIST",
+      "content_ref": "messages",
+      "required_scope": "chat.use",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/messages",
+      "kind": "CREATE",
+      "content_ref": "messages",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/messages/{id}",
+      "kind": "GET_ONE",
+      "content_ref": "messages",
+      "required_scope": "chat.use",
+      "lookup_column": "id",
+      "target_state": null
+    }
+  ],
+  "pages": [
+    {
+      "name": "Chat",
+      "slug": "chat",
+      "role": "anonymous",
+      "required_scope": null,
+      "children": [
+        {
+          "type": "data_table",
+          "props": {
+            "source": "messages",
+            "columns": [
+              {
+                "field": "role",
+                "label": "role"
+              },
+              {
+                "field": "body",
+                "label": "body"
+              }
+            ]
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "subscribe",
+              "props": {
+                "content": "messages"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "form",
+          "props": {
+            "target": "messages"
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "field_input",
+              "props": {
+                "field": "body",
+                "label": "body",
+                "input_type": "text",
+                "required": true
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "nav_items": [
+    {
+      "label": "Chat",
+      "page_slug": "chat",
+      "visible_to": [
+        "all"
+      ],
+      "badge_content": null
+    }
+  ],
+  "streams": [],
+  "computes": [
+    {
+      "name": {
+        "display": "reply",
+        "snake": "reply",
+        "pascal": "Reply"
+      },
+      "shape": "NONE",
+      "input_content": [],
+      "output_content": [],
+      "body_lines": [],
+      "required_scope": "chat.use",
+      "required_role": null,
+      "input_params": [],
+      "output_params": [],
+      "client_safe": false,
+      "identity_mode": "delegate",
+      "required_confidentiality_scopes": [],
+      "output_confidentiality_scope": null,
+      "field_dependencies": [],
+      "provider": "ai-agent",
+      "preconditions": [],
+      "postconditions": [],
+      "directive": "You are a helpful conversational assistant. Be natural and\n    helpful. Never fabricate information. If asked to do something\n    outside your capabilities, explain what you can do instead.",
+      "objective": "Reply to the user's latest message. Load the conversation\n    history with content.query(\"messages\"). Create your reply\n    with content.create(\"messages\", {\"role\": \"assistant\",\n    \"body\": your_reply}).",
+      "strategy": null,
+      "trigger": "event \"message.created\"",
+      "trigger_where": "message.role == \"user\"",
+      "accesses": [
+        "messages"
+      ],
+      "input_fields": [],
+      "output_fields": [],
+      "output_creates": null
+    }
+  ],
+  "channels": [],
+  "boundaries": [],
+  "error_handlers": [],
+  "reclassification_points": []
+}

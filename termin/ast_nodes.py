@@ -323,12 +323,18 @@ class ComputeNode:
     identity_mode: str = "delegate"              # "delegate" or "service"
     required_confidentiality_scopes: list[str] = field(default_factory=list)
     output_confidentiality: Optional[str] = None  # explicit reclassification
-    provider: Optional[str] = None                # "cel" (default), "ai-agent", CCP package name
+    provider: Optional[str] = None                # "cel" (default), "llm", "ai-agent"
     preconditions: list[str] = field(default_factory=list)   # CEL expressions
     postconditions: list[str] = field(default_factory=list)  # CEL expressions
-    objective: Optional[str] = None               # multi-line LLM prompt (ai-agent)
-    strategy: Optional[str] = None                # multi-line execution plan (ai-agent)
+    directive: Optional[str] = None               # system prompt (strong prior)
+    objective: Optional[str] = None               # task prompt (what to accomplish)
+    strategy: Optional[str] = None                # execution plan (legacy, folded into objective)
     trigger: Optional[str] = None                 # "schedule <interval>" or "event <name>"
+    trigger_where: Optional[str] = None           # CEL expression for trigger filtering
+    accesses: list[str] = field(default_factory=list)        # content types this Compute can touch
+    input_fields: list[tuple[str, str]] = field(default_factory=list)   # (content_ref, field_name)
+    output_fields: list[tuple[str, str]] = field(default_factory=list)  # (content_ref, field_name)
+    output_creates: Optional[str] = None          # content type for "Output creates X"
     line: int = 0
 
 

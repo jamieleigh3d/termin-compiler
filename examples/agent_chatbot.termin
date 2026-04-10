@@ -1,0 +1,45 @@
+Application: Agent Chatbot
+  Description: Conversational AI chatbot with message history
+Id: 0d0e2358-ffc7-4f3f-bc89-1af5ca363b1f
+
+Users authenticate with stub
+Scopes are "chat.use"
+
+An "anonymous" has "chat.use"
+
+Content called "messages":
+  Each message has a role which is one of: "user", "assistant", defaults to "user"
+  Each message has a body which is text, required
+  Anyone with "chat.use" can view or create messages
+
+Compute called "reply":
+  Provider is "ai-agent"
+  Accesses messages
+  Trigger on event "message.created" where `message.role == "user"`
+  Directive is ```
+    You are a helpful conversational assistant. Be natural and
+    helpful. Never fabricate information. If asked to do something
+    outside your capabilities, explain what you can do instead.
+  ```
+  Objective is ```
+    Reply to the user's latest message. Load the conversation
+    history with content.query("messages"). Create your reply
+    with content.create("messages", {"role": "assistant",
+    "body": your_reply}).
+  ```
+  Anyone with "chat.use" can execute this
+
+As an anonymous, I want to chat with the AI
+  so that I can have a conversation:
+    Show a page called "Chat"
+    Display a table of messages with columns: role, body
+    Accept input for body
+    This table subscribes to messages changes
+
+Navigation bar:
+  "Chat" links to "Chat" visible to all
+
+Expose a REST API at /api/v1:
+  GET    /messages              lists messages
+  POST   /messages              creates a message
+  GET    /messages/{id}         gets a message

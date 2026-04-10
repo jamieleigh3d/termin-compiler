@@ -485,6 +485,30 @@ compute_strategy_line
     = 'Strategy' 'is' rest:rest_of_line $
     ;
 
+compute_accesses_line
+    = 'Accesses' items:words $
+    ;
+
+compute_input_field_line
+    = 'Input' 'from' 'field' ref:field_ref $
+    ;
+
+compute_output_field_line
+    = 'Output' 'into' 'field' ref:field_ref $
+    ;
+
+compute_output_creates_line
+    = 'Output' 'creates' content:word_or_quoted $
+    ;
+
+compute_directive_line
+    = 'Directive' 'is' rest:rest_of_line $
+    ;
+
+field_ref
+    = content:word '.' field:word
+    ;
+
 compute_access_line
     = role:word_or_quoted 'can' 'execute' 'this' $
     ;

@@ -796,7 +796,7 @@ def lower(program: Program) -> AppSpec:
     computes = []
     compute_by_name: dict[str, ComputeNode] = {c.name: c for c in program.computes}
     for comp in program.computes:
-        shape = SHAPE_MAP.get(comp.shape, ComputeShape.TRANSFORM)
+        shape = SHAPE_MAP.get(comp.shape, ComputeShape.NONE if comp.provider in ("llm", "ai-agent") else ComputeShape.TRANSFORM)
         # Infer client_safe: a Compute is client-safe when it has a pure CEL
         # body, is a TRANSFORM shape (1:1, no joins/aggregation), and has no
         # required scope (no server-side authorization needed for evaluation).
@@ -830,9 +830,15 @@ def lower(program: Program) -> AppSpec:
             provider=comp.provider,
             preconditions=tuple(comp.preconditions),
             postconditions=tuple(comp.postconditions),
+            directive=comp.directive,
             objective=comp.objective,
             strategy=comp.strategy,
             trigger=comp.trigger,
+            trigger_where=comp.trigger_where,
+            accesses=tuple(_resolve_to_content(a) for a in comp.accesses),
+            input_fields=tuple(comp.input_fields),
+            output_fields=tuple(comp.output_fields),
+            output_creates=_resolve_to_content(comp.output_creates) if comp.output_creates else None,
         ))
 
     # ── Lower channels ──

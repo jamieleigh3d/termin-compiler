@@ -1,0 +1,44 @@
+Application: Agent Simple
+  Description: Minimal AI agent — submit a prompt, get a completion
+Id: 2b909f99-d936-4469-843c-2fdc6aceef60
+
+Users authenticate with stub
+Scopes are "agent.use"
+
+An "anonymous" has "agent.use"
+
+Content called "completions":
+  Each completion has a prompt which is text, required
+  Each completion has a response which is text
+  Anyone with "agent.use" can view, create, or update completions
+
+Compute called "complete":
+  Provider is "llm"
+  Accesses completions
+  Input from field completion.prompt
+  Output into field completion.response
+  Trigger on event "completion.created"
+  Directive is ```
+    You are a helpful assistant. Be concise and clear.
+    If you don't know the answer, say so honestly.
+  ```
+  Objective is ```
+    Answer the following prompt from the user.
+  ```
+  Anyone with "agent.use" can execute this
+
+As an anonymous, I want to submit prompts and see responses
+  so that I can test the AI agent:
+    Show a page called "Agent"
+    Display a table of completions with columns: prompt, response
+    Accept input for prompt
+    This table subscribes to completions changes
+
+Navigation bar:
+  "Agent" links to "Agent" visible to all
+
+Expose a REST API at /api/v1:
+  GET    /completions              lists completions
+  POST   /completions              creates a completion
+  GET    /completions/{id}         gets a completion
+  PUT    /completions/{id}         updates a completion

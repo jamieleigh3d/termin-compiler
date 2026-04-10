@@ -93,6 +93,28 @@ class Analyzer:
             return True
         return False
 
+    def _resolve_content_name_in_accesses(self, ref: str, compute) -> bool:
+        """Check if a content reference (possibly singular) is in the Compute's Accesses list."""
+        for acc in compute.accesses:
+            # Direct match
+            if ref == acc:
+                return True
+            # Singular match: "completion" matches "completions"
+            if ref + "s" == acc or ref + "es" == acc:
+                return True
+            # The access item's singular matches the ref
+            resolved = self._find_content_by_name(acc)
+            if resolved and resolved.singular == ref:
+                return True
+        return False
+
+    def _find_content_by_name(self, name: str):
+        """Find a Content node by name or singular."""
+        for c in self.program.contents:
+            if c.name == name or c.singular == name:
+                return c
+        return None
+
     def _check_semantics(self) -> None:
         self._check_role_aliases()
         self._check_role_scopes()
@@ -303,13 +325,53 @@ class Analyzer:
 
     def _check_computes(self) -> None:
         valid_shapes = {"transform", "reduce", "expand", "correlate", "route"}
+        llm_providers = {"llm", "ai-agent"}
         for compute in self.program.computes:
-            if not compute.shape or compute.shape not in valid_shapes:
+            has_field_wiring = bool(compute.input_fields or compute.output_fields or compute.output_creates)
+            has_accesses = bool(compute.accesses)
+            is_llm_provider = compute.provider in llm_providers
+
+            # Shape is required for CEL computes, optional for LLM/agent providers with field wiring
+            if compute.shape and compute.shape not in valid_shapes:
                 self.errors.add(SemanticError(
                     message=f'Compute "{compute.name}" has invalid shape "{compute.shape}". '
                             f'Valid shapes: {", ".join(sorted(valid_shapes))}',
                     line=compute.line,
                 ))
+            elif not compute.shape and not is_llm_provider and not has_field_wiring:
+                self.errors.add(SemanticError(
+                    message=f'Compute "{compute.name}" has no shape and no field wiring. '
+                            f'Add a Transform/Reduce/Expand/Correlate/Route shape, or use '
+                            f'Input from field / Output into field with Provider is "llm".',
+                    line=compute.line,
+                ))
+
+            # Validate Accesses references
+            for acc in compute.accesses:
+                if not self._resolve_content_name(acc):
+                    self.errors.add(SemanticError(
+                        message=f'Compute "{compute.name}" declares access to undefined '
+                                f'content "{acc}"',
+                        line=compute.line,
+                    ))
+
+            # Validate input/output field references against Accesses
+            for content_ref, field_name in compute.input_fields:
+                if has_accesses and not self._resolve_content_name_in_accesses(content_ref, compute):
+                    self.errors.add(SemanticError(
+                        message=f'Compute "{compute.name}": Input field "{content_ref}.{field_name}" '
+                                f'references content not in Accesses declaration',
+                        line=compute.line,
+                    ))
+            for content_ref, field_name in compute.output_fields:
+                if has_accesses and not self._resolve_content_name_in_accesses(content_ref, compute):
+                    self.errors.add(SemanticError(
+                        message=f'Compute "{compute.name}": Output field "{content_ref}.{field_name}" '
+                                f'references content not in Accesses declaration',
+                        line=compute.line,
+                    ))
+
+            # Legacy shape-based input/output validation
             for inp in compute.inputs:
                 if not self._resolve_content_name(inp):
                     self.errors.add(SemanticError(
