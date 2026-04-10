@@ -27,7 +27,7 @@ from .confidentiality import (
     check_for_redacted_values, is_redacted,
 )
 from .transaction import Transaction
-from .channels import ChannelDispatcher, ChannelError, ChannelScopeError, ChannelValidationError, ChannelConfigError, load_deploy_config
+from .channels import ChannelDispatcher, ChannelError, ChannelScopeError, ChannelValidationError, ChannelConfigError, load_deploy_config, check_deploy_config_warnings
 
 
 def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
@@ -206,6 +206,10 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
 
         channel_dispatcher.on_ws_message(_handle_inbound_ws)
         await channel_dispatcher.startup(strict=strict_channels)
+        # Warn about unset env vars or uncustomized placeholders
+        config_warnings = check_deploy_config_warnings(deploy_config, ir)
+        for w in config_warnings:
+            print(f"[Termin] WARNING: {w}")
         configured_channels = [ch["name"]["display"] for ch in ir.get("channels", []) if channel_dispatcher.is_configured(ch["name"]["display"])]
         if configured_channels:
             print(f"[Termin] Phase 4a: Channels connected: {', '.join(configured_channels)}")

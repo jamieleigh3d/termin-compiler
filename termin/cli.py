@@ -54,6 +54,53 @@ def _sha256(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
+def _generate_deploy_template(ir_dict: dict, external_channels: list) -> dict:
+    """Generate a deploy config template with placeholder env vars."""
+    channels = {}
+    for ch in external_channels:
+        display = ch["name"]["display"]
+        snake = ch["name"]["snake"]
+        env_prefix = snake.upper().replace("-", "_")
+        direction = str(ch.get("direction", "OUTBOUND"))
+        delivery = str(ch.get("delivery", "RELIABLE"))
+        has_actions = bool(ch.get("actions", []))
+
+        # Choose protocol from delivery intent
+        protocol = "websocket" if "REALTIME" in delivery else "http"
+
+        ch_config = {
+            "url": f"https://TODO-configure-{snake}.example.com/api",
+            "protocol": protocol,
+            "auth": {
+                "type": "bearer",
+                "token": f"${{{env_prefix}_TOKEN}}",
+            },
+        }
+
+        if protocol == "http":
+            ch_config["timeout_ms"] = 30000
+            ch_config["retry"] = {"max_attempts": 3, "backoff_ms": 1000}
+        elif protocol == "websocket":
+            ch_config["reconnect"] = True
+            ch_config["heartbeat_ms"] = 30000
+
+        channels[display] = ch_config
+
+    # Auth provider from IR
+    auth = ir_dict.get("auth", {})
+    auth_provider = auth.get("provider", "stub")
+
+    return {
+        "version": "0.1.0",
+        "channels": channels,
+        "identity": {
+            "provider": auth_provider,
+            "config": {},
+        },
+        "runtime": {},
+    }
+
+
 def _compile_source(source_path: Path):
     """Compile a .termin source file. Returns (program, spec, source_text)."""
     source_text = source_path.read_text(encoding="utf-8")
@@ -237,6 +284,23 @@ def compile(source: str, output: str | None, seed_path: str | None,
 
     click.echo(f"Compiled {source_path.name} -> {pkg_path.name} "
                f"(v{version} rev{revision}, id={spec.app_id[:8]}...)")
+
+    # Auto-generate deploy config template if app has external channels
+    deploy_filename = f"{stem}.deploy.json"
+    deploy_path = Path(deploy_filename)
+    external_channels = [
+        ch for ch in ir_dict.get("channels", [])
+        if str(ch.get("direction", "")).replace("ChannelDirection.", "") != "INTERNAL"
+        and "INTERNAL" not in str(ch.get("direction", ""))
+    ]
+    if external_channels and not deploy_path.exists():
+        deploy_template = _generate_deploy_template(ir_dict, external_channels)
+        deploy_path.write_text(
+            json.dumps(deploy_template, indent=2),
+            encoding="utf-8",
+        )
+        click.echo(f"Generated deploy config: {deploy_filename} "
+                   f"({len(external_channels)} channel(s) — edit before serving)")
 
 
 @main.command()

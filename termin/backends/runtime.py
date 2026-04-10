@@ -75,15 +75,11 @@ if _seed_path.exists():
     _seed_data = json.loads(_seed_path.read_text(encoding="utf-8"))
 
 # Deploy config: <app_name>.deploy.json provides channel URLs, auth, etc.
-# Without it, external channels are not connected (strict mode disabled for dev).
 _app_stem = Path(__file__).stem.replace("_app", "")
-_deploy_candidates = [f"{{_app_stem}}.deploy.json", "termin.deploy.json"]
+_deploy_path = Path(__file__).with_name(f"{{_app_stem}}.deploy.json")
 _deploy_config = None
-for _dp in _deploy_candidates:
-    _dp_path = Path(__file__).with_name(_dp)
-    if _dp_path.exists():
-        _deploy_config = json.loads(_dp_path.read_text(encoding="utf-8"))
-        break
+if _deploy_path.exists():
+    _deploy_config = json.loads(_deploy_path.read_text(encoding="utf-8"))
 
 app = create_termin_app(IR_JSON, seed_data=_seed_data,
                         deploy_config=_deploy_config,

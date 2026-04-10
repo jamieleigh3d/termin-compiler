@@ -53,12 +53,11 @@ def load_deploy_config(path: str = None, app_name: str = None) -> dict:
 
     Search order:
       1. Explicit path if provided
-      2. {app_name}.deploy.json (app-specific, preferred)
-      3. termin.deploy.json (legacy fallback)
+      2. {app_name}.deploy.json (app-specific)
 
     Args:
         path: Explicit path to deploy config file.
-        app_name: Snake_case app name for app-specific config lookup.
+        app_name: Snake_case app name for config lookup.
 
     Returns:
         Resolved config dict with ${ENV_VAR} substituted, or empty dict if not found.
@@ -66,10 +65,8 @@ def load_deploy_config(path: str = None, app_name: str = None) -> dict:
     candidates = []
     if path:
         candidates.append(path)
-    else:
-        if app_name:
-            candidates.append(f"{app_name}.deploy.json")
-        candidates.append("termin.deploy.json")
+    elif app_name:
+        candidates.append(f"{app_name}.deploy.json")
 
     for candidate in candidates:
         try:
@@ -83,6 +80,57 @@ def load_deploy_config(path: str = None, app_name: str = None) -> dict:
             print(f"[Termin] Warning: Failed to load deploy config from {candidate}: {e}")
             continue
     return {}
+
+
+def check_deploy_config_warnings(deploy_config: dict, ir: dict) -> list[str]:
+    """Check for unset environment variables and uncustomized placeholder values.
+
+    Returns a list of warning messages.
+    """
+    warnings = []
+    channels_config = deploy_config.get("channels", {})
+
+    for ch in ir.get("channels", []):
+        direction = ch.get("direction", "")
+        if direction == "INTERNAL":
+            continue
+        display = ch["name"]["display"]
+        snake = ch["name"]["snake"]
+        ch_config = channels_config.get(display) or channels_config.get(snake, {})
+        if not ch_config:
+            continue
+
+        # Check for unresolved ${ENV_VAR} patterns (env var not set)
+        _check_unresolved_vars(ch_config, f"channels.{display}", warnings)
+
+        # Check for placeholder URLs that weren't customized
+        url = ch_config.get("url", "")
+        if url and ("example.com" in url or "placeholder" in url.lower()
+                     or url.startswith("https://TODO") or url.startswith("http://TODO")):
+            warnings.append(
+                f"Channel '{display}': URL looks like a placeholder ({url}). "
+                f"Update the deploy config with the actual service URL."
+            )
+
+    return warnings
+
+
+def _check_unresolved_vars(obj, path: str, warnings: list):
+    """Recursively check for unresolved ${ENV_VAR} patterns in a config dict."""
+    import re
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            _check_unresolved_vars(v, f"{path}.{k}", warnings)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            _check_unresolved_vars(v, f"{path}[{i}]", warnings)
+    elif isinstance(obj, str):
+        unresolved = re.findall(r'\$\{(\w+)\}', obj)
+        for var in unresolved:
+            warnings.append(
+                f"Environment variable ${{{var}}} is not set (referenced in {path}). "
+                f"Set it before starting the application."
+            )
 
 
 def validate_channel_config(ir: dict, deploy_config: dict) -> list[str]:

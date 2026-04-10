@@ -21,6 +21,7 @@ venv/
 /*_seed.json
 /app_seed.json
 /app_timing.json
+/*.deploy.json
 
 # IDE
 .vscode/
