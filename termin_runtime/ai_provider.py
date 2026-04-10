@@ -45,7 +45,14 @@ class AIProvider:
     def startup(self):
         """Initialize the LLM client."""
         if not self.is_configured:
-            logger.warning("AI provider not configured — LLM Computes will be skipped")
+            if not self._service:
+                logger.warning("AI provider not configured — no 'ai_provider' section in deploy config")
+            elif not self._api_key:
+                logger.warning(f"AI provider '{self._service}' has no API key — set the environment variable (e.g., ANTHROPIC_API_KEY)")
+            elif "${" in self._api_key:
+                logger.warning(f"AI provider API key contains unresolved variable: {self._api_key}")
+            else:
+                logger.warning("AI provider not configured — LLM Computes will be skipped")
             return
 
         if self._service == "anthropic":
