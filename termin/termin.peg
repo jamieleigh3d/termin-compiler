@@ -296,6 +296,11 @@ highlight_rows_line
     | 'Highlight' 'rows' 'where' rest:rest_of_line $    #HighlightFree
     ;
 
+mark_rows_line
+    = 'Mark' 'rows' 'where' cel:expr 'as' label:quoted_string $
+    | 'Mark' field:word 'where' cel:expr 'as' label:quoted_string $
+    ;
+
 allow_filtering_line
     = 'Allow' 'filtering' 'by' fields:comma_list $
     ;

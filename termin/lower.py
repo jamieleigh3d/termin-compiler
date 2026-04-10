@@ -10,7 +10,7 @@ from typing import Optional
 from .ast_nodes import (
     Program, Content, Field, TypeExpr, AccessRule, StateMachine,
     Transition, EventRule, UserStory, Directive, ShowPage, DisplayTable,
-    ShowRelated, HighlightRows, AllowFilter, AllowSearch, SubscribeTo,
+    ShowRelated, HighlightRows, MarkAs, AllowFilter, AllowSearch, SubscribeTo,
     AcceptInput, ValidateUnique, CreateAs, AfterSave, ShowChart,
     DisplayAggregation, DisplayText, StructuredAggregation, SectionStart,
     ActionHeader, ActionButtonDef, LinkColumn,
@@ -500,6 +500,17 @@ def lower(program: Program) -> AppSpec:
                 if cur_data_table:
                     cur_data_table.children = cur_data_table.children + (
                         ComponentNode(type="search", props={"fields": [_snake(f) for f in d.fields]}),
+                    )
+
+            elif isinstance(d, MarkAs):
+                if cur_data_table:
+                    cond = PropValue(value=d.condition_expr, is_expr=True)
+                    label = PropValue(value=d.label, is_expr=False)
+                    scope = PropValue(value=d.scope, is_expr=False)
+                    cur_data_table.children = cur_data_table.children + (
+                        ComponentNode(type="semantic_mark", props={
+                            "condition": cond, "label": label, "scope": scope,
+                        }),
                     )
 
             elif isinstance(d, HighlightRows):

@@ -161,6 +161,14 @@ class HighlightRows(Directive):
 
 
 @dataclass
+class MarkAs(Directive):
+    """Semantic emphasis: Mark rows/fields where [expr] as "label"."""
+    condition_expr: str = ""
+    label: str = ""
+    scope: str = "row"  # "row" or field name
+
+
+@dataclass
 class AllowFilter(Directive):
     fields: list[str] = field(default_factory=list)
 

@@ -15,7 +15,7 @@ from .ast_nodes import (
     Program, Application, Identity, Role, RoleAlias, Content, Field, TypeExpr,
     AccessRule, StateMachine, Transition, EventRule, EventCondition,
     EventAction, UserStory, ShowPage, DisplayTable, ShowRelated,
-    HighlightRows, AllowFilter, AllowSearch, SubscribeTo, AcceptInput,
+    HighlightRows, MarkAs, AllowFilter, AllowSearch, SubscribeTo, AcceptInput,
     ValidateUnique, CreateAs, AfterSave, ShowChart, DisplayAggregation,
     StructuredAggregation, SectionStart, ActionHeader, ActionButtonDef,
     NavBar, NavItem, ApiSection, ApiEndpoint, Stream, Directive,
@@ -97,6 +97,7 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Then ", "error_then_line"), ("As ", "story_header"), ("so that ", "so_that_line"),
     ("Show a page called", "show_page_line"), ("Display a table of", "display_table_line"),
     ("For each ", "show_related_line"),  # also handles action_header_line — disambiguated in _classify_line
+    ("Mark ", "mark_rows_line"),
     ("Highlight rows where", "highlight_rows_line"),
     ("Allow filtering by", "allow_filtering_line"), ("Allow searching by", "allow_searching_line"),
     ("Link ", "link_column_line"),
@@ -659,6 +660,23 @@ def _parse_line(text: str, rule: str, ln: int):
         gi = af.find(" grouped by ")
         if gi < 0: return ("directive", ShowRelated(singular=sg, related_content=af, line=ln))
         return ("directive", ShowRelated(singular=sg, related_content=af[:gi].strip(), group_by=af[gi+12:].strip(), line=ln))
+    if rule == "mark_rows_line":
+        # "Mark rows where `expr` as "label"" or "Mark field where `expr` as "label""
+        cel = _eb(text) or ""
+        # Extract label: last quoted string after "as"
+        label = ""
+        if ' as "' in text:
+            label = text.rsplit(' as "', 1)[1].rstrip('"').strip()
+        elif " as '" in text:
+            label = text.rsplit(" as '", 1)[1].rstrip("'").strip()
+        # Determine scope: "rows" or a field name
+        scope = "row"
+        if text.startswith("Mark ") and not text.startswith("Mark rows"):
+            # "Mark <field> where ..." — extract field name
+            after_mark = text[5:].strip()
+            if " where " in after_mark:
+                scope = after_mark.split(" where ", 1)[0].strip()
+        return ("directive", MarkAs(condition_expr=cel, label=label, scope=scope, line=ln))
     if rule == "highlight_rows_line":
         rest = text[21:].strip(); j = _eb(rest)
         if j: return ("directive", HighlightRows(condition_expr=j, line=ln))

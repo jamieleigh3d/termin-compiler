@@ -42,53 +42,89 @@ def _render_data_table(node: dict) -> str:
         parts.append('    <th class="px-4 py-2 text-left text-sm font-medium text-gray-600">Actions</th>')
 
     parts.append('  </tr></thead><tbody>')
+    # Semantic marks — check for semantic_mark children
+    semantic_marks = []
+    for child in children:
+        if child.get("type") == "semantic_mark":
+            props = child.get("props", {})
+            cond = props.get("condition", {})
+            label = props.get("label", {})
+            if isinstance(cond, dict) and cond.get("is_expr"):
+                mark_label = label.get("value", "") if isinstance(label, dict) else str(label)
+                semantic_marks.append((cond["value"], mark_label))
+
     # A5: Highlight — check for highlight child with CEL condition
     highlight_expr = None
+    # Migrate highlight to semantic_mark with label "highlighted"
     for child in children:
         if child.get("type") == "highlight":
             cond = child.get("props", {}).get("condition", {})
             if isinstance(cond, dict) and cond.get("is_expr"):
                 highlight_expr = cond["value"]
+                semantic_marks.append((cond["value"], "highlighted"))
 
-    if highlight_expr:
-        # Convert CEL field references to Jinja item.field references
-        import re
-        def _to_jinja_field(expr):
-            """Convert CEL row expression to Jinja2.
-            Prefixes bare identifiers with 'item.' while preserving
-            string literals and operators."""
-            result = []
-            # Split on quoted strings to avoid replacing inside them
-            parts_split = re.split(r'("[^"]*"|\'[^\']*\')', expr)
-            keywords = {'and', 'or', 'not', 'true', 'false', 'none', 'is', 'in', 'item'}
-            for i, part in enumerate(parts_split):
-                if i % 2 == 1:
-                    # Quoted string — keep as-is
-                    result.append(part)
-                else:
-                    # Replace .field -> item.field
-                    part = re.sub(r'\.([a-zA-Z_]\w*)', r'item.\1', part)
-                    # Replace bare identifiers -> item.identifier
-                    part = re.sub(
-                        r'\b([a-z_][a-zA-Z0-9_]*)\b',
-                        lambda m: m.group(0) if m.group(1) in keywords else f'item.{m.group(1)}',
-                        part)
-                    # Deduplicate item.item. -> item.
-                    part = part.replace('item.item.', 'item.')
-                    result.append(part)
-            return ''.join(result)
-        jinja_expr = _to_jinja_field(highlight_expr)
-        # Replace CEL operators with Jinja equivalents
-        jinja_expr = jinja_expr.replace("||", " or ").replace("&&", " and ")
-        # Collect all field names referenced in the expression
+    import re
+
+    def _to_jinja_field(expr):
+        """Convert CEL row expression to Jinja2."""
+        result = []
+        parts_split = re.split(r'("[^"]*"|\'[^\']*\')', expr)
+        keywords = {'and', 'or', 'not', 'true', 'false', 'none', 'is', 'in', 'item'}
+        for i, part in enumerate(parts_split):
+            if i % 2 == 1:
+                result.append(part)
+            else:
+                part = re.sub(r'\.([a-zA-Z_]\w*)', r'item.\1', part)
+                part = re.sub(
+                    r'\b([a-z_][a-zA-Z0-9_]*)\b',
+                    lambda m: m.group(0) if m.group(1) in keywords else f'item.{m.group(1)}',
+                    part)
+                part = part.replace('item.item.', 'item.')
+                result.append(part)
+        return ''.join(result)
+
+    def _guard_expr(jinja_expr):
+        """Add null guards for all item.field references."""
         field_names = re.findall(r'item\.(\w+)', jinja_expr)
-        # Use .get() with None default so missing fields → None → comparison fails
         jinja_expr = re.sub(r'item\.(\w+)', r'item.get("\1")', jinja_expr)
-        # Guard: only evaluate when ALL referenced fields exist on the row
         if field_names:
             guards = " and ".join(f'item.get("{f}") is not none' for f in set(field_names))
-            jinja_expr = f'{guards} and ({jinja_expr})'
-        parts.append(f'    {{% for item in items %}}<tr class="border-t {{% if {jinja_expr} %}}bg-red-50 font-semibold{{% endif %}}" data-termin-row-id="{{{{ item.id }}}}">')
+            return f'{guards} and ({jinja_expr})'
+        return jinja_expr
+
+    # Semantic mark label-to-CSS mapping
+    MARK_STYLES = {
+        "urgent": "bg-red-50 font-semibold",
+        "critical": "bg-red-100 font-bold",
+        "warning": "bg-amber-50",
+        "success": "bg-green-50",
+        "highlighted": "bg-red-50 font-semibold",  # legacy highlight compat
+    }
+
+    if semantic_marks:
+        # Build conditional class and data attributes from all marks
+        mark_parts = []
+        for expr, label in semantic_marks:
+            jinja_expr = _to_jinja_field(expr)
+            jinja_expr = jinja_expr.replace("||", " or ").replace("&&", " and ")
+            jinja_expr = _guard_expr(jinja_expr)
+            css_class = MARK_STYLES.get(label, "")
+            mark_parts.append((jinja_expr, css_class, label))
+
+        # Build the row opening with conditional classes and ARIA
+        row_classes = "border-t"
+        conditions = []
+        for jinja_expr, css_class, label in mark_parts:
+            if css_class:
+                conditions.append(f'{{% if {jinja_expr} %}}{css_class}{{% endif %}}')
+        class_str = row_classes + " " + " ".join(conditions) if conditions else row_classes
+
+        # Add data-termin-mark and aria-label for accessibility
+        mark_attrs = ""
+        for jinja_expr, css_class, label in mark_parts:
+            mark_attrs += f' {{% if {jinja_expr} %}}data-termin-mark="{label}" aria-label="{label}"{{% endif %}}'
+
+        parts.append(f'    {{% for item in items %}}<tr class="{class_str}"{mark_attrs} data-termin-row-id="{{{{ item.id }}}}">')
     else:
         parts.append('    {% for item in items %}<tr class="border-t" data-termin-row-id="{{ item.id }}">')
     for col in cols:
