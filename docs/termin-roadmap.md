@@ -259,6 +259,7 @@ Items deferred to v1.0 or later. Not prioritized, not scheduled.
 | Agent prompt versioning and rollback | product-strategy.md | Treat prompts as deployable artifacts |
 | Delegate identity mode for agents | confidentiality-spec.md | Agent acts on behalf of caller (vs service identity) |
 | Package signatures (cryptographic signing) | — | Signing and verification of .termin.pkg |
+| Singular/plural plausibility validation | — | Compiler warns if Content name and singular (`Each X has`) look unrelated (e.g., "echoes" vs "banana"). Basic containment check, not full NLP. |
 
 ---
 
