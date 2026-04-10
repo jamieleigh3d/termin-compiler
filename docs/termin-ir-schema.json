@@ -221,6 +221,11 @@
       "additionalProperties": false,
       "properties": {
         "name": { "$ref": "#/$defs/QualifiedName" },
+        "singular": {
+          "type": "string",
+          "default": "",
+          "description": "Authoritative singular form from the DSL (e.g., 'echo' for Content 'echoes'). Derived from 'Each X has...' declarations. Used by the runtime for event context naming."
+        },
         "fields": {
           "type": "array",
           "items": { "$ref": "#/$defs/FieldSpec" },
@@ -640,8 +645,8 @@
 
     "ComputeShape": {
       "type": "string",
-      "enum": ["TRANSFORM", "REDUCE", "EXPAND", "CORRELATE", "ROUTE"],
-      "description": "The data flow shape of a Compute module. TRANSFORM: 1-to-1. REDUCE: many-to-1. EXPAND: 1-to-many. CORRELATE: many-to-many join. ROUTE: 1-to-conditional-output."
+      "enum": ["NONE", "TRANSFORM", "REDUCE", "EXPAND", "CORRELATE", "ROUTE"],
+      "description": "The data flow shape of a Compute module. NONE: no shape (LLM/agent providers use field wiring instead). TRANSFORM: 1-to-1. REDUCE: many-to-1. EXPAND: 1-to-many. CORRELATE: many-to-many join. ROUTE: 1-to-conditional-output."
     },
 
     "ComputeParamSpec": {
@@ -657,8 +662,8 @@
 
     "ComputeSpec": {
       "type": "object",
-      "description": "A Compute module — a pure data transformation with declared inputs, outputs, and a CEL body. Computes are the processing primitive: they read Content, transform it, and write to Content.",
-      "required": ["name", "shape", "input_content", "output_content"],
+      "description": "A Compute module — a data transformation, LLM completion, or autonomous agent. CEL Computes use Transform shapes with CEL bodies. LLM Computes use field wiring (input_fields/output_fields). Agent Computes use the ComputeContext tool API scoped to their Accesses declaration.",
+      "required": ["name", "shape"],
       "additionalProperties": false,
       "properties": {
         "name": { "$ref": "#/$defs/QualifiedName" },
@@ -732,7 +737,7 @@
         "provider": {
           "type": ["string", "null"],
           "default": null,
-          "description": "Compute provider. null or 'cel' (default CEL evaluator), 'ai-agent' (autonomous AI), or a CCP package name."
+          "description": "Compute provider. null or 'cel' (default CEL evaluator), 'llm' (Level 1 field-to-field completion), 'ai-agent' (Level 3 autonomous AI with tools)."
         },
         "preconditions": {
           "type": "array",
@@ -746,20 +751,63 @@
           "default": [],
           "description": "CEL expressions evaluated after execution against the staging snapshot. All must return true or the transaction is rolled back (HTTP 409)."
         },
+        "directive": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "System prompt (strong prior) for LLM/agent providers. The agent's identity, rules, and constraints. Maps to the LLM system message."
+        },
         "objective": {
           "type": ["string", "null"],
           "default": null,
-          "description": "Multi-line system prompt for ai-agent provider. Opaque to the runtime — passed to the LLM provider."
+          "description": "Task prompt for LLM/agent providers. What to accomplish in this invocation. For agents, includes the strategy (tool usage plan). May contain inline CEL expressions."
         },
         "strategy": {
           "type": ["string", "null"],
           "default": null,
-          "description": "Multi-line execution plan for ai-agent provider. Opaque to the runtime — passed to the LLM provider."
+          "description": "Legacy: execution plan for agents. Folded into Objective in v0.5.0+. Retained for backward compatibility."
         },
         "trigger": {
           "type": ["string", "null"],
           "default": null,
-          "description": "Trigger mechanism: 'schedule <interval>' or 'event <name>'. null means API-invoked only."
+          "description": "Trigger mechanism: 'schedule <interval>' or 'event \"<name>\"'. null means API-invoked only."
+        },
+        "trigger_where": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "CEL expression for event trigger filtering. When present, the Compute is only invoked if this expression evaluates to true against the triggering event. Routing filter, not a safety gate (see preconditions for that)."
+        },
+        "accesses": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Content types this Compute can access (resolved snake_case names). Required boundary declaration. The runtime restricts agent tool calls to these content types. The compiler cross-checks field wiring and CEL body references against this list."
+        },
+        "input_fields": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "default": [],
+          "description": "Field wiring for LLM input. Array of [content_ref, field_name] pairs. The runtime reads these fields from the triggering record and passes them to the LLM as input context."
+        },
+        "output_fields": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "default": [],
+          "description": "Field wiring for LLM output. Array of [content_ref, field_name] pairs. The runtime writes the LLM response into these fields on the triggering record."
+        },
+        "output_creates": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Content type name for 'Output creates X'. When set, the LLM response creates a new record in this content type instead of updating the triggering record."
         }
       }
     },
