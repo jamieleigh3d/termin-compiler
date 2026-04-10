@@ -319,6 +319,134 @@ Level 1 and 3 are needed for v0.5.0. Levels 2, 4, 5 are future.
 
 **Context:** For `Output into field completion.response`, the runtime needs the LLM to return text that goes into that field. Simple for single-field output. But what about multi-field output? The LLM could return JSON, or use a structured output schema, or the runtime could use tool_use with a return schema matching the output fields. JL mentioned XML-tag-wrapped output as current industry practice. The runtime needs a convention.
 
+### D-13: Inbound Channel Hosting
+
+**Question:** Does the runtime host the webhook endpoint, or is that an infrastructure concern (API Gateway routes to runtime)?
+
+**Context:** Thread 003, Q1. The reference runtime currently registers `/webhooks/{name}` routes (Block F). But in production, an API Gateway or load balancer might front the runtime. Who owns the endpoint URL? The deploy config has the URL, but for inbound channels, that's the URL the *external service* calls. The runtime needs to know its own public URL to register webhooks. Or: this is purely deployment config and the runtime just listens.
+
+### D-14: Inbound Payload Transformation
+
+**Question:** When an external webhook payload arrives in a different schema than the Content type, how is it transformed?
+
+**Context:** Thread 003, Q2. A GitHub webhook payload doesn't match a Termin Content schema. Options: CEL transform on the Channel declaration, an Adapter Compute between Channel and Content, or a mapping in deployment config. This affects how Channel-triggered Computes (D-06) work.
+
+### D-15: Request Channels (Synchronous Bidirectional)
+
+**Question:** How does a Compute synchronously query an external API and get a response?
+
+**Context:** Thread 003, Q3. An agent needs to call an external API (e.g., AWS IAM) and wait for a response. The current Channel model is fire-and-forget (send) or persistent (WebSocket). A request channel is: send request, get response, continue. Is this a Channel direction ("request"), a special action pattern, or a different primitive? Affects `channel.invoke()` semantics.
+
+### D-16: Inbound Channel Event Integration
+
+**Question:** When an inbound Channel creates a Content record, does it automatically fire `When` event triggers?
+
+**Context:** Thread 003, Q5. The reference runtime already does this (Block F: webhook creates record, calls `run_event_handlers`). But is this automatic behavior part of the spec, or should the Channel declaration explicitly say it? If automatic, any inbound data always fires events. If declared, the Channel controls whether events propagate.
+
+### D-17: Block C Architectural Inputs
+
+**Question:** Three decisions needed for boundary enforcement: (1) Multiple boundaries in one process or separate? (2) How are inter-boundary channels materialized — HTTP, in-process, message queue? (3) Does the reference runtime enforce "only through Channels" or is that distributed-only?
+
+**Context:** From termin-confidentiality-runtime-design.md § Block C Inputs. Deferred until v0.6.0. Depends on D-03, D-04, D-13.
+
+---
+
+## v0.5.0 Dependency Analysis
+
+What must be resolved to ship v0.5.0 to an AWS-native Termin runtime. Chain of dependencies from examples → design questions → implementation blocks.
+
+### Critical Path
+
+```
+agent_simple.termin (example)
+  ├── D-02: LLM field wiring syntax (Input from / Output into)
+  │     └── Grammar + parser + IR changes
+  ├── D-10: defaults to "user" for enum fields
+  │     └── Verify or fix in compiler
+  ├── D-12: LLM structured output convention
+  │     └── How runtime maps LLM response → output fields
+  ├── G1: Wire Compute system type into CEL context
+  │     └── Compute.Name, Compute.Scopes for preconditions
+  └── G4: AI provider integration (Anthropic + OpenAI)
+        └── Deploy config ai_provider section
+              └── Block F: Deploy config (DONE)
+
+agent_chatbot.termin (example)
+  ├── Everything from agent_simple, plus:
+  ├── D-05: Compute access declarations (what agent can touch)
+  ├── D-08: Event envelope vs raw record
+  ├── G3: ComputeContext tool API (content.query/create/update, state.transition)
+  │     ├── G2: Before/After snapshots (for postconditions)
+  │     └── Block F: Channel dispatcher (DONE) — for channel.invoke/send tools
+  └── G6: Event trigger for Computes (Trigger on event)
+
+channel_demo.termin / channel_simple.termin (validation)
+  └── Block F: Channel Runtime (DONE)
+
+security_agent.termin (stretch goal, validates full model)
+  ├── Everything from agent_chatbot, plus:
+  ├── G5: Runtime scheduler (Trigger on schedule)
+  └── Full postcondition enforcement with rollback
+```
+
+### Resolution Order (suggested)
+
+Phase 1 — Design decisions (can be done in parallel):
+```
+D-02  LLM field wiring syntax        ← blocks grammar work
+D-10  defaults to "user"             ← quick verify/fix
+D-12  Structured output convention   ← blocks runtime LLM integration
+D-05  Compute access declarations    ← blocks agent scoping
+D-08  Event envelope vs raw record   ← blocks event trigger for Computes
+```
+
+Phase 2 — Compiler changes (sequential, TDD):
+```
+Write agent_simple.termin in desired DSL
+  → Fix grammar: Input from field / Output into field / Provider is "llm"
+  → Fix parser + AST + IR + lowering
+  → Conformance tests for expected IR
+Write agent_chatbot.termin in desired DSL
+  → Fix grammar: Trigger on event, defaults to "user"
+  → Fix parser + AST + IR + lowering
+  → Conformance tests for expected IR
+```
+
+Phase 3 — Runtime implementation (parallel where possible):
+```
+G4: AI provider (Anthropic + OpenAI SDK)   ← can start during Phase 2
+G1: Compute system type in CEL             ← small, independent
+G3: ComputeContext tool API                ← largest item, blocks agent_chatbot
+G6: Event trigger for Computes             ← medium, blocks agent_chatbot
+G2: Before/After snapshots                 ← needed for postconditions
+```
+
+Phase 4 — Integration testing:
+```
+agent_simple end-to-end: form → event → LLM → response appears
+agent_chatbot end-to-end: message → event → agent → reply appears
+Conformance suite updated with agent tests
+```
+
+### Not blocking v0.5.0
+
+These are important but can ship after:
+```
+D-03  Implicit channels in IR         → v0.6.0
+D-04  Events vs channels design       → v0.6.0
+D-06  Channel-triggered Computes      → v0.6.0
+D-07  Trace/log schema                → v0.7.0
+D-09  Chat presentation component     → v0.7.0
+D-11  Auto-generated REST API         → v0.7.0
+D-13  Inbound channel hosting         → v0.6.0
+D-14  Inbound payload transformation  → v0.6.0
+D-15  Request channels                → v0.6.0
+D-16  Inbound channel event firing    → already implemented, needs spec
+D-17  Block C architectural inputs    → v0.6.0
+H1-5  Mark...as semantic emphasis     → v0.5.0 (independent track)
+G5    Runtime scheduler               → stretch goal for v0.5.0
+```
+
 ---
 
 ## v0.6.0 Backlog
