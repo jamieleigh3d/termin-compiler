@@ -151,26 +151,9 @@ Items deferred to v1.0 or later. Not prioritized, not scheduled. Captured here s
 
 Restructured April 9, 2026. Blocks A, B, D are complete. Channel runtime and AI agent support are the critical path to v0.5.0 for an AWS-native Termin runtime. Everything else is lower priority.
 
-### Priority 1: Block F — Channel Runtime (v0.5.0 blocker)
+### Priority 1: Block G — AI Agent Runtime (v0.5.0 blocker)
 
-**Why first:** Channels are declared in the compiler and IR, but the reference runtime doesn't implement them. an AWS-native Termin runtime needs working channels for external integrations. We need to validate the Channel model in the reference runtime before shipping v0.5.0 to an AWS-native Termin runtime.
-
-| # | Item | Effort | Subsystems | Notes |
-|---|------|--------|------------|-------|
-| F1 | Deploy config loader: read `termin.deploy.json`, resolve `${ENV_VAR}` | Small | runtime (new module) | New file: `termin_runtime/channels.py`. Loads config at startup, maps channel names → URL + auth + protocol. |
-| F2 | Outbound channel dispatcher (HTTP): `channel_send()` for reliable delivery | Medium | runtime (channels) | HTTP client (httpx). POST to configured URL. Retry with exponential backoff. Scope check against ChannelRequirementSpec. |
-| F3 | Outbound channel dispatcher (WebSocket): persistent connections for realtime | Medium | runtime (channels) | WebSocket client manager. Auto-reconnect, heartbeat. Scope check on send. |
-| F4 | Event action handler: wire `send_channel` in `run_event_handlers()` | Small | runtime (app, channels) | Currently dead code. When EventActionSpec has `send_channel`, call the channel dispatcher. |
-| F5 | Action invocation endpoint: `POST /api/v1/channels/{name}/actions/{action}` | Medium | runtime (app, channels) | Validate params against ChannelActionSpec.takes, check scopes, forward to external service, validate response against returns. |
-| F6 | Inbound webhook handler: register endpoints from IR, validate payloads | Medium | runtime (app, channels) | For inbound reliable channels: register route at channel endpoint (or `/webhooks/{name}`), validate against carries_content schema, create content record, fire events. |
-| F7 | Inbound WebSocket handler: accept persistent connections for realtime channels | Medium | runtime (app, channels) | For inbound realtime channels: dedicated WebSocket endpoint, message validation, content creation, event firing. |
-| F8 | Channel reflection: expose connection status, send/receive metrics | Small | runtime (reflection, channels) | Extend existing reflection with live connection state (connected/disconnected/error), message counts, last activity. |
-| F9 | Channel demo end-to-end test: channel_demo.termin with mock external services | Medium | tests | TestClient + mock HTTP/WS servers. Verify: outbound send, inbound webhook → content created, action invocation → response, event → channel send. |
-| F10 | Deploy config JSON Schema: `termin.deploy.schema.json` | Small | docs | DONE — `docs/termin-deploy-schema.json` |
-
-**Exit criteria:** `channel_demo.termin` works end-to-end. Outbound sends hit configured URLs. Inbound webhooks create content records. Action invocations dispatch and return typed responses. Events trigger channel sends. All behind scope enforcement.
-
-### Priority 2: Block G — AI Agent Runtime
+**Why first:** Block F (Channels) is complete. Agents depend on channels (`channel.invoke()`). an AWS-native Termin runtime is building agent support. We need a working AI agent demo to prove the model before v0.5.0.
 
 **Why second:** Depends on channels (agents call `channel.invoke()`). an AWS-native Termin runtime is building agent support. We need a working AI agent demo to prove the model before v0.5.0.
 
@@ -186,6 +169,18 @@ Restructured April 9, 2026. Blocks A, B, D are complete. Channel runtime and AI 
 | G8 | Agent observability: execution log, tool call trace, token usage | Small | runtime (agent, reflection) | Log each tool call with args/result. Expose via reflection. Track token usage per invocation. |
 
 **Exit criteria:** A `.termin` app with `Provider is "ai-agent"` actually calls Claude, executes tool calls through ComputeContext, respects pre/postconditions with rollback, and the whole thing is observable.
+
+### Priority 2: Block H — Semantic Mark Primitive (v0.5.0)
+
+**Why:** PRFAQ v7 promise. Replaces `Highlight rows where` with semantic `Mark ... as "label"` that decouples intent from presentation. Works on rows, fields, and columns.
+
+| # | Item | Effort | Subsystems | Notes |
+|---|------|--------|------------|-------|
+| H1 | `Mark rows where [expr] as "label"` grammar + parser | Small | compiler (PEG, parser) | Replaces `Highlight rows where`. No deprecation (pre-v1.0). |
+| H2 | `Mark [field] where [expr] as "label"` for field-level marks | Small | compiler (PEG, parser) | Same syntax, scoped to a field within a table. |
+| H3 | `semantic_mark` IR component type | Small | IR, lowering | `{type: "semantic_mark", props: {condition, label, scope}}` where scope is "row", "field", or "column". |
+| H4 | Runtime renderer: map labels to visual + ARIA attributes | Medium | runtime (presentation) | Default label→rendering map (urgent→red+alert, warning→amber, success→green). Custom labels get `data-termin-mark="label"`. |
+| H5 | Update all examples using `Highlight` to use `Mark...as` | Small | examples | Clean swap across all .termin files. |
 
 ### Priority 3: Block E — Remaining Quick Wins & Research
 
@@ -232,6 +227,38 @@ Deferred until channels and agents are working. Boundaries are metadata-only in 
 | E16 | Deploy config schema: `termin.deploy.schema.json` | DONE |
 | E17 | Channel demo example: `channel_demo.termin` exercising all patterns | DONE |
 | E18 | ~~CCP/ECP package system~~ | KILLED — replaced by Channel Actions (F5) |
+
+**Block F: Channel Runtime** — DONE (F1-F10). Deploy config loader, outbound HTTP/WS dispatch, inbound webhooks, action invocation, event-driven sends, channel reflection, strict validation, auto-generated deploy templates. 36 channel tests.
+
+---
+
+## v0.6.0 Backlog
+
+Items planned for v0.6.0 (after v0.5.0 ships to an AWS-native Termin runtime).
+
+| Item | Effort | Source | Notes |
+|------|--------|--------|-------|
+| Structured English compiler errors | Medium | Thread 004 § 2 | Error codes (TERMIN-E001+), fuzzy-match suggestions ("did you mean?"), `--format json` for Console consumption |
+| Boundary isolation enforcement (Block C) | Large | appserver-v2.md | Cross-boundary data only through declared Channels. Depends on Block F. |
+| Cross-boundary identity propagation | Medium | distributed-runtime.md | Identity context flows through Channel crossings |
+
+---
+
+## v1.0 Backlog
+
+Items deferred to v1.0 or later. Not prioritized, not scheduled.
+
+| Item | Source | Notes |
+|------|--------|-------|
+| Multi-file apps: composition of multiple .termin source files | appserver-v2.md § Library dependencies | Research needed: import syntax, namespace resolution, cross-file Content/Channel references |
+| Localization layer for end-user labels | Thread 004 § 3 | Labels become keys, `localization/` dir in .termin.pkg with `{lang}.json` files |
+| Diff preview: `termin diff base.termin proposed.termin` | Thread 004 § 4 | IR structural diff with human-readable English output for Console change review |
+| Confidentiality scope hierarchies | appserver-v2.md | Tree-walk scope resolution (e.g., `hr.salary` implies `hr`) |
+| Row-level security filters | appserver-v2.md | Per-identity record filtering |
+| Agent-authored application deployment | product-strategy.md | Agent writes .termin, compiles, deploys |
+| Agent prompt versioning and rollback | product-strategy.md | Treat prompts as deployable artifacts |
+| Delegate identity mode for agents | confidentiality-spec.md | Agent acts on behalf of caller (vs service identity) |
+| Package signatures (cryptographic signing) | — | Signing and verification of .termin.pkg |
 
 ---
 
