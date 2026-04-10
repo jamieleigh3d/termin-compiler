@@ -1,0 +1,66 @@
+Application: Channel Simple
+  Description: Minimal channel demo with loopback — outbound channel sends to the app's own inbound webhook, proving the full dispatch pipeline without external services
+Id: b7e1c3a0-4f89-4d1e-a293-8c0d1f6e2b57
+
+Users authenticate with stub
+Scopes are "messages.read", "messages.write", and "messages.sync"
+
+A "user" has "messages.read", "messages.write", and "messages.sync"
+A "viewer" has "messages.read"
+
+Content called "notes":
+  Each note has a title which is text, required
+  Each note has a body which is text
+  Each note has a source which is one of: "local", "synced"
+  Anyone with "messages.read" can view notes
+  Anyone with "messages.write" can create or update notes
+
+Content called "echoes":
+  Each echo has a title which is text
+  Each echo has a body which is text
+  Each echo has an origin which is text
+  Anyone with "messages.read" can view echoes
+  Anyone with "messages.sync" can create echoes
+
+Channel called "note-sync":
+  Carries notes
+  Direction: outbound
+  Delivery: reliable
+  Requires "messages.sync" to send
+
+Channel called "echo-receiver":
+  Carries echoes
+  Direction: inbound
+  Delivery: reliable
+  Requires "messages.sync" to send
+
+When `note.source == "local"`:
+  Send note to "note-sync"
+  Log level: INFO
+
+As a user, I want to create notes and see echoes
+  so that I can test the channel pipeline:
+    Show a page called "Notes"
+    Display count of notes grouped by source
+    Display a table of notes with columns: title, body, source
+    Accept input for title, body
+    Allow searching by title
+    This table subscribes to notes changes
+
+As a viewer, I want to see messages that came back through the channel
+  so that I can verify the loopback works:
+    Show a page called "Echoes"
+    Display a table of echoes with columns: title, body, origin
+    This table subscribes to echoes changes
+
+Navigation bar:
+  "Notes" links to "Notes" visible to all
+  "Echoes" links to "Echoes" visible to all
+
+Expose a REST API at /api/v1:
+  GET    /notes                lists notes
+  POST   /notes                creates a note
+  GET    /notes/{id}           gets a note
+  PUT    /notes/{id}           updates a note
+  GET    /echoes               lists echoes
+  POST   /echoes               creates an echo

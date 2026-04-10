@@ -1,0 +1,462 @@
+{
+  "ir_version": "0.4.0",
+  "reflection_enabled": true,
+  "app_id": "b7e1c3a0-4f89-4d1e-a293-8c0d1f6e2b57",
+  "name": "Channel Simple",
+  "description": "Minimal channel demo with loopback \u2014 outbound channel sends to the app's own inbound webhook, proving the full dispatch pipeline without external services",
+  "auth": {
+    "provider": "stub",
+    "scopes": [
+      "messages.read",
+      "messages.write",
+      "messages.sync"
+    ],
+    "roles": [
+      {
+        "name": "user",
+        "scopes": [
+          "messages.read",
+          "messages.write",
+          "messages.sync"
+        ]
+      },
+      {
+        "name": "viewer",
+        "scopes": [
+          "messages.read"
+        ]
+      }
+    ]
+  },
+  "content": [
+    {
+      "name": {
+        "display": "notes",
+        "snake": "notes",
+        "pascal": "Notes"
+      },
+      "fields": [
+        {
+          "name": "title",
+          "display_name": "title",
+          "business_type": "text",
+          "column_type": "TEXT",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "body",
+          "display_name": "body",
+          "business_type": "text",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "source",
+          "display_name": "source",
+          "business_type": "enum",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [
+            "local",
+            "synced"
+          ],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        }
+      ],
+      "storage_intent": "auto",
+      "has_state_machine": false,
+      "initial_state": null,
+      "confidentiality_scopes": []
+    },
+    {
+      "name": {
+        "display": "echoes",
+        "snake": "echoes",
+        "pascal": "Echoes"
+      },
+      "fields": [
+        {
+          "name": "title",
+          "display_name": "title",
+          "business_type": "text",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "body",
+          "display_name": "body",
+          "business_type": "text",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "origin",
+          "display_name": "origin",
+          "business_type": "text",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        }
+      ],
+      "storage_intent": "auto",
+      "has_state_machine": false,
+      "initial_state": null,
+      "confidentiality_scopes": []
+    }
+  ],
+  "access_grants": [
+    {
+      "content": "notes",
+      "scope": "messages.read",
+      "verbs": [
+        "VIEW"
+      ]
+    },
+    {
+      "content": "notes",
+      "scope": "messages.write",
+      "verbs": [
+        "CREATE",
+        "UPDATE"
+      ]
+    },
+    {
+      "content": "echoes",
+      "scope": "messages.read",
+      "verbs": [
+        "VIEW"
+      ]
+    },
+    {
+      "content": "echoes",
+      "scope": "messages.sync",
+      "verbs": [
+        "CREATE"
+      ]
+    }
+  ],
+  "state_machines": [],
+  "events": [
+    {
+      "source_content": "notes",
+      "trigger": "expr",
+      "condition": null,
+      "action": {
+        "target_content": "",
+        "column_mapping": [],
+        "send_content": "note",
+        "send_channel": "note-sync"
+      },
+      "condition_expr": "note.source == \"local\"",
+      "log_level": "INFO"
+    }
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/v1/notes",
+      "kind": "LIST",
+      "content_ref": "notes",
+      "required_scope": "messages.read",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/notes",
+      "kind": "CREATE",
+      "content_ref": "notes",
+      "required_scope": "messages.write",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/notes/{id}",
+      "kind": "GET_ONE",
+      "content_ref": "notes",
+      "required_scope": "messages.read",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/notes/{id}",
+      "kind": "UPDATE",
+      "content_ref": "notes",
+      "required_scope": "messages.write",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/echoes",
+      "kind": "LIST",
+      "content_ref": "echoes",
+      "required_scope": "messages.read",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/echoes",
+      "kind": "CREATE",
+      "content_ref": "echoes",
+      "required_scope": "messages.sync",
+      "lookup_column": "id",
+      "target_state": null
+    }
+  ],
+  "pages": [
+    {
+      "name": "Notes",
+      "slug": "notes",
+      "role": "user",
+      "required_scope": "messages.write",
+      "children": [
+        {
+          "type": "data_table",
+          "props": {
+            "source": "notes",
+            "columns": [
+              {
+                "field": "title",
+                "label": "title"
+              },
+              {
+                "field": "body",
+                "label": "body"
+              },
+              {
+                "field": "source",
+                "label": "source"
+              }
+            ]
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "search",
+              "props": {
+                "fields": [
+                  "title"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "subscribe",
+              "props": {
+                "content": "notes"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "stat_breakdown",
+          "props": {
+            "source": "notes",
+            "label": "notes by source",
+            "group_by": "source"
+          },
+          "style": {},
+          "layout": {},
+          "children": []
+        },
+        {
+          "type": "form",
+          "props": {
+            "target": "notes",
+            "submit_scope": "messages.write"
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "field_input",
+              "props": {
+                "field": "title",
+                "label": "title",
+                "input_type": "text",
+                "required": true
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "body",
+                "label": "body",
+                "input_type": "text"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Echoes",
+      "slug": "echoes",
+      "role": "viewer",
+      "required_scope": null,
+      "children": [
+        {
+          "type": "data_table",
+          "props": {
+            "source": "echoes",
+            "columns": [
+              {
+                "field": "title",
+                "label": "title"
+              },
+              {
+                "field": "body",
+                "label": "body"
+              },
+              {
+                "field": "origin",
+                "label": "origin"
+              }
+            ]
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "subscribe",
+              "props": {
+                "content": "echoes"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "nav_items": [
+    {
+      "label": "Notes",
+      "page_slug": "notes",
+      "visible_to": [
+        "all"
+      ],
+      "badge_content": null
+    },
+    {
+      "label": "Echoes",
+      "page_slug": "echoes",
+      "visible_to": [
+        "all"
+      ],
+      "badge_content": null
+    }
+  ],
+  "streams": [],
+  "computes": [],
+  "channels": [
+    {
+      "name": {
+        "display": "note-sync",
+        "snake": "note_sync",
+        "pascal": "NoteSync"
+      },
+      "carries_content": "notes",
+      "direction": "OUTBOUND",
+      "delivery": "RELIABLE",
+      "endpoint": null,
+      "requirements": [
+        {
+          "scope": "messages.sync",
+          "direction": "send"
+        }
+      ],
+      "actions": []
+    },
+    {
+      "name": {
+        "display": "echo-receiver",
+        "snake": "echo_receiver",
+        "pascal": "EchoReceiver"
+      },
+      "carries_content": "echoes",
+      "direction": "INBOUND",
+      "delivery": "RELIABLE",
+      "endpoint": null,
+      "requirements": [
+        {
+          "scope": "messages.sync",
+          "direction": "send"
+        }
+      ],
+      "actions": []
+    }
+  ],
+  "boundaries": [],
+  "error_handlers": [],
+  "reclassification_points": []
+}

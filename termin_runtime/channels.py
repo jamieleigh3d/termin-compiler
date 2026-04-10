@@ -496,6 +496,16 @@ class ChannelDispatcher:
             headers["Authorization"] = f"Bearer {auth.token}"
         elif auth.auth_type == "api_key" and auth.token:
             headers[auth.header] = auth.token
+        elif auth.auth_type == "none":
+            # For loopback/internal HTTP calls: include service identity cookie.
+            # Uses the first role in the roles list (typically the most privileged).
+            # Production runtimes would use service identity tokens instead.
+            first_role = ""
+            for r in self._ir.get("auth", {}).get("roles", []):
+                first_role = r.get("name", "")
+                break
+            if first_role:
+                headers["Cookie"] = f"termin_role={first_role}; termin_user_name=channel-dispatcher"
         return headers
 
     def _check_scope(self, channel_name: str, direction: str, user_scopes: set) -> bool:
