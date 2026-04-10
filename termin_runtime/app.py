@@ -54,13 +54,17 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     event_bus = EventBus()
     reflection = ReflectionEngine(ir_json)
 
-    # Channel dispatcher — load app-specific deploy config
+    # Load app-specific deploy config
     has_external_channels = any(
         ch.get("direction", "") != "INTERNAL"
         for ch in ir.get("channels", [])
     )
-    if deploy_config is None and has_external_channels:
-        # Derive app snake_name for config file lookup
+    has_llm_computes = any(
+        (c.get("provider") or "") in ("llm", "ai-agent")
+        for c in ir.get("computes", [])
+    )
+    needs_deploy_config = has_external_channels or has_llm_computes
+    if deploy_config is None and needs_deploy_config:
         app_snake = ir.get("name", "app").lower().replace(" ", "_").replace("-", "_")
         deploy_config = load_deploy_config(path=deploy_config_path, app_name=app_snake)
     elif deploy_config is None:
