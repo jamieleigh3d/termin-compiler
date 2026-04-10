@@ -341,6 +341,18 @@ Level 1 and 3 are needed for v0.5.0. Levels 2, 4, 5 are future.
 
 **Context:** From termin-confidentiality-runtime-design.md § Block C Inputs. Deferred until v0.6.0. Depends on D-03, D-04, D-13.
 
+### D-18: Audit Declaration on ContentSchema
+
+**Question:** How should builders declare what's safe to log per content type?
+
+**Context:** Thread 004 (an AWS-native runtime-ai). HRBP case management where presence of a record is safe to log but content is sensitive. Proposed: `audit: actions | content | none` on ContentSchema. `actions` = log event type + record ID but not field values. `content` = log everything. `none` = suppress logging. Connects to D-07 (trace schema) — agent traces should respect audit declarations. Relates to confidentiality system (different axis: confidentiality = who sees data, audit = what gets logged).
+
+### D-19: Dependent Field Values / Cascading Constraints
+
+**Question:** How should the DSL declare when one field's value constrains another field's allowed values?
+
+**Context:** Thread 004 (an AWS-native runtime-ai). Retail product configurator: selecting "MacBook Pro 16-inch" narrows RAM to [16, 32, 48]. an AWS-native Termin runtime hits this with hierarchical configuration (region → compliance framework → data residency). Proposed IR shape: `dependent_values: [{when: {field, equals}, then: {field, allowed}}]`. Keeps constraint graph in IR for UI generation, validation, optimization. Concern: simple `when/then` covers 80% but doesn't compose for multi-field or range constraints. Need to decide if this is a flat list or a composable constraint graph.
+
 ---
 
 ## v0.5.0 Dependency Analysis
