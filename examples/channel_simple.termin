@@ -11,7 +11,6 @@ A "viewer" has "messages.read"
 Content called "notes":
   Each note has a title which is text, required
   Each note has a body which is text
-  Each note has a source which is one of: "local", "synced"
   Anyone with "messages.read" can view notes
   Anyone with "messages.write" can create or update notes
 
@@ -34,15 +33,14 @@ Channel called "echo-receiver":
   Delivery: reliable
   Requires "messages.sync" to send
 
-When `note.source == "local"`:
+When `note.created`:
   Send note to "note-sync"
   Log level: INFO
 
 As a user, I want to create notes and see echoes
   so that I can test the channel pipeline:
     Show a page called "Notes"
-    Display count of notes grouped by source
-    Display a table of notes with columns: title, body, source
+    Display a table of notes with columns: title, body
     Accept input for title, body
     Allow searching by title
     This table subscribes to notes changes

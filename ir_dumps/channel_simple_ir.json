@@ -67,25 +67,6 @@
           "list_type": null,
           "default_expr": null,
           "confidentiality_scopes": []
-        },
-        {
-          "name": "source",
-          "display_name": "source",
-          "business_type": "enum",
-          "column_type": "TEXT",
-          "required": false,
-          "unique": false,
-          "minimum": null,
-          "maximum": null,
-          "enum_values": [
-            "local",
-            "synced"
-          ],
-          "foreign_key": null,
-          "is_auto": false,
-          "list_type": null,
-          "default_expr": null,
-          "confidentiality_scopes": []
         }
       ],
       "storage_intent": "auto",
@@ -198,7 +179,7 @@
         "send_content": "note",
         "send_channel": "note-sync"
       },
-      "condition_expr": "note.source == \"local\"",
+      "condition_expr": "note.created",
       "log_level": "INFO"
     }
   ],
@@ -277,10 +258,6 @@
               {
                 "field": "body",
                 "label": "body"
-              },
-              {
-                "field": "source",
-                "label": "source"
               }
             ]
           },
@@ -308,17 +285,6 @@
               "children": []
             }
           ]
-        },
-        {
-          "type": "stat_breakdown",
-          "props": {
-            "source": "notes",
-            "label": "notes by source",
-            "group_by": "source"
-          },
-          "style": {},
-          "layout": {},
-          "children": []
         },
         {
           "type": "form",

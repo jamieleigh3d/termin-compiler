@@ -440,17 +440,28 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                                 await db.commit()
                             elif action and action.get("send_channel"):
                                 # Channel send action: dispatch record to channel
-                                try:
-                                    await channel_dispatcher.channel_send(
-                                        action["send_channel"], record, user_scopes=None
-                                    )
-                                    log = ev.get("log_level", "INFO")
-                                    print(f"[Termin] [{log}] Event sent {action.get('send_content', 'record')} to channel '{action['send_channel']}'")
-                                except ChannelError as ce:
-                                    print(f"[Termin] [ERROR] Channel send failed: {ce}")
+                                # Fire-and-forget via background task. Uses a fresh
+                                # sync httpx client in a thread to avoid event loop
+                                # deadlocks when the channel target is the same server.
+                                import threading
+                                def _sync_send(_action=action, _record=dict(record), _ev=ev):
+                                    import httpx as _httpx
+                                    ch_name = _action["send_channel"]
+                                    try:
+                                        config = channel_dispatcher.get_config(ch_name)
+                                        if not config or not config.url:
+                                            print(f"[Termin] Channel '{ch_name}': no deploy config, send skipped")
+                                            return
+                                        headers = channel_dispatcher._build_headers(config)
+                                        resp = _httpx.post(config.url, json=_record, headers=headers, timeout=config.timeout_ms / 1000.0)
+                                        log = _ev.get("log_level", "INFO")
+                                        print(f"[Termin] [{log}] Event sent {_action.get('send_content', 'record')} to channel '{ch_name}' (HTTP {resp.status_code})")
+                                    except Exception as e:
+                                        print(f"[Termin] [ERROR] Channel send to '{ch_name}' failed: {e}")
+                                threading.Thread(target=_sync_send, daemon=True).start()
                             await event_bus.publish({"type": f"{ev.get('source_content', '')}_event", "log_level": ev.get("log_level", "INFO")})
-                    except Exception:
-                        pass
+                    except Exception as _ev_err:
+                        print(f"[Termin] [WARN] Event handler error: {_ev_err}")
 
     # ── API routes from IR ──
     for route in ir.get("routes", []):
@@ -546,6 +557,8 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                         # Redact confidential fields in response
                         user_scopes = set(user.get("scopes", []))
                         return redact_record(record, schema, user_scopes)
+                    except HTTPException:
+                        raise
                     except Exception as e:
                         err_msg = str(e)
                         if "UNIQUE constraint" in err_msg:
