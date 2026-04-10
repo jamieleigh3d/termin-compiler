@@ -51,20 +51,70 @@ MOCK_DEPLOY_CONFIG = {
             "protocol": "http",
             "auth": {"type": "bearer", "token": "slack-token"},
         },
+        "github-webhooks": {
+            "url": "https://mock-github.test/webhooks",
+            "protocol": "http",
+            "auth": {"type": "hmac", "secret": "github-secret"},
+        },
+        "monitoring-feed": {
+            "url": "https://mock-monitoring.test/feed",
+            "protocol": "http",
+            "auth": {"type": "bearer", "token": "monitor-token"},
+        },
     },
 }
 
 
-def _make_channel_client(deploy_config=None):
+def _make_channel_client(deploy_config=None, strict=None):
     """Create a TestClient for channel_demo with deploy config."""
     ir_json = _load_ir("channel_demo")
     seed = _load_seed("channel_demo")
     config = deploy_config or MOCK_DEPLOY_CONFIG
-    app = create_termin_app(ir_json, seed_data=seed, deploy_config=config)
+    # If deploy_config is explicitly empty, also disable strict mode
+    strict_channels = strict if strict is not None else (deploy_config is None or bool(deploy_config.get("channels")))
+    app = create_termin_app(ir_json, seed_data=seed, deploy_config=config, strict_channels=strict_channels)
     return TestClient(app)
 
 
 # ── Deploy config loading ──
+
+class TestStrictChannelValidation:
+    def test_strict_rejects_missing_config(self):
+        """App with external channels must have deploy config in strict mode."""
+        ir_json = _load_ir("channel_demo")
+        with pytest.raises(Exception, match="deploy config"):
+            app = create_termin_app(ir_json, deploy_config={}, strict_channels=True)
+            # The error happens during lifespan startup, so we need to trigger it
+            with TestClient(app):
+                pass
+
+    def test_non_strict_allows_missing_config(self):
+        """In non-strict mode, missing config is allowed (for dev/testing)."""
+        ir_json = _load_ir("channel_demo")
+        app = create_termin_app(ir_json, deploy_config={}, strict_channels=False)
+        with TestClient(app) as client:
+            r = client.get("/api/reflect/channels")
+            assert r.status_code == 200
+            for ch in r.json():
+                if ch["direction"] != "INTERNAL":
+                    assert ch["state"] == "not_configured"
+
+    def test_internal_channels_never_need_config(self):
+        """Internal channels don't require deploy config even in strict mode."""
+        from termin_runtime.channels import validate_channel_config
+        ir = json.loads(_load_ir("channel_demo"))
+        # Provide config for all external channels
+        errors = validate_channel_config(ir, MOCK_DEPLOY_CONFIG)
+        # incident-bus is internal — should not appear in errors
+        assert not any("incident-bus" in e for e in errors)
+
+    def test_validation_catches_missing_url(self):
+        from termin_runtime.channels import validate_channel_config
+        ir = json.loads(_load_ir("channel_demo"))
+        bad_config = {"channels": {"pagerduty": {"protocol": "http"}}}  # no url
+        errors = validate_channel_config(ir, bad_config)
+        assert any("pagerduty" in e and "url" in e.lower() for e in errors)
+
 
 class TestDeployConfigLoading:
     def test_resolve_env_vars(self):
@@ -109,13 +159,13 @@ class TestChannelDispatcher:
         assert config.auth.token == "test-token"
 
     def test_get_config_returns_none_for_unconfigured(self):
-        config = self.dispatcher.get_config("github-webhooks")
+        config = self.dispatcher.get_config("incident-bus")
         assert config is None
 
     def test_is_configured(self):
         assert self.dispatcher.is_configured("pagerduty")
         assert self.dispatcher.is_configured("cloud-provider")
-        assert not self.dispatcher.is_configured("github-webhooks")
+        assert self.dispatcher.is_configured("github-webhooks")
         assert not self.dispatcher.is_configured("incident-bus")
 
     def test_get_action_spec(self):
@@ -350,15 +400,16 @@ class TestChannelReflection:
             assert pagerduty["direction"] == "OUTBOUND"
             assert pagerduty["metrics"]["sent"] == 0
 
-            # Unconfigured channels
+            # Inbound channels — configured
             github = next(ch for ch in channels if ch["name"] == "github-webhooks")
-            assert github["configured"] is False
-            assert github["state"] == "not_configured"
+            assert github["configured"] is True
+            assert github["direction"] == "INBOUND"
 
-            # Internal channels
+            # Internal channels — never need config
             bus = next(ch for ch in channels if ch["name"] == "incident-bus")
             assert bus["configured"] is False
             assert bus["direction"] == "INTERNAL"
+            assert bus["state"] == "not_configured"
 
             # Action-only channel
             cloud = next(ch for ch in channels if ch["name"] == "cloud-provider")

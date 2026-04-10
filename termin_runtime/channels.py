@@ -48,27 +48,80 @@ def _resolve_config_env(obj):
     return obj
 
 
-def load_deploy_config(path: str = None) -> dict:
-    """Load and resolve a termin.deploy.json file.
+def load_deploy_config(path: str = None, app_name: str = None) -> dict:
+    """Load and resolve a deploy config file.
+
+    Search order:
+      1. Explicit path if provided
+      2. {app_name}.deploy.json (app-specific, preferred)
+      3. termin.deploy.json (legacy fallback)
 
     Args:
-        path: Path to deploy config. If None, looks for termin.deploy.json
-              in the current directory.
+        path: Explicit path to deploy config file.
+        app_name: Snake_case app name for app-specific config lookup.
 
     Returns:
         Resolved config dict with ${ENV_VAR} substituted, or empty dict if not found.
     """
-    if path is None:
-        path = "termin.deploy.json"
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            raw = json.load(f)
-        return _resolve_config_env(raw)
-    except FileNotFoundError:
-        return {}
-    except (json.JSONDecodeError, OSError) as e:
-        print(f"[Termin] Warning: Failed to load deploy config from {path}: {e}")
-        return {}
+    candidates = []
+    if path:
+        candidates.append(path)
+    else:
+        if app_name:
+            candidates.append(f"{app_name}.deploy.json")
+        candidates.append("termin.deploy.json")
+
+    for candidate in candidates:
+        try:
+            with open(candidate, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            logger.info(f"Loaded deploy config from {candidate}")
+            return _resolve_config_env(raw)
+        except FileNotFoundError:
+            continue
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"[Termin] Warning: Failed to load deploy config from {candidate}: {e}")
+            continue
+    return {}
+
+
+def validate_channel_config(ir: dict, deploy_config: dict) -> list[str]:
+    """Validate that all non-internal channels have deploy configuration.
+
+    Returns a list of error messages. Empty list means valid.
+    """
+    errors = []
+    channel_configs = deploy_config.get("channels", {})
+
+    for ch in ir.get("channels", []):
+        direction = ch.get("direction", "")
+        if direction == "INTERNAL":
+            continue  # internal channels never need config
+
+        display = ch["name"]["display"]
+        snake = ch["name"]["snake"]
+
+        if display not in channel_configs and snake not in channel_configs:
+            errors.append(
+                f"Channel '{display}' (direction: {direction}) has no deploy configuration. "
+                f"Add an entry to the deploy config file or change direction to 'internal'."
+            )
+            continue
+
+        # Validate config has a URL
+        config = channel_configs.get(display) or channel_configs.get(snake, {})
+        if not config.get("url"):
+            errors.append(
+                f"Channel '{display}' has a deploy config entry but no 'url'. "
+                f"Every external channel must have a URL."
+            )
+
+    return errors
+
+
+class ChannelConfigError(Exception):
+    """Raised when the deploy config is missing or invalid for required channels."""
+    pass
 
 
 # ── Channel config types ──
@@ -313,8 +366,29 @@ class ChannelDispatcher:
             except Exception as e:
                 logger.error(f"Channel '{channel_name}': message handler error: {e}")
 
-    async def startup(self):
-        """Initialize HTTP client and connect outbound WebSocket channels."""
+    def validate(self) -> list[str]:
+        """Validate that all non-internal channels have deploy config.
+
+        Returns list of error messages. Empty means valid.
+        """
+        return validate_channel_config(self._ir, self._deploy)
+
+    async def startup(self, strict: bool = True):
+        """Initialize HTTP client and connect outbound WebSocket channels.
+
+        Args:
+            strict: If True (default), raise ChannelConfigError if any
+                    non-internal channel lacks deploy config.
+        """
+        # Validate channel config
+        if strict:
+            errors = self.validate()
+            if errors:
+                raise ChannelConfigError(
+                    f"Cannot start application — {len(errors)} channel(s) missing deploy config:\n"
+                    + "\n".join(f"  - {e}" for e in errors)
+                )
+
         self._http_client = httpx.AsyncClient(timeout=60.0)
 
         # Connect WebSocket channels

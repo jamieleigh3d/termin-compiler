@@ -27,17 +27,22 @@ from .confidentiality import (
     check_for_redacted_values, is_redacted,
 )
 from .transaction import Transaction
-from .channels import ChannelDispatcher, ChannelError, ChannelScopeError, ChannelValidationError, load_deploy_config
+from .channels import ChannelDispatcher, ChannelError, ChannelScopeError, ChannelValidationError, ChannelConfigError, load_deploy_config
 
 
-def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None, deploy_config: dict = None) -> FastAPI:
+def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
+                      deploy_config: dict = None, deploy_config_path: str = None,
+                      strict_channels: bool = True) -> FastAPI:
     """Create a fully configured FastAPI app from an IR JSON string.
 
     Args:
         ir_json: The IR JSON string.
         db_path: Path to the SQLite database file.
         seed_data: Optional dict of {content_name: [record_dicts]} to seed on first run.
-        deploy_config: Optional deploy config dict. If None, loads from termin.deploy.json.
+        deploy_config: Optional deploy config dict. Overrides file loading.
+        deploy_config_path: Explicit path to deploy config file.
+        strict_channels: If True, refuse to start if non-internal channels lack
+                         deploy config. Set False for testing or dev mode.
     """
     ir = json.loads(ir_json)
     app_name = ir.get("name", "Termin App")
@@ -48,9 +53,17 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     event_bus = EventBus()
     reflection = ReflectionEngine(ir_json)
 
-    # Channel dispatcher
-    if deploy_config is None:
-        deploy_config = load_deploy_config()
+    # Channel dispatcher — load app-specific deploy config
+    has_external_channels = any(
+        ch.get("direction", "") != "INTERNAL"
+        for ch in ir.get("channels", [])
+    )
+    if deploy_config is None and has_external_channels:
+        # Derive app snake_name for config file lookup
+        app_snake = ir.get("name", "app").lower().replace(" ", "_").replace("-", "_")
+        deploy_config = load_deploy_config(path=deploy_config_path, app_name=app_snake)
+    elif deploy_config is None:
+        deploy_config = {}
     channel_dispatcher = ChannelDispatcher(ir, deploy_config)
 
     # Identity
@@ -192,12 +205,16 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                 await db.close()
 
         channel_dispatcher.on_ws_message(_handle_inbound_ws)
-        await channel_dispatcher.startup()
+        await channel_dispatcher.startup(strict=strict_channels)
         configured_channels = [ch["name"]["display"] for ch in ir.get("channels", []) if channel_dispatcher.is_configured(ch["name"]["display"])]
         if configured_channels:
             print(f"[Termin] Phase 4a: Channels connected: {', '.join(configured_channels)}")
         elif ir.get("channels"):
-            print(f"[Termin] Phase 4a: {len(ir['channels'])} channel(s) declared (no deploy config)")
+            internal_only = all(ch.get("direction") == "INTERNAL" for ch in ir.get("channels", []))
+            if internal_only:
+                print(f"[Termin] Phase 4a: {len(ir['channels'])} internal channel(s)")
+            else:
+                print(f"[Termin] Phase 4a: {len(ir['channels'])} channel(s) declared (no deploy config)")
         print(f"[Termin] Phase 5a: Starting WebSocket forwarder")
 
         async def _ws_forwarder():

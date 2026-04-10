@@ -243,7 +243,9 @@ def compile(source: str, output: str | None, seed_path: str | None,
 @click.argument("package", type=click.Path(exists=True))
 @click.option("-p", "--port", default=8000, type=int, help="Port to serve on (default: 8000)")
 @click.option("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
-def serve(package: str, port: int, host: str):
+@click.option("--deploy", default=None, type=click.Path(exists=True), help="Deploy config file (default: {app_name}.deploy.json)")
+@click.option("--no-strict-channels", is_flag=True, help="Allow missing deploy config for external channels (dev mode)")
+def serve(package: str, port: int, host: str, deploy: str, no_strict_channels: bool):
     """Serve a .termin.pkg package as a running application."""
     import uvicorn
     from termin_runtime import create_termin_app
@@ -285,14 +287,27 @@ def serve(package: str, port: int, host: str):
         if seed_path.exists():
             seed_data = json.loads(seed_path.read_text(encoding="utf-8"))
         ir = json.loads(ir_json)
-        click.echo(f"[Termin] Loading {ir.get('name', 'App')} from raw IR")
+        app_name = ir.get("name", "App")
+        click.echo(f"[Termin] Loading {app_name} from raw IR")
     else:
         click.echo(f"Error: Unrecognized file type: {pkg_path.name}", err=True)
         click.echo("Expected .termin.pkg or .json", err=True)
         sys.exit(1)
 
     # Create and serve
-    app = create_termin_app(ir_json, seed_data=seed_data)
+    try:
+        app = create_termin_app(
+            ir_json, seed_data=seed_data,
+            deploy_config_path=deploy,
+            strict_channels=not no_strict_channels,
+        )
+    except Exception as e:
+        if "channel" in str(e).lower() and "deploy config" in str(e).lower():
+            click.echo(f"\nError: {e}", err=True)
+            click.echo(f"\nTo fix: create a deploy config file or use --no-strict-channels for dev mode.", err=True)
+            sys.exit(1)
+        raise
+
     click.echo(f"[Termin] Serving on http://{host}:{port}")
     uvicorn.run(app, host=host, port=port)
 

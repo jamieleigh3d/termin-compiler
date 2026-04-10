@@ -21,7 +21,7 @@ def _load_ir(name: str) -> str:
 
 def _make_client(name: str):
     """Create a TestClient for an IR dump."""
-    app = create_termin_app(_load_ir(name))
+    app = create_termin_app(_load_ir(name), strict_channels=False)
     return TestClient(app)
 
 

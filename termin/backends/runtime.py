@@ -74,7 +74,20 @@ _seed_data = None
 if _seed_path.exists():
     _seed_data = json.loads(_seed_path.read_text(encoding="utf-8"))
 
-app = create_termin_app(IR_JSON, seed_data=_seed_data)
+# Deploy config: <app_name>.deploy.json provides channel URLs, auth, etc.
+# Without it, external channels are not connected (strict mode disabled for dev).
+_app_stem = Path(__file__).stem.replace("_app", "")
+_deploy_candidates = [f"{{_app_stem}}.deploy.json", "termin.deploy.json"]
+_deploy_config = None
+for _dp in _deploy_candidates:
+    _dp_path = Path(__file__).with_name(_dp)
+    if _dp_path.exists():
+        _deploy_config = json.loads(_dp_path.read_text(encoding="utf-8"))
+        break
+
+app = create_termin_app(IR_JSON, seed_data=_seed_data,
+                        deploy_config=_deploy_config,
+                        strict_channels=(_deploy_config is not None))
 
 if __name__ == "__main__":
     import uvicorn
@@ -82,13 +95,18 @@ if __name__ == "__main__":
     parser.add_argument("-p", "--port", type=int, default=8000)
     parser.add_argument("--seed", type=str, default=None,
                         help="Path to a JSON seed file (dict of content_name -> [records])")
+    parser.add_argument("--deploy", type=str, default=None,
+                        help="Path to deploy config JSON file")
     args = parser.parse_args()
     if args.seed:
         seed_path = Path(args.seed)
         if seed_path.exists():
             _seed_data = json.loads(seed_path.read_text(encoding="utf-8"))
-            # Recreate app with seed data
-            app = create_termin_app(IR_JSON, seed_data=_seed_data)
+    if args.deploy:
+        _deploy_config = json.loads(Path(args.deploy).read_text(encoding="utf-8"))
+    app = create_termin_app(IR_JSON, seed_data=_seed_data,
+                            deploy_config=_deploy_config,
+                            strict_channels=(_deploy_config is not None))
     uvicorn.run(app, host="0.0.0.0", port=args.port)
 '''
 
