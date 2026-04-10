@@ -1100,7 +1100,8 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                                 data["status"] = _sm.get("initial", "")
                             if _ca:
                                 data["status"] = _ca
-                            await create_record(db, _ft, data, schema, _sm, terminator, event_bus)
+                            record = await create_record(db, _ft, data, schema, _sm, terminator, event_bus)
+                            await run_event_handlers(db, _ft, "created", record)
 
                         # A8: After-save navigation
                         redirect_url = f"/{_sl}"
