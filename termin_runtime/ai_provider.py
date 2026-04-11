@@ -131,7 +131,7 @@ class AIProvider:
         import anthropic
         try:
             response = self._client.messages.create(
-                model=self._model or "claude-sonnet-4-20250514",
+                model=self._model or "claude-haiku-4-5-20251001",
                 max_tokens=4096,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_message}],
@@ -156,7 +156,7 @@ class AIProvider:
         for turn in range(max_turns):
             try:
                 response = self._client.messages.create(
-                    model=self._model or "claude-sonnet-4-20250514",
+                    model=self._model or "claude-haiku-4-5-20251001",
                     max_tokens=4096,
                     system=system_prompt,
                     messages=messages,

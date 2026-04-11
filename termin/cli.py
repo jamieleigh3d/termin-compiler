@@ -304,7 +304,7 @@ def compile(source: str, output: str | None, seed_path: str | None,
         if llm_computes:
             deploy_template["ai_provider"] = {
                 "service": "anthropic",
-                "model": "claude-sonnet-4-20250514",
+                "model": "claude-haiku-4-5-20251001",
                 "api_key": "${ANTHROPIC_API_KEY}",
             }
         deploy_path.write_text(
