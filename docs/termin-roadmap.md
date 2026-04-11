@@ -211,48 +211,7 @@ Restructured April 11, 2026. v0.5.0 shipped. v0.6.0 "Boundaries" in progress on 
 
 ## Design Backlog
 
-Open design questions that need resolution before or during implementation. Each has a name, the open question, and context.
-
-### D-01: Provider Taxonomy and Access Levels
-
-**Question:** How do we formalize the four provider levels and their trust boundaries?
-
-**Context:** Four levels identified:
-- **Level 1 — LLM (field-level):** Pure completion. Wired to specific input/output fields. No tools, no AppFabric access. One API call. New syntax: `Input from field X.Y` / `Output into field X.Y`.
-- **Level 2 — LLM with context (boundary-scoped):** LLM has read tools scoped to a boundary or declared context. Can explore related data beyond the input fields. Output still typed and constrained to declared fields.
-- **Level 3 — Agent (application-scoped):** Full ComputeContext tools (content, state, channel, reflect) but only within the application boundary. Role-based permissions apply. Like a REPL within the app.
-- **Level 4 — Agent (configuration-boundary):** Multi-application scope. Can see exposed channels and properties across apps in a configuration boundary. Level 5 variant: admin/superuser can peek into application internals.
-
-Level 1 and 3 are needed for v0.5.0. Levels 2, 4, 5 are future.
-
-### D-02: LLM Field Wiring Syntax
-
-**Question:** What's the exact DSL syntax for connecting LLM input/output to specific fields?
-
-**Context:** JL's direction:
-- `Input from field completion.prompt` — reads the prompt field from the triggering record
-- `Output into field completion.response` — writes the LLM response to the response field
-- `Output new object messages` — creates a new record in a different content type
-- Could have multiple inputs (instructions + data), formatted into the system message
-- No magic inference — explicit wiring, like a spreadsheet formula connecting cells
-
-### D-03: Implicit Channels in IR
-
-**Question:** Should implicit channels (Compute I/O) be materialized in the IR, or inferred by the runtime?
-
-**Context:** When a Compute declares `Transform: takes messages, produces messages`, that implies two data flows (in/out) that are enforcement points. These are real channels — the runtime should check access control and confidentiality on them. Currently they're not in the IR. Thread 003, open question #4. Related to D-01 Level 3 agent scoping — the implicit channels define what the agent can touch.
-
-### D-04: Events vs Channels as Distinct Primitives
-
-**Question:** What's the precise relationship between events and channels? Are they the same primitive or distinct?
-
-**Context:** JL says don't collapse them. Current model: events fire on content changes (`When note.created`), channels carry data between boundaries. But: an inbound channel creates content which fires an event. An event can trigger a channel send. A channel-triggered Compute is basically an event from a channel. Where does one end and the other begin? Design needed.
-
-### D-05: Compute Access Declarations
-
-**Question:** Should agents declare what content they can access, replacing "takes/produces" for the agent case?
-
-**Context:** `Transform: takes messages, produces messages` works for CEL transforms and LLM completions (deterministic shape). For agents, it's misleading — the agent might query, create, update, delete across its scope. Better: `Accesses messages, findings` — declares what the agent is allowed to touch without implying a functional transform shape. The existing five Compute shapes (Transform, Reduce, Expand, Correlate, Route) may need a sixth shape or a different mechanism for agents.
+Open design questions. Resolved decisions moved to `termin-roadmap-archive.md`.
 
 ### D-06: Channel-Triggered Computes
 
@@ -266,35 +225,17 @@ Level 1 and 3 are needed for v0.5.0. Levels 2, 4, 5 are future.
 
 **Context:** Traces should capture: input, system prompt, LLM response (including reasoning/thinking), tool calls, token usage, timing. The schema should be standardized so any Compute provider produces the same shape. Access should be scoped — JL suggested a `logs` verb alongside `read`/`write`/`update`/`delete`. Traces available through reflection API. Traces UI is v0.7 backlog.
 
-### D-08: Event Envelope vs Raw Record
-
-**Question:** When a Compute triggers on an event, should it receive an event envelope or a raw record?
-
-**Context:** Currently the runtime passes the raw record to event handlers. It should pass an event envelope: `{type: "message.created", payload: {the record}, metadata: {timestamp, source, identity}}`. This is how real event-driven systems work. The Compute's trigger declaration says what content type the event carries.
-
 ### D-09: Chat Presentation Component
 
 **Question:** What does a chat UI component look like in the Termin presentation IR?
 
 **Context:** The current table-of-messages approach works but isn't a real chat interface. A `chat` component type would render messages as a conversation with proper turn-taking UI, input bar, scroll behavior. Needed for agent_chatbot to look right. Backlogged to v0.5.
 
-### D-10: Default Field Values for Enums
-
-**Question:** Does `defaults to "user"` work for enum fields with string literal defaults?
-
-**Context:** We have `defaults to` syntax for CEL expressions. The chatbot needs `Each message has a role which is one of: "user", "assistant", defaults to "user"`. Need to verify the compiler handles this. If not, it's a small grammar/parser fix.
-
 ### D-11: Auto-Generated REST API
 
 **Question:** Should Content types auto-generate CRUD API routes by convention?
 
 **Context:** Currently every example explicitly declares `Expose a REST API at /api/v1:` with every route listed. This is boilerplate. Every Content type should get standard CRUD routes automatically. The explicit section should only be needed for customization (extra transition endpoints, restricted access, custom paths). JL asked: "Why do we expose the REST API like we do? Is it because we like doing REST APIs?"
-
-### D-12: LLM Response Structured Output
-
-**Question:** How does the LLM return structured data for the Level 1 completion case?
-
-**Context:** For `Output into field completion.response`, the runtime needs the LLM to return text that goes into that field. Simple for single-field output. But what about multi-field output? The LLM could return JSON, or use a structured output schema, or the runtime could use tool_use with a return schema matching the output fields. JL mentioned XML-tag-wrapped output as current industry practice. The runtime needs a convention.
 
 ### D-13: Inbound Channel Hosting
 
@@ -320,136 +261,7 @@ Level 1 and 3 are needed for v0.5.0. Levels 2, 4, 5 are future.
 
 **Context:** Thread 003, Q5. The reference runtime already does this (Block F: webhook creates record, calls `run_event_handlers`). But is this automatic behavior part of the spec, or should the Channel declaration explicitly say it? If automatic, any inbound data always fires events. If declared, the Channel controls whether events propagate.
 
-### D-17: Block C Architectural Inputs
-
-**Question:** Three decisions needed for boundary enforcement: (1) Multiple boundaries in one process or separate? (2) How are inter-boundary channels materialized — HTTP, in-process, message queue? (3) Does the reference runtime enforce "only through Channels" or is that distributed-only?
-
-**Context:** From termin-confidentiality-runtime-design.md § Block C Inputs. Deferred until v0.6.0. Depends on D-03, D-04, D-13.
-
-### D-18: Audit Declaration on ContentSchema
-
-**Status:** DECIDED 2026-04-10
-
-**Decision:** Three levels named by intent: `actions` (default), `debug`, `none`.
-
-- **`actions`** (default) — log event type, record ID, field names changed, identity, timestamp. Never log field values. Safe for production. This is the pit of success — you don't have to think about it.
-- **`debug`** — log full field values. Opt-in for development/investigation. The name signals "not for production with sensitive data."
-- **`none`** — suppress logging entirely. For ephemeral/scratch content.
-
-Default is `actions`, not `debug`. The safe behavior requires zero configuration. Builders only reach for `debug` when actively investigating, and the name makes them pause.
-
-Agent traces (D-07) are separate from content audit — trace logging follows its own rules. Log redaction (automatically redacting field values from traces when content has confidentiality scopes) is a v1.0 consideration.
-
-No compiler warning needed for confidential content — the default (`actions`) never logs field values, so confidentiality scopes are inherently protected.
-
-DSL: `Audit level: actions` (optional — default is actions if omitted).
-IR: `audit: "actions"` on ContentSchema.
-
-**Context:** Thread 005 (an AWS-native runtime-ai). HRBP case management, ELG access patterns. Five audit consumers identified: compliance officer (access patterns), security investigator (timeline), builder (debugging), data subject (GDPR), platform operator (metrics). Actions level serves compliance + security. Debug level serves builders. Subject access is a separate feature (v1.0 row-level identity filtering).
-
-### D-19: Dependent Field Values / Cascading Constraints
-
-**Question:** How should the DSL declare when one field's value constrains another field's allowed values?
-
-**Context:** Thread 004 (an AWS-native runtime-ai). Retail product configurator: selecting "MacBook Pro 16-inch" narrows RAM to [16, 32, 48]. an AWS-native Termin runtime hits this with hierarchical configuration (region → compliance framework → data residency). Proposed IR shape: `dependent_values: [{when: {field, equals}, then: {field, allowed}}]`. Keeps constraint graph in IR for UI generation, validation, optimization. Concern: simple `when/then` covers 80% but doesn't compose for multi-field or range constraints. Need to decide if this is a flat list or a composable constraint graph.
-
----
-
-## v0.5.0 Dependency Analysis
-
-What must be resolved to ship v0.5.0 to an AWS-native Termin runtime. Chain of dependencies from examples → design questions → implementation blocks.
-
-### Critical Path
-
-```
-agent_simple.termin (example)
-  ├── D-02: LLM field wiring syntax (Input from / Output into)
-  │     └── Grammar + parser + IR changes
-  ├── D-10: defaults to "user" for enum fields
-  │     └── Verify or fix in compiler
-  ├── D-12: LLM structured output convention
-  │     └── How runtime maps LLM response → output fields
-  ├── G1: Wire Compute system type into CEL context
-  │     └── Compute.Name, Compute.Scopes for preconditions
-  └── G4: AI provider integration (Anthropic + OpenAI)
-        └── Deploy config ai_provider section
-              └── Block F: Deploy config (DONE)
-
-agent_chatbot.termin (example)
-  ├── Everything from agent_simple, plus:
-  ├── D-05: Compute access declarations (what agent can touch)
-  ├── D-08: Event envelope vs raw record
-  ├── G3: ComputeContext tool API (content.query/create/update, state.transition)
-  │     ├── G2: Before/After snapshots (for postconditions)
-  │     └── Block F: Channel dispatcher (DONE) — for channel.invoke/send tools
-  └── G6: Event trigger for Computes (Trigger on event)
-
-channel_demo.termin / channel_simple.termin (validation)
-  └── Block F: Channel Runtime (DONE)
-
-security_agent.termin (stretch goal, validates full model)
-  ├── Everything from agent_chatbot, plus:
-  ├── G5: Runtime scheduler (Trigger on schedule)
-  └── Full postcondition enforcement with rollback
-```
-
-### Resolution Order (suggested)
-
-Phase 1 — Design decisions (can be done in parallel):
-```
-D-02  LLM field wiring syntax        ← blocks grammar work
-D-10  defaults to "user"             ← quick verify/fix
-D-12  Structured output convention   ← blocks runtime LLM integration
-D-05  Compute access declarations    ← blocks agent scoping
-D-08  Event envelope vs raw record   ← blocks event trigger for Computes
-```
-
-Phase 2 — Compiler changes (sequential, TDD):
-```
-Write agent_simple.termin in desired DSL
-  → Fix grammar: Input from field / Output into field / Provider is "llm"
-  → Fix parser + AST + IR + lowering
-  → Conformance tests for expected IR
-Write agent_chatbot.termin in desired DSL
-  → Fix grammar: Trigger on event, defaults to "user"
-  → Fix parser + AST + IR + lowering
-  → Conformance tests for expected IR
-```
-
-Phase 3 — Runtime implementation (parallel where possible):
-```
-G4: AI provider (Anthropic + OpenAI SDK)   ← can start during Phase 2
-G1: Compute system type in CEL             ← small, independent
-G3: ComputeContext tool API                ← largest item, blocks agent_chatbot
-G6: Event trigger for Computes             ← medium, blocks agent_chatbot
-G2: Before/After snapshots                 ← needed for postconditions
-```
-
-Phase 4 — Integration testing:
-```
-agent_simple end-to-end: form → event → LLM → response appears
-agent_chatbot end-to-end: message → event → agent → reply appears
-Conformance suite updated with agent tests
-```
-
-### Not blocking v0.5.0
-
-These are important but can ship after:
-```
-D-03  Implicit channels in IR         → v0.6.0
-D-04  Events vs channels design       → v0.6.0
-D-06  Channel-triggered Computes      → v0.6.0
-D-07  Trace/log schema                → v0.7.0
-D-09  Chat presentation component     → v0.7.0
-D-11  Auto-generated REST API         → v0.7.0
-D-13  Inbound channel hosting         → v0.6.0
-D-14  Inbound payload transformation  → v0.6.0
-D-15  Request channels                → v0.6.0
-D-16  Inbound channel event firing    → already implemented, needs spec
-D-17  Block C architectural inputs    → v0.6.0
-H1-5  Mark...as semantic emphasis     → v0.5.0 (independent track)
-G5    Runtime scheduler               → stretch goal for v0.5.0
-```
+Resolved design decisions (D-01 through D-05, D-08, D-10, D-12, D-17, D-18, D-19) and the v0.5.0 dependency analysis are archived in `termin-roadmap-archive.md`.
 
 ---
 
