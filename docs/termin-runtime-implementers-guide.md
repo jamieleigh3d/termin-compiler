@@ -644,7 +644,31 @@ The reference runtime uses WebSocket multiplexing for real-time updates:
    ```
 4. **Client updates** the local cache and re-renders affected components
 
-### 13.2 Event Bus
+### 13.2 WebSocket Behavioral Contract
+
+A conforming runtime MUST satisfy these behavioral requirements:
+
+1. **Push on create:** When a record is created (via any path — API, form, webhook, Compute), all WebSocket subscribers to that Content type MUST receive a push event within 2 seconds. The push payload MUST be the record dict with `id` and all field values — not an event wrapper.
+
+2. **Push on update:** When a record is updated, all subscribers MUST receive a push event with the updated field values within 2 seconds.
+
+3. **Subscribe returns current data:** When a client subscribes to a Content type, the subscribe response MUST include a `current` array of all existing records for that Content type.
+
+4. **No cross-content leakage:** Creating or updating Content type A MUST NOT produce a push event for subscribers of Content type B.
+
+5. **No duplicate pushes:** One create or update operation MUST produce exactly one push event per subscriber. Duplicate pushes break client-side idempotency.
+
+6. **Push payload shape:** The push frame MUST have this structure:
+   ```json
+   {"v": 1, "ch": "content.{name}.created", "op": "push", "ref": null, "payload": {"id": 1, "field1": "value1", ...}}
+   ```
+   The `payload` is the record itself. It MUST contain `id` and all Content field values. It MUST NOT contain event bus wrapper keys like `channel_id`, `type`, or `record`.
+
+7. **Background Compute updates:** When a Compute (including LLM/agent Computes running in background threads) updates a record, the push MUST be delivered to WebSocket subscribers on the main event loop. Cross-thread event delivery MUST work correctly.
+
+These requirements are validated by the behavioral conformance tests in `test_behavioral_ws.py`.
+
+### 13.3 Event Bus
 
 Internally, the runtime uses an Event Bus to propagate changes:
 
