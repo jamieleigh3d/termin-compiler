@@ -156,7 +156,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                                 "ch": channel_id,
                                 "op": "push",
                                 "ref": None,
-                                "payload": event.get("record") or event,
+                                "payload": event.get("data") or event.get("record") or event,
                             })
                         except Exception:
                             dead.append(conn_id)

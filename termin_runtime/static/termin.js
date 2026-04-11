@@ -394,7 +394,7 @@ function hydrateForms() {
               // Find the table on this page and add the row
               const table = document.querySelector("table");
               if (table) {
-                const newRow = createRow(data, table);
+                const newRow = createRow(table, data);
                 const tbody = table.querySelector("tbody") || table;
                 tbody.appendChild(newRow);
                 flashRow(newRow);

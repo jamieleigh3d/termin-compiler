@@ -252,6 +252,145 @@ class TestFormSubmitNoRedirect:
             assert "id" in data
 
 
+# ── WebSocket real-time update tests ──
+
+class TestWebSocketUpdates:
+    """Verify that record creation and updates are pushed via WebSocket."""
+
+    def test_form_ajax_returns_created_record(self):
+        """AJAX form POST should return the created record with id."""
+        ir_json = _load_ir("agent_simple")
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "anonymous")
+            r = client.post(
+                "/agent",
+                data={"prompt": "hello"},
+                headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+            )
+            assert r.status_code == 200
+            data = r.json()
+            assert "id" in data, f"Response should contain record id, got: {data}"
+            assert data.get("prompt") == "hello"
+
+    def test_form_ajax_record_visible_in_api(self):
+        """Record created via AJAX form should be visible in the API."""
+        ir_json = _load_ir("agent_simple")
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "anonymous")
+            # Create via AJAX form
+            r = client.post(
+                "/agent",
+                data={"prompt": "test prompt"},
+                headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+            )
+            assert r.status_code == 200
+            created = r.json()
+            # Verify via API
+            r2 = client.get("/api/v1/completions")
+            records = r2.json()
+            found = [rec for rec in records if rec.get("id") == created.get("id")]
+            assert len(found) == 1
+            assert found[0]["prompt"] == "test prompt"
+
+    def _receive_until(self, ws, op, max_messages=5):
+        """Receive WebSocket messages until we get one with the specified op."""
+        for _ in range(max_messages):
+            msg = ws.receive_json()
+            if msg.get("op") == op:
+                return msg
+        pytest.fail(f"Never received message with op='{op}' after {max_messages} messages")
+
+    def test_websocket_subscribe_gets_current_data(self):
+        """WebSocket subscribe should return current records."""
+        ir_json = _load_ir("agent_simple")
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "anonymous")
+            # Create a record first
+            client.post("/api/v1/completions", json={"prompt": "existing"})
+            # Connect WebSocket and subscribe
+            with client.websocket_connect("/runtime/ws") as ws:
+                ws.send_json({
+                    "v": 1, "ch": "content.completions", "op": "subscribe", "ref": "sub1", "payload": {}
+                })
+                # May receive push events before the subscribe response
+                resp = self._receive_until(ws, "response")
+                assert resp["ref"] == "sub1"
+                assert "current" in resp["payload"]
+                records = resp["payload"]["current"]
+                assert any(r["prompt"] == "existing" for r in records)
+
+    def test_websocket_receives_push_on_api_create(self):
+        """Creating a record via API should push an event to WebSocket subscribers."""
+        ir_json = _load_ir("agent_simple")
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "anonymous")
+            # Connect and subscribe FIRST, before creating any records
+            with client.websocket_connect("/runtime/ws") as ws:
+                ws.send_json({
+                    "v": 1, "ch": "content.completions", "op": "subscribe", "ref": "sub1", "payload": {}
+                })
+                self._receive_until(ws, "response")  # consume subscribe response
+
+                # Now create a record via API
+                client.post("/api/v1/completions", json={"prompt": "new record"})
+
+                # Should receive a push event
+                push = self._receive_until(ws, "push")
+                assert "completions" in push["ch"]
+
+    def test_websocket_receives_push_on_form_create(self):
+        """Creating a record via AJAX form should push an event to WebSocket subscribers."""
+        ir_json = _load_ir("agent_simple")
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "anonymous")
+            with client.websocket_connect("/runtime/ws") as ws:
+                ws.send_json({
+                    "v": 1, "ch": "content.completions", "op": "subscribe", "ref": "sub1", "payload": {}
+                })
+                self._receive_until(ws, "response")
+
+                # Create via AJAX form POST
+                client.post(
+                    "/agent",
+                    data={"prompt": "form created"},
+                    headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+                )
+
+                # Should receive a push event
+                push = self._receive_until(ws, "push")
+                assert "completions" in push["ch"]
+
+    def test_websocket_push_payload_contains_record_fields(self):
+        """Push payload should be the record dict with field values, not a wrapper."""
+        ir_json = _load_ir("agent_simple")
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "anonymous")
+            with client.websocket_connect("/runtime/ws") as ws:
+                ws.send_json({
+                    "v": 1, "ch": "content.completions", "op": "subscribe", "ref": "sub1", "payload": {}
+                })
+                self._receive_until(ws, "response")
+
+                client.post("/api/v1/completions", json={"prompt": "payload test"})
+
+                push = self._receive_until(ws, "push")
+                payload = push["payload"]
+                # Payload should be the record itself, not {"channel_id": ..., "data": ...}
+                assert "id" in payload, f"Payload should have 'id', got: {list(payload.keys())}"
+                assert "prompt" in payload, f"Payload should have 'prompt', got: {list(payload.keys())}"
+                assert payload["prompt"] == "payload test"
+                # Should NOT have nested wrapper keys
+                assert "channel_id" not in payload, "Payload should not be the raw event wrapper"
+                assert "data" not in payload or isinstance(payload.get("data"), str), \
+                    "Payload should not have nested 'data' dict"
+
+
 # ── Mark...as semantic emphasis ──
 
 class TestMarkAs:
