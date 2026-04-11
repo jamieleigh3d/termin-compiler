@@ -2,7 +2,6 @@
 State on Non-Content Primitives, and Reflection endpoint.
 """
 
-import ast
 import json
 import pytest
 from pathlib import Path
@@ -173,6 +172,26 @@ class TestBoundaryPropertyIR:
         assert prop.expr == "orders.length"
 
 
+class TestBoundaryAnalyzer:
+    def test_duplicate_content_across_boundaries(self):
+        """Content in two boundaries should produce an error."""
+        source = VALID_BASE + (
+            'Boundary called "sales":\n'
+            '  Contains orders\n'
+            '  Identity inherits from application\n\n'
+            'Boundary called "fulfillment":\n'
+            '  Contains orders\n'
+            '  Identity inherits from application\n'
+        )
+        program, errors = parse(source)
+        assert errors.ok, errors.format()
+        result = analyze(program)
+        assert not result.ok, "Content in two boundaries should be rejected"
+        assert any("TERMIN-S030" in str(e) for e in result.errors), (
+            f"Expected TERMIN-S030, got: {result.format()}"
+        )
+
+
 # ============================================================
 # Feature 3: State on Non-Content Primitives
 # ============================================================
@@ -246,75 +265,6 @@ class TestStateNonContentAnalyzer:
 # Feature 4: Reflection Endpoint
 # ============================================================
 
-@pytest.mark.skipif(
-    not __import__("importlib").util.find_spec("pyjexl"),
-    reason="Legacy fastapi backend requires pyjexl (deprecated)"
-)
-class TestReflectionEndpoint:
-    def _compile_to_code(self, source: str) -> str:
-        from termin.backends.fastapi import FastApiBackend
-        program, errors = parse(source)
-        assert errors.ok, errors.format()
-        result = analyze(program)
-        assert result.ok, result.format()
-        spec = lower(program)
-        backend = FastApiBackend()
-        return backend.generate(spec)
-
-    def test_reflection_endpoint_generated(self):
-        code = self._compile_to_code(VALID_BASE)
-        assert "/api/reflect" in code
-        assert "api_reflect" in code
-        assert "APP_SPEC_JSON" in code
-
-    def test_reflection_endpoint_valid_python(self):
-        code = self._compile_to_code(VALID_BASE)
-        # Ensure the generated code is valid Python
-        ast.parse(code)
-
-    def test_reflection_endpoint_scope_guarded(self):
-        code = self._compile_to_code(VALID_BASE)
-        # Should be guarded by the first view scope: "orders.read"
-        assert 'require_scope("orders.read")' in code
-
-    def test_reflection_endpoint_returns_json(self):
-        """Compile, import, and verify the /api/reflect endpoint returns valid JSON."""
-        import importlib
-        import sys
-        import tempfile
-        import os
-
-        code = self._compile_to_code(VALID_BASE)
-
-        # Write to temp file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False,
-                                          dir=str(Path(__file__).parent),
-                                          encoding='utf-8') as f:
-            f.write(code)
-            tmp_path = f.name
-
-        try:
-            # Import the generated module
-            spec_mod = importlib.util.spec_from_file_location("reflect_test_app", tmp_path)
-            mod = importlib.util.module_from_spec(spec_mod)
-            spec_mod.loader.exec_module(mod)
-
-            from starlette.testclient import TestClient
-            client = TestClient(mod.app)
-
-            # Call the reflect endpoint (using stub auth)
-            response = client.get(
-                "/api/reflect",
-                cookies={"session": "stub_user:read orders,write orders,admin orders:order clerk"},
-            )
-            assert response.status_code == 200
-            data = response.json()
-            assert data["name"] == "Phase D Test"
-            assert "content" in data
-            assert "auth" in data
-        finally:
-            os.unlink(tmp_path)
-
 
 # ============================================================
 # Integration: all features together
@@ -359,19 +309,16 @@ class TestPhaseD_Integration:
         assert len(spec.boundaries[0].properties) == 1
         assert len(spec.channels) == 1
 
-    def test_full_codegen(self):
-        from termin.backends.fastapi import FastApiBackend
+    def test_full_ir_lowering(self):
+        """Verify the full pipeline lowers to IR correctly."""
         program, errors = parse(self.FULL_SOURCE)
         assert errors.ok, errors.format()
         result = analyze(program)
         assert result.ok, result.format()
         spec = lower(program)
-        backend = FastApiBackend()
-        code = backend.generate(spec)
-        # Verify valid Python
-        ast.parse(code)
-        # Verify reflection endpoint exists
-        assert "/api/reflect" in code
+        assert len(spec.boundaries) == 1
+        assert spec.boundaries[0].name.snake == "order_processing"
+        assert len(spec.channels) == 1
 
 
 # ============================================================
@@ -840,8 +787,9 @@ class TestBoundaryEnforcementMap:
             assert r.status_code == 403, f"Cross-boundary access should be rejected: {r.text}"
             assert "cross-boundary" in r.json()["detail"].lower()
 
-    def test_content_not_in_boundary_unrestricted(self):
-        """Content not in any boundary should be accessible from anywhere."""
+    def test_content_outside_subboundary_rejected_from_subboundary(self):
+        """Content not in any sub-boundary lives in the app boundary.
+        A Compute in a sub-boundary cannot reach app-level content without a channel."""
         from termin_runtime import create_termin_app
         from fastapi.testclient import TestClient
         ir = _block_c_ir(
@@ -885,13 +833,16 @@ class TestBoundaryEnforcementMap:
         app = create_termin_app(ir, strict_channels=False)
         with TestClient(app) as client:
             client.cookies.set("termin_role", "admin")
-            # "logs" is not in any boundary, so even though Compute is in "sales",
-            # accessing "logs" should be allowed
+            # "logs" is NOT in the "sales" boundary — it's in the implicit app boundary.
+            # Compute is in "sales" (via its access to "orders"), so accessing "logs"
+            # is a cross-boundary access and should be rejected.
             r = client.post("/api/v1/compute/log_writer", json={"input": {}})
-            assert r.status_code != 403, f"Unbounded content should be unrestricted: {r.text}"
+            assert r.status_code == 403, f"Cross-boundary access to app-level content should be rejected: {r.text}"
+            assert "cross-boundary" in r.json()["detail"].lower()
 
-    def test_no_boundaries_everything_allowed(self):
-        """App with no boundaries should allow all access (backward compat)."""
+    def test_no_boundaries_all_content_in_app_boundary(self):
+        """App with no explicit boundaries: all content is in the implicit app boundary.
+        All Computes are also in the app boundary. Same boundary → allowed."""
         from termin_runtime import create_termin_app
         from fastapi.testclient import TestClient
         ir = _block_c_ir(
@@ -928,5 +879,109 @@ class TestBoundaryEnforcementMap:
         app = create_termin_app(ir, strict_channels=False)
         with TestClient(app) as client:
             client.cookies.set("termin_role", "admin")
+            # No explicit boundaries → implicit app boundary contains everything → same boundary → allowed
             r = client.post("/api/v1/compute/free_compute", json={"input": {}})
-            assert r.status_code != 403, f"No boundaries should mean unrestricted: {r.text}"
+            assert r.status_code != 403, f"Same app boundary should allow access: {r.text}"
+
+    def test_app_level_compute_accesses_app_level_content(self):
+        """A Compute not in any sub-boundary (app-level) can access app-level content."""
+        from termin_runtime import create_termin_app
+        from fastapi.testclient import TestClient
+        ir = _block_c_ir(
+            boundaries=[{
+                "name": {"display": "sales", "snake": "sales", "pascal": "Sales"},
+                "contains_content": ["orders"],
+                "contains_boundaries": [],
+                "identity_mode": "inherit",
+                "identity_scopes": [],
+                "properties": [],
+            }],
+            computes=[{
+                "name": {"display": "log reader", "snake": "log_reader", "pascal": "LogReader"},
+                "shape": "TRANSFORM",
+                "input_content": [],
+                "output_content": [],
+                "body_lines": ["42"],
+                "required_scope": "admin",
+                "required_role": None,
+                "input_params": [],
+                "output_params": [],
+                "client_safe": False,
+                "identity_mode": "delegate",
+                "required_confidentiality_scopes": [],
+                "output_confidentiality_scope": None,
+                "field_dependencies": [],
+                "provider": None,
+                "preconditions": [],
+                "postconditions": [],
+                "directive": None,
+                "objective": None,
+                "strategy": None,
+                "trigger": None,
+                "trigger_where": None,
+                "accesses": ["logs"],
+                "input_fields": [],
+                "output_fields": [],
+                "output_creates": None,
+            }],
+        )
+        app = create_termin_app(ir, strict_channels=False)
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "admin")
+            # "logs" is not in any sub-boundary → app boundary.
+            # Compute only accesses "logs" → also app boundary.
+            # Same boundary → allowed.
+            r = client.post("/api/v1/compute/log_reader", json={"input": {}})
+            assert r.status_code != 403, f"App-level Compute accessing app-level content should be allowed: {r.text}"
+
+    def test_app_level_compute_cannot_reach_into_subboundary(self):
+        """A Compute at app level cannot access content inside a sub-boundary without a channel."""
+        from termin_runtime import create_termin_app
+        from fastapi.testclient import TestClient
+        ir = _block_c_ir(
+            boundaries=[{
+                "name": {"display": "sales", "snake": "sales", "pascal": "Sales"},
+                "contains_content": ["orders"],
+                "contains_boundaries": [],
+                "identity_mode": "inherit",
+                "identity_scopes": [],
+                "properties": [],
+            }],
+            computes=[{
+                "name": {"display": "order peeker", "snake": "order_peeker", "pascal": "OrderPeeker"},
+                "shape": "TRANSFORM",
+                "input_content": [],
+                "output_content": [],
+                "body_lines": ["42"],
+                "required_scope": "admin",
+                "required_role": None,
+                "input_params": [],
+                "output_params": [],
+                "client_safe": False,
+                "identity_mode": "delegate",
+                "required_confidentiality_scopes": [],
+                "output_confidentiality_scope": None,
+                "field_dependencies": [],
+                "provider": None,
+                "preconditions": [],
+                "postconditions": [],
+                "directive": None,
+                "objective": None,
+                "strategy": None,
+                "trigger": None,
+                "trigger_where": None,
+                "accesses": ["logs", "orders"],
+                "input_fields": [],
+                "output_fields": [],
+                "output_creates": None,
+            }],
+        )
+        app = create_termin_app(ir, strict_channels=False)
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "admin")
+            # Compute accesses "logs" (app boundary) and "orders" (sales boundary).
+            # First match puts Compute in app boundary (logs).
+            # Accessing "orders" (sales boundary) is cross-boundary → rejected.
+            r = client.post("/api/v1/compute/order_peeker", json={"input": {}})
+            assert r.status_code == 403, f"App-level Compute reaching into sub-boundary should be rejected: {r.text}"
+            assert "cross-boundary" in r.json()["detail"].lower()
