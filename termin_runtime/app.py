@@ -1368,7 +1368,19 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                             record = await create_record(db, _ft, data, schema, _sm, terminator, event_bus)
                             await run_event_handlers(db, _ft, "created", record)
 
-                        # A8: After-save navigation
+                        # Check if this is an AJAX request — return JSON instead of redirect
+                        accept = request.headers.get("accept", "")
+                        is_ajax = ("application/json" in accept
+                                   or request.headers.get("x-requested-with", "").lower() == "xmlhttprequest")
+                        if is_ajax:
+                            # Return the created/updated record as JSON
+                            if edit_id:
+                                return {"ok": True, "id": edit_id, "action": "updated"}
+                            elif record:
+                                return record
+                            else:
+                                return {"ok": True}
+                        # A8: After-save navigation (traditional form submit)
                         redirect_url = f"/{_sl}"
                         if _as and _as.startswith("return_to:"):
                             target_slug = _as.split(":", 1)[1].strip()

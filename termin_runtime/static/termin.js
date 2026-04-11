@@ -355,12 +355,70 @@ function hydrateAggregations() {
 }
 
 function hydrateForms() {
-  // Don't intercept forms — let them POST normally and redirect.
-  // The server handles validation and state transitions. The redirect
-  // triggers a full page re-render with fresh data. WebSocket push
-  // updates OTHER tabs viewing the same data, not the form submitter.
-  //
-  // Future: intercept for optimistic UI or partial page updates.
+  // Intercept form submits — use fetch() instead of full page redirect.
+  // This keeps the WebSocket connection alive so real-time updates
+  // (like LLM responses) are pushed to the client without needing a refresh.
+  document.querySelectorAll("form[method='post'], form:not([method])").forEach(form => {
+    // Skip the role-switcher form
+    if (form.action && form.action.includes("/set-role")) return;
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const formData = new FormData(form);
+      const url = form.action || window.location.href;
+
+      try {
+        const resp = await fetch(url, {
+          method: "POST",
+          body: formData,
+          headers: {
+            "Accept": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+          },
+        });
+
+        if (resp.ok) {
+          // Clear the form inputs
+          form.querySelectorAll("input[type='text'], textarea").forEach(input => {
+            input.value = "";
+          });
+          form.querySelectorAll("select").forEach(select => {
+            select.selectedIndex = 0;
+          });
+
+          // The WebSocket subscription will push the new record to the table.
+          // But also try to add it immediately from the response for snappiness.
+          try {
+            const data = await resp.json();
+            if (data && data.id) {
+              // Find the table on this page and add the row
+              const table = document.querySelector("table");
+              if (table) {
+                const newRow = createRow(data, table);
+                const tbody = table.querySelector("tbody") || table;
+                tbody.appendChild(newRow);
+                flashRow(newRow);
+              }
+            }
+          } catch (jsonErr) {
+            // Response wasn't JSON — that's fine, WebSocket will update
+          }
+        } else {
+          // Show error
+          try {
+            const err = await resp.json();
+            alert(err.detail || "Error saving record");
+          } catch {
+            alert("Error saving record (HTTP " + resp.status + ")");
+          }
+        }
+      } catch (fetchErr) {
+        // Network error — fall back to normal form submit
+        console.warn("[Termin] AJAX submit failed, falling back to form POST:", fetchErr);
+        form.submit();
+      }
+    });
+  });
 }
 
 // ── Connection Indicator ──

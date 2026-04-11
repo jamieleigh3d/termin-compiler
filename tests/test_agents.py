@@ -208,6 +208,50 @@ class TestEventTriggeredCompute:
             assert "body" in r.text.lower()
 
 
+# ── Form submit should not cause page reload ──
+
+class TestFormSubmitNoRedirect:
+    """Form submissions should use AJAX, not 303 redirect.
+
+    The 303 redirect kills the WebSocket connection, causing the client
+    to miss real-time updates (like LLM responses). The form should
+    submit via fetch() and the server should return JSON, not redirect.
+    """
+
+    def test_form_post_returns_json_not_redirect(self):
+        """POST to the form page with Accept: application/json should return JSON."""
+        ir_json = _load_ir("agent_simple")
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app, raise_server_exceptions=False) as client:
+            client.cookies.set("termin_role", "anonymous")
+            r = client.post(
+                "/agent",
+                data={"prompt": "test prompt"},
+                headers={"Accept": "application/json"},
+                follow_redirects=False,
+            )
+            # Should NOT be a 303 redirect — should be 200 with JSON
+            # or at minimum, the record should be created
+            if r.status_code == 303:
+                pytest.fail(
+                    "Form POST returned 303 redirect — this kills the WebSocket connection. "
+                    "The form should submit via AJAX and return JSON."
+                )
+
+    def test_form_post_creates_record_via_api(self):
+        """The form can alternatively POST to the API endpoint for AJAX submission."""
+        ir_json = _load_ir("agent_simple")
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "anonymous")
+            # API endpoint always returns JSON, no redirect
+            r = client.post("/api/v1/completions", json={"prompt": "test via API"})
+            assert r.status_code == 201
+            data = r.json()
+            assert data["prompt"] == "test via API"
+            assert "id" in data
+
+
 # ── Mark...as semantic emphasis ──
 
 class TestMarkAs:
