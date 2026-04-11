@@ -275,12 +275,19 @@ function hydrateDataTables() {
           flashRow(row);
         }
       } else if (action === "created" && data && data.id != null) {
-        // Append new row
-        const tbody = table.querySelector("tbody");
-        if (tbody) {
-          const row = createRow(table, data);
-          tbody.appendChild(row);
-          flashRow(row);
+        // Append new row — but skip if already added (e.g., by AJAX form handler)
+        const existing = table.querySelector(`tr[data-termin-row-id="${data.id}"]`);
+        if (existing) {
+          // Row already exists — just update it in case fields changed
+          updateRow(existing, data);
+          flashRow(existing);
+        } else {
+          const tbody = table.querySelector("tbody");
+          if (tbody) {
+            const row = createRow(table, data);
+            tbody.appendChild(row);
+            flashRow(row);
+          }
         }
       } else if (action === "deleted") {
         const id = data.record_id || data.id;
