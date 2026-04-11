@@ -210,6 +210,12 @@
           "items": { "type": "string" },
           "default": [],
           "description": "Confidentiality labels attached to this field. Data in this field is only accessible to identities holding all listed scopes. Empty means unrestricted within the Content's own access grants."
+        },
+        "one_of_values": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Field-level constraint: value must be one of the listed strings. Empty means no constraint. Unified with enum_values — one_of can apply to any base type, not just enums."
         }
       }
     },
@@ -252,6 +258,51 @@
           "items": { "type": "string" },
           "default": [],
           "description": "Default confidentiality scopes applied to all records in this Content. Individual fields may declare additional scopes. Empty means no Content-level confidentiality restriction."
+        },
+        "audit": {
+          "type": "string",
+          "enum": ["actions", "debug", "none"],
+          "default": "actions",
+          "description": "Audit level for this Content. 'actions' (default): log event type, record ID, field names, identity, timestamp — never field values. 'debug': log full field values (opt-in, development only). 'none': suppress logging entirely."
+        },
+        "dependent_values": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DependentValueSpec" },
+          "default": [],
+          "description": "Conditional constraints on field values. When a condition holds, another field is constrained to specific values, required to equal a value, or given a default."
+        }
+      }
+    },
+
+    "DependentValueSpec": {
+      "type": "object",
+      "description": "A conditional constraint: When [condition], [field] must be/defaults to [value(s)].",
+      "required": ["field", "constraint"],
+      "additionalProperties": false,
+      "properties": {
+        "when": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "CEL condition expression. Null means unconditional constraint."
+        },
+        "field": {
+          "type": "string",
+          "description": "Snake_case field name this constraint applies to."
+        },
+        "constraint": {
+          "type": "string",
+          "enum": ["one_of", "equals", "default"],
+          "description": "Constraint type: 'one_of' restricts to allowed values, 'equals' requires exact match, 'default' sets a default if field not provided."
+        },
+        "values": {
+          "type": "array",
+          "items": {},
+          "default": [],
+          "description": "Allowed values for 'one_of' constraint."
+        },
+        "value": {
+          "description": "Target value for 'equals' or 'default' constraint.",
+          "default": null
         }
       }
     },

@@ -1,0 +1,16 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "strict"
+
+[tool.coverage.run]
+source = ["termin", "termin_runtime"]
+
+[tool.coverage.report]
+fail_under = 69
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ ==",
+    "raise NotImplementedError",
+]
