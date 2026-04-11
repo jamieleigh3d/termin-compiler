@@ -1373,13 +1373,13 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                         is_ajax = ("application/json" in accept
                                    or request.headers.get("x-requested-with", "").lower() == "xmlhttprequest")
                         if is_ajax:
-                            # Return the created/updated record as JSON
+                            from fastapi.responses import JSONResponse
                             if edit_id:
-                                return {"ok": True, "id": edit_id, "action": "updated"}
+                                return JSONResponse({"ok": True, "id": edit_id, "action": "updated"})
                             elif record:
-                                return record
+                                return JSONResponse(record)
                             else:
-                                return {"ok": True}
+                                return JSONResponse({"ok": True})
                         # A8: After-save navigation (traditional form submit)
                         redirect_url = f"/{_sl}"
                         if _as and _as.startswith("return_to:"):
