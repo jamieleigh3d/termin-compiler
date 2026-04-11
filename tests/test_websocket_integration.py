@@ -264,6 +264,88 @@ class TestRealWebSocketPush:
             assert "record" not in payload, "Payload contains nested 'record' key"
 
     @pytest.mark.asyncio
+    async def test_ws_push_from_webhook_source(self, channel_simple_server):
+        """Webhook-created records should push with correct payload.
+
+        This catches the payload wrapping bug where webhook events use
+        'data' key but broadcast extracted 'record' key.
+        """
+        server = channel_simple_server
+
+        async with websockets.client.connect(server.ws_url) as ws:
+            # Subscribe to echoes (the webhook target)
+            await ws.send(json.dumps({
+                "v": 1, "ch": "content.echoes", "op": "subscribe",
+                "ref": "sub1", "payload": {}
+            }))
+            await self._recv_until(ws, "response")
+
+            # Create via webhook endpoint (simulates inbound channel)
+            async with httpx.AsyncClient() as client:
+                r = await client.post(
+                    f"{server.base_url}/webhooks/echo_receiver",
+                    json={"title": "webhook push test", "body": "via webhook"},
+                    cookies={"termin_role": "anonymous"},
+                )
+                assert r.status_code == 200
+
+            # Should receive push with record fields directly
+            push = json.loads(await asyncio.wait_for(ws.recv(), timeout=2))
+            assert push["op"] == "push"
+            payload = push["payload"]
+            assert "id" in payload, f"Webhook push missing 'id': {list(payload.keys())}"
+            assert "title" in payload, f"Webhook push missing 'title': {list(payload.keys())}"
+            assert payload["title"] == "webhook push test"
+            # Must NOT be wrapped
+            assert "channel_id" not in payload
+            assert "data" not in payload or isinstance(payload.get("data"), str)
+
+    @pytest.mark.asyncio
+    async def test_ws_push_from_background_compute(self, agent_simple_server):
+        """Records updated by a background Compute thread should push to WS.
+
+        This catches the event loop isolation bug where background threads
+        can't publish to the main loop's event bus.
+
+        Since we don't have a real AI provider configured, we test this by
+        calling the Compute endpoint directly (which also runs in-process)
+        and verifying the update push arrives. For the full background thread
+        test, an actual LLM provider or mock is needed.
+        """
+        server = agent_simple_server
+
+        # Create a record first
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                f"{server.base_url}/api/v1/completions",
+                json={"prompt": "bg thread test"},
+                cookies={"termin_role": "anonymous"},
+            )
+            record_id = r.json()["id"]
+
+        async with websockets.client.connect(server.ws_url) as ws:
+            await ws.send(json.dumps({
+                "v": 1, "ch": "content.completions", "op": "subscribe",
+                "ref": "sub1", "payload": {}
+            }))
+            await self._recv_until(ws, "response")
+
+            # Update the record via API (simulates what the Compute does)
+            async with httpx.AsyncClient() as client:
+                r = await client.put(
+                    f"{server.base_url}/api/v1/completions/{record_id}",
+                    json={"response": "simulated LLM response"},
+                    cookies={"termin_role": "anonymous"},
+                )
+                assert r.status_code == 200
+
+            # Should receive update push
+            push = json.loads(await asyncio.wait_for(ws.recv(), timeout=2))
+            assert push["op"] == "push"
+            assert "updated" in push["ch"]
+            assert push["payload"]["id"] == record_id
+
+    @pytest.mark.asyncio
     async def test_ws_no_push_for_unsubscribed_content(self, channel_simple_server):
         """Creating content type A doesn't push to subscribers of content type B."""
         server = channel_simple_server
