@@ -465,7 +465,7 @@ def test_audit_level_valid_values():
 Scopes are "read"
 A "user" has "read"
 '''
-    for level in ("actions", "content", "none"):
+    for level in ("actions", "debug", "none"):
         src = preamble + f'''Content called "events":
   Each event has a title which is text
   Anyone with "read" can view events

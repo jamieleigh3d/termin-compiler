@@ -454,7 +454,7 @@ def _minimal_ir_with_compute(preconditions=None, postconditions=None, body_lines
                  "default_expr": None, "enum_values": []},
             ],
             "confidentiality_scope": None,
-            "audit": "content",
+            "audit": "actions",
         }],
         "access_grants": [
             {"content": "items", "verb": "read", "scope": "basic"},

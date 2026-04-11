@@ -866,10 +866,10 @@ A "user" has "read"
         spec = self._parse_and_lower(source)
         assert spec.content[0].audit == "none"
 
-    def test_audit_default_content_in_ir(self):
+    def test_audit_default_actions_in_ir(self):
         source = '''Content called "events":
   Each event has a title which is text
   Anyone with "read" can view events
 '''
         spec = self._parse_and_lower(source)
-        assert spec.content[0].audit == "content"
+        assert spec.content[0].audit == "actions"

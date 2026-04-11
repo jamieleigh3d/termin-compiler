@@ -135,7 +135,7 @@ content_audit_line
     = 'Audit' 'level:' level:audit_level $
     ;
 
-audit_level = 'actions' | 'content' | 'none' ;
+audit_level = 'actions' | 'debug' | 'none' ;
 
 access_line
     = 'Anyone' 'with' scope:quoted_string 'can'

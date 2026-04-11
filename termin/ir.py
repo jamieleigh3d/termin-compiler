@@ -70,7 +70,7 @@ class ContentSchema:
     has_state_machine: bool = False
     initial_state: Optional[str] = None
     confidentiality_scopes: tuple[str, ...] = ()  # content-level scopes (inherited by fields)
-    audit: str = "content"                         # "actions", "content", or "none"
+    audit: str = "actions"                          # "actions" (default), "debug", or "none"
 
 
 # Backward-compatible alias

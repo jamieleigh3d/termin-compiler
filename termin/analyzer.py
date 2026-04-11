@@ -211,10 +211,10 @@ class Analyzer:
                     ))
 
             # Validate audit level
-            if content.audit not in ("actions", "content", "none"):
+            if content.audit not in ("actions", "debug", "none"):
                 self.errors.add(SemanticError(
                     message=f'Content "{content.name}" has invalid audit level '
-                            f'"{content.audit}". Must be one of: actions, content, none',
+                            f'"{content.audit}". Must be one of: actions, debug, none',
                     line=content.line,
                     code="TERMIN-S005",
                 ))
