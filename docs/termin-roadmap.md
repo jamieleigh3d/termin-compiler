@@ -343,9 +343,24 @@ Level 1 and 3 are needed for v0.5.0. Levels 2, 4, 5 are future.
 
 ### D-18: Audit Declaration on ContentSchema
 
-**Question:** How should builders declare what's safe to log per content type?
+**Status:** DECIDED 2026-04-10
 
-**Context:** Thread 004 (an AWS-native runtime-ai). HRBP case management where presence of a record is safe to log but content is sensitive. Proposed: `audit: actions | content | none` on ContentSchema. `actions` = log event type + record ID but not field values. `content` = log everything. `none` = suppress logging. Connects to D-07 (trace schema) — agent traces should respect audit declarations. Relates to confidentiality system (different axis: confidentiality = who sees data, audit = what gets logged).
+**Decision:** Three levels named by intent: `actions` (default), `debug`, `none`.
+
+- **`actions`** (default) — log event type, record ID, field names changed, identity, timestamp. Never log field values. Safe for production. This is the pit of success — you don't have to think about it.
+- **`debug`** — log full field values. Opt-in for development/investigation. The name signals "not for production with sensitive data."
+- **`none`** — suppress logging entirely. For ephemeral/scratch content.
+
+Default is `actions`, not `debug`. The safe behavior requires zero configuration. Builders only reach for `debug` when actively investigating, and the name makes them pause.
+
+Agent traces (D-07) are separate from content audit — trace logging follows its own rules. Log redaction (automatically redacting field values from traces when content has confidentiality scopes) is a v1.0 consideration.
+
+No compiler warning needed for confidential content — the default (`actions`) never logs field values, so confidentiality scopes are inherently protected.
+
+DSL: `Audit level: actions` (optional — default is actions if omitted).
+IR: `audit: "actions"` on ContentSchema.
+
+**Context:** Thread 005 (an AWS-native runtime-ai). HRBP case management, ELG access patterns. Five audit consumers identified: compliance officer (access patterns), security investigator (timeline), builder (debugging), data subject (GDPR), platform operator (metrics). Actions level serves compliance + security. Debug level serves builders. Subject access is a separate feature (v1.0 row-level identity filtering).
 
 ### D-19: Dependent Field Values / Cascading Constraints
 
@@ -495,6 +510,8 @@ Items deferred to v1.0 or later. Not prioritized, not scheduled.
 | Delegate identity mode for agents | confidentiality-spec.md | Agent acts on behalf of caller (vs service identity) |
 | Package signatures (cryptographic signing) | — | Signing and verification of .termin.pkg |
 | Singular/plural plausibility validation | — | Compiler warns if Content name and singular (`Each X has`) look unrelated (e.g., "echoes" vs "banana"). Basic containment check, not full NLP. |
+| Audit log redaction for agent traces | D-18 | Auto-redact field values from agent execution traces when content has confidentiality scopes. Agent reads sensitive field → trace shows [REDACTED]. |
+| Subject access / GDPR data export | — | Per-identity query: "what records exist about me and who accessed them." Row-level identity filtering. |
 
 ---
 
