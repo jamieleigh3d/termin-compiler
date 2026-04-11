@@ -158,6 +158,7 @@ class Analyzer:
         self._check_channels()
         self._check_boundaries()
         self._check_error_handlers()
+        self._check_dependent_values()
 
     def _check_role_aliases(self) -> None:
         role_names_lower = {r.lower() for r in self.role_names}
@@ -593,6 +594,60 @@ class Analyzer:
                         code="TERMIN-S026",
                         suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
                     ))
+
+    def _check_dependent_values(self) -> None:
+        """D-19: Validate dependent value (When clause) declarations."""
+        for content in self.program.contents:
+            field_names = {f.name for f in content.fields}
+            # Build enum field map for exhaustiveness check
+            enum_fields = {}
+            for f in content.fields:
+                if f.type_expr.enum_values:
+                    enum_fields[f.name] = set(f.type_expr.enum_values)
+
+            # Track When clauses per (condition_field, target_field) for exhaustiveness
+            when_coverage: dict[str, set[str]] = {}  # condition_field -> set of covered values
+
+            for dv in content.dependent_values:
+                # Check that the target field exists
+                if dv.field not in field_names:
+                    suggestion = _fuzzy_match(dv.field, field_names)
+                    self.errors.add(SemanticError(
+                        message=f'Dependent value in "{content.name}" references '
+                                f'undefined field "{dv.field}"',
+                        line=dv.line,
+                        code="TERMIN-S029",
+                        suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
+                    ))
+
+                # Track coverage for exhaustiveness (simple equality on enum field)
+                if dv.when_expr:
+                    import re
+                    # Match simple patterns like: field == "value"
+                    m = re.match(r'(\w+)\s*==\s*"([^"]*)"', dv.when_expr)
+                    if m:
+                        cond_field = m.group(1)
+                        cond_value = m.group(2)
+                        key = f"{cond_field}:{dv.field}"
+                        when_coverage.setdefault(key, set()).add(cond_value)
+
+            # Exhaustiveness warning: if When clauses reference an enum field
+            # but don't cover all values
+            for key, covered_values in when_coverage.items():
+                cond_field, target_field = key.split(":", 1)
+                if cond_field in enum_fields:
+                    all_values = enum_fields[cond_field]
+                    missing = all_values - covered_values
+                    if missing and len(covered_values) > 0:
+                        # Warning, not error
+                        self.errors.add(SemanticError(
+                            message=f'Content "{content.name}": When clauses on '
+                                    f'"{cond_field}" for field "{target_field}" '
+                                    f'do not cover all enum values. Missing: '
+                                    f'{", ".join(sorted(missing))}',
+                            line=content.line,
+                            code="TERMIN-W001",
+                        ))
 
     def _check_error_handlers(self) -> None:
         """Validate that error handler sources reference defined primitives."""

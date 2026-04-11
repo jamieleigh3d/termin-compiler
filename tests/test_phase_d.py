@@ -372,3 +372,294 @@ class TestPhaseD_Integration:
         ast.parse(code)
         # Verify reflection endpoint exists
         assert "/api/reflect" in code
+
+
+# ============================================================
+# D-19: Dependent Field Values
+# ============================================================
+
+D19_BASE = '''\
+Application: D-19 Test
+  Description: Dependent field values test
+
+Users authenticate with stub
+Scopes are "orders.read" and "orders.write"
+
+An "order clerk" has "orders.read" and "orders.write"
+
+Content called "laptop orders":
+  Each order has a size which is an enum, is one of: "14-inch", "16-inch"
+  Each order has a ram which is a whole number
+  Each order has a color which is text
+  Anyone with "orders.read" can view laptop orders
+  Anyone with "orders.write" can create or update laptop orders
+
+  When `size == "14-inch"`, ram must be one of: 8, 16, 24
+  When `size == "16-inch"`, ram must be one of: 16, 32, 48
+  When `size == "16-inch"`, color defaults to "space gray"
+'''
+
+
+class TestD19Parser:
+    """D-19: Parser tests for dependent field values."""
+
+    def test_classify_content_when_one_of(self):
+        line = 'When `size == "14-inch"`, ram must be one of: 8, 16, 24'
+        assert _classify_line(line) == "content_when_line"
+
+    def test_classify_content_when_defaults(self):
+        line = 'When `size == "16-inch"`, color defaults to "space gray"'
+        assert _classify_line(line) == "content_when_line"
+
+    def test_classify_unconditional_constraint(self):
+        line = 'ram must be one of: 8, 16, 24, 32, 48'
+        assert _classify_line(line) == "unconditional_constraint_line"
+
+    def test_event_when_not_confused_with_content_when(self):
+        """Event When (no comma + constraint) should still classify as event."""
+        line = 'When `quantity < 10`:'
+        assert _classify_line(line) == "event_expr_line"
+
+    def test_parse_d19_full(self):
+        program, errors = parse(D19_BASE)
+        assert errors.ok, errors.format()
+        assert len(program.contents) == 1
+        ct = program.contents[0]
+        assert ct.name == "laptop orders"
+        assert len(ct.dependent_values) == 3
+
+    def test_when_one_of_parsed(self):
+        program, _ = parse(D19_BASE)
+        ct = program.contents[0]
+        dv = ct.dependent_values[0]
+        assert dv.when_expr == 'size == "14-inch"'
+        assert dv.field == "ram"
+        assert dv.constraint == "one_of"
+        assert dv.values == [8, 16, 24]
+
+    def test_when_defaults_parsed(self):
+        program, _ = parse(D19_BASE)
+        ct = program.contents[0]
+        dv = ct.dependent_values[2]
+        assert dv.when_expr == 'size == "16-inch"'
+        assert dv.field == "color"
+        assert dv.constraint == "default"
+        assert dv.values == ["space gray"]
+
+    def test_is_one_of_field_constraint(self):
+        """Field-level 'is one of' constraint on base type."""
+        src = '''\
+Application: Is One Of Test
+  Description: Test
+
+Users authenticate with stub
+Scopes are "read"
+
+Content called "orders":
+  Each order has a ram which is a whole number, is one of: 8, 16, 24, 32
+  Anyone with "read" can view orders
+'''
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        f = program.contents[0].fields[0]
+        assert f.type_expr.base_type == "whole_number"
+        assert f.type_expr.one_of_values == [8, 16, 24, 32]
+
+
+class TestD19IR:
+    """D-19: IR lowering tests for dependent field values."""
+
+    def test_dependent_values_in_ir(self):
+        program, errors = parse(D19_BASE)
+        assert errors.ok, errors.format()
+        result = analyze(program)
+        assert result.ok, result.format()
+        spec = lower(program)
+        cs = spec.content[0]
+        assert len(cs.dependent_values) == 3
+
+    def test_dependent_value_shape(self):
+        program, _ = parse(D19_BASE)
+        spec = lower(program)
+        cs = spec.content[0]
+        dv = cs.dependent_values[0]
+        assert dv.when == 'size == "14-inch"'
+        assert dv.field == "ram"
+        assert dv.constraint == "one_of"
+        assert dv.values == (8, 16, 24)
+
+    def test_is_one_of_in_field_ir(self):
+        src = '''\
+Application: One Of IR Test
+  Description: Test
+
+Users authenticate with stub
+Scopes are "read"
+
+Content called "orders":
+  Each order has a ram which is a whole number, is one of: 8, 16, 24
+  Anyone with "read" can view orders
+'''
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        spec = lower(program)
+        f = spec.content[0].fields[0]
+        assert f.one_of_values == (8, 16, 24)
+
+
+class TestD19Analyzer:
+    """D-19: Analyzer tests for dependent field values."""
+
+    def test_undefined_field_in_when_clause(self):
+        src = '''\
+Application: Analyzer Test
+  Description: Test
+
+Users authenticate with stub
+Scopes are "read" and "write"
+
+Content called "orders":
+  Each order has a size which is an enum, is one of: "14-inch", "16-inch"
+  Anyone with "read" can view orders
+  Anyone with "write" can create orders
+
+  When `size == "14-inch"`, nonexistent_field must be one of: 1, 2, 3
+'''
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        result = analyze(program)
+        assert not result.ok
+        assert any("TERMIN-S029" in str(e) for e in result.errors)
+
+    def test_exhaustiveness_warning(self):
+        """When clauses that don't cover all enum values should warn."""
+        src = '''\
+Application: Exhaustiveness Test
+  Description: Test
+
+Users authenticate with stub
+Scopes are "read" and "write"
+
+Content called "laptops":
+  Each laptop has a size which is one of: "small", "medium", "large"
+  Each laptop has a ram which is a whole number
+  Anyone with "read" can view laptops
+  Anyone with "write" can create laptops
+
+  When `size == "small"`, ram must be one of: 8, 16
+  When `size == "large"`, ram must be one of: 32, 48
+'''
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        result = analyze(program)
+        # Should have a warning (not error) about missing "medium"
+        warnings = [e for e in result.errors if "TERMIN-W001" in str(e)]
+        assert len(warnings) == 1
+        assert "medium" in str(warnings[0])
+
+
+class TestD19Runtime:
+    """D-19: Runtime validation tests for dependent field values."""
+
+    def _build_ir(self):
+        return json.dumps({
+            "ir_version": "0.5.0",
+            "reflection_enabled": False,
+            "app_id": "d19-test",
+            "name": "D-19 Test",
+            "description": "",
+            "auth": {
+                "provider": "stub",
+                "scopes": ["orders.read", "orders.write"],
+                "roles": [{"name": "clerk", "scopes": ["orders.read", "orders.write"]}],
+            },
+            "content": [{
+                "name": {"display": "laptop orders", "snake": "laptop_orders", "pascal": "LaptopOrders"},
+                "singular": "laptop_order",
+                "fields": [
+                    {"name": "size", "column_type": "TEXT", "business_type": "enum",
+                     "enum_values": ["14-inch", "16-inch"], "one_of_values": []},
+                    {"name": "ram", "column_type": "INTEGER", "business_type": "whole_number",
+                     "enum_values": [], "one_of_values": []},
+                    {"name": "color", "column_type": "TEXT", "business_type": "text",
+                     "enum_values": [], "one_of_values": []},
+                ],
+                "dependent_values": [
+                    {"when": 'size == "14-inch"', "field": "ram", "constraint": "one_of", "values": [8, 16, 24]},
+                    {"when": 'size == "16-inch"', "field": "ram", "constraint": "one_of", "values": [16, 32, 48]},
+                    {"when": 'size == "16-inch"', "field": "color", "constraint": "default", "value": "space gray"},
+                ],
+                "audit": "actions",
+            }],
+            "access_grants": [
+                {"content": "laptop_orders", "scope": "orders.read", "verbs": ["VIEW"]},
+                {"content": "laptop_orders", "scope": "orders.write", "verbs": ["CREATE", "UPDATE"]},
+            ],
+            "state_machines": [],
+            "events": [],
+            "routes": [
+                {"method": "GET", "path": "/api/v1/laptop_orders", "kind": "LIST",
+                 "content_ref": "laptop_orders", "required_scope": "orders.read"},
+                {"method": "POST", "path": "/api/v1/laptop_orders", "kind": "CREATE",
+                 "content_ref": "laptop_orders", "required_scope": "orders.write"},
+                {"method": "PUT", "path": "/api/v1/laptop_orders/{id}", "kind": "UPDATE",
+                 "content_ref": "laptop_orders", "required_scope": "orders.write", "lookup_column": "id"},
+            ],
+            "pages": [],
+            "nav_items": [],
+            "streams": [],
+            "computes": [],
+            "channels": [],
+            "boundaries": [],
+            "error_handlers": [],
+            "reclassification_points": [],
+        })
+
+    def test_create_valid_14inch_ram(self):
+        from termin_runtime import create_termin_app
+        from fastapi.testclient import TestClient
+        app = create_termin_app(self._build_ir(), strict_channels=False)
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "clerk")
+            r = client.post("/api/v1/laptop_orders", json={"size": "14-inch", "ram": 8})
+            assert r.status_code == 201, r.text
+
+    def test_create_invalid_14inch_ram(self):
+        from termin_runtime import create_termin_app
+        from fastapi.testclient import TestClient
+        app = create_termin_app(self._build_ir(), strict_channels=False)
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "clerk")
+            r = client.post("/api/v1/laptop_orders", json={"size": "14-inch", "ram": 48})
+            assert r.status_code == 422, f"Expected 422 for invalid ram, got {r.status_code}: {r.text}"
+            assert "must be one of" in r.json()["detail"].lower()
+
+    def test_create_valid_16inch_ram(self):
+        from termin_runtime import create_termin_app
+        from fastapi.testclient import TestClient
+        app = create_termin_app(self._build_ir(), strict_channels=False)
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "clerk")
+            r = client.post("/api/v1/laptop_orders", json={"size": "16-inch", "ram": 32})
+            assert r.status_code == 201, r.text
+
+    def test_create_default_color_applied(self):
+        from termin_runtime import create_termin_app
+        from fastapi.testclient import TestClient
+        app = create_termin_app(self._build_ir(), strict_channels=False)
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "clerk")
+            r = client.post("/api/v1/laptop_orders", json={"size": "16-inch", "ram": 16})
+            assert r.status_code == 201, r.text
+            assert r.json()["color"] == "space gray"
+
+    def test_create_no_constraint_when_condition_unmet(self):
+        """When condition is false, constraint should not apply."""
+        from termin_runtime import create_termin_app
+        from fastapi.testclient import TestClient
+        app = create_termin_app(self._build_ir(), strict_channels=False)
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "clerk")
+            # 14-inch with ram=48 should fail, but 16-inch with ram=48 should pass
+            r = client.post("/api/v1/laptop_orders", json={"size": "16-inch", "ram": 48})
+            assert r.status_code == 201, r.text

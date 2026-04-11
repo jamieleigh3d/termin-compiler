@@ -128,6 +128,87 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                 return g["scope"]
         return None
 
+    # ── D-19: Dependent value validation ──
+    def validate_dependent_values(content_name: str, data: dict):
+        """Validate dependent value constraints (When clauses) on create/update.
+
+        Evaluates all matching When conditions and validates constraints.
+        Raises HTTPException(422) if a must be one of or must be constraint is violated.
+        """
+        schema = content_lookup.get(content_name, {})
+        dep_vals = schema.get("dependent_values", [])
+        if not dep_vals:
+            return
+
+        # Also validate field-level one_of_values constraints
+        for field_def in schema.get("fields", []):
+            fname = field_def["name"]
+            one_of = field_def.get("one_of_values", [])
+            if one_of and fname in data and data[fname] is not None and data[fname] != "":
+                val = data[fname]
+                # Type-coerce for comparison
+                if isinstance(one_of[0], (int, float)):
+                    try:
+                        val = type(one_of[0])(val)
+                    except (ValueError, TypeError):
+                        pass
+                if val not in one_of:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Invalid value '{data[fname]}' for {fname}. "
+                               f"Must be one of: {', '.join(str(v) for v in one_of)}")
+
+        for dv in dep_vals:
+            # Evaluate When condition (or unconditional if when is None)
+            if dv.get("when"):
+                try:
+                    matched = expr_eval.evaluate(dv["when"], data)
+                    if not matched:
+                        continue  # Condition not met, skip this rule
+                except Exception:
+                    continue  # Eval error — skip silently
+
+            field_name = dv["field"]
+            constraint = dv["constraint"]
+
+            if constraint == "one_of":
+                allowed = list(dv.get("values", []))
+                if field_name in data and data[field_name] is not None and data[field_name] != "":
+                    val = data[field_name]
+                    # Type-coerce for comparison
+                    if allowed and isinstance(allowed[0], (int, float)):
+                        try:
+                            val = type(allowed[0])(val)
+                        except (ValueError, TypeError):
+                            pass
+                    if val not in allowed:
+                        when_desc = f" (when {dv['when']})" if dv.get("when") else ""
+                        raise HTTPException(
+                            status_code=422,
+                            detail=f"Invalid value '{data[field_name]}' for {field_name}{when_desc}. "
+                                   f"Must be one of: {', '.join(str(v) for v in allowed)}")
+
+            elif constraint == "equals":
+                required_val = dv.get("value")
+                if field_name in data and data[field_name] is not None:
+                    val = data[field_name]
+                    if isinstance(required_val, (int, float)):
+                        try:
+                            val = type(required_val)(val)
+                        except (ValueError, TypeError):
+                            pass
+                    if val != required_val:
+                        when_desc = f" (when {dv['when']})" if dv.get("when") else ""
+                        raise HTTPException(
+                            status_code=422,
+                            detail=f"Value for {field_name}{when_desc} must be {required_val}")
+
+            elif constraint == "default":
+                # Set default if field not provided
+                default_val = dv.get("value")
+                if field_name not in data or data[field_name] is None or data[field_name] == "":
+                    data[field_name] = default_val
+
     # Register reflection with expression evaluator
     register_reflection_with_expr_eval(reflection, expr_eval)
 
@@ -826,6 +907,9 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                             raise HTTPException(
                                 status_code=422,
                                 detail=f"Value {val} for {fname} exceeds maximum {fmax}")
+                    # D-19: Validate dependent value constraints
+                    validate_dependent_values(_cr, body)
+
                     # Strip unknown fields (mass assignment protection)
                     known_fields = {f["name"] for f in schema.get("fields", [])}
                     known_fields.add("status")
@@ -883,8 +967,17 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                     write_err = check_write_access(body, schema, user_scopes)
                     if write_err:
                         raise HTTPException(status_code=403, detail=write_err)
+                    # D-19: Validate dependent value constraints
+                    # For updates, merge with existing data for condition evaluation
                     db = await get_db(db_path)
                     try:
+                        existing = await get_record(db, _cr, param_val, _lc)
+                        if existing:
+                            merged = dict(existing)
+                            merged.update(body)
+                            validate_dependent_values(_cr, merged)
+                        else:
+                            validate_dependent_values(_cr, body)
                         record = await update_record(db, _cr, param_val, body, _lc, terminator, event_bus)
                         await run_event_handlers(db, _cr, "updated", record)
                         return redact_record(record, schema, user_scopes)

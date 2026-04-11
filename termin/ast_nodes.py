@@ -18,6 +18,7 @@ class TypeExpr:
     minimum: Optional[int] = None
     maximum: Optional[int] = None
     enum_values: list[str] = field(default_factory=list)
+    one_of_values: list = field(default_factory=list)  # D-19: is one of constraint (numbers or strings)
     references: Optional[str] = None  # name of referenced Content
     list_type: Optional[str] = None   # inner type for "list of <type>"
     default_expr: Optional[str] = None  # CEL expression or literal string for default value
@@ -43,11 +44,22 @@ class AccessRule:
 
 
 @dataclass
+class DependentValue:
+    """A When clause or unconditional constraint on a field within a Content block."""
+    when_expr: Optional[str]        # CEL condition, or None for unconditional
+    field: str                      # field name
+    constraint: str                 # "one_of", "equals", or "default"
+    values: list = field(default_factory=list)  # list of allowed values (strings or numbers)
+    line: int = 0
+
+
+@dataclass
 class Content:
     name: str
     singular: str
     fields: list[Field] = field(default_factory=list)
     access_rules: list[AccessRule] = field(default_factory=list)
+    dependent_values: list[DependentValue] = field(default_factory=list)
     confidentiality_scopes: list[str] = field(default_factory=list)  # content-level scopes
     audit: str = "actions"  # "actions" (default, safe), "debug" (full values), or "none"
     line: int = 0

@@ -122,6 +122,7 @@ constraint
     | 'unique'                #Unique
     | 'minimum' val:number    #Minimum
     | 'maximum' val:number    #Maximum
+    | 'is' 'one' 'of:' vals:literal_list  #IsOneOf
     | 'defaults' 'to' expr:expr        #DefaultExpr
     | 'defaults' 'to' lit:quoted_string    #DefaultLiteral
     | 'confidentiality' 'is' scopes:quoted_list  #Confidentiality
@@ -136,6 +137,33 @@ content_audit_line
     ;
 
 audit_level = 'actions' | 'debug' | 'none' ;
+
+# Dependent field values (D-19)
+content_when_line
+    = 'When' condition:expr ',' field:words_before_must
+      'must' 'be' 'one' 'of:' values:literal_list $        #WhenOneOf
+    | 'When' condition:expr ',' field:words_before_must
+      'must' 'be' value:literal_value $                      #WhenEquals
+    | 'When' condition:expr ',' field:words_before_defaults
+      'defaults' 'to' value:literal_value $                  #WhenDefault
+    ;
+
+# Unconditional constraint
+unconditional_constraint_line
+    = field:words_before_must 'must' 'be' 'one' 'of:' values:literal_list $  #UnconditionalOneOf
+    ;
+
+literal_list
+    = val+:literal_value { ',' ['and'] val+:literal_value }*
+    ;
+
+literal_value
+    = quoted_string
+    | /\-?\d+(?:\.\d+)?/
+    ;
+
+words_before_must = /\w+(?:\s+(?!must\b)\w+)*/ ;
+words_before_defaults = /\w+(?:\s+(?!defaults\b)\w+)*/ ;
 
 access_line
     = 'Anyone' 'with' scope:quoted_string 'can'

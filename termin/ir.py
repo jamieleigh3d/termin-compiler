@@ -50,6 +50,7 @@ class FieldSpec:
     minimum: Optional[int] = None
     maximum: Optional[int] = None
     enum_values: tuple[str, ...] = ()  # non-empty for enum columns
+    one_of_values: tuple = ()          # D-19: is one of constraint values (numbers or strings)
     foreign_key: Optional[str] = None  # target table snake name
     is_auto: bool = False              # automatic timestamp
     list_type: Optional[str] = None    # inner type for JSON list columns
@@ -62,6 +63,16 @@ Column = FieldSpec
 
 
 @dataclass(frozen=True)
+class DependentValueSpec:
+    """A conditional or unconditional field constraint in the IR."""
+    when: Optional[str]           # CEL expression, or None for unconditional
+    field: str                    # snake_case field name
+    constraint: str               # "one_of", "equals", or "default"
+    values: tuple = ()            # tuple of allowed values (for one_of)
+    value: Any = None             # single value (for equals/default)
+
+
+@dataclass(frozen=True)
 class ContentSchema:
     name: QualifiedName
     fields: tuple[FieldSpec, ...]
@@ -71,6 +82,7 @@ class ContentSchema:
     initial_state: Optional[str] = None
     confidentiality_scopes: tuple[str, ...] = ()  # content-level scopes (inherited by fields)
     audit: str = "actions"                          # "actions" (default), "debug", or "none"
+    dependent_values: tuple['DependentValueSpec', ...] = ()  # D-19: conditional field constraints
 
 
 # Backward-compatible alias

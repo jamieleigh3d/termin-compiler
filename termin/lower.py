@@ -28,7 +28,7 @@ from .ir import (
     ChannelDelivery, ChannelRequirementSpec, ChannelActionParamSpec,
     ChannelActionSpec, ChannelSpec, BoundarySpec,
     BoundaryPropertySpec, ErrorHandlerSpec, ErrorActionSpec,
-    FieldDependency, ReclassificationPoint,
+    FieldDependency, ReclassificationPoint, DependentValueSpec,
 )
 
 
@@ -217,12 +217,38 @@ def lower(program: Program) -> AppSpec:
                 minimum=f.type_expr.minimum,
                 maximum=f.type_expr.maximum,
                 enum_values=tuple(f.type_expr.enum_values),
+                one_of_values=tuple(f.type_expr.one_of_values),
                 foreign_key=_snake(f.type_expr.references) if f.type_expr.references else None,
                 is_auto=f.type_expr.base_type == "automatic",
                 list_type=f.type_expr.list_type,
                 default_expr=default_ir,
                 confidentiality_scopes=tuple(f.type_expr.confidentiality_scopes),
             ))
+        # Lower dependent values (D-19)
+        dep_vals = []
+        for dv in c.dependent_values:
+            if dv.constraint == "one_of":
+                dep_vals.append(DependentValueSpec(
+                    when=dv.when_expr,
+                    field=_snake(dv.field),
+                    constraint="one_of",
+                    values=tuple(dv.values),
+                ))
+            elif dv.constraint == "equals":
+                dep_vals.append(DependentValueSpec(
+                    when=dv.when_expr,
+                    field=_snake(dv.field),
+                    constraint="equals",
+                    value=dv.values[0] if dv.values else None,
+                ))
+            elif dv.constraint == "default":
+                dep_vals.append(DependentValueSpec(
+                    when=dv.when_expr,
+                    field=_snake(dv.field),
+                    constraint="default",
+                    value=dv.values[0] if dv.values else None,
+                ))
+
         has_sm = c.name in sm_by_content
         content_schemas.append(ContentSchema(
             name=_qname(c.name),
@@ -232,6 +258,7 @@ def lower(program: Program) -> AppSpec:
             initial_state=sm_by_content[c.name].initial_state if has_sm else None,
             confidentiality_scopes=tuple(c.confidentiality_scopes),
             audit=c.audit,
+            dependent_values=tuple(dep_vals),
         ))
 
     # ── Lower auth ──

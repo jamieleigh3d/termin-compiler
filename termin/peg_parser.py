@@ -13,7 +13,7 @@ import tatsu
 
 from .ast_nodes import (
     Program, Application, Identity, Role, RoleAlias, Content, Field, TypeExpr,
-    AccessRule, StateMachine, Transition, EventRule, EventCondition,
+    AccessRule, DependentValue, StateMachine, Transition, EventRule, EventCondition,
     EventAction, UserStory, ShowPage, DisplayTable, ShowRelated,
     HighlightRows, MarkAs, AllowFilter, AllowSearch, SubscribeTo, AcceptInput,
     ValidateUnique, CreateAs, AfterSave, ShowChart, DisplayAggregation,
@@ -88,7 +88,7 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Users authenticate with", "identity_line"), ("Scopes are", "scopes_line"),
     ("Content called", "content_header"), ("Scoped to", "content_scoped_line"), ("Audit level:", "content_audit_line"), ("Each ", "field_line"),
     ("Anyone with", "access_line"), ("State for", "state_header"),
-    ("When `", "event_expr_line"), ("When [", "event_expr_line"),  # backtick first, bracket legacy
+    ("When `", "event_expr_line"), ("When [", "event_expr_line"),  # backtick first, bracket legacy  # disambiguated in _classify_line for content When
     ("When a ", "event_v1_line"), ("When an ", "event_v1_line"),
     ("Create a ", "event_action_line"), ("Create an ", "event_action_line"),
     ("Send ", "event_send_line"),
@@ -157,6 +157,15 @@ def _classify_line(text: str) -> str:
             # Disambiguate "Requires" — channel/action (has "to send/receive/invoke") vs compute confidentiality
             if rule == "channel_requires_line" and " to send" not in text and " to receive" not in text and " to invoke" not in text:
                 return "compute_requires_conf_line"
+            # Disambiguate "When `expr`" — content dependent value vs event trigger
+            # Content When: "When `expr`, field must be..." or "When `expr`, field defaults to..."
+            if rule == "event_expr_line" and (text.startswith("When `") or text.startswith("When [")):
+                # If contains ", field must be" or ", field defaults to" — it's a content When
+                if " must be " in text or " defaults to " in text:
+                    # Check for comma after backtick close — distinguishes from event When
+                    bt_close = text.find("`", 6) if text.startswith("When `") else text.find("]", 6)
+                    if bt_close >= 0 and "," in text[bt_close:bt_close+3]:
+                        return "content_when_line"
             return rule
     if text.startswith('"') and " transitions to " in text: return "action_button_line"
     if text.startswith('"') and " links to " in text: return "nav_item_line"
@@ -166,6 +175,8 @@ def _classify_line(text: str) -> str:
     if text.startswith("`") and text.endswith("`") and not text.startswith("```"): return "compute_body_expr_line"
     if text.startswith("[") and text.endswith("]"): return "compute_body_expr_line"  # legacy bracket support
     if " can execute this" in text: return "compute_access_line"
+    # D-19: Unconditional constraint: "field must be one of: ..."
+    if " must be one of:" in text: return "unconditional_constraint_line"
     return "unknown"
 
 # --- TatSu helpers ---
@@ -260,6 +271,22 @@ def _parse_type_text(text: str, ln: int = 0) -> TypeExpr:
         scope_str = cm.group(1)
         expr.confidentiality_scopes = [s.strip().strip('"') for s in re.findall(r'"([^"]*)"', scope_str)]
         text = text[:cm.start()] + text[cm.end():]
+
+    # D-19: Extract "is one of: val1, val2, ..." constraint
+    ioo_match = re.search(r',?\s*is\s+one\s+of:\s*(.+)', text, re.IGNORECASE)
+    if ioo_match:
+        vals_text = ioo_match.group(1).strip()
+        # Strip trailing constraints (required, unique, etc.)
+        for kw in [", required", ",required", ", unique", ",unique",
+                   ", minimum", ",minimum", ", maximum", ",maximum",
+                   ", defaults", ",defaults", ", confidentiality", ",confidentiality"]:
+            ki = vals_text.lower().find(kw)
+            if ki >= 0:
+                vals_text = vals_text[:ki].strip()
+        one_of_vals = _parse_literal_list(vals_text)
+        if one_of_vals:
+            expr.one_of_values = one_of_vals
+            text = text[:ioo_match.start()] + text[ioo_match.end():]
 
     # Extract "defaults to `expr`" or "defaults to [expr]" (legacy) or 'defaults to "literal"'
     dm = re.search(r',?\s*defaults\s+to\s+`([^`]+)`', text, re.IGNORECASE)
@@ -506,6 +533,76 @@ def _parse_action_params(text: str, prefix: str, ln: int) -> list[ActionParam]:
             # Fallback: just a name
             params.append(ActionParam(name=part.strip(), type_name="text", line=ln))
     return params
+
+
+def _parse_literal_list(text: str) -> list:
+    """Parse a comma/and-separated list of literals (quoted strings or numbers)."""
+    import re
+    result = []
+    # Find quoted strings and bare numbers
+    for m in re.finditer(r'"([^"]*)"|(-?\d+(?:\.\d+)?)', text):
+        if m.group(1) is not None:
+            result.append(m.group(1))
+        elif m.group(2) is not None:
+            v = m.group(2)
+            try:
+                result.append(int(v))
+            except ValueError:
+                try:
+                    result.append(float(v))
+                except ValueError:
+                    result.append(v)
+    return result
+
+
+def _parse_content_when(text: str, ln: int):
+    """Parse a content When clause: When `expr`, field must be one of: / must be / defaults to."""
+    # Extract the condition expression
+    cond = _eb(text[5:])  # after "When "
+    if not cond:
+        return None
+
+    # Find the comma after the closing backtick/bracket
+    bt_close = text.find("`", 6) if "`" in text[5:7] else text.find("]", 6)
+    if bt_close < 0:
+        return None
+    comma_pos = text.find(",", bt_close)
+    if comma_pos < 0:
+        return None
+    rest = text[comma_pos + 1:].strip()
+
+    # Parse constraint
+    if " must be one of:" in rest:
+        field_part = rest[:rest.index(" must be one of:")].strip()
+        values_text = rest[rest.index(" must be one of:") + len(" must be one of:"):].strip()
+        values = _parse_literal_list(values_text)
+        return ("dependent_value", DependentValue(
+            when_expr=cond, field=field_part, constraint="one_of", values=values, line=ln))
+    elif " must be " in rest:
+        field_part = rest[:rest.index(" must be ")].strip()
+        value_text = rest[rest.index(" must be ") + len(" must be "):].strip()
+        values = _parse_literal_list(value_text)
+        value = values[0] if values else value_text.strip().strip('"')
+        return ("dependent_value", DependentValue(
+            when_expr=cond, field=field_part, constraint="equals", values=[value], line=ln))
+    elif " defaults to " in rest:
+        field_part = rest[:rest.index(" defaults to ")].strip()
+        value_text = rest[rest.index(" defaults to ") + len(" defaults to "):].strip()
+        values = _parse_literal_list(value_text)
+        value = values[0] if values else value_text.strip().strip('"')
+        return ("dependent_value", DependentValue(
+            when_expr=cond, field=field_part, constraint="default", values=[value], line=ln))
+    return None
+
+
+def _parse_unconditional_constraint(text: str, ln: int):
+    """Parse an unconditional constraint: field must be one of: val1, val2."""
+    idx = text.index(" must be one of:")
+    field_part = text[:idx].strip()
+    values_text = text[idx + len(" must be one of:"):].strip()
+    values = _parse_literal_list(values_text)
+    return ("dependent_value", DependentValue(
+        when_expr=None, field=field_part, constraint="one_of", values=values, line=ln))
 
 
 # --- Per-line parse dispatch ---
@@ -903,6 +1000,10 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule)
         level = str(r.get("level", "content")).strip().lower() if r else text.split(":", 1)[1].strip().lower()
         return ("content_audit", level)
+    if rule == "content_when_line":
+        return _parse_content_when(text, ln)
+    if rule == "unconditional_constraint_line":
+        return _parse_unconditional_constraint(text, ln)
     if rule == "channel_header":
         r = P(text, rule); return ("channel_header", ChannelDecl(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "channel_carries_line":
@@ -983,13 +1084,14 @@ def _assemble(parsed: list) -> Program:
         elif k == "role_alias": prog.role_aliases.append(item[1]); i += 1
         elif k == "content_header":
             ct = item[1]; i += 1
-            for ch in _collect(lambda x: x in ("field","access","content_scoped","content_audit")):
+            for ch in _collect(lambda x: x in ("field","access","content_scoped","content_audit","dependent_value")):
                 if ch[0] == "field":
                     if ch[2]: ct.singular = ch[2]
                     ct.fields.append(ch[1])
                 elif ch[0] == "access": ct.access_rules.append(ch[1])
                 elif ch[0] == "content_scoped": ct.confidentiality_scopes.extend(ch[1])
                 elif ch[0] == "content_audit": ct.audit = ch[1]
+                elif ch[0] == "dependent_value": ct.dependent_values.append(ch[1])
             prog.contents.append(ct)
         elif k == "state_header":
             sm = item[1]; i += 1
