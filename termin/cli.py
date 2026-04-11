@@ -189,7 +189,7 @@ def compile(source: str, output: str | None, seed_path: str | None,
         ir_path.write_text(ir_json, encoding="utf-8")
         click.echo(f"IR dumped to {ir_path.name}")
 
-    # Legacy mode: output .py + .json (backward compat)
+    # Legacy mode: output .py + .json (generates slim runtime app)
     # Auto-detect: if output path ends in .py, use legacy mode
     if output and Path(output).suffix == ".py":
         legacy = True
@@ -369,7 +369,7 @@ def serve(package: str, port: int, host: str, deploy: str, no_strict_channels: b
                     click.echo(f"WARNING: Checksum mismatch for {filename}", err=True)
 
     elif pkg_path.suffix == ".json":
-        # Raw IR JSON (backward compat)
+        # Raw IR JSON (for development/debugging)
         ir_json = pkg_path.read_text(encoding="utf-8")
         seed_data = None
         seed_path = pkg_path.with_name(pkg_path.stem.replace("_ir", "") + "_seed.json")

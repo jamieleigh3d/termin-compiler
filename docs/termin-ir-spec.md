@@ -1,7 +1,7 @@
 # Termin Intermediate Representation (IR) Specification
 
 **Version:** 0.1.0-draft
-**Status:** Formative
+**Status:** SUPERSEDED by `termin-ir-schema.json` (JSON Schema) + `termin-runtime-implementers-guide.md`. This document is retained for historical context. The authoritative IR contract is the JSON Schema; the authoritative field documentation is the implementer's guide.
 
 ---
 
@@ -152,7 +152,7 @@ This section defines what the IR should become. Changes are prioritized by how m
 
 ```json
 {
-  "ir_version": "0.2.0",
+  "ir_version": "0.5.0",
   "name": "...",
   ...
 }
@@ -251,7 +251,7 @@ Reflection is a runtime capability, not an IR data structure. But the IR needs t
 
 ```json
 {
-  "ir_version": "0.2.0",
+  "ir_version": "0.5.0",
   "reflection_enabled": true,
   ...
 }

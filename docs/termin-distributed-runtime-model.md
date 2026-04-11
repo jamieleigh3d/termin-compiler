@@ -97,7 +97,7 @@ Response:
 
 ```json
 {
-  "runtime_version": "0.2.0",
+  "runtime_version": "0.5.0",
   "application": "Warehouse Inventory Manager",
   "boundaries": {
     "order_processing": {

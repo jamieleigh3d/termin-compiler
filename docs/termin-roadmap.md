@@ -15,32 +15,29 @@ Termin is a governed application substrate where business software is structural
 
 ### Phase 0: Proof of Architecture (Current — Q2 2026)
 
-**Status:** In progress. Core pipeline and real-time subscriptions working. Legacy code removed. IR schema and implementer's guide published. Focus shifting to end-to-end demo completeness.
+**Status:** Complete. All exit criteria met. v0.5.0 shipped April 10, 2026. v0.6.0 in progress on `feature/v0.6`.
 
-| Item | Status | Source Doc | Notes |
-|------|--------|-----------|-------|
-| TatSu PEG parser (authoritative) | DONE | CLAUDE.md | Replaced lexer + recursive descent + Lark |
-| Component tree IR (Presentation v2) | DONE | termin-presentation-ir-spec-v2.md | PageEntry with ComponentNode children |
-| Runtime backend (termin_runtime) | DONE | — | 9 modules, ~1200 lines |
-| WebSocket multiplexer (Phase 1 distributed) | DONE | termin-distributed-runtime-model.md | Subscribe/push/request, ConnectionManager |
-| SSR + vanilla JS hydration (termin.js) | DONE | termin-distributed-runtime-model.md | Client runtime, ~340 lines |
-| Seed data support | DONE | — | Auto-seed from companion _seed.json |
-| Dependency completeness tests | DONE | — | AST scan of imports vs setup.py |
-| String iteration guard tests | DONE | — | Parametrized across all examples |
-| Remove legacy code (Lark, codegen, lexer/parser) | DONE | — | ~4,100 lines removed |
-| **Field-level confidentiality system** | **PLANNED** | termin-confidentiality-brd.md, termin-confidentiality-spec.md | Tier 1 guarantee. Field redaction, taint propagation, compile-time scope enforcement |
-| **Boundary isolation enforcement** | **PLANNED** | termin-appserver-and-ecosystem-v2.md | Cross-boundary data only through declared Channels |
-| **State transition scope-gating** | **PLANNED** | termin-product-strategy.md | Runtime rejects transitions caller's identity doesn't permit |
-| **Conformance test suite seed** | **PLANNED** | termin-product-strategy.md | 10-20 tests covering Tier 1 guarantees |
-| **System-defined CEL functions** | **PLANNED** | termin-appserver-and-ecosystem-v2.md | sum(), count(), now(), identity.has_scope() |
-| `boundary_type` in registry response | DONE | termin-appserver-and-ecosystem-v2.md | Forward compat: application/library/module/configuration |
-| `client_safe` flag on ComputeSpec | DONE | termin-distributed-runtime-model.md | Added to IR; inference logic pending |
-| JSON Schema (draft 2020-12) for IR | DONE | termin-ir-schema.json | Machine-readable contract, validated against all examples |
-| Runtime Implementer's Guide | DONE | termin-runtime-implementers-guide.md | Companion to schema for building conforming runtimes |
-| `maximum` constraint in PEG grammar | DONE | — | Fixed iteration order bug |
-| `State for channel/compute` in PEG parser | DONE | — | Fixed prefix stripping |
+| Item | Status | Notes |
+|------|--------|-------|
+| TatSu PEG parser (authoritative) | DONE | Replaced lexer + recursive descent + Lark |
+| Component tree IR (Presentation v2) | DONE | PageEntry with ComponentNode children |
+| Runtime backend (termin_runtime) | DONE | 12 modules, ~2400 lines |
+| WebSocket multiplexer | DONE | Subscribe/push/request, ConnectionManager |
+| SSR + vanilla JS hydration (termin.js) | DONE | Client runtime, ~340 lines |
+| Seed data support | DONE | Auto-seed from companion _seed.json |
+| Dependency completeness tests | DONE | AST scan of imports vs setup.py |
+| String iteration guard tests | DONE | Parametrized across all examples |
+| Remove legacy code (Lark, codegen, lexer/parser, pyjexl backend) | DONE | ~6,200 lines removed total |
+| Field-level confidentiality system | DONE | Block B: redaction, taint, CEL guard, output taint |
+| Boundary isolation enforcement | DONE | Block C: implicit app boundary, containment map, channel-only crossing |
+| State transition scope-gating | DONE | Runtime rejects transitions caller's identity doesn't permit |
+| Conformance test suite | DONE | 531 tests across 18 test files |
+| System-defined CEL functions | DONE | sum(), count(), now(), User.* identity object |
+| JSON Schema (draft 2020-12) for IR | DONE | Machine-readable contract, validated against all examples |
+| Runtime Implementer's Guide | DONE | Companion to schema with WebSocket behavioral contract (§13.2) |
+| Code coverage baseline | DONE | pytest-cov, 69% floor, 77% current |
 
-**Exit criteria:** Conformance test suite passes. Single `.termin` → IR → runtime → working app with enforced identity, enforced state transitions, enforced boundary isolation, enforced field redaction.
+**Exit criteria met:** Conformance test suite passes. `.termin` → IR → runtime → working app with enforced identity, state transitions, boundary isolation, and field redaction. Two runtimes (reference + an AWS-native Termin runtime) consuming the same conformance suite.
 
 ---
 
@@ -137,8 +134,8 @@ Items deferred to v1.0 or later. Not prioritized, not scheduled. Captured here s
 | `termin-presentation-ir-spec-v2.md` | Component tree IR specification | Implemented |
 | `termin-distributed-runtime-model.md` | WebSocket multiplexing, registry, client runtime | Phase 1 implemented |
 | `termin-appserver-and-ecosystem-v2.md` | Application Server, packages, providers, boundaries, agents | Vision (Phase 2-4) |
-| `termin-confidentiality-brd.md` | Business requirements for field redaction + taint propagation | Approved |
-| `termin-confidentiality-spec.md` | Technical spec: DSL syntax, IR changes, compiler analysis, runtime enforcement | Draft |
+| `termin-confidentiality-brd.md` | Business requirements for field redaction + taint propagation | Implemented (Block B) |
+| `termin-confidentiality-spec.md` | Technical spec: DSL syntax, IR changes, compiler analysis, runtime enforcement | Implemented (Block B) |
 | `termin-roadmap.md` | This document — backlog, priorities, implementation order | Living document |
 | `termin-ir-schema.json` | JSON Schema (draft 2020-12) for the IR — machine-readable contract | Current |
 | `termin-runtime-implementers-guide.md` | How to build a conforming Termin runtime from the IR schema | Current |
@@ -149,34 +146,25 @@ Items deferred to v1.0 or later. Not prioritized, not scheduled. Captured here s
 
 ## Immediate Priority Queue
 
-Restructured April 10, 2026. Blocks A, B, D, F, G (core), H are complete. v0.5.0 compiler and runtime features shipped.
+Restructured April 11, 2026. v0.5.0 shipped. v0.6.0 "Boundaries" in progress on `feature/v0.6`.
 
-### Completed: Block G — AI Agent Runtime
+### v0.6.0 "Boundaries" — In Progress
 
-| # | Item | Status |
-|---|------|--------|
-| G3 | Agent tool API: ComputeContext tools (content_query/create/update, state_transition) | DONE |
-| G4 | AI provider: Anthropic + OpenAI with forced tool_use, thinking-first output | DONE |
-| G6 | Event trigger for Computes: Trigger on event with where clause | DONE |
-| G7 | Agent demos: agent_simple.termin (Level 1 LLM) + agent_chatbot.termin (Level 3 agent) | DONE |
-| G1 | Compute system type in CEL context | DEFERRED to v0.6 (not blocking demos) |
-| G2 | Before/After snapshots for postconditions | DEFERRED to v0.6 (not blocking demos) |
-| G5 | Runtime scheduler for Trigger on schedule | DEFERRED to v0.6 |
-| G8 | Agent observability (trace logging) | DEFERRED to v0.7 |
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| G1 | Compute system type in CEL context | DONE | v0.6 |
+| G2 | Before/After snapshots for postconditions | DONE | v0.6 — ContentSnapshot class |
+| G5 | Runtime scheduler for Trigger on schedule | DONE | v0.6 |
+| D-18 | Audit levels: actions/debug/none | DONE | v0.6 — default "actions" (pit of success) |
+| D-19 | Dependent field values (When clauses, is-one-of) | DONE | v0.6 |
+| C1 | Boundary isolation enforcement | DONE | v0.6 — implicit app boundary, containment map, channel-only crossing |
+| — | Structured English compiler errors | DONE | v0.6 — error codes, fuzzy match suggestions, --format json |
+| — | Legacy backend removal (fastapi.py + PageSpec) | DONE | v0.6 — ~2,100 lines removed |
+| — | Code coverage baseline (pytest-cov, 69% floor) | DONE | v0.6 — 77% current |
+| C2 | Cross-boundary identity propagation | PLANNED | Identity context flows through Channel crossings |
+| — | Conformance suite update for v0.6 | PLANNED | Audit, dependent values, boundaries |
 
-### Completed: Block H — Semantic Mark Primitive
-
-| # | Item | Status |
-|---|------|--------|
-| H1 | `Mark rows where [expr] as "label"` grammar + parser | DONE |
-| H2 | `Mark [field] where [expr] as "label"` for field-level marks | DONE |
-| H3 | `semantic_mark` IR component type | DONE |
-| H4 | Runtime renderer: label→CSS + data-termin-mark + aria-label | DONE |
-| H5 | Update examples to use Mark...as | Backlogged (existing Highlight still works) |
-
-### Priority 3: Block E — Remaining Quick Wins & Research
-
-Previously "Block E: Research & Future." Items not yet done, reprioritized.
+### Remaining Quick Wins & Research
 
 | # | Item | Effort | Subsystems | Notes | Status |
 |---|------|--------|------------|-------|--------|
@@ -185,22 +173,15 @@ Previously "Block E: Research & Future." Items not yet done, reprioritized.
 | E2 | Package signatures (cryptographic signing of .termin.pkg) | Research | compiler, runtime | — | |
 | E6 | Automation API contract for programmatic UI interaction | Research | runtime, conformance | testing-methodology.md § Tier 3 | |
 
-### Priority 4: Block C — Boundary Enforcement
-
-Deferred until channels and agents are working. Boundaries are metadata-only in the current runtime.
-
-| # | Item | Effort | Subsystems | Notes |
-|---|------|--------|------------|-------|
-| C1 | Boundary isolation enforcement | Large | runtime (app, storage) | Cross-boundary data only through declared Channels. Depends on F1-F7. |
-| C2 | Cross-boundary identity propagation | Medium | runtime (identity, app) | Identity context flows through Channel crossings. |
-
 ### Completed Blocks
 
 **Block A: End-to-End Demo Completeness** — DONE (A1-A9)
 
 **Block B: Confidentiality System** — DONE (B1-B11). Grammar, parser, analyzer, lowering, runtime redaction, Compute endpoint, CEL guard, output taint, presentation, HR Portal example.
 
-**Block D: Package Format & Conformance** — DONE (D1-D9). `.termin.pkg`, `termin compile/serve`, conformance suite (251 tests), App Id, IR 0.4.0.
+**Block C: Boundary Enforcement** — DONE (v0.6). Implicit app boundary, containment map, channel-only crossing enforcement, duplicate-content analyzer check (TERMIN-S030). No backward-compat exceptions — the app itself is always a boundary.
+
+**Block D: Package Format & Conformance** — DONE (D1-D9). `.termin.pkg`, `termin compile/serve`, conformance suite (475 tests), App Id, IR 0.5.0.
 
 **Block E (completed items):**
 
@@ -221,6 +202,10 @@ Deferred until channels and agents are working. Boundaries are metadata-only in 
 | E18 | ~~CCP/ECP package system~~ | KILLED — replaced by Channel Actions (F5) |
 
 **Block F: Channel Runtime** — DONE (F1-F10). Deploy config loader, outbound HTTP/WS dispatch, inbound webhooks, action invocation, event-driven sends, channel reflection, strict validation, auto-generated deploy templates. 36 channel tests.
+
+**Block G: AI Agent Runtime** — DONE (G1-G7). AI provider (Anthropic + OpenAI), event-triggered Computes, ComputeContext tools, Before/After snapshots, runtime scheduler. G8 (observability) deferred to v0.7.
+
+**Block H: Semantic Mark Primitive** — DONE (H1-H4). Grammar, parser, IR component, runtime renderer with label→CSS + ARIA.
 
 ---
 
@@ -468,29 +453,42 @@ G5    Runtime scheduler               → stretch goal for v0.5.0
 
 ---
 
-## v0.6.0 Backlog
+## v0.6.0 Backlog — "Boundaries"
 
-Items planned for v0.6.0 (after v0.5.0 ships to an AWS-native Termin runtime).
+Theme: enforcement, quality, cleanup. Branch: `feature/v0.6`.
 
-| Item | Effort | Source | Notes |
+| Item | Effort | Status | Notes |
 |------|--------|--------|-------|
-| Structured English compiler errors | Medium | Thread 004 § 2 | Error codes (TERMIN-E001+), fuzzy-match suggestions ("did you mean?"), `--format json` for Console consumption |
-| Boundary isolation enforcement (Block C) | Large | appserver-v2.md | Cross-boundary data only through declared Channels. Depends on Block F. |
-| Cross-boundary identity propagation | Medium | distributed-runtime.md | Identity context flows through Channel crossings |
+| Structured English compiler errors | Medium | DONE | Error codes (TERMIN-S/X/W), fuzzy-match, `--format json` |
+| D-18: Audit levels (actions/debug/none) | Small | DONE | Default "actions" (pit of success) |
+| D-19: Dependent field values | Medium | DONE | When clauses, is-one-of constraint modifier |
+| G1: Compute system type in CEL | Small | DONE | |
+| G2: Before/After snapshots | Medium | DONE | ContentSnapshot, postcondition 409s |
+| G5: Runtime scheduler | Small | DONE | Trigger on schedule |
+| Block C: Boundary enforcement | Large | DONE | Implicit app boundary, containment map |
+| Legacy backend removal | Small | DONE | ~2,100 lines of dead code |
+| Code coverage baseline | Small | DONE | pytest-cov, 69% floor, currently 77% |
+| Cross-boundary identity propagation | Medium | PLANNED | Identity context flows through Channel crossings |
+| Conformance suite v0.6 update | Medium | PLANNED | Tests for audit, dependent values, boundaries |
 
 ---
 
 ## v0.7.0 Backlog
 
-Examples cleanup, advanced examples, and polish.
+Theme: polish, observability, developer experience.
 
 | Item | Source | Notes |
 |------|--------|-------|
-| Traces UI: page showing LLM/agent execution logs | D-07 | Content table of standardized trace records, queryable via reflection |
+| G8: Agent observability (trace logging) | D-07 | Standardized trace schema, content table, queryable via reflection |
 | Chat presentation component | D-09 | Replace table-of-messages with proper chat UI in agent_chatbot |
-| Advanced agent example with postconditions and rollback | Block G | Demonstrate pre/postcondition enforcement, Before/After snapshots |
-| Auto-generated REST API (convention over configuration) | D-11 | Content types get CRUD routes automatically, explicit section for overrides only |
-| Examples audit: remove boilerplate, use latest syntax | — | All examples updated to use v0.5 features (field wiring, Mark...as, auto-API) |
+| Auto-generated REST API (convention over configuration) | D-11 | Content types get CRUD routes automatically |
+| Examples audit: remove boilerplate, use latest syntax | — | All examples updated to use v0.6 features |
+| **Code coverage: ai_provider.py** | — | Currently 37%. Needs mock LLM tests for agent loop, tool building |
+| **Code coverage: channels.py** | — | Currently 54%. WebSocket reconnect, metrics, error paths |
+| **Code coverage: transaction.py** | — | Currently 49%. Staging, commit/rollback semantics |
+| **Code coverage: expression.py** | — | Currently 68%. More CEL edge cases |
+| **Code coverage: reflection.py** | — | Currently 40%. Reflection engine query paths |
+| **Code coverage: errors.py (runtime)** | — | Currently 37%. Error router paths |
 
 ---
 
@@ -568,3 +566,15 @@ Items deferred to v1.0 or later. Not prioritized, not scheduled.
 | 2026-04-10 | Block H: Mark...as semantic emphasis (grammar, parser, IR, renderer) | 77e71c0 |
 | 2026-04-10 | Agent examples: agent_simple.termin (Level 1 LLM) + agent_chatbot.termin (Level 3 agent) | 66f6a4a |
 | 2026-04-10 | 480 tests passing (24 new agent/mark tests) | ce2ef73 |
+| 2026-04-10 | v0.5.0 release: Channels, AI Agents, Mark...as, WebSocket behavioral tests | 752a5a5 |
+| 2026-04-10 | WebSocket sync bug fix (5 stacked bugs), retrospective | 365e025..d827c01 |
+| 2026-04-10 | Three test levels: async WS integration, Playwright browser, behavioral conformance | various |
+| 2026-04-10 | Design decisions D-03, D-04, D-17, D-18, D-19 decided | various |
+| 2026-04-11 | v0.6 Phase 1: G1, G5, D-18, structured errors (534 tests) | da555c8..2a259c0 |
+| 2026-04-11 | v0.6 Phase 2: G2 (snapshots), D-19 (dependent values), Block C (boundaries) | 267bf4e..cb72088 |
+| 2026-04-11 | Fix boundary enforcement: app is always a boundary, no backward-compat exceptions | — |
+| 2026-04-11 | Analyzer: TERMIN-S030 duplicate content across boundaries | — |
+| 2026-04-11 | Remove legacy pyjexl backend (~2,100 lines) + PageSpec shim | — |
+| 2026-04-11 | Fix stale xfail tests: compute endpoints + channel endpoints already implemented | — |
+| 2026-04-11 | Code coverage: pytest-cov config, 69% floor, 77% baseline | — |
+| 2026-04-11 | 542 tests, 0 failures, 0 skips, 0 xfails | — |
