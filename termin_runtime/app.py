@@ -89,6 +89,48 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
             if interval is not None:
                 schedule_computes.append((comp, interval))
 
+    # ── Block C: Boundary containment map ──
+    # Maps content_name (snake) -> boundary_name (snake), or absent if not in any boundary
+    boundary_for_content: dict[str, str] = {}
+    # Maps compute_name (snake) -> boundary_name (snake), inferred from Accesses overlap
+    boundary_for_compute: dict[str, str] = {}
+
+    for bnd in ir.get("boundaries", []):
+        bnd_snake = bnd["name"]["snake"]
+        for content_snake in bnd.get("contains_content", []):
+            boundary_for_content[content_snake] = bnd_snake
+
+    # Infer boundary for each Compute from its Accesses: a Compute is "in" a boundary
+    # if any of its Accesses content is in that boundary
+    for comp in ir.get("computes", []):
+        comp_snake = comp["name"]["snake"]
+        for acc in comp.get("accesses", []):
+            if acc in boundary_for_content:
+                boundary_for_compute[comp_snake] = boundary_for_content[acc]
+                break  # Use first match
+
+    def check_boundary_access(compute_snake: str, target_content: str) -> str | None:
+        """Check if a Compute can access a content type across boundaries.
+
+        Returns None if access is allowed, or an error message if denied.
+        """
+        # If target content is not in any boundary, unrestricted
+        if target_content not in boundary_for_content:
+            return None
+        # If Compute is not in any boundary, unrestricted
+        if compute_snake not in boundary_for_compute:
+            return None
+        # Same boundary → allow
+        compute_bnd = boundary_for_compute[compute_snake]
+        content_bnd = boundary_for_content[target_content]
+        if compute_bnd == content_bnd:
+            return None
+        # Different boundary → reject
+        return (f"Cross-boundary access denied: Compute '{compute_snake}' "
+                f"(boundary '{compute_bnd}') cannot directly access "
+                f"content '{target_content}' (boundary '{content_bnd}'). "
+                f"Cross-boundary access requires a channel.")
+
     # Identity
     roles = {}
     for role in ir.get("auth", {}).get("roles", []):
@@ -756,6 +798,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         user_msg = f"{objective}\n\nTriggering record:\n{json.dumps(record, indent=2, default=str)}"
 
         # Tool execution function
+        comp_snake = comp["name"]["snake"]
         async def execute_tool(tool_name: str, tool_input: dict) -> dict:
             db = await get_db(db_path)
             try:
@@ -763,6 +806,9 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                     cname = tool_input.get("content_name", "")
                     if cname not in accesses:
                         return {"error": f"Access denied: {cname} not in Accesses"}
+                    bnd_err = check_boundary_access(comp_snake, cname)
+                    if bnd_err:
+                        return {"error": bnd_err}
                     filters = tool_input.get("filters", {})
                     if filters:
                         where = " AND ".join(f"{k} = ?" for k in filters)
@@ -775,6 +821,9 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                     cname = tool_input.get("content_name", "")
                     if cname not in accesses:
                         return {"error": f"Access denied: {cname} not in Accesses"}
+                    bnd_err = check_boundary_access(comp_snake, cname)
+                    if bnd_err:
+                        return {"error": bnd_err}
                     data = tool_input.get("data", {})
                     sm_info = sm_lookup.get(cname)
                     if sm_info:
@@ -794,6 +843,9 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                     cname = tool_input.get("content_name", "")
                     if cname not in accesses:
                         return {"error": f"Access denied: {cname} not in Accesses"}
+                    bnd_err = check_boundary_access(comp_snake, cname)
+                    if bnd_err:
+                        return {"error": bnd_err}
                     rid = tool_input.get("record_id")
                     data = tool_input.get("data", {})
                     await update_record(db, cname, rid, data, "id", terminator, event_bus)
@@ -803,6 +855,9 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                     cname = tool_input.get("content_name", "")
                     if cname not in accesses:
                         return {"error": f"Access denied: {cname} not in Accesses"}
+                    bnd_err = check_boundary_access(comp_snake, cname)
+                    if bnd_err:
+                        return {"error": bnd_err}
                     rid = tool_input.get("record_id")
                     target = tool_input.get("target_state")
                     result = await do_state_transition(db, cname, rid, target,
@@ -1147,6 +1202,14 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
             except Exception as e:
                 tx.rollback()
                 raise HTTPException(status_code=500, detail=f"Precondition evaluation error: {e}")
+
+        # Block C: Boundary enforcement for CEL Compute content access
+        comp_snake_name = comp["name"]["snake"]
+        for acc_content in comp.get("accesses", []):
+            bnd_err = check_boundary_access(comp_snake_name, acc_content)
+            if bnd_err:
+                tx.rollback()
+                raise HTTPException(status_code=403, detail=bnd_err)
 
         # Execute the CEL body
         body_lines = comp.get("body_lines", [])

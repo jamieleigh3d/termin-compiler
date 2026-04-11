@@ -663,3 +663,270 @@ class TestD19Runtime:
             # 14-inch with ram=48 should fail, but 16-inch with ram=48 should pass
             r = client.post("/api/v1/laptop_orders", json={"size": "16-inch", "ram": 48})
             assert r.status_code == 201, r.text
+
+
+# ============================================================
+# Block C: Boundary Enforcement
+# ============================================================
+
+def _block_c_ir(boundaries=None, computes=None):
+    """Build a minimal IR for boundary enforcement testing."""
+    return json.dumps({
+        "ir_version": "0.5.0",
+        "reflection_enabled": False,
+        "app_id": "block-c-test",
+        "name": "Block C Test",
+        "description": "",
+        "auth": {
+            "provider": "stub",
+            "scopes": ["admin"],
+            "roles": [{"name": "admin", "scopes": ["admin"]}],
+        },
+        "content": [
+            {
+                "name": {"display": "orders", "snake": "orders", "pascal": "Orders"},
+                "singular": "order",
+                "fields": [
+                    {"name": "title", "column_type": "TEXT", "business_type": "text",
+                     "enum_values": [], "one_of_values": []},
+                ],
+                "audit": "actions",
+            },
+            {
+                "name": {"display": "invoices", "snake": "invoices", "pascal": "Invoices"},
+                "singular": "invoice",
+                "fields": [
+                    {"name": "amount", "column_type": "REAL", "business_type": "currency",
+                     "enum_values": [], "one_of_values": []},
+                ],
+                "audit": "actions",
+            },
+            {
+                "name": {"display": "logs", "snake": "logs", "pascal": "Logs"},
+                "singular": "log",
+                "fields": [
+                    {"name": "message", "column_type": "TEXT", "business_type": "text",
+                     "enum_values": [], "one_of_values": []},
+                ],
+                "audit": "actions",
+            },
+        ],
+        "access_grants": [
+            {"content": "orders", "scope": "admin", "verbs": ["VIEW", "CREATE"]},
+            {"content": "invoices", "scope": "admin", "verbs": ["VIEW", "CREATE"]},
+            {"content": "logs", "scope": "admin", "verbs": ["VIEW", "CREATE"]},
+        ],
+        "state_machines": [],
+        "events": [],
+        "routes": [],
+        "pages": [],
+        "nav_items": [],
+        "streams": [],
+        "computes": computes or [],
+        "channels": [],
+        "boundaries": boundaries or [],
+        "error_handlers": [],
+        "reclassification_points": [],
+    })
+
+
+class TestBoundaryEnforcementMap:
+    """Block C: Verify boundary containment map is built correctly."""
+
+    def test_content_in_same_boundary_allowed(self):
+        """Compute accessing content in the same boundary should succeed."""
+        from termin_runtime import create_termin_app
+        from fastapi.testclient import TestClient
+        ir = _block_c_ir(
+            boundaries=[{
+                "name": {"display": "sales", "snake": "sales", "pascal": "Sales"},
+                "contains_content": ["orders", "invoices"],
+                "contains_boundaries": [],
+                "identity_mode": "inherit",
+                "identity_scopes": [],
+                "properties": [],
+            }],
+            computes=[{
+                "name": {"display": "order total", "snake": "order_total", "pascal": "OrderTotal"},
+                "shape": "TRANSFORM",
+                "input_content": ["orders"],
+                "output_content": [],
+                "body_lines": ["42"],
+                "required_scope": "admin",
+                "required_role": None,
+                "input_params": [],
+                "output_params": [],
+                "client_safe": False,
+                "identity_mode": "delegate",
+                "required_confidentiality_scopes": [],
+                "output_confidentiality_scope": None,
+                "field_dependencies": [],
+                "provider": None,
+                "preconditions": [],
+                "postconditions": [],
+                "directive": None,
+                "objective": None,
+                "strategy": None,
+                "trigger": None,
+                "trigger_where": None,
+                "accesses": ["orders"],
+                "input_fields": [],
+                "output_fields": [],
+                "output_creates": None,
+            }],
+        )
+        app = create_termin_app(ir, strict_channels=False)
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "admin")
+            r = client.post("/api/v1/compute/order_total", json={"input": {}})
+            assert r.status_code != 403, f"Same-boundary access should be allowed: {r.text}"
+
+    def test_cross_boundary_rejected(self):
+        """Compute accessing content in a different boundary should get 403."""
+        from termin_runtime import create_termin_app
+        from fastapi.testclient import TestClient
+        ir = _block_c_ir(
+            boundaries=[
+                {
+                    "name": {"display": "sales", "snake": "sales", "pascal": "Sales"},
+                    "contains_content": ["orders"],
+                    "contains_boundaries": [],
+                    "identity_mode": "inherit",
+                    "identity_scopes": [],
+                    "properties": [],
+                },
+                {
+                    "name": {"display": "finance", "snake": "finance", "pascal": "Finance"},
+                    "contains_content": ["invoices"],
+                    "contains_boundaries": [],
+                    "identity_mode": "inherit",
+                    "identity_scopes": [],
+                    "properties": [],
+                },
+            ],
+            computes=[{
+                "name": {"display": "cross boundary", "snake": "cross_boundary", "pascal": "CrossBoundary"},
+                "shape": "TRANSFORM",
+                "input_content": [],
+                "output_content": [],
+                "body_lines": ["42"],
+                "required_scope": "admin",
+                "required_role": None,
+                "input_params": [],
+                "output_params": [],
+                "client_safe": False,
+                "identity_mode": "delegate",
+                "required_confidentiality_scopes": [],
+                "output_confidentiality_scope": None,
+                "field_dependencies": [],
+                "provider": None,
+                "preconditions": [],
+                "postconditions": [],
+                "directive": None,
+                "objective": None,
+                "strategy": None,
+                "trigger": None,
+                "trigger_where": None,
+                "accesses": ["orders", "invoices"],
+                "input_fields": [],
+                "output_fields": [],
+                "output_creates": None,
+            }],
+        )
+        app = create_termin_app(ir, strict_channels=False)
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "admin")
+            r = client.post("/api/v1/compute/cross_boundary", json={"input": {}})
+            assert r.status_code == 403, f"Cross-boundary access should be rejected: {r.text}"
+            assert "cross-boundary" in r.json()["detail"].lower()
+
+    def test_content_not_in_boundary_unrestricted(self):
+        """Content not in any boundary should be accessible from anywhere."""
+        from termin_runtime import create_termin_app
+        from fastapi.testclient import TestClient
+        ir = _block_c_ir(
+            boundaries=[{
+                "name": {"display": "sales", "snake": "sales", "pascal": "Sales"},
+                "contains_content": ["orders"],
+                "contains_boundaries": [],
+                "identity_mode": "inherit",
+                "identity_scopes": [],
+                "properties": [],
+            }],
+            computes=[{
+                "name": {"display": "log writer", "snake": "log_writer", "pascal": "LogWriter"},
+                "shape": "TRANSFORM",
+                "input_content": [],
+                "output_content": [],
+                "body_lines": ["42"],
+                "required_scope": "admin",
+                "required_role": None,
+                "input_params": [],
+                "output_params": [],
+                "client_safe": False,
+                "identity_mode": "delegate",
+                "required_confidentiality_scopes": [],
+                "output_confidentiality_scope": None,
+                "field_dependencies": [],
+                "provider": None,
+                "preconditions": [],
+                "postconditions": [],
+                "directive": None,
+                "objective": None,
+                "strategy": None,
+                "trigger": None,
+                "trigger_where": None,
+                "accesses": ["orders", "logs"],
+                "input_fields": [],
+                "output_fields": [],
+                "output_creates": None,
+            }],
+        )
+        app = create_termin_app(ir, strict_channels=False)
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "admin")
+            # "logs" is not in any boundary, so even though Compute is in "sales",
+            # accessing "logs" should be allowed
+            r = client.post("/api/v1/compute/log_writer", json={"input": {}})
+            assert r.status_code != 403, f"Unbounded content should be unrestricted: {r.text}"
+
+    def test_no_boundaries_everything_allowed(self):
+        """App with no boundaries should allow all access (backward compat)."""
+        from termin_runtime import create_termin_app
+        from fastapi.testclient import TestClient
+        ir = _block_c_ir(
+            boundaries=[],
+            computes=[{
+                "name": {"display": "free compute", "snake": "free_compute", "pascal": "FreeCompute"},
+                "shape": "TRANSFORM",
+                "input_content": ["orders"],
+                "output_content": ["invoices"],
+                "body_lines": ["42"],
+                "required_scope": "admin",
+                "required_role": None,
+                "input_params": [],
+                "output_params": [],
+                "client_safe": False,
+                "identity_mode": "delegate",
+                "required_confidentiality_scopes": [],
+                "output_confidentiality_scope": None,
+                "field_dependencies": [],
+                "provider": None,
+                "preconditions": [],
+                "postconditions": [],
+                "directive": None,
+                "objective": None,
+                "strategy": None,
+                "trigger": None,
+                "trigger_where": None,
+                "accesses": ["orders", "invoices"],
+                "input_fields": [],
+                "output_fields": [],
+                "output_creates": None,
+            }],
+        )
+        app = create_termin_app(ir, strict_channels=False)
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "admin")
+            r = client.post("/api/v1/compute/free_compute", json={"input": {}})
+            assert r.status_code != 403, f"No boundaries should mean unrestricted: {r.text}"
