@@ -1113,19 +1113,19 @@ def parse_peg(source: str) -> tuple[Program, CompileResult]:
     errors = CompileResult()
     try: lines = _preprocess(source)
     except Exception as e:
-        errors.add(ParseError(message=f"Preprocessing failed: {e}", line=0)); return Program(), errors
+        errors.add(ParseError(message=f"Preprocessing failed: {e}", line=0, code="TERMIN-P001")); return Program(), errors
     parsed = []
     for line_num, text in lines:
         rule = _classify_line(text)
         if rule == "unknown":
-            errors.add(ParseError(message=f"Unrecognized line: {text}", line=line_num, source_line=text)); continue
+            errors.add(ParseError(message=f"Unrecognized line: {text}", line=line_num, source_line=text, code="TERMIN-P002")); continue
         try:
             result = _parse_line(text, rule, line_num)
             if result is not None: parsed.append(result)
         except Exception as e:
-            errors.add(ParseError(message=f"Failed to parse line: {e}", line=line_num, source_line=text))
+            errors.add(ParseError(message=f"Failed to parse line: {e}", line=line_num, source_line=text, code="TERMIN-P003"))
     if not errors.ok: return Program(), errors
     try: program = _assemble(parsed)
     except Exception as e:
-        errors.add(ParseError(message=f"Block assembly failed: {e}", line=0)); return Program(), errors
+        errors.add(ParseError(message=f"Block assembly failed: {e}", line=0, code="TERMIN-P004")); return Program(), errors
     return program, errors
