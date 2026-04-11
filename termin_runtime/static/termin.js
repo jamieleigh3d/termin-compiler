@@ -275,7 +275,7 @@ function hydrateDataTables() {
           flashRow(row);
         }
       } else if (action === "created" && data && data.id != null) {
-        // Append new row — but skip if already added (e.g., by AJAX form handler)
+        // Append new row — but skip if already exists
         const existing = table.querySelector(`tr[data-termin-row-id="${data.id}"]`);
         if (existing) {
           // Row already exists — just update it in case fields changed
@@ -311,15 +311,23 @@ function updateRow(row, data) {
 }
 
 function createRow(table, data) {
-  // Get column order from thead
-  const headers = table.querySelectorAll("thead th");
+  // Determine column fields from existing rows or thead
   const fields = [];
   const tbody = table.querySelector("tbody");
-  const existingRow = tbody && tbody.querySelector("tr[data-termin-row-id]");
+  const existingRow = tbody && tbody.querySelector("tr[data-termin-row-id] td[data-termin-field]");
   if (existingRow) {
-    // Copy field order from existing row
-    existingRow.querySelectorAll("td[data-termin-field]").forEach(td => {
+    // Copy field order from existing row that has cells
+    existingRow.closest("tr").querySelectorAll("td[data-termin-field]").forEach(td => {
       fields.push(td.dataset.terminField);
+    });
+  }
+  if (fields.length === 0) {
+    // Fall back to thead column headers
+    table.querySelectorAll("thead th").forEach(th => {
+      const text = th.textContent.trim().toLowerCase().replace(/\s+/g, "_");
+      if (text && text !== "actions") {
+        fields.push(text);
+      }
     });
   }
 
@@ -392,24 +400,9 @@ function hydrateForms() {
           form.querySelectorAll("select").forEach(select => {
             select.selectedIndex = 0;
           });
-
-          // The WebSocket subscription will push the new record to the table.
-          // But also try to add it immediately from the response for snappiness.
-          try {
-            const data = await resp.json();
-            if (data && data.id) {
-              // Find the table on this page and add the row
-              const table = document.querySelector("table");
-              if (table) {
-                const newRow = createRow(table, data);
-                const tbody = table.querySelector("tbody") || table;
-                tbody.appendChild(newRow);
-                flashRow(newRow);
-              }
-            }
-          } catch (jsonErr) {
-            // Response wasn't JSON — that's fine, WebSocket will update
-          }
+          // Don't add the row here — the WebSocket subscription will push
+          // the new record to the table. Adding from both sources causes
+          // duplicate rows. Let WebSocket be the single source of truth.
         } else {
           // Show error
           try {

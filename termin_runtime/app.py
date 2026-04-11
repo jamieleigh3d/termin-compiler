@@ -344,7 +344,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         if js_path.exists():
             return Response(content=js_path.read_text(encoding="utf-8"),
                             media_type="application/javascript",
-                            headers={"Cache-Control": "public, max-age=3600"})
+                            headers={"Cache-Control": "no-cache"})
         return Response(content="// termin.js not found", media_type="application/javascript",
                         status_code=404)
 

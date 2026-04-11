@@ -442,6 +442,15 @@ def build_nav_html(nav_items: list, roles: list) -> str:
 
 # ── Base template ──
 
+def _js_version_hash():
+    """Hash the termin.js file for cache busting."""
+    import hashlib
+    from pathlib import Path
+    js_path = Path(__file__).parent / "static" / "termin.js"
+    if js_path.exists():
+        return hashlib.md5(js_path.read_bytes()).hexdigest()[:8]
+    return "0"
+
 def build_base_template(app_name: str, nav_html: str) -> object:
     """Build the base HTML template with nav bar and termin.js runtime."""
     template = f'''<!DOCTYPE html>
@@ -497,7 +506,7 @@ def build_base_template(app_name: str, nav_html: str) -> object:
         }}
     }});
     </script>
-    <script type="module" src="/runtime/termin.js"></script>
+    <script type="module" src="/runtime/termin.js?v={_js_version_hash()}"></script>
 </body>
 </html>'''
     return jinja_env.from_string(template)
