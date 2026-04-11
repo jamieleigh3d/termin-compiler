@@ -90,39 +90,48 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                 schedule_computes.append((comp, interval))
 
     # ── Block C: Boundary containment map ──
-    # Maps content_name (snake) -> boundary_name (snake), or absent if not in any boundary
+    # The app itself is always a boundary. Content not in any explicit sub-boundary
+    # lives in the implicit app boundary "__app__". There is no "unrestricted" —
+    # every content type and every Compute is in exactly one boundary.
+    APP_BOUNDARY = "__app__"
+
+    # Maps content_name (snake) -> boundary_name (snake)
     boundary_for_content: dict[str, str] = {}
-    # Maps compute_name (snake) -> boundary_name (snake), inferred from Accesses overlap
+    # Maps compute_name (snake) -> boundary_name (snake)
     boundary_for_compute: dict[str, str] = {}
 
+    # Assign content to explicit sub-boundaries
     for bnd in ir.get("boundaries", []):
         bnd_snake = bnd["name"]["snake"]
         for content_snake in bnd.get("contains_content", []):
             boundary_for_content[content_snake] = bnd_snake
 
+    # Content not in any explicit boundary → app boundary
+    for ct in ir.get("content", []):
+        ct_snake = ct["name"]["snake"]
+        if ct_snake not in boundary_for_content:
+            boundary_for_content[ct_snake] = APP_BOUNDARY
+
     # Infer boundary for each Compute from its Accesses: a Compute is "in" a boundary
-    # if any of its Accesses content is in that boundary
+    # if any of its Accesses content is in that boundary (first match wins)
     for comp in ir.get("computes", []):
         comp_snake = comp["name"]["snake"]
         for acc in comp.get("accesses", []):
             if acc in boundary_for_content:
                 boundary_for_compute[comp_snake] = boundary_for_content[acc]
-                break  # Use first match
+                break
+        # Compute with no Accesses or no matched content → app boundary
+        if comp_snake not in boundary_for_compute:
+            boundary_for_compute[comp_snake] = APP_BOUNDARY
 
     def check_boundary_access(compute_snake: str, target_content: str) -> str | None:
         """Check if a Compute can access a content type across boundaries.
 
         Returns None if access is allowed, or an error message if denied.
         """
-        # If target content is not in any boundary, unrestricted
-        if target_content not in boundary_for_content:
-            return None
-        # If Compute is not in any boundary, unrestricted
-        if compute_snake not in boundary_for_compute:
-            return None
+        compute_bnd = boundary_for_compute.get(compute_snake, APP_BOUNDARY)
+        content_bnd = boundary_for_content.get(target_content, APP_BOUNDARY)
         # Same boundary → allow
-        compute_bnd = boundary_for_compute[compute_snake]
-        content_bnd = boundary_for_content[target_content]
         if compute_bnd == content_bnd:
             return None
         # Different boundary → reject

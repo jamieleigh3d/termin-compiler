@@ -35,4 +35,4 @@ For v0.6: `Accesses X` (no `from` clause) is checked against the Compute's conta
 2. On every content operation from a Compute, check: is the target Content in the same boundary as the Compute?
 3. Same boundary → allow (enforced by Accesses + Content access grants)
 4. Different boundary → require `from` clause with explicit channel → v0.6 rejects with "cross-boundary access requires a channel" error (cross-boundary channels implemented in v1.0)
-5. Content NOT in any boundary → unrestricted (backward compat with apps that don't use boundaries)
+5. Content NOT in any explicit sub-boundary → implicit app boundary. The app itself is always a boundary. Cross-boundary rules still apply between the app boundary and sub-boundaries.

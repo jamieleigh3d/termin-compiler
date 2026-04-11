@@ -101,7 +101,7 @@ Channel called "internal order bus":
 --- Boundaries ---
 
 Boundary called "order processing":
-  Contains orders, order lines, and reports
+  Contains orders, order lines
   Identity inherits from application
 
 Boundary called "order reporting":

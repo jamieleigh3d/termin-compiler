@@ -582,6 +582,9 @@ class Analyzer:
     # ── Boundary Checks ──
 
     def _check_boundaries(self) -> None:
+        # Track which boundary each content type belongs to
+        content_to_boundary: dict[str, str] = {}
+
         for boundary in self.program.boundaries:
             for item in boundary.contains:
                 if not self._resolve_content_name(item) and item not in self.boundary_names:
@@ -594,6 +597,17 @@ class Analyzer:
                         code="TERMIN-S026",
                         suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
                     ))
+                elif item in content_to_boundary:
+                    self.errors.add(SemanticError(
+                        message=f'Content "{item}" is in both boundary '
+                                f'"{content_to_boundary[item]}" and '
+                                f'boundary "{boundary.name}". '
+                                f'Content can only belong to one boundary.',
+                        line=boundary.line,
+                        code="TERMIN-S030",
+                    ))
+                else:
+                    content_to_boundary[item] = boundary.name
 
     def _check_dependent_values(self) -> None:
         """D-19: Validate dependent value (When clause) declarations."""
