@@ -301,49 +301,90 @@ class TestRealWebSocketPush:
             assert "data" not in payload or isinstance(payload.get("data"), str)
 
     @pytest.mark.asyncio
-    async def test_ws_push_from_background_compute(self, agent_simple_server):
+    async def test_ws_push_from_background_compute(self):
         """Records updated by a background Compute thread should push to WS.
 
-        This catches the event loop isolation bug where background threads
-        can't publish to the main loop's event bus.
-
-        Since we don't have a real AI provider configured, we test this by
-        calling the Compute endpoint directly (which also runs in-process)
-        and verifying the update push arrives. For the full background thread
-        test, an actual LLM provider or mock is needed.
+        Uses a mock AI provider that returns immediately. This exercises
+        the actual background thread + event loop isolation path that caused
+        the original sync bug.
         """
-        server = agent_simple_server
+        from termin_runtime.ai_provider import AIProvider
 
-        # Create a record first
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                f"{server.base_url}/api/v1/completions",
-                json={"prompt": "bg thread test"},
-                cookies={"termin_role": "anonymous"},
-            )
-            record_id = r.json()["id"]
+        ir_json = _load_ir("agent_simple")
 
-        async with websockets.client.connect(server.ws_url) as ws:
-            await ws.send(json.dumps({
-                "v": 1, "ch": "content.completions", "op": "subscribe",
-                "ref": "sub1", "payload": {}
-            }))
-            await self._recv_until(ws, "response")
+        # Mock deploy config with a fake AI provider
+        mock_deploy = {
+            "ai_provider": {
+                "service": "anthropic",
+                "model": "mock",
+                "api_key": "mock-key",
+            }
+        }
 
-            # Update the record via API (simulates what the Compute does)
-            async with httpx.AsyncClient() as client:
-                r = await client.put(
-                    f"{server.base_url}/api/v1/completions/{record_id}",
-                    json={"response": "simulated LLM response"},
-                    cookies={"termin_role": "anonymous"},
-                )
-                assert r.status_code == 200
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config=mock_deploy)
 
-            # Should receive update push
-            push = json.loads(await asyncio.wait_for(ws.recv(), timeout=2))
-            assert push["op"] == "push"
-            assert "updated" in push["ch"]
-            assert push["payload"]["id"] == record_id
+        # Patch the AI provider's complete method to return immediately
+        # without calling a real API
+        from unittest.mock import AsyncMock
+        for route in app.routes:
+            pass  # We need to patch at the module level
+
+        # Patch the Anthropic client import to return a mock
+        import termin_runtime.ai_provider as ai_mod
+        original_startup = AIProvider.startup
+
+        def mock_startup(self):
+            """Mock startup that creates a fake client."""
+            self._client = True  # truthy but not a real client
+
+        original_complete = AIProvider.complete
+
+        async def mock_complete(self, system_prompt, user_message, output_tool):
+            """Mock complete that returns a fake response after a tiny delay."""
+            await asyncio.sleep(0.1)  # simulate LLM latency
+            return {"thinking": "mock thinking", "response": "mock LLM response"}
+
+        AIProvider.startup = mock_startup
+        AIProvider.complete = mock_complete
+
+        try:
+            server = UvicornTestServer(app)
+            server.start()
+
+            try:
+                async with websockets.client.connect(server.ws_url) as ws:
+                    await ws.send(json.dumps({
+                        "v": 1, "ch": "content.completions", "op": "subscribe",
+                        "ref": "sub1", "payload": {}
+                    }))
+                    await self._recv_until(ws, "response")
+
+                    # Create a record — this triggers the event, which fires
+                    # the mock LLM Compute in a BACKGROUND THREAD
+                    async with httpx.AsyncClient() as client:
+                        r = await client.post(
+                            f"{server.base_url}/api/v1/completions",
+                            json={"prompt": "bg thread test"},
+                            cookies={"termin_role": "anonymous"},
+                        )
+                        assert r.status_code == 201
+
+                    # Should receive the created push first
+                    created = await self._recv_until(ws, "push", timeout=5)
+                    assert "created" in created["ch"]
+                    record_id = created["payload"]["id"]
+
+                    # Then should receive the UPDATE push from the background
+                    # thread (the mock LLM fills in the response field)
+                    updated = json.loads(await asyncio.wait_for(ws.recv(), timeout=5))
+                    assert updated["op"] == "push"
+                    assert "updated" in updated["ch"]
+                    assert updated["payload"]["response"] == "mock LLM response"
+            finally:
+                server.stop()
+        finally:
+            AIProvider.startup = original_startup
+            AIProvider.complete = original_complete
 
     @pytest.mark.asyncio
     async def test_ws_no_push_for_unsubscribed_content(self, channel_simple_server):

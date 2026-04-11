@@ -138,7 +138,7 @@ async def create_record(db, content_name: str, data: dict, schema: dict = None,
                 "type": f"{content_name}_created",
                 "channel_id": f"content.{content_name}.created",
                 "content_name": content_name,
-                "record": record,
+                "data": record,
             })
         return record
     except Exception as e:
@@ -189,7 +189,7 @@ async def update_record(db, content_name: str, id_value, data: dict,
                 "type": f"{content_name}_updated",
                 "channel_id": f"content.{content_name}.updated",
                 "content_name": content_name,
-                "record": record,
+                "data": record,
             })
         return record
     except Exception as e:
