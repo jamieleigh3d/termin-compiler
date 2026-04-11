@@ -422,3 +422,152 @@ class TestMarkAs:
         assert len(marks) == 1
         assert marks[0].scope == "salary"
         assert marks[0].label == "high-earner"
+
+
+# ── G1: Compute system type in CEL context ──
+
+def _minimal_ir_with_compute(preconditions=None, postconditions=None, body_lines=None,
+                             scopes=None, role_scopes=None):
+    """Build a minimal IR dict with a single Compute for testing."""
+    scopes = scopes or ["admin", "basic"]
+    role_scopes = role_scopes or {"admin_user": ["admin", "basic"], "basic_user": ["basic"]}
+    return json.dumps({
+        "ir_version": "0.4.0",
+        "reflection_enabled": False,
+        "app_id": "test-compute-ctx",
+        "name": "Test Compute",
+        "description": "Test app for Compute context",
+        "auth": {
+            "provider": "stub",
+            "scopes": scopes,
+            "roles": [
+                {"name": role, "scopes": s}
+                for role, s in role_scopes.items()
+            ],
+        },
+        "content": [{
+            "name": {"display": "items", "snake": "items", "pascal": "Items"},
+            "singular": "item",
+            "fields": [
+                {"name": "title", "column_type": "TEXT", "nullable": False,
+                 "unique": False, "business_type": "short_text", "confidentiality_scope": None,
+                 "default_expr": None, "enum_values": []},
+            ],
+            "confidentiality_scope": None,
+            "audit": "content",
+        }],
+        "access_grants": [
+            {"content": "items", "verb": "read", "scope": "basic"},
+            {"content": "items", "verb": "create", "scope": "basic"},
+        ],
+        "state_machines": [],
+        "events": [],
+        "routes": [],
+        "pages": [],
+        "nav_items": [],
+        "streams": [],
+        "computes": [{
+            "name": {"display": "test compute", "snake": "test_compute", "pascal": "TestCompute"},
+            "shape": "TRANSFORM",
+            "input_content": ["items"],
+            "output_content": ["items"],
+            "body_lines": body_lines or ["size(items)"],
+            "required_scope": "basic",
+            "required_role": None,
+            "input_params": [],
+            "output_params": [],
+            "client_safe": False,
+            "identity_mode": "delegate",
+            "required_confidentiality_scopes": [],
+            "output_confidentiality_scope": None,
+            "field_dependencies": [],
+            "provider": None,
+            "preconditions": preconditions or [],
+            "postconditions": postconditions or [],
+            "directive": None,
+            "objective": None,
+            "strategy": None,
+            "trigger": None,
+            "trigger_where": None,
+            "accesses": ["items"],
+            "input_fields": [],
+            "output_fields": [],
+            "output_creates": None,
+        }],
+        "channels": [],
+        "boundaries": [],
+        "error_handlers": [],
+        "reclassification_points": [],
+    })
+
+
+class TestComputeCelContext:
+    """G1: Verify the Compute system type is available in CEL precondition/postcondition context."""
+
+    def test_precondition_accesses_compute_scopes(self):
+        """Precondition using Compute.Scopes should pass when user has the required scope."""
+        ir_json = _minimal_ir_with_compute(
+            preconditions=['Compute.Scopes.exists(s, s == "admin")'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "admin_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            # Should pass precondition (admin_user has "admin" scope)
+            assert r.status_code != 412, f"Precondition should pass for admin_user: {r.text}"
+
+    def test_precondition_rejects_missing_scope(self):
+        """Precondition using Compute.Scopes should fail (412) when scope is absent."""
+        ir_json = _minimal_ir_with_compute(
+            preconditions=['Compute.Scopes.exists(s, s == "admin")'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code == 412, f"Expected 412 for missing scope, got {r.status_code}: {r.text}"
+
+    def test_precondition_accesses_compute_name(self):
+        """Precondition can reference Compute.Name."""
+        ir_json = _minimal_ir_with_compute(
+            preconditions=['Compute.Name == "test compute"'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 412, f"Precondition on Compute.Name should pass: {r.text}"
+
+    def test_precondition_accesses_compute_trigger(self):
+        """Precondition can reference Compute.Trigger (should be 'api' for direct invocation)."""
+        ir_json = _minimal_ir_with_compute(
+            preconditions=['Compute.Trigger == "api"'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 412, f"Precondition on Compute.Trigger should pass: {r.text}"
+
+    def test_precondition_accesses_compute_started_at(self):
+        """Precondition can reference Compute.StartedAt (ISO timestamp string)."""
+        ir_json = _minimal_ir_with_compute(
+            preconditions=['size(Compute.StartedAt) > 0'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 412, f"Precondition on Compute.StartedAt should pass: {r.text}"
+
+    def test_postcondition_accesses_compute_context(self):
+        """Postconditions also receive the Compute context."""
+        ir_json = _minimal_ir_with_compute(
+            postconditions=['Compute.Name == "test compute"'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            # Should not fail with 409 (postcondition failure)
+            assert r.status_code != 409, f"Postcondition on Compute.Name should pass: {r.text}"
