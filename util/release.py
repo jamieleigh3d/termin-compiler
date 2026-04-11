@@ -310,7 +310,7 @@ def main():
             print("\n  TESTS FAILED. Fix issues before committing.")
             sys.exit(1)
 
-    # ── Summary ──
+    # ── Pre-commit checklist ──
     print("\n" + "=" * 72)
     print("  RELEASE PREPARATION COMPLETE")
     print("=" * 72)
@@ -322,12 +322,24 @@ def main():
         if conformance_ok and args.ir_version:
             print(f"  Files modified in conformance repo: ~21")
         print()
-        print("  Next steps:")
-        print("    1. Review the changes (git diff)")
-        print("    2. Commit the compiler repo")
-        print("    3. Commit the conformance repo")
-        print("    4. Push both")
-        print("    5. Add a changelog entry to conformance README.md")
+        print("  ┌─────────────────────────────────────────────────────────┐")
+        print("  │  MANDATORY CHECKLIST — do NOT skip these steps:        │")
+        print("  ├─────────────────────────────────────────────────────────┤")
+        print("  │  [ ] 1. Update CHANGELOG.md in compiler repo           │")
+        print("  │  [ ] 2. Update README.md in conformance repo:          │")
+        print("  │         - IR version number                            │")
+        print("  │         - Test count                                   │")
+        print("  │         - Fixture list (new .termin.pkg files)         │")
+        print("  │         - Changelog section for this version           │")
+        print("  │  [ ] 3. Review git diff in BOTH repos                  │")
+        print("  │  [ ] 4. Run tests in BOTH repos                        │")
+        print("  │  [ ] 5. Commit compiler repo                           │")
+        print("  │  [ ] 6. Commit conformance repo                        │")
+        print("  │  [ ] 7. Tag both repos: git tag vX.Y.Z                 │")
+        print("  │  [ ] 8. Push both repos with --tags                    │")
+        print("  │  [ ] 9. Rebase messages branch onto new main           │")
+        print("  │  [ ] 10. Update open threads with release status       │")
+        print("  └─────────────────────────────────────────────────────────┘")
     print()
 
 
