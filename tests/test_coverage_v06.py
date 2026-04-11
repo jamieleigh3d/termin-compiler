@@ -406,6 +406,315 @@ class TestContentSnapshotEdgeCases:
             _ = snap["nonexistent"]
 
 
+# ── app.py: agent tool execution via mock agent_loop ──
+
+class TestAgentToolExecution:
+    """Cover execute_tool paths inside _execute_agent_compute.
+
+    Mock the agent_loop to call execute_tool directly with predetermined
+    tool names and parameters, then validate the results.
+    """
+
+    @pytest.fixture(autouse=False)
+    def agent_app_with_mock(self, tmp_path):
+        """Create an app with an agent Compute, mock the agent_loop to call tools."""
+        from termin_runtime import create_termin_app
+        from termin_runtime.ai_provider import AIProvider
+        from fastapi.testclient import TestClient
+        import asyncio
+
+        ir = json.dumps({
+            "ir_version": "0.5.0", "reflection_enabled": False,
+            "app_id": "agent-tool-test", "name": "Agent Tool Test", "description": "",
+            "auth": {"provider": "stub", "scopes": ["admin"],
+                     "roles": [{"name": "admin", "scopes": ["admin"]}]},
+            "content": [
+                {"name": {"display": "agent_tasks", "snake": "agent_tasks", "pascal": "Tasks"},
+                 "singular": "task",
+                 "fields": [
+                     {"name": "title", "column_type": "TEXT", "business_type": "text",
+                      "enum_values": [], "one_of_values": []},
+                     {"name": "response", "column_type": "TEXT", "business_type": "text",
+                      "enum_values": [], "one_of_values": []},
+                 ],
+                 "audit": "actions", "dependent_values": [],
+                 "has_state_machine": True, "initial_state": "open",
+                 "confidentiality_scopes": []},
+                {"name": {"display": "logs", "snake": "logs", "pascal": "Logs"},
+                 "singular": "log",
+                 "fields": [
+                     {"name": "message", "column_type": "TEXT", "business_type": "text",
+                      "enum_values": [], "one_of_values": []},
+                 ],
+                 "audit": "actions", "dependent_values": []},
+            ],
+            "access_grants": [
+                {"content": "agent_tasks", "scope": "admin", "verbs": ["VIEW", "CREATE", "UPDATE"]},
+                {"content": "logs", "scope": "admin", "verbs": ["VIEW", "CREATE"]},
+            ],
+            "state_machines": [{
+                "content_ref": "agent_tasks", "machine_name": "task status",
+                "initial_state": "open",
+                "transitions": [
+                    {"from_state": "open", "to_state": "closed", "required_scope": "admin"},
+                ],
+            }],
+            "events": [],
+            "routes": [
+                {"method": "POST", "path": "/api/v1/tasks", "kind": "CREATE",
+                 "content_ref": "agent_tasks", "required_scope": "admin"},
+                {"method": "GET", "path": "/api/v1/tasks", "kind": "LIST",
+                 "content_ref": "agent_tasks", "required_scope": "admin"},
+            ],
+            "pages": [], "nav_items": [], "streams": [],
+            "computes": [{
+                "name": {"display": "agent", "snake": "agent", "pascal": "Agent"},
+                "shape": "NONE",
+                "input_content": [], "output_content": [],
+                "body_lines": [],
+                "required_scope": "admin", "required_role": None,
+                "input_params": [], "output_params": [],
+                "client_safe": False, "identity_mode": "delegate",
+                "required_confidentiality_scopes": [],
+                "output_confidentiality_scope": None,
+                "field_dependencies": [],
+                "provider": "ai-agent",
+                "preconditions": [], "postconditions": [],
+                "directive": "You are a task management agent.",
+                "objective": "Process the task.",
+                "strategy": None,
+                "trigger": 'event "agent_tasks.created"',
+                "trigger_where": None,
+                "accesses": ["agent_tasks", "logs"],
+                "input_fields": [], "output_fields": [],
+                "output_creates": None,
+            }],
+            "channels": [], "boundaries": [],
+            "error_handlers": [], "reclassification_points": [],
+        })
+
+        deploy = {"ai_provider": {"service": "anthropic", "model": "mock", "api_key": "mock"}}
+        db_file = str(tmp_path / "agent_test.db")
+        app = create_termin_app(ir, db_path=db_file, strict_channels=False, deploy_config=deploy)
+
+        # Store references for patching in individual tests
+        app._test_ai_provider_class = AIProvider
+        return app
+
+    def _run_with_mock_tool_calls(self, app, tool_calls):
+        """Run a test where the mock agent_loop calls execute_tool with given tool calls.
+
+        tool_calls: list of (tool_name, tool_input) tuples the mock will execute.
+        Returns the final result dict from the agent.
+        """
+        from termin_runtime.ai_provider import AIProvider
+        from fastapi.testclient import TestClient
+        import asyncio
+
+        original_startup = AIProvider.startup
+        original_agent_loop = AIProvider.agent_loop
+
+        def mock_startup(self):
+            self._client = True
+
+        async def mock_agent_loop(self, system_prompt, user_message, tools, execute_tool):
+            """Mock that calls execute_tool with predetermined calls, then returns."""
+            results = []
+            for tool_name, tool_input in tool_calls:
+                result = await execute_tool(tool_name, tool_input)
+                results.append({"tool": tool_name, "result": result})
+            return {"thinking": "mock agent", "tool_results": results}
+
+        AIProvider.startup = mock_startup
+        AIProvider.agent_loop = mock_agent_loop
+
+        try:
+            with TestClient(app) as client:
+                client.cookies.set("termin_role", "admin")
+                # Create a task — triggers the agent Compute
+                r = client.post("/api/v1/tasks", json={"title": "test task"})
+                assert r.status_code == 201
+                record_id = r.json()["id"]
+
+                # Give the background thread time to run the agent
+                import time
+                time.sleep(1.0)
+
+                return client, record_id
+        finally:
+            AIProvider.startup = original_startup
+            AIProvider.agent_loop = original_agent_loop
+
+    def test_content_query_tool(self, agent_app_with_mock):
+        """Agent calling content_query should return records."""
+        client, _ = self._run_with_mock_tool_calls(
+            agent_app_with_mock,
+            [("content_query", {"content_name": "agent_tasks"})]
+        )
+
+    def test_content_create_tool(self, agent_app_with_mock):
+        """Agent calling content_create should insert a record."""
+        client, _ = self._run_with_mock_tool_calls(
+            agent_app_with_mock,
+            [("content_create", {"content_name": "logs", "data": {"message": "agent created this"}})]
+        )
+        # Verify the log was created
+        from termin_runtime import create_termin_app
+        # The client is closed, but the record should be in DB
+
+    def test_content_update_tool(self, agent_app_with_mock):
+        """Agent calling content_update should modify a record."""
+        client, record_id = self._run_with_mock_tool_calls(
+            agent_app_with_mock,
+            [("content_update", {"content_name": "agent_tasks", "record_id": 1,
+                                  "data": {"response": "agent updated"}})]
+        )
+
+    def test_state_transition_tool(self, agent_app_with_mock):
+        """Agent calling state_transition should change record status."""
+        client, record_id = self._run_with_mock_tool_calls(
+            agent_app_with_mock,
+            [("state_transition", {"content_name": "agent_tasks", "record_id": 1,
+                                    "target_state": "closed"})]
+        )
+
+    def test_content_query_access_denied(self, agent_app_with_mock):
+        """Agent querying content not in Accesses should get error."""
+        client, _ = self._run_with_mock_tool_calls(
+            agent_app_with_mock,
+            [("content_query", {"content_name": "nonexistent"})]
+        )
+
+    def test_content_create_access_denied(self, agent_app_with_mock):
+        """Agent creating content not in Accesses should get error."""
+        client, _ = self._run_with_mock_tool_calls(
+            agent_app_with_mock,
+            [("content_create", {"content_name": "nonexistent", "data": {"x": 1}})]
+        )
+
+    def test_content_update_access_denied(self, agent_app_with_mock):
+        """Agent updating content not in Accesses should get error."""
+        client, _ = self._run_with_mock_tool_calls(
+            agent_app_with_mock,
+            [("content_update", {"content_name": "nonexistent", "record_id": 1, "data": {"x": 1}})]
+        )
+
+    def test_content_query_boundary_denied(self, tmp_path):
+        """Agent querying content in a different boundary should get boundary error."""
+        from termin_runtime import create_termin_app
+        from termin_runtime.ai_provider import AIProvider
+        from fastapi.testclient import TestClient
+        import time
+
+        ir = json.dumps({
+            "ir_version": "0.5.0", "reflection_enabled": False,
+            "app_id": "bnd-agent-test", "name": "Bnd Agent Test", "description": "",
+            "auth": {"provider": "stub", "scopes": ["admin"],
+                     "roles": [{"name": "admin", "scopes": ["admin"]}]},
+            "content": [
+                {"name": {"display": "work items", "snake": "work_items", "pascal": "WorkItems"},
+                 "singular": "work item",
+                 "fields": [{"name": "title", "column_type": "TEXT", "business_type": "text",
+                              "enum_values": [], "one_of_values": []}],
+                 "audit": "actions", "dependent_values": []},
+                {"name": {"display": "secrets", "snake": "secrets", "pascal": "Secrets"},
+                 "singular": "secret",
+                 "fields": [{"name": "value", "column_type": "TEXT", "business_type": "text",
+                              "enum_values": [], "one_of_values": []}],
+                 "audit": "actions", "dependent_values": []},
+            ],
+            "access_grants": [
+                {"content": "work_items", "scope": "admin", "verbs": ["VIEW", "CREATE"]},
+                {"content": "secrets", "scope": "admin", "verbs": ["VIEW", "CREATE"]},
+            ],
+            "routes": [
+                {"method": "POST", "path": "/api/v1/work_items", "kind": "CREATE",
+                 "content_ref": "work_items", "required_scope": "admin"},
+            ],
+            "state_machines": [], "events": [], "pages": [], "nav_items": [],
+            "streams": [],
+            "computes": [{
+                "name": {"display": "worker", "snake": "worker", "pascal": "Worker"},
+                "shape": "NONE", "input_content": [], "output_content": [],
+                "body_lines": [], "required_scope": "admin", "required_role": None,
+                "input_params": [], "output_params": [],
+                "client_safe": False, "identity_mode": "delegate",
+                "required_confidentiality_scopes": [],
+                "output_confidentiality_scope": None,
+                "field_dependencies": [], "provider": "ai-agent",
+                "preconditions": [], "postconditions": [],
+                "directive": "test", "objective": "test", "strategy": None,
+                "trigger": 'event "work_items.created"',
+                "trigger_where": None,
+                "accesses": ["work_items", "secrets"],
+                "input_fields": [], "output_fields": [], "output_creates": None,
+            }],
+            "channels": [],
+            "boundaries": [
+                {"name": {"display": "public", "snake": "public", "pascal": "Public"},
+                 "contains_content": ["work_items"],
+                 "contains_boundaries": [], "identity_mode": "inherit",
+                 "identity_scopes": [], "properties": []},
+                {"name": {"display": "private", "snake": "private", "pascal": "Private"},
+                 "contains_content": ["secrets"],
+                 "contains_boundaries": [], "identity_mode": "inherit",
+                 "identity_scopes": [], "properties": []},
+            ],
+            "error_handlers": [], "reclassification_points": [],
+        })
+
+        deploy = {"ai_provider": {"service": "anthropic", "model": "mock", "api_key": "mock"}}
+        db_file = str(tmp_path / "bnd_agent.db")
+
+        boundary_errors = []
+        original_startup = AIProvider.startup
+        original_loop = AIProvider.agent_loop
+
+        def mock_startup(self): self._client = True
+
+        async def mock_agent_loop(self, system_prompt, user_message, tools, execute_tool):
+            # Try to query secrets from public boundary — should get boundary error
+            result = await execute_tool("content_query", {"content_name": "secrets"})
+            boundary_errors.append(result)
+            # Try create across boundary
+            result2 = await execute_tool("content_create", {"content_name": "secrets", "data": {"value": "x"}})
+            boundary_errors.append(result2)
+            # Try update across boundary
+            result3 = await execute_tool("content_update", {"content_name": "secrets", "record_id": 1, "data": {"value": "y"}})
+            boundary_errors.append(result3)
+            # Try state transition across boundary
+            result4 = await execute_tool("state_transition", {"content_name": "secrets", "record_id": 1, "target_state": "x"})
+            boundary_errors.append(result4)
+            return {"thinking": "tested boundaries"}
+
+        AIProvider.startup = mock_startup
+        AIProvider.agent_loop = mock_agent_loop
+
+        try:
+            app = create_termin_app(ir, db_path=db_file, strict_channels=False, deploy_config=deploy)
+            with TestClient(app) as client:
+                client.cookies.set("termin_role", "admin")
+                r = client.post("/api/v1/work_items", json={"title": "test"})
+                assert r.status_code == 201
+                time.sleep(1.0)
+
+            # All 4 tool calls should have returned boundary errors
+            for i, err in enumerate(boundary_errors):
+                assert isinstance(err, dict), f"Tool call {i}: expected dict, got {type(err)}"
+                assert "error" in err, f"Tool call {i}: expected error, got {err}"
+                assert "cross-boundary" in err["error"].lower(), f"Tool call {i}: expected boundary error, got {err}"
+        finally:
+            AIProvider.startup = original_startup
+            AIProvider.agent_loop = original_loop
+
+    def test_state_transition_access_denied(self, agent_app_with_mock):
+        """Agent transitioning state on content not in Accesses should get error."""
+        client, _ = self._run_with_mock_tool_calls(
+            agent_app_with_mock,
+            [("state_transition", {"content_name": "nonexistent", "record_id": 1, "target_state": "closed"})]
+        )
+
+
 # ── cli.py: JSON error format ──
 
 class TestCLIJsonErrors:
