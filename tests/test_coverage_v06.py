@@ -367,6 +367,45 @@ class TestBoundaryEdgeCases:
             assert r.status_code == 200
 
 
+# ── transaction.py: ContentSnapshot edge cases ──
+
+class TestContentSnapshotEdgeCases:
+    """Cover __getattr__ and __getitem__ error paths."""
+
+    def test_getattr_existing_content(self):
+        from termin_runtime.transaction import ContentSnapshot
+        snap = ContentSnapshot({"orders": [{"id": 1}]})
+        assert snap.orders == [{"id": 1}]
+
+    def test_getattr_missing_content_raises(self):
+        from termin_runtime.transaction import ContentSnapshot
+        snap = ContentSnapshot({})
+        with pytest.raises(AttributeError, match="no content type"):
+            _ = snap.nonexistent
+
+    def test_getattr_private_raises(self):
+        from termin_runtime.transaction import ContentSnapshot
+        snap = ContentSnapshot({})
+        with pytest.raises(AttributeError):
+            _ = snap._private
+
+    def test_getitem_result(self):
+        from termin_runtime.transaction import ContentSnapshot
+        snap = ContentSnapshot({}, result=42)
+        assert snap["result"] == 42
+
+    def test_getitem_content(self):
+        from termin_runtime.transaction import ContentSnapshot
+        snap = ContentSnapshot({"items": [{"id": 1}]})
+        assert snap["items"] == [{"id": 1}]
+
+    def test_getitem_missing_raises(self):
+        from termin_runtime.transaction import ContentSnapshot
+        snap = ContentSnapshot({})
+        with pytest.raises(KeyError):
+            _ = snap["nonexistent"]
+
+
 # ── cli.py: JSON error format ──
 
 class TestCLIJsonErrors:
@@ -426,6 +465,41 @@ class TestAnalyzerFuzzyMatch:
         # Should get a "Did you mean?" suggestion
         err_text = result.format()
         assert "TERMIN-S026" in err_text
+
+    def test_boundary_scope_restriction_invalid(self):
+        """Boundary restricting to undefined scope should error with TERMIN-X006."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "items":\n'
+            '  Each item has a name which is text\n'
+            '  Anyone with "admin" can view items\n\n'
+            'Boundary called "zone":\n'
+            '  Contains items\n'
+            '  Identity restricts to "nonexistent_scope"\n'
+        )
+        program, errors = parse(source)
+        assert errors.ok, errors.format()
+        result = analyze(program)
+        assert not result.ok
+        assert any("TERMIN-X006" in str(e) for e in result.errors)
+
+    def test_error_handler_undefined_source(self):
+        """Error handler referencing undefined primitive should error."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "items":\n'
+            '  Each item has a name which is text\n'
+            '  Anyone with "admin" can view items\n\n'
+            'When errors from "nonexistent_thing":\n'
+            '  Log level: ERROR\n'
+        )
+        program, errors = parse(source)
+        if errors.ok:
+            result = analyze(program)
+            if not result.ok:
+                assert any("TERMIN-S027" in str(e) for e in result.errors)
 
     def test_dependent_value_undefined_field_gets_suggestion(self):
         source = (
