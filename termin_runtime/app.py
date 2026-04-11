@@ -26,7 +26,7 @@ from .confidentiality import (
     check_compute_access, check_taint_integrity, enforce_output_taint,
     check_for_redacted_values, is_redacted,
 )
-from .transaction import Transaction
+from .transaction import Transaction, ContentSnapshot
 from .channels import ChannelDispatcher, ChannelError, ChannelScopeError, ChannelValidationError, ChannelConfigError, load_deploy_config, check_deploy_config_warnings
 from .ai_provider import AIProvider, AIProviderError, build_output_tool, build_agent_tools
 from .scheduler import Scheduler, parse_schedule_interval
@@ -1088,29 +1088,41 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         output = {"result": result, "transaction_id": tx.id}
 
         # Build Before/After snapshots for postcondition evaluation
-        # Before: content data as it was before execution
-        # After: content data with staged changes applied + compute result
-        before_snapshot = {"result": None}
-        after_snapshot = {"result": result}
+        # Before: frozen read-only snapshot of content state at transaction start
+        # After: current state (staging merged with DB) at postcondition evaluation time
+        before_data = {"result": None}
+        after_data = {"result": result}
 
         # Load content data for input/output content types referenced by this Compute
         try:
             db = await get_db(db_path)
-            for content_name in set(comp.get("input_content", []) + comp.get("output_content", [])):
+            all_content_refs = set(
+                comp.get("input_content", [])
+                + comp.get("output_content", [])
+                + comp.get("accesses", [])
+            )
+            for content_name in all_content_refs:
                 cursor = await db.execute(f"SELECT * FROM {content_name}")
                 rows = await cursor.fetchall()
                 records = [dict(r) for r in rows]
-                before_snapshot[content_name] = records
-                # After = same as before + any staged writes (currently CEL-only = no writes)
-                after_snapshot[content_name] = await tx.read_all(content_name, records)
+                before_data[content_name] = records
+                # After = production records with staged changes applied
+                after_data[content_name] = await tx.read_all(content_name, records)
             await db.close()
         except Exception:
             pass  # If content loading fails, postconditions use simplified snapshots
 
-        # Evaluate postconditions
+        # Also store as ContentSnapshot objects for Python-side use
+        before_snapshot_obj = ContentSnapshot(
+            {k: v for k, v in before_data.items() if k != "result"}, result=None)
+        after_snapshot_obj = ContentSnapshot(
+            {k: v for k, v in after_data.items() if k != "result"}, result=result)
+
+        # Evaluate postconditions — Before/After are CEL-compatible dicts
+        # with content_query available as a registered function
         post_ctx = dict(compute_ctx)
-        post_ctx["After"] = after_snapshot
-        post_ctx["Before"] = before_snapshot
+        post_ctx["After"] = after_data
+        post_ctx["Before"] = before_data
         for i, postcond in enumerate(comp.get("postconditions", [])):
             try:
                 check = expr_eval.evaluate(postcond, post_ctx)

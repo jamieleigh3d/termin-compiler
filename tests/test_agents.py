@@ -573,6 +573,121 @@ class TestComputeCelContext:
             assert r.status_code != 409, f"Postcondition on Compute.Name should pass: {r.text}"
 
 
+# ── G2: Before/After snapshots for postconditions ──
+
+from termin_runtime.transaction import ContentSnapshot
+
+
+class TestContentSnapshot:
+    """Unit tests for the ContentSnapshot class."""
+
+    def test_content_query_returns_records(self):
+        snap = ContentSnapshot({"items": [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}]})
+        result = snap.content_query("items")
+        assert len(result) == 2
+        assert result[0]["name"] == "a"
+
+    def test_content_query_empty_for_unknown(self):
+        snap = ContentSnapshot({"items": [{"id": 1}]})
+        assert snap.content_query("orders") == []
+
+    def test_result_property(self):
+        snap = ContentSnapshot({}, result=42)
+        assert snap.result == 42
+
+    def test_result_default_none(self):
+        snap = ContentSnapshot({})
+        assert snap.result is None
+
+    def test_dict_access(self):
+        snap = ContentSnapshot({"items": [{"id": 1}]}, result=99)
+        assert len(snap["items"]) == 1
+        assert snap["result"] == 99
+
+    def test_content_query_returns_copy(self):
+        """Modifying returned list should not affect snapshot (frozen)."""
+        snap = ContentSnapshot({"items": [{"id": 1}]})
+        result = snap.content_query("items")
+        result.append({"id": 2})
+        assert len(snap.content_query("items")) == 1  # unchanged
+
+
+class TestBeforeAfterPostconditions:
+    """G2: Verify Before/After snapshots are injected into postcondition CEL context."""
+
+    def test_postcondition_after_result(self):
+        """After.result should contain the compute result."""
+        ir_json = _minimal_ir_with_compute(
+            body_lines=["42"],
+            postconditions=['After.result == 42'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 409, f"After.result postcondition should pass: {r.text}"
+
+    def test_postcondition_before_result_is_none(self):
+        """Before.result should be None (nothing computed yet at start)."""
+        ir_json = _minimal_ir_with_compute(
+            body_lines=["42"],
+            postconditions=['Before.result == null'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 409, f"Before.result == null should pass: {r.text}"
+
+    def test_postcondition_content_size(self):
+        """Postcondition can check record counts via Before/After content lists."""
+        ir_json = _minimal_ir_with_compute(
+            body_lines=["42"],
+            postconditions=['size(After.items) >= 0'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 409, f"Content size postcondition should pass: {r.text}"
+
+    def test_postcondition_before_after_comparison(self):
+        """Postcondition comparing Before and After content sizes."""
+        ir_json = _minimal_ir_with_compute(
+            body_lines=["42"],
+            postconditions=['size(After.items) >= size(Before.items)'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 409, f"Before/After comparison should pass: {r.text}"
+
+    def test_postcondition_bounded_growth(self):
+        """Postcondition enforcing bounded growth: After <= Before + N."""
+        ir_json = _minimal_ir_with_compute(
+            body_lines=["42"],
+            postconditions=['size(After.items) <= size(Before.items) + 100'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 409, f"Bounded growth postcondition should pass: {r.text}"
+
+    def test_postcondition_failure_returns_409(self):
+        """A failing postcondition should return 409."""
+        ir_json = _minimal_ir_with_compute(
+            body_lines=["42"],
+            postconditions=['After.result == 999'],  # Will fail: result is 42 not 999
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code == 409
+
+
 # ── G5: Runtime scheduler for Trigger on schedule ──
 
 from termin_runtime.scheduler import Scheduler, parse_schedule_interval
