@@ -123,7 +123,7 @@ class TestAPIRoutes:
             r = client.get("/api/reflect")
             assert r.status_code == 200
             data = r.json()
-            assert data["ir_version"] == "0.4.0"
+            assert data["ir_version"] == "0.5.0"
             assert "content" in data
 
     def test_errors_endpoint(self):

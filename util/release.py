@@ -197,13 +197,23 @@ def copy_to_conformance(dry_run: bool):
         print(f"  COPY: fixtures/ir/{f.name}")
         count += 1
 
-    # Schema -> specs/
+    # Schema -> specs/ (or fixtures/ if specs/ doesn't exist)
     schema_src = COMPILER_ROOT / "docs" / "termin-ir-schema.json"
     schema_dst = CONFORMANCE_SPECS_DIR / "termin-ir-schema.json"
+    if not CONFORMANCE_SPECS_DIR.exists():
+        schema_dst = CONFORMANCE_PKG_DIR / "termin-ir-schema.json"
     if schema_src.exists():
         if not dry_run:
             shutil.copy2(schema_src, schema_dst)
-        print(f"  COPY: specs/termin-ir-schema.json")
+        print(f"  COPY: {schema_dst.relative_to(CONFORMANCE_ROOT)}")
+        count += 1
+
+    # Deploy configs for apps with external channels or AI providers
+    for f in COMPILER_ROOT.glob("*.deploy.json"):
+        dest = CONFORMANCE_PKG_DIR / f.name
+        if not dry_run:
+            shutil.copy2(f, dest)
+        print(f"  COPY: fixtures/{f.name}")
         count += 1
 
     return count

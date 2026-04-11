@@ -23,8 +23,8 @@ Content called "tickets":
   Each ticket has a submitted by which is text, required, defaults to `User.Name`
   Each ticket has an assigned to which is text
   Each ticket has a created at which is automatic, defaults to `now`
-  Anyone with "tickets.view" can tickets.view
-  Anyone with "tickets.create" can tickets.create
+  Anyone with "tickets.view" can view tickets
+  Anyone with "tickets.create" can create tickets
   Anyone with "tickets.manage" can update tickets
   Anyone with "tickets.admin" can delete tickets
 

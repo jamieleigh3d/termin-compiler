@@ -1,5 +1,5 @@
 {
-  "ir_version": "0.4.0",
+  "ir_version": "0.5.0",
   "reflection_enabled": true,
   "app_id": "9d81658f-b642-437f-8f39-ffe31faa7701",
   "name": "Help Desk Ticket Tracker",
@@ -259,12 +259,16 @@
     {
       "content": "tickets",
       "scope": "tickets.view",
-      "verbs": []
+      "verbs": [
+        "VIEW"
+      ]
     },
     {
       "content": "tickets",
       "scope": "tickets.create",
-      "verbs": []
+      "verbs": [
+        "CREATE"
+      ]
     },
     {
       "content": "tickets",
@@ -349,7 +353,7 @@
       "path": "/api/v1/tickets",
       "kind": "LIST",
       "content_ref": "tickets",
-      "required_scope": null,
+      "required_scope": "tickets.view",
       "lookup_column": "id",
       "target_state": null
     },
@@ -358,7 +362,7 @@
       "path": "/api/v1/tickets",
       "kind": "CREATE",
       "content_ref": "tickets",
-      "required_scope": null,
+      "required_scope": "tickets.create",
       "lookup_column": "id",
       "target_state": null
     },
@@ -367,7 +371,7 @@
       "path": "/api/v1/tickets/{id}",
       "kind": "GET_ONE",
       "content_ref": "tickets",
-      "required_scope": null,
+      "required_scope": "tickets.view",
       "lookup_column": "id",
       "target_state": null
     },
@@ -458,13 +462,14 @@
       "name": "Submit Ticket",
       "slug": "submit_ticket",
       "role": "customer",
-      "required_scope": null,
+      "required_scope": "tickets.create",
       "children": [
         {
           "type": "form",
           "props": {
             "target": "tickets",
-            "create_as": "open"
+            "create_as": "open",
+            "submit_scope": "tickets.create"
           },
           "style": {},
           "layout": {},
