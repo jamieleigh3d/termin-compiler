@@ -29,6 +29,7 @@ from .confidentiality import (
 from .transaction import Transaction
 from .channels import ChannelDispatcher, ChannelError, ChannelScopeError, ChannelValidationError, ChannelConfigError, load_deploy_config, check_deploy_config_warnings
 from .ai_provider import AIProvider, AIProviderError, build_output_tool, build_agent_tools
+from .scheduler import Scheduler, parse_schedule_interval
 
 
 def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
@@ -77,10 +78,16 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     # Build Compute lookup with trigger index
     compute_specs = {}  # snake_name -> compute IR dict
     trigger_computes = []  # computes with event triggers
+    schedule_computes = []  # computes with schedule triggers (interval_seconds, comp)
     for comp in ir.get("computes", []):
         compute_specs[comp["name"]["snake"]] = comp
-        if (comp.get("trigger") or "").startswith("event "):
+        trigger = comp.get("trigger") or ""
+        if trigger.startswith("event "):
             trigger_computes.append(comp)
+        else:
+            interval = parse_schedule_interval(trigger)
+            if interval is not None:
+                schedule_computes.append((comp, interval))
 
     # Identity
     roles = {}
@@ -236,6 +243,14 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         config_warnings = check_deploy_config_warnings(deploy_config, ir)
         for w in config_warnings:
             print(f"[Termin] WARNING: {w}")
+        # Schedule-triggered Computes
+        scheduler = Scheduler()
+        for comp, interval in schedule_computes:
+            scheduler.register(comp, interval, _execute_compute)
+        if scheduler.task_count:
+            await scheduler.start()
+            print(f"[Termin] Phase 4c: Scheduler started ({scheduler.task_count} task(s))")
+
         configured_channels = [ch["name"]["display"] for ch in ir.get("channels", []) if channel_dispatcher.is_configured(ch["name"]["display"])]
         if configured_channels:
             print(f"[Termin] Phase 4a: Channels connected: {', '.join(configured_channels)}")
@@ -264,6 +279,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         print(f"[Termin] Phase 5: Ready to serve")
         yield
         forwarder.cancel()
+        await scheduler.stop()
         await channel_dispatcher.shutdown()
         print(f"[Termin] Shutting down...")
 

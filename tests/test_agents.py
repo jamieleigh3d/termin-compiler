@@ -571,3 +571,83 @@ class TestComputeCelContext:
             r = client.post("/api/v1/compute/test_compute", json={"input": {}})
             # Should not fail with 409 (postcondition failure)
             assert r.status_code != 409, f"Postcondition on Compute.Name should pass: {r.text}"
+
+
+# ── G5: Runtime scheduler for Trigger on schedule ──
+
+from termin_runtime.scheduler import Scheduler, parse_schedule_interval
+
+
+class TestScheduleParser:
+    """Unit tests for schedule trigger parsing."""
+
+    def test_parse_schedule_every_1_hour(self):
+        assert parse_schedule_interval("schedule every 1 hour") == 3600
+
+    def test_parse_schedule_every_5_minutes(self):
+        assert parse_schedule_interval("schedule every 5 minutes") == 300
+
+    def test_parse_schedule_every_30_seconds(self):
+        assert parse_schedule_interval("schedule every 30 seconds") == 30
+
+    def test_parse_schedule_every_2_days(self):
+        assert parse_schedule_interval("schedule every 2 days") == 172800
+
+    def test_parse_returns_none_for_event_trigger(self):
+        assert parse_schedule_interval('event "order.created"') is None
+
+    def test_parse_returns_none_for_empty(self):
+        assert parse_schedule_interval("") is None
+        assert parse_schedule_interval(None) is None
+
+    def test_parse_returns_none_for_nonsense(self):
+        assert parse_schedule_interval("do something else") is None
+
+
+class TestSchedulerExecution:
+    """Integration test: Compute with schedule trigger executes on timer."""
+
+    @pytest.mark.asyncio
+    async def test_scheduled_compute_executes_within_timeout(self):
+        """A Compute scheduled every 1 second should execute at least once within 3 seconds."""
+        executions = []
+
+        async def mock_execute(comp, record, content_name, main_loop=None):
+            executions.append(comp["name"]["display"])
+
+        scheduler = Scheduler()
+        comp = {
+            "name": {"display": "tick", "snake": "tick", "pascal": "Tick"},
+            "provider": None,
+            "trigger": "schedule every 1 second",
+        }
+        scheduler.register(comp, 1.0, mock_execute)
+        await scheduler.start()
+        try:
+            # Wait up to 3 seconds for at least one execution
+            for _ in range(30):
+                if executions:
+                    break
+                await asyncio.sleep(0.1)
+            assert len(executions) >= 1, f"Expected at least 1 execution, got {len(executions)}"
+            assert executions[0] == "tick"
+        finally:
+            await scheduler.stop()
+
+    @pytest.mark.asyncio
+    async def test_scheduler_stop_cancels_tasks(self):
+        """After stop(), no more executions should occur."""
+        executions = []
+
+        async def mock_execute(comp, record, content_name, main_loop=None):
+            executions.append(1)
+
+        scheduler = Scheduler()
+        comp = {"name": {"display": "stopper", "snake": "stopper", "pascal": "Stopper"}}
+        scheduler.register(comp, 0.5, mock_execute)
+        await scheduler.start()
+        await asyncio.sleep(0.7)
+        await scheduler.stop()
+        count_after_stop = len(executions)
+        await asyncio.sleep(0.7)
+        assert len(executions) == count_after_stop, "No executions should occur after stop()"
