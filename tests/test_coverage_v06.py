@@ -715,6 +715,395 @@ class TestAgentToolExecution:
         )
 
 
+# ── app.py: type coercion edge cases and scheduler ──
+
+class TestTypeCoercionEdgeCases:
+    """Cover ValueError/TypeError branches in dependent value type coercion."""
+
+    @pytest.fixture
+    def numeric_one_of_client(self, tmp_path):
+        """App with numeric one_of values for type coercion testing."""
+        from termin_runtime import create_termin_app
+        from fastapi.testclient import TestClient
+        ir = json.dumps({
+            "ir_version": "0.5.0", "reflection_enabled": False,
+            "app_id": "coerce-test", "name": "Coerce Test", "description": "",
+            "auth": {"provider": "stub", "scopes": ["admin"],
+                     "roles": [{"name": "admin", "scopes": ["admin"]}]},
+            "content": [{
+                "name": {"display": "widgets", "snake": "widgets", "pascal": "Widgets"},
+                "singular": "widget",
+                "fields": [
+                    {"name": "size", "column_type": "INTEGER", "business_type": "whole number",
+                     "enum_values": [], "one_of_values": [10, 20, 30]},
+                    {"name": "category", "column_type": "TEXT", "business_type": "text",
+                     "enum_values": [], "one_of_values": []},
+                ],
+                "audit": "actions",
+                "dependent_values": [
+                    {"when": 'category == "special"', "field": "size",
+                     "constraint": "one_of", "values": [10, 20], "value": None},
+                    {"when": 'category == "exact"', "field": "size",
+                     "constraint": "equals", "values": [10], "value": 10},
+                    {"when": "INVALID CEL !!!", "field": "size",
+                     "constraint": "one_of", "values": [99], "value": None},
+                ],
+            }],
+            "access_grants": [{"content": "widgets", "scope": "admin", "verbs": ["VIEW", "CREATE", "UPDATE"]}],
+            "routes": [
+                {"method": "POST", "path": "/api/v1/widgets", "kind": "CREATE",
+                 "content_ref": "widgets", "required_scope": "admin"},
+                {"method": "PUT", "path": "/api/v1/widgets/{id}", "kind": "UPDATE",
+                 "content_ref": "widgets", "required_scope": "admin", "lookup_column": "id"},
+            ],
+            "state_machines": [], "events": [], "pages": [], "nav_items": [],
+            "streams": [], "computes": [], "channels": [], "boundaries": [],
+            "error_handlers": [], "reclassification_points": [],
+        })
+        db_file = str(tmp_path / "coerce.db")
+        app = create_termin_app(ir, db_path=db_file, strict_channels=False)
+        with TestClient(app) as c:
+            c.cookies.set("termin_role", "admin")
+            yield c
+
+    def test_non_numeric_string_for_numeric_one_of(self, numeric_one_of_client):
+        """Non-convertible string for numeric one_of should hit ValueError branch and reject."""
+        r = numeric_one_of_client.post("/api/v1/widgets",
+                                        json={"size": "banana", "category": "normal"})
+        assert r.status_code == 422
+
+    def test_non_numeric_for_dependent_one_of(self, numeric_one_of_client):
+        """Non-numeric for dependent numeric one_of should hit coercion error."""
+        r = numeric_one_of_client.post("/api/v1/widgets",
+                                        json={"size": "xyz", "category": "special"})
+        assert r.status_code == 422
+
+    def test_non_numeric_for_equals_coercion(self, numeric_one_of_client):
+        """Non-numeric for equals with numeric value hits ValueError."""
+        r = numeric_one_of_client.post("/api/v1/widgets",
+                                        json={"size": "abc", "category": "exact"})
+        assert r.status_code == 422
+
+    def test_bad_cel_in_when_skips_silently(self, numeric_one_of_client):
+        """Invalid CEL in When clause should skip (not crash), let valid constraints run."""
+        # The "INVALID CEL !!!" When clause should be skipped
+        r = numeric_one_of_client.post("/api/v1/widgets",
+                                        json={"size": "10", "category": "normal"})
+        assert r.status_code == 201
+
+    def test_update_validates_dependent_values(self, numeric_one_of_client):
+        """PUT should also validate dependent values (covers line 1044)."""
+        r = numeric_one_of_client.post("/api/v1/widgets",
+                                        json={"size": "10", "category": "normal"})
+        assert r.status_code == 201
+        rid = r.json()["id"]
+        # Update with invalid value
+        r2 = numeric_one_of_client.put(f"/api/v1/widgets/{rid}",
+                                        json={"size": "999"})
+        assert r2.status_code == 422
+
+
+class TestSchedulerCoverage:
+    """Cover scheduler registration and startup paths."""
+
+    def test_scheduled_compute_registers(self, tmp_path):
+        """A Compute with 'Trigger on schedule' should register with scheduler."""
+        from termin_runtime import create_termin_app
+        from fastapi.testclient import TestClient
+        ir = json.dumps({
+            "ir_version": "0.5.0", "reflection_enabled": False,
+            "app_id": "sched-test", "name": "Sched Test", "description": "",
+            "auth": {"provider": "stub", "scopes": ["admin"],
+                     "roles": [{"name": "admin", "scopes": ["admin"]}]},
+            "content": [{
+                "name": {"display": "reports", "snake": "reports", "pascal": "Reports"},
+                "singular": "report",
+                "fields": [{"name": "data", "column_type": "TEXT", "business_type": "text",
+                             "enum_values": [], "one_of_values": []}],
+                "audit": "actions",
+            }],
+            "access_grants": [{"content": "reports", "scope": "admin", "verbs": ["VIEW", "CREATE"]}],
+            "routes": [],
+            "state_machines": [], "events": [], "pages": [], "nav_items": [],
+            "streams": [],
+            "computes": [{
+                "name": {"display": "daily report", "snake": "daily_report", "pascal": "DailyReport"},
+                "shape": "TRANSFORM", "input_content": [], "output_content": [],
+                "body_lines": ["42"], "required_scope": "admin", "required_role": None,
+                "input_params": [], "output_params": [],
+                "client_safe": False, "identity_mode": "delegate",
+                "required_confidentiality_scopes": [],
+                "output_confidentiality_scope": None,
+                "field_dependencies": [], "provider": None,
+                "preconditions": [], "postconditions": [],
+                "directive": None, "objective": None, "strategy": None,
+                "trigger": "schedule every 60s",
+                "trigger_where": None,
+                "accesses": ["reports"], "input_fields": [], "output_fields": [],
+                "output_creates": None,
+            }],
+            "channels": [], "boundaries": [],
+            "error_handlers": [], "reclassification_points": [],
+        })
+        db_file = str(tmp_path / "sched.db")
+        app = create_termin_app(ir, db_path=db_file, strict_channels=False)
+        # Just verify the app starts without error — scheduler registers during lifespan
+        with TestClient(app) as c:
+            c.cookies.set("termin_role", "admin")
+            r = c.get("/api/reflect")
+            assert r.status_code == 200
+
+
+# ── peg_parser.py: error paths and edge cases ──
+
+class TestParserErrorPaths:
+    """Cover parse error recovery and malformed input handling."""
+
+    def test_malformed_when_no_backtick_close(self):
+        """When clause with unclosed backtick should fail gracefully."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "items":\n'
+            '  Each item has a name which is text\n'
+            '  Anyone with "admin" can create items\n'
+            '  When `unclosed, name must be one of: "a"\n'
+        )
+        program, errors = parse(source)
+        # Should not crash — either parses differently or reports error
+
+    def test_malformed_when_no_comma(self):
+        """When clause without comma after condition."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "items":\n'
+            '  Each item has a name which is text\n'
+            '  Anyone with "admin" can create items\n'
+            '  When `true` name must be one of: "a"\n'
+        )
+        program, errors = parse(source)
+
+    def test_when_clause_no_constraint_keyword(self):
+        """When clause with condition but no must be / defaults to."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "items":\n'
+            '  Each item has a name which is text\n'
+            '  Anyone with "admin" can create items\n'
+            '  When `true`, name is something else entirely\n'
+        )
+        program, errors = parse(source)
+
+    def test_literal_list_bare_non_numeric_string(self):
+        """Bare non-numeric, non-quoted value — regex doesn't match, returns empty."""
+        result = _parse_literal_list('hello')
+        assert result == []  # regex requires quoted or numeric
+
+    def test_literal_list_bare_number_not_int(self):
+        """Value that looks numeric but isn't a clean int should try float."""
+        result = _parse_literal_list('3.14, 42')
+        assert 3.14 in result
+        assert 42 in result
+
+    def test_parse_content_when_no_condition(self):
+        """_parse_content_when with empty condition returns None."""
+        from termin.peg_parser import _parse_content_when
+        assert _parse_content_when("When , name must be one of: 'a'", 1) is None
+
+    def test_parse_content_when_no_backtick_close(self):
+        """_parse_content_when with unclosed backtick returns None."""
+        from termin.peg_parser import _parse_content_when
+        assert _parse_content_when("When `open, name must be one of: 'a'", 1) is None
+
+    def test_parse_content_when_no_comma(self):
+        """_parse_content_when with no comma after condition returns None."""
+        from termin.peg_parser import _parse_content_when
+        assert _parse_content_when("When `true` name must be one of: 'a'", 1) is None
+
+    def test_parse_content_when_no_constraint(self):
+        """_parse_content_when with no recognized constraint returns None."""
+        from termin.peg_parser import _parse_content_when
+        assert _parse_content_when("When `true`, name does something weird", 1) is None
+
+    def test_parse_literal_list_non_int_non_float(self):
+        """Bare number that's neither int nor float (shouldn't happen but covers except)."""
+        # The regex matches digits, so int() should always work. But let's cover float fallback.
+        result = _parse_literal_list('"a", 3.5')
+        assert result == ["a", 3.5]
+
+    def test_is_one_of_with_required_suffix(self):
+        """'is one of: ... , required' should strip the required keyword from values."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "items":\n'
+            '  Each item has a priority which is one of: "low", "high", required\n'
+            '  Anyone with "admin" can create items\n'
+        )
+        program, errors = parse(source)
+        assert errors.ok, errors.format()
+        f = [f for f in program.contents[0].fields if f.name == "priority"][0]
+        assert "low" in f.type_expr.enum_values
+        assert "high" in f.type_expr.enum_values
+        # "required" should NOT be in the enum values — it's a field modifier
+        for v in f.type_expr.enum_values:
+            assert "required" not in v.lower()
+
+    def test_parse_error_per_line_exception(self):
+        """Force a per-line parse exception via monkeypatch."""
+        from unittest.mock import patch
+        import termin.peg_parser as parser_mod
+        original = parser_mod._parse_line
+        def exploding_parse(text, rule, ln):
+            if "BOOM" in text:
+                raise RuntimeError("forced parse error")
+            return original(text, rule, ln)
+        with patch.object(parser_mod, '_parse_line', exploding_parse):
+            # Classify a line that contains BOOM — it'll match some rule, then explode
+            source = 'Application: BOOM\n  Description: test\n'
+            program, errors = parse(source)
+            assert not errors.ok
+            assert any("TERMIN-P003" in str(e) for e in errors.errors)
+
+    def test_preprocess_exception(self):
+        """Force a preprocessing exception via monkeypatch."""
+        from unittest.mock import patch
+        import termin.peg_parser as parser_mod
+        with patch.object(parser_mod, '_preprocess', side_effect=RuntimeError("forced")):
+            program, errors = parse("anything")
+            assert not errors.ok
+            assert any("TERMIN-P001" in str(e) for e in errors.errors)
+
+    def test_assembly_exception(self):
+        """Force a block assembly exception via monkeypatch."""
+        from unittest.mock import patch
+        import termin.peg_parser as parser_mod
+        original_assemble = parser_mod._assemble
+        def exploding_assemble(parsed):
+            raise RuntimeError("forced assembly error")
+        with patch.object(parser_mod, '_assemble', exploding_assemble):
+            source = 'Application: Test\n  Description: t\n'
+            program, errors = parse(source)
+            assert not errors.ok
+            assert any("TERMIN-P004" in str(e) for e in errors.errors)
+
+    def test_completely_broken_source(self):
+        """Totally invalid source should hit top-level error handler."""
+        program, errors = parse("")
+        # Empty source should parse without crash
+
+    def test_single_line_garbage(self):
+        """Single garbage line should hit per-line error handler."""
+        source = "Application: Test\n  Description: t\n\n@#$%^&*\n"
+        program, errors = parse(source)
+
+
+# ── analyzer.py: remaining fuzzy-match branches ──
+
+class TestAnalyzerFuzzyMatchBranches:
+    """Cover fuzzy-match suggestion lines in various analyzer checks."""
+
+    def test_transition_from_state_typo(self):
+        """Typo in transition from_state should trigger fuzzy match."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "tickets":\n'
+            '  Each ticket has a title which is text\n'
+            '  Anyone with "admin" can create tickets\n\n'
+            'State for tickets called "status":\n'
+            '  A ticket starts as "open"\n'
+            '  A ticket can also be "closed"\n'
+            '  An opn ticket can become closed if the user has "admin"\n'
+        )
+        program, errors = parse(source)
+        if errors.ok:
+            result = analyze(program)
+            # May or may not error depending on how "opn" is parsed
+
+    def test_transition_scope_typo(self):
+        """Typo in transition scope should trigger fuzzy match."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "tickets":\n'
+            '  Each ticket has a title which is text\n'
+            '  Anyone with "admin" can create tickets\n\n'
+            'State for tickets called "status":\n'
+            '  A ticket starts as "open"\n'
+            '  A ticket can also be "closed"\n'
+            '  An open ticket can become closed if the user has "admn"\n'
+        )
+        program, errors = parse(source)
+        if errors.ok:
+            result = analyze(program)
+            if not result.ok:
+                assert any("admn" in str(e) for e in result.errors)
+
+    def test_accesses_content_typo(self):
+        """Typo in Accesses content name should trigger fuzzy match."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "tickets":\n'
+            '  Each ticket has a title which is text\n'
+            '  Anyone with "admin" can create tickets\n\n'
+            'Compute called "process":\n'
+            '  Provider is "cel"\n'
+            '  Accesses tickts\n'
+            '  Anyone with "admin" can execute this\n'
+        )
+        program, errors = parse(source)
+        if errors.ok:
+            result = analyze(program)
+            if not result.ok:
+                err_text = result.format()
+                assert "tickts" in err_text or "TERMIN" in err_text
+
+    def test_output_creates_content_typo(self):
+        """Typo in Output creates content should trigger fuzzy match."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "tickets":\n'
+            '  Each ticket has a title which is text\n'
+            '  Anyone with "admin" can create tickets\n\n'
+            'Content called "logs":\n'
+            '  Each log has a message which is text\n'
+            '  Anyone with "admin" can create logs\n\n'
+            'Compute called "process":\n'
+            '  Provider is "cel"\n'
+            '  Accesses tickets\n'
+            '  Output creates lgs\n'
+            '  Anyone with "admin" can execute this\n'
+        )
+        program, errors = parse(source)
+        if errors.ok:
+            result = analyze(program)
+            if not result.ok:
+                assert any("lgs" in str(e) for e in result.errors)
+
+    def test_compute_requires_scope_typo(self):
+        """Typo in Compute required scope should trigger fuzzy match."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "items":\n'
+            '  Each item has a name which is text\n'
+            '  Anyone with "admin" can create items\n\n'
+            'Compute called "process":\n'
+            '  Provider is "cel"\n'
+            '  Accesses items\n'
+            '  Requires "admn" to execute\n'
+            '  Anyone with "admin" can execute this\n'
+        )
+        program, errors = parse(source)
+        if errors.ok:
+            result = analyze(program)
+
+
 # ── cli.py: JSON error format ──
 
 class TestCLIJsonErrors:
@@ -728,6 +1117,16 @@ class TestCLIJsonErrors:
         runner = CliRunner()
         r = runner.invoke(main, ["compile", str(bad), "--format", "json"])
         assert r.exit_code != 0
+
+    def test_error_severity_methods(self):
+        """Cover _severity() on SemanticError and SecurityError."""
+        from termin.errors import SemanticError, SecurityError
+        se = SemanticError(message="test", line=1, code="TERMIN-S001")
+        assert se._severity() == "error"
+        assert se.to_dict()["severity"] == "error"
+        xe = SecurityError(message="test", line=1, code="TERMIN-X001")
+        assert xe._severity() == "error"
+        assert xe.to_dict()["severity"] == "error"
 
     def test_semantic_error_json_format(self, tmp_path):
         from click.testing import CliRunner

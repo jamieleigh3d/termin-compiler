@@ -18,7 +18,9 @@ def client():
     from termin_runtime import create_termin_app
 
     ir_json = IR_PATH.read_text(encoding="utf-8")
-    app = create_termin_app(ir_json, strict_channels=False)
+    import tempfile, os
+    db_file = os.path.join(tempfile.mkdtemp(), "compute_demo.db")
+    app = create_termin_app(ir_json, db_path=db_file, strict_channels=False)
     with TestClient(app) as tc:
         yield tc
 
