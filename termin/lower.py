@@ -231,6 +231,7 @@ def lower(program: Program) -> AppSpec:
             has_state_machine=has_sm,
             initial_state=sm_by_content[c.name].initial_state if has_sm else None,
             confidentiality_scopes=tuple(c.confidentiality_scopes),
+            audit=c.audit,
         ))
 
     # ── Lower auth ──

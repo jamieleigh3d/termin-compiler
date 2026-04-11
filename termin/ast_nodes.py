@@ -49,6 +49,7 @@ class Content:
     fields: list[Field] = field(default_factory=list)
     access_rules: list[AccessRule] = field(default_factory=list)
     confidentiality_scopes: list[str] = field(default_factory=list)  # content-level scopes
+    audit: str = "content"  # "actions", "content", or "none"
     line: int = 0
 
 

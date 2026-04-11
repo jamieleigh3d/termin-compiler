@@ -168,6 +168,14 @@ class Analyzer:
                         line=rule.line,
                     ))
 
+            # Validate audit level
+            if content.audit not in ("actions", "content", "none"):
+                self.errors.add(SemanticError(
+                    message=f'Content "{content.name}" has invalid audit level '
+                            f'"{content.audit}". Must be one of: actions, content, none',
+                    line=content.line,
+                ))
+
     def _check_state_machines(self) -> None:
         for sm in self.program.state_machines:
             # Allow state machines on Content, Channel, or Compute names

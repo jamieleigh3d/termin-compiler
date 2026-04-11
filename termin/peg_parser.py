@@ -86,7 +86,7 @@ def _preprocess(source: str) -> list[tuple[int, str]]:
 _PREFIXES: list[tuple[str, str]] = [
     ("Application:", "application_line"), ("Description:", "description_line"), ("Id:", "id_line"),
     ("Users authenticate with", "identity_line"), ("Scopes are", "scopes_line"),
-    ("Content called", "content_header"), ("Scoped to", "content_scoped_line"), ("Each ", "field_line"),
+    ("Content called", "content_header"), ("Scoped to", "content_scoped_line"), ("Audit level:", "content_audit_line"), ("Each ", "field_line"),
     ("Anyone with", "access_line"), ("State for", "state_header"),
     ("When `", "event_expr_line"), ("When [", "event_expr_line"),  # backtick first, bracket legacy
     ("When a ", "event_v1_line"), ("When an ", "event_v1_line"),
@@ -899,6 +899,10 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule)
         scopes = _ql(r.get("scopes")) if r else _eqs(text)
         return ("content_scoped", scopes)
+    if rule == "content_audit_line":
+        r = P(text, rule)
+        level = str(r.get("level", "content")).strip().lower() if r else text.split(":", 1)[1].strip().lower()
+        return ("content_audit", level)
     if rule == "channel_header":
         r = P(text, rule); return ("channel_header", ChannelDecl(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "channel_carries_line":
@@ -979,12 +983,13 @@ def _assemble(parsed: list) -> Program:
         elif k == "role_alias": prog.role_aliases.append(item[1]); i += 1
         elif k == "content_header":
             ct = item[1]; i += 1
-            for ch in _collect(lambda x: x in ("field","access","content_scoped")):
+            for ch in _collect(lambda x: x in ("field","access","content_scoped","content_audit")):
                 if ch[0] == "field":
                     if ch[2]: ct.singular = ch[2]
                     ct.fields.append(ch[1])
                 elif ch[0] == "access": ct.access_rules.append(ch[1])
                 elif ch[0] == "content_scoped": ct.confidentiality_scopes.extend(ch[1])
+                elif ch[0] == "content_audit": ct.audit = ch[1]
             prog.contents.append(ct)
         elif k == "state_header":
             sm = item[1]; i += 1

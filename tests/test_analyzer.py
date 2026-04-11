@@ -455,3 +455,32 @@ def test_compute_demo_passes():
     assert parse_errors.ok, parse_errors.format()
     result = analyze(program)
     assert result.ok, result.format()
+
+
+# ── D-18: Audit level validation ──
+
+def test_audit_level_valid_values():
+    """Valid audit levels should pass analysis."""
+    preamble = '''Users authenticate with stub
+Scopes are "read"
+A "user" has "read"
+'''
+    for level in ("actions", "content", "none"):
+        src = preamble + f'''Content called "events":
+  Each event has a title which is text
+  Anyone with "read" can view events
+  Audit level: {level}'''
+        result = _analyze(src)
+        assert result.ok, f"Audit level '{level}' should be valid: {result.format()}"
+
+
+def test_audit_level_invalid_detected():
+    """Invalid audit levels should be caught by the analyzer."""
+    from termin.ast_nodes import Content, Field, TypeExpr
+    # Manually create a Content with bad audit to test the analyzer check
+    from termin.ast_nodes import Program
+    prog = Program()
+    prog.contents.append(Content(name="items", singular="item", audit="verbose"))
+    result = analyze(prog)
+    assert not result.ok
+    assert any("audit level" in str(e.message).lower() for e in result.errors)

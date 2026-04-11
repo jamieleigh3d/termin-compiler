@@ -131,6 +131,12 @@ content_scoped_line
     = 'Scoped' 'to' scopes:quoted_list $
     ;
 
+content_audit_line
+    = 'Audit' 'level:' level:audit_level $
+    ;
+
+audit_level = 'actions' | 'content' | 'none' ;
+
 access_line
     = 'Anyone' 'with' scope:quoted_string 'can'
       verbs:verb_phrase content_name:rest_of_line $
