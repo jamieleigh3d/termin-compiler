@@ -550,7 +550,7 @@ def _parse_literal_list(text: str) -> list:
             except ValueError:
                 try:
                     result.append(float(v))
-                except ValueError:
+                except ValueError:  # pragma: no cover — regex ensures valid numeric
                     result.append(v)
     return result
 

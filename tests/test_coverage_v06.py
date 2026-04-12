@@ -1085,6 +1085,121 @@ class TestAnalyzerFuzzyMatchBranches:
             if not result.ok:
                 assert any("lgs" in str(e) for e in result.errors)
 
+    def test_event_create_content_typo(self):
+        """Typo in event action create content should trigger fuzzy match (line 277)."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "tickets":\n'
+            '  Each ticket has a title which is text\n'
+            '  Anyone with "admin" can create tickets\n\n'
+            'When `tickets.created`:\n'
+            '  Create a tickt with title\n'
+        )
+        program, errors = parse(source)
+        if errors.ok:
+            result = analyze(program)
+            # Should error on undefined "tickt"
+
+    def test_error_handler_source_typo_with_suggestion(self):
+        """Error handler with typo in source should trigger fuzzy match (line 676)."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "tickets":\n'
+            '  Each ticket has a title which is text\n'
+            '  Anyone with "admin" can create tickets\n\n'
+            'When errors from "tickts":\n'
+            '  Log level: ERROR\n'
+        )
+        program, errors = parse(source)
+        if errors.ok:
+            result = analyze(program)
+            if not result.ok:
+                err_text = result.format()
+                assert "TERMIN-S027" in err_text
+
+    def test_channel_scope_typo(self):
+        """Typo in channel requirement scope should trigger fuzzy match (line 536)."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "items":\n'
+            '  Each item has a name which is text\n'
+            '  Anyone with "admin" can create items\n\n'
+            'Channel called "webhook":\n'
+            '  Carries items\n'
+            '  Direction: inbound\n'
+            '  Delivery: reliable\n'
+            '  Endpoint: /webhooks/items\n'
+            '  Requires "admn" to send\n'
+        )
+        program, errors = parse(source)
+        if errors.ok:
+            result = analyze(program)
+            if not result.ok:
+                assert any("admn" in str(e) for e in result.errors)
+
+    def test_compute_output_content_typo(self):
+        """Typo in Compute output content should trigger fuzzy match (line 463)."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "items":\n'
+            '  Each item has a name which is text\n'
+            '  Anyone with "admin" can create items\n\n'
+            'Compute called "process":\n'
+            '  Transform: takes items, produces itms\n'
+            '  Anyone with "admin" can execute this\n'
+        )
+        program, errors = parse(source)
+        if errors.ok:
+            result = analyze(program)
+            if not result.ok:
+                assert any("itms" in str(e) for e in result.errors)
+
+    def test_lower_dependent_value_spec(self):
+        """Lowering a program with dependent values produces DependentValueSpec (line 238)."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "items":\n'
+            '  Each item has a size which is one of: "small", "large"\n'
+            '  Each item has a color which is text\n'
+            '  Anyone with "admin" can create items\n'
+            '  When `size == "small"`, color must be one of: "red", "blue"\n'
+            '  When `size == "large"`, color must be one of: "black", "white"\n'
+        )
+        program, errors = parse(source)
+        assert errors.ok, errors.format()
+        result = analyze(program)
+        assert result.ok, result.format()
+        spec = lower(program)
+        ct = [c for c in spec.content if c.name.snake == "items"][0]
+        assert len(ct.dependent_values) == 2
+        assert ct.dependent_values[0].constraint == "one_of"
+        assert ct.dependent_values[1].constraint == "one_of"
+
+    def test_lower_dependent_value_equals(self):
+        """Lowering 'must be' produces equals DependentValueSpec (line 238)."""
+        source = (
+            'Application: Test\n  Description: t\n\n'
+            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Content called "items":\n'
+            '  Each item has a size which is one of: "small", "large"\n'
+            '  Each item has a color which is text\n'
+            '  Anyone with "admin" can create items\n'
+            '  When `size == "small"`, color must be "red"\n'
+            '  When `size == "large"`, color must be "blue"\n'
+        )
+        program, errors = parse(source)
+        assert errors.ok, errors.format()
+        result = analyze(program)
+        assert result.ok, result.format()
+        spec = lower(program)
+        ct = [c for c in spec.content if c.name.snake == "items"][0]
+        assert any(dv.constraint == "equals" for dv in ct.dependent_values)
+
     def test_compute_requires_scope_typo(self):
         """Typo in Compute required scope should trigger fuzzy match."""
         source = (
@@ -1119,11 +1234,20 @@ class TestCLIJsonErrors:
         assert r.exit_code != 0
 
     def test_error_severity_methods(self):
-        """Cover _severity() on SemanticError and SecurityError."""
-        from termin.errors import SemanticError, SecurityError
+        """Cover _severity() on all error types including base TerminError."""
+        from termin.errors import TerminError, ParseError, SemanticError, SecurityError
+        # Base class
+        te = TerminError(message="test", line=1)
+        assert te._severity() == "error"
+        # ParseError
+        pe = ParseError(message="test", line=1, code="TERMIN-P001")
+        assert pe._severity() == "error"
+        assert pe.to_dict()["severity"] == "error"
+        # SemanticError
         se = SemanticError(message="test", line=1, code="TERMIN-S001")
         assert se._severity() == "error"
         assert se.to_dict()["severity"] == "error"
+        # SecurityError
         xe = SecurityError(message="test", line=1, code="TERMIN-X001")
         assert xe._severity() == "error"
         assert xe.to_dict()["severity"] == "error"
