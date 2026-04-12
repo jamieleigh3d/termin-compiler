@@ -124,6 +124,14 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         if comp_snake not in boundary_for_compute:
             boundary_for_compute[comp_snake] = APP_BOUNDARY
 
+    # C2: Boundary identity restriction map
+    # Maps content_name -> required scopes (from boundary identity_mode: restrict)
+    boundary_identity_scopes: dict[str, list[str]] = {}
+    for bnd in ir.get("boundaries", []):
+        if bnd.get("identity_mode") == "restrict" and bnd.get("identity_scopes"):
+            for content_snake in bnd.get("contains_content", []):
+                boundary_identity_scopes[content_snake] = list(bnd["identity_scopes"])
+
     def check_boundary_access(compute_snake: str, target_content: str) -> str | None:
         """Check if a Compute can access a content type across boundaries.
 
@@ -139,6 +147,23 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                 f"(boundary '{compute_bnd}') cannot directly access "
                 f"content '{target_content}' (boundary '{content_bnd}'). "
                 f"Cross-boundary access requires a channel.")
+
+    def check_boundary_identity(content_snake: str, user_scopes: list[str]) -> str | None:
+        """C2: Check if the caller's identity satisfies boundary restrictions.
+
+        If the content is in a boundary with identity_mode: restrict, the caller
+        must hold all declared identity_scopes. Returns None if OK, error message if denied.
+        """
+        required = boundary_identity_scopes.get(content_snake)
+        if not required:
+            return None  # No restriction or inherit mode
+        missing = [s for s in required if s not in user_scopes]
+        if missing:
+            bnd_name = boundary_for_content.get(content_snake, APP_BOUNDARY)
+            return (f"Boundary identity restriction: content '{content_snake}' "
+                    f"is in boundary '{bnd_name}' which requires scopes "
+                    f"{required}. Missing: {missing}")
+        return None
 
     # Identity
     roles = {}
@@ -906,6 +931,13 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                 deps = [Depends(require_scope(sc))] if sc else []
                 @app.get(p, dependencies=deps)
                 async def list_route(request: Request, _cr=cr):
+                    # C2: Boundary identity restriction check
+                    user = get_current_user(request)
+                    user_scopes = list(user.get("scopes", []))
+                    bnd_id_err = check_boundary_identity(_cr, user_scopes)
+                    if bnd_id_err:
+                        raise HTTPException(status_code=403, detail=bnd_id_err)
+
                     db = await get_db(db_path)
                     try:
                         cursor = await db.execute(f"SELECT * FROM {_cr}")
@@ -913,9 +945,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                         records = [dict(r) for r in rows]
                         # Redact confidential fields
                         schema = content_lookup.get(_cr, {})
-                        user = get_current_user(request)
-                        user_scopes = set(user.get("scopes", []))
-                        return redact_records(records, schema, user_scopes)
+                        return redact_records(records, schema, set(user_scopes))
                     finally:
                         await db.close()
             make_list_route(path, content_ref, scope)
@@ -925,6 +955,13 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                 deps = [Depends(require_scope(sc))] if sc else []
                 @app.post(p, status_code=201, dependencies=deps)
                 async def create_route(request: Request, _cr=cr, _sm=sm_info):
+                    # C2: Boundary identity restriction check
+                    user = get_current_user(request)
+                    user_scopes = list(user.get("scopes", []))
+                    bnd_id_err = check_boundary_identity(_cr, user_scopes)
+                    if bnd_id_err:
+                        raise HTTPException(status_code=403, detail=bnd_id_err)
+
                     body = await request.json()
                     # Set initial state from state machine (API creates)
                     # Always override — clients cannot set initial status directly
