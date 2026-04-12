@@ -422,3 +422,347 @@ class TestMarkAs:
         assert len(marks) == 1
         assert marks[0].scope == "salary"
         assert marks[0].label == "high-earner"
+
+
+# ── G1: Compute system type in CEL context ──
+
+def _minimal_ir_with_compute(preconditions=None, postconditions=None, body_lines=None,
+                             scopes=None, role_scopes=None):
+    """Build a minimal IR dict with a single Compute for testing."""
+    scopes = scopes or ["admin", "basic"]
+    role_scopes = role_scopes or {"admin_user": ["admin", "basic"], "basic_user": ["basic"]}
+    return json.dumps({
+        "ir_version": "0.4.0",
+        "reflection_enabled": False,
+        "app_id": "test-compute-ctx",
+        "name": "Test Compute",
+        "description": "Test app for Compute context",
+        "auth": {
+            "provider": "stub",
+            "scopes": scopes,
+            "roles": [
+                {"name": role, "scopes": s}
+                for role, s in role_scopes.items()
+            ],
+        },
+        "content": [{
+            "name": {"display": "items", "snake": "items", "pascal": "Items"},
+            "singular": "item",
+            "fields": [
+                {"name": "title", "column_type": "TEXT", "nullable": False,
+                 "unique": False, "business_type": "short_text", "confidentiality_scope": None,
+                 "default_expr": None, "enum_values": []},
+            ],
+            "confidentiality_scope": None,
+            "audit": "actions",
+        }],
+        "access_grants": [
+            {"content": "items", "verb": "read", "scope": "basic"},
+            {"content": "items", "verb": "create", "scope": "basic"},
+        ],
+        "state_machines": [],
+        "events": [],
+        "routes": [],
+        "pages": [],
+        "nav_items": [],
+        "streams": [],
+        "computes": [{
+            "name": {"display": "test compute", "snake": "test_compute", "pascal": "TestCompute"},
+            "shape": "TRANSFORM",
+            "input_content": ["items"],
+            "output_content": ["items"],
+            "body_lines": body_lines or ["size(items)"],
+            "required_scope": "basic",
+            "required_role": None,
+            "input_params": [],
+            "output_params": [],
+            "client_safe": False,
+            "identity_mode": "delegate",
+            "required_confidentiality_scopes": [],
+            "output_confidentiality_scope": None,
+            "field_dependencies": [],
+            "provider": None,
+            "preconditions": preconditions or [],
+            "postconditions": postconditions or [],
+            "directive": None,
+            "objective": None,
+            "strategy": None,
+            "trigger": None,
+            "trigger_where": None,
+            "accesses": ["items"],
+            "input_fields": [],
+            "output_fields": [],
+            "output_creates": None,
+        }],
+        "channels": [],
+        "boundaries": [],
+        "error_handlers": [],
+        "reclassification_points": [],
+    })
+
+
+class TestComputeCelContext:
+    """G1: Verify the Compute system type is available in CEL precondition/postcondition context."""
+
+    def test_precondition_accesses_compute_scopes(self):
+        """Precondition using Compute.Scopes should pass when user has the required scope."""
+        ir_json = _minimal_ir_with_compute(
+            preconditions=['Compute.Scopes.exists(s, s == "admin")'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "admin_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            # Should pass precondition (admin_user has "admin" scope)
+            assert r.status_code != 412, f"Precondition should pass for admin_user: {r.text}"
+
+    def test_precondition_rejects_missing_scope(self):
+        """Precondition using Compute.Scopes should fail (412) when scope is absent."""
+        ir_json = _minimal_ir_with_compute(
+            preconditions=['Compute.Scopes.exists(s, s == "admin")'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code == 412, f"Expected 412 for missing scope, got {r.status_code}: {r.text}"
+
+    def test_precondition_accesses_compute_name(self):
+        """Precondition can reference Compute.Name."""
+        ir_json = _minimal_ir_with_compute(
+            preconditions=['Compute.Name == "test compute"'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 412, f"Precondition on Compute.Name should pass: {r.text}"
+
+    def test_precondition_accesses_compute_trigger(self):
+        """Precondition can reference Compute.Trigger (should be 'api' for direct invocation)."""
+        ir_json = _minimal_ir_with_compute(
+            preconditions=['Compute.Trigger == "api"'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 412, f"Precondition on Compute.Trigger should pass: {r.text}"
+
+    def test_precondition_accesses_compute_started_at(self):
+        """Precondition can reference Compute.StartedAt (ISO timestamp string)."""
+        ir_json = _minimal_ir_with_compute(
+            preconditions=['size(Compute.StartedAt) > 0'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 412, f"Precondition on Compute.StartedAt should pass: {r.text}"
+
+    def test_postcondition_accesses_compute_context(self):
+        """Postconditions also receive the Compute context."""
+        ir_json = _minimal_ir_with_compute(
+            postconditions=['Compute.Name == "test compute"'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            # Should not fail with 409 (postcondition failure)
+            assert r.status_code != 409, f"Postcondition on Compute.Name should pass: {r.text}"
+
+
+# ── G2: Before/After snapshots for postconditions ──
+
+from termin_runtime.transaction import ContentSnapshot
+
+
+class TestContentSnapshot:
+    """Unit tests for the ContentSnapshot class."""
+
+    def test_content_query_returns_records(self):
+        snap = ContentSnapshot({"items": [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}]})
+        result = snap.content_query("items")
+        assert len(result) == 2
+        assert result[0]["name"] == "a"
+
+    def test_content_query_empty_for_unknown(self):
+        snap = ContentSnapshot({"items": [{"id": 1}]})
+        assert snap.content_query("orders") == []
+
+    def test_result_property(self):
+        snap = ContentSnapshot({}, result=42)
+        assert snap.result == 42
+
+    def test_result_default_none(self):
+        snap = ContentSnapshot({})
+        assert snap.result is None
+
+    def test_dict_access(self):
+        snap = ContentSnapshot({"items": [{"id": 1}]}, result=99)
+        assert len(snap["items"]) == 1
+        assert snap["result"] == 99
+
+    def test_content_query_returns_copy(self):
+        """Modifying returned list should not affect snapshot (frozen)."""
+        snap = ContentSnapshot({"items": [{"id": 1}]})
+        result = snap.content_query("items")
+        result.append({"id": 2})
+        assert len(snap.content_query("items")) == 1  # unchanged
+
+
+class TestBeforeAfterPostconditions:
+    """G2: Verify Before/After snapshots are injected into postcondition CEL context."""
+
+    def test_postcondition_after_result(self):
+        """After.result should contain the compute result."""
+        ir_json = _minimal_ir_with_compute(
+            body_lines=["42"],
+            postconditions=['After.result == 42'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 409, f"After.result postcondition should pass: {r.text}"
+
+    def test_postcondition_before_result_is_none(self):
+        """Before.result should be None (nothing computed yet at start)."""
+        ir_json = _minimal_ir_with_compute(
+            body_lines=["42"],
+            postconditions=['Before.result == null'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 409, f"Before.result == null should pass: {r.text}"
+
+    def test_postcondition_content_size(self):
+        """Postcondition can check record counts via Before/After content lists."""
+        ir_json = _minimal_ir_with_compute(
+            body_lines=["42"],
+            postconditions=['size(After.items) >= 0'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 409, f"Content size postcondition should pass: {r.text}"
+
+    def test_postcondition_before_after_comparison(self):
+        """Postcondition comparing Before and After content sizes."""
+        ir_json = _minimal_ir_with_compute(
+            body_lines=["42"],
+            postconditions=['size(After.items) >= size(Before.items)'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 409, f"Before/After comparison should pass: {r.text}"
+
+    def test_postcondition_bounded_growth(self):
+        """Postcondition enforcing bounded growth: After <= Before + N."""
+        ir_json = _minimal_ir_with_compute(
+            body_lines=["42"],
+            postconditions=['size(After.items) <= size(Before.items) + 100'],
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code != 409, f"Bounded growth postcondition should pass: {r.text}"
+
+    def test_postcondition_failure_returns_409(self):
+        """A failing postcondition should return 409."""
+        ir_json = _minimal_ir_with_compute(
+            body_lines=["42"],
+            postconditions=['After.result == 999'],  # Will fail: result is 42 not 999
+        )
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "basic_user")
+            r = client.post("/api/v1/compute/test_compute", json={"input": {}})
+            assert r.status_code == 409
+
+
+# ── G5: Runtime scheduler for Trigger on schedule ──
+
+from termin_runtime.scheduler import Scheduler, parse_schedule_interval
+
+
+class TestScheduleParser:
+    """Unit tests for schedule trigger parsing."""
+
+    def test_parse_schedule_every_1_hour(self):
+        assert parse_schedule_interval("schedule every 1 hour") == 3600
+
+    def test_parse_schedule_every_5_minutes(self):
+        assert parse_schedule_interval("schedule every 5 minutes") == 300
+
+    def test_parse_schedule_every_30_seconds(self):
+        assert parse_schedule_interval("schedule every 30 seconds") == 30
+
+    def test_parse_schedule_every_2_days(self):
+        assert parse_schedule_interval("schedule every 2 days") == 172800
+
+    def test_parse_returns_none_for_event_trigger(self):
+        assert parse_schedule_interval('event "order.created"') is None
+
+    def test_parse_returns_none_for_empty(self):
+        assert parse_schedule_interval("") is None
+        assert parse_schedule_interval(None) is None
+
+    def test_parse_returns_none_for_nonsense(self):
+        assert parse_schedule_interval("do something else") is None
+
+
+class TestSchedulerExecution:
+    """Integration test: Compute with schedule trigger executes on timer."""
+
+    @pytest.mark.asyncio
+    async def test_scheduled_compute_executes_within_timeout(self):
+        """A Compute scheduled every 1 second should execute at least once within 3 seconds."""
+        executions = []
+
+        async def mock_execute(comp, record, content_name, main_loop=None):
+            executions.append(comp["name"]["display"])
+
+        scheduler = Scheduler()
+        comp = {
+            "name": {"display": "tick", "snake": "tick", "pascal": "Tick"},
+            "provider": None,
+            "trigger": "schedule every 1 second",
+        }
+        scheduler.register(comp, 1.0, mock_execute)
+        await scheduler.start()
+        try:
+            # Wait up to 3 seconds for at least one execution
+            for _ in range(30):
+                if executions:
+                    break
+                await asyncio.sleep(0.1)
+            assert len(executions) >= 1, f"Expected at least 1 execution, got {len(executions)}"
+            assert executions[0] == "tick"
+        finally:
+            await scheduler.stop()
+
+    @pytest.mark.asyncio
+    async def test_scheduler_stop_cancels_tasks(self):
+        """After stop(), no more executions should occur."""
+        executions = []
+
+        async def mock_execute(comp, record, content_name, main_loop=None):
+            executions.append(1)
+
+        scheduler = Scheduler()
+        comp = {"name": {"display": "stopper", "snake": "stopper", "pascal": "Stopper"}}
+        scheduler.register(comp, 0.5, mock_execute)
+        await scheduler.start()
+        await asyncio.sleep(0.7)
+        await scheduler.stop()
+        count_after_stop = len(executions)
+        await asyncio.sleep(0.7)
+        assert len(executions) == count_after_stop, "No executions should occur after stop()"

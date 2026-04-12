@@ -58,6 +58,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -79,6 +80,7 @@
             "medium",
             "low"
           ],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -95,6 +97,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -111,6 +114,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -127,6 +131,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -143,6 +148,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -159,6 +165,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": true,
           "list_type": null,
@@ -170,7 +177,9 @@
       "storage_intent": "auto",
       "has_state_machine": true,
       "initial_state": "opened",
-      "confidentiality_scopes": []
+      "confidentiality_scopes": [],
+      "audit": "actions",
+      "dependent_values": []
     },
     {
       "name": {
@@ -189,6 +198,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -205,6 +215,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -221,6 +232,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -237,6 +249,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": true,
           "list_type": null,
@@ -253,6 +266,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -274,6 +288,7 @@
             "failed",
             "rolled-back"
           ],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -285,7 +300,9 @@
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,
-      "confidentiality_scopes": []
+      "confidentiality_scopes": [],
+      "audit": "actions",
+      "dependent_values": []
     },
     {
       "name": {
@@ -304,6 +321,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -320,6 +338,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -336,6 +355,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -352,6 +372,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -368,6 +389,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": true,
           "list_type": null,
@@ -379,7 +401,9 @@
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,
-      "confidentiality_scopes": []
+      "confidentiality_scopes": [],
+      "audit": "actions",
+      "dependent_values": []
     }
   ],
   "access_grants": [

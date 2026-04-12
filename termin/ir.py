@@ -7,7 +7,6 @@ pass. Backends read pre-resolved, immutable data.
 All types are frozen dataclasses with tuples (not lists) for immutability.
 """
 
-import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Optional
@@ -50,6 +49,7 @@ class FieldSpec:
     minimum: Optional[int] = None
     maximum: Optional[int] = None
     enum_values: tuple[str, ...] = ()  # non-empty for enum columns
+    one_of_values: tuple = ()          # D-19: is one of constraint values (numbers or strings)
     foreign_key: Optional[str] = None  # target table snake name
     is_auto: bool = False              # automatic timestamp
     list_type: Optional[str] = None    # inner type for JSON list columns
@@ -62,6 +62,16 @@ Column = FieldSpec
 
 
 @dataclass(frozen=True)
+class DependentValueSpec:
+    """A conditional or unconditional field constraint in the IR."""
+    when: Optional[str]           # CEL expression, or None for unconditional
+    field: str                    # snake_case field name
+    constraint: str               # "one_of", "equals", or "default"
+    values: tuple = ()            # tuple of allowed values (for one_of)
+    value: Any = None             # single value (for equals/default)
+
+
+@dataclass(frozen=True)
 class ContentSchema:
     name: QualifiedName
     fields: tuple[FieldSpec, ...]
@@ -70,6 +80,8 @@ class ContentSchema:
     has_state_machine: bool = False
     initial_state: Optional[str] = None
     confidentiality_scopes: tuple[str, ...] = ()  # content-level scopes (inherited by fields)
+    audit: str = "actions"                          # "actions" (default), "debug", or "none"
+    dependent_values: tuple['DependentValueSpec', ...] = ()  # D-19: conditional field constraints
 
 
 # Backward-compatible alias
@@ -185,89 +197,6 @@ class RouteSpec:
 
 # ── Pages / UI ──
 
-@dataclass(frozen=True)
-class TableColumn:
-    display: str    # "SKU"
-    key: str        # "sku"
-
-
-@dataclass(frozen=True)
-class FilterField:
-    key: str                        # snake_case column name
-    display: str                    # display label
-    filter_type: str                # "text", "enum", "status", "distinct"
-    options: tuple[str, ...] = ()   # for enum/status filters
-
-
-@dataclass(frozen=True)
-class FormField:
-    key: str                        # snake_case column name
-    display: str                    # display label
-    input_type: str                 # "text", "number", "currency", "enum", "reference"
-    required: bool = False
-    minimum: Optional[int] = None
-    step: Optional[str] = None      # e.g. "0.01" for currency
-    enum_values: tuple[str, ...] = ()
-    reference_content: Optional[str] = None       # resolved snake_case
-    reference_display_col: Optional[str] = None
-    reference_unique_col: Optional[str] = None
-
-
-@dataclass(frozen=True)
-class HighlightRule:
-    field: str              # snake_case
-    operator: str           # "lte"
-    threshold_field: str    # snake_case
-
-
-@dataclass(frozen=True)
-class RelatedDataSpec:
-    related_content: str       # snake_case
-    join_column: str         # column in related table referencing this table
-    display_columns: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class AggregationSpec:
-    key: str                # slug for template variable
-    description: str        # display text
-    agg_type: str           # "count", "count_by_status", "sum_join"
-    content_ref: str              # target table snake_case
-    join_content: Optional[str] = None
-    join_column: Optional[str] = None
-    sum_expression: Optional[str] = None
-
-
-@dataclass(frozen=True)
-class ChartSpec:
-    content_ref: str              # snake_case
-    days: int = 30
-    chart_type: str = "line"
-
-
-@dataclass(frozen=True)
-class PageSpec:
-    name: str                                       # "Inventory Dashboard"
-    slug: str                                       # "inventory_dashboard"
-    role: str                                       # which role this story belongs to
-    display_content: Optional[str] = None             # table snake_case
-    table_columns: tuple[TableColumn, ...] = ()
-    filters: tuple[FilterField, ...] = ()
-    search_fields: tuple[str, ...] = ()             # snake_case column names
-    highlight: Optional[HighlightRule] = None
-    subscribe_stream: Optional[str] = None          # content name for SSE
-    related: Optional[RelatedDataSpec] = None
-    form_fields: tuple[FormField, ...] = ()         # empty = no form
-    form_target_content: Optional[str] = None
-    create_as_status: Optional[str] = None
-    validate_unique_field: Optional[str] = None
-    after_save_instruction: Optional[str] = None
-    aggregations: tuple[AggregationSpec, ...] = ()
-    chart: Optional[ChartSpec] = None
-    required_scope: Optional[str] = None            # scope for form POST
-    static_texts: tuple[str, ...] = ()              # plain text content blocks
-    static_expressions: tuple[str, ...] = ()        # compute expression calls
-
 
 # ── Presentation v2: Component Tree ──
 
@@ -301,163 +230,6 @@ class PageEntry:
     required_scope: Optional[str] = None
     children: tuple = ()   # tuple of ComponentNode
 
-
-def page_entry_to_pagespec(entry: 'PageEntry') -> PageSpec:
-    """Convert a PageEntry component tree back to a flat PageSpec for legacy backends."""
-    display_content = None
-    table_columns = []
-    filters = []
-    search_fields = []
-    highlight = None
-    subscribe_stream = None
-    related = None
-    form_fields = []
-    form_target = None
-    create_as = None
-    validate_unique = None
-    after_save = None
-    aggregations = []
-    chart = None
-    scope = entry.required_scope
-    static_texts = []
-    static_expressions = []
-
-    def _walk(children, parent_type=None):
-        nonlocal display_content, highlight, subscribe_stream, related
-        nonlocal form_target, create_as, validate_unique, after_save, chart, scope
-
-        for node in children:
-            t = node.type
-            p = node.props
-
-            if t == "text":
-                content = p.get("content", "")
-                if isinstance(content, dict) and content.get("is_expr"):
-                    static_expressions.append(content["value"])
-                elif isinstance(content, PropValue) and content.is_expr:
-                    static_expressions.append(content.value)
-                else:
-                    val = content.value if isinstance(content, PropValue) else content
-                    static_texts.append(val)
-
-            elif t == "data_table":
-                display_content = p.get("source")
-                for col in p.get("columns", []):
-                    table_columns.append(TableColumn(
-                        display=col.get("label", col.get("field", "")),
-                        key=col.get("field", ""),
-                    ))
-                _walk(node.children, parent_type="data_table")
-
-            elif t == "filter":
-                filters.append(FilterField(
-                    key=p.get("field", ""),
-                    display=p.get("field", ""),
-                    filter_type={"enum": "enum", "state": "status", "distinct": "distinct",
-                                 "reference": "text"}.get(p.get("mode", "text"), "text"),
-                    options=tuple(p.get("options", [])),
-                ))
-
-            elif t == "search":
-                search_fields.extend(p.get("fields", []))
-
-            elif t == "highlight":
-                cond = p.get("condition")
-                if isinstance(cond, dict) and cond.get("is_expr"):
-                    highlight = HighlightRule(field="", operator="expr", threshold_field=cond["value"])
-
-            elif t == "subscribe":
-                subscribe_stream = p.get("content")
-
-            elif t == "related":
-                related = RelatedDataSpec(
-                    related_content=p.get("content", ""),
-                    join_column=p.get("join", ""),
-                    display_columns=(),
-                )
-
-            elif t == "form":
-                form_target = p.get("target")
-                create_as = p.get("create_as")
-                after_save = p.get("after_save")
-                if p.get("submit_scope"):
-                    scope = p["submit_scope"]
-                _walk(node.children, parent_type="form")
-
-            elif t == "field_input":
-                form_fields.append(FormField(
-                    key=p.get("field", ""),
-                    display=p.get("label", p.get("field", "")),
-                    input_type=p.get("input_type", "text"),
-                    required=p.get("required", False),
-                    minimum=p.get("minimum"),
-                    step=p.get("step"),
-                    enum_values=tuple(p.get("enum_values", [])),
-                    reference_content=p.get("reference_content"),
-                    reference_display_col=p.get("reference_display_col"),
-                    reference_unique_col=p.get("reference_unique_col"),
-                ))
-
-            elif t == "aggregation":
-                agg_key = re.sub(r'[^a-z0-9]+', '_', p.get("label", "agg").lower()).strip('_')[:30]
-                # Map component agg_type to legacy backend agg_type
-                at = p.get("agg_type", "count")
-                legacy_agg = {"sum": "sum_join", "average": "sum_join", "minimum": "sum_join",
-                              "maximum": "sum_join"}.get(at, at)
-                expr = None
-                if isinstance(p.get("expression"), dict):
-                    expr = p["expression"].get("value")
-                aggregations.append(AggregationSpec(
-                    key=agg_key,
-                    description=p.get("label", ""),
-                    agg_type=legacy_agg,
-                    content_ref=p.get("source", ""),
-                    sum_expression=expr,
-                ))
-
-            elif t == "stat_breakdown":
-                agg_key = re.sub(r'[^a-z0-9]+', '_', p.get("label", "breakdown").lower()).strip('_')[:30]
-                aggregations.append(AggregationSpec(
-                    key=agg_key,
-                    description=p.get("label", ""),
-                    agg_type="count_by_status",
-                    content_ref=p.get("source", ""),
-                ))
-
-            elif t == "chart":
-                chart = ChartSpec(
-                    content_ref=p.get("source", ""),
-                    days=p.get("period_days", 30),
-                    chart_type=p.get("chart_type", "line"),
-                )
-
-            elif t == "section":
-                _walk(node.children, parent_type=parent_type)
-
-    _walk(entry.children)
-
-    return PageSpec(
-        name=entry.name,
-        slug=entry.slug,
-        role=entry.role,
-        display_content=display_content,
-        table_columns=tuple(table_columns),
-        filters=tuple(filters),
-        search_fields=tuple(search_fields),
-        highlight=highlight,
-        subscribe_stream=subscribe_stream,
-        related=related,
-        form_fields=tuple(form_fields),
-        form_target_content=form_target,
-        create_as_status=create_as,
-        validate_unique_field=validate_unique,
-        after_save_instruction=after_save,
-        aggregations=tuple(aggregations),
-        chart=chart,
-        required_scope=scope,
-        static_texts=tuple(static_texts),
-        static_expressions=tuple(static_expressions),
-    )
 
 
 # ── Navigation ──

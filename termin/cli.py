@@ -101,14 +101,17 @@ def _generate_deploy_template(ir_dict: dict, external_channels: list) -> dict:
     }
 
 
-def _compile_source(source_path: Path):
+def _compile_source(source_path: Path, format_json: bool = False):
     """Compile a .termin source file. Returns (program, spec, source_text)."""
     source_text = source_path.read_text(encoding="utf-8")
 
     # Parse
     program, parse_errors = parse(source_text)
     if not parse_errors.ok:
-        click.echo(parse_errors.format(), err=True)
+        if format_json:
+            click.echo(json.dumps(parse_errors.to_json_list(), indent=2), err=True)
+        else:
+            click.echo(parse_errors.format(), err=True)
         sys.exit(1)
 
     # Generate and write back app ID if missing
@@ -143,7 +146,10 @@ def _compile_source(source_path: Path):
     # Analyze
     analysis_errors = analyze(program)
     if not analysis_errors.ok:
-        click.echo(analysis_errors.format(), err=True)
+        if format_json:
+            click.echo(json.dumps(analysis_errors.to_json_list(), indent=2), err=True)
+        else:
+            click.echo(analysis_errors.format(), err=True)
         sys.exit(1)
 
     # Lower to IR
@@ -163,12 +169,14 @@ def _compile_source(source_path: Path):
 @click.option("--emit-ir", "ir_output", default=None, type=click.Path(),
               help="Also dump the IR JSON to this file (for debugging)")
 @click.option("--legacy", is_flag=True, help="Output legacy .py + .json instead of .termin.pkg")
+@click.option("--format", "output_format", default=None, type=click.Choice(["json"]),
+              help="Error output format: json for machine-readable errors")
 def compile(source: str, output: str | None, seed_path: str | None,
             assets_path: str | None, app_version: str | None,
-            ir_output: str | None, legacy: bool):
+            ir_output: str | None, legacy: bool, output_format: str | None):
     """Compile a .termin file into a .termin.pkg package."""
     source_path = Path(source)
-    program, spec, source_text = _compile_source(source_path)
+    program, spec, source_text = _compile_source(source_path, format_json=(output_format == "json"))
 
     # Build IR JSON
     ir_dict = asdict(spec)
@@ -181,7 +189,7 @@ def compile(source: str, output: str | None, seed_path: str | None,
         ir_path.write_text(ir_json, encoding="utf-8")
         click.echo(f"IR dumped to {ir_path.name}")
 
-    # Legacy mode: output .py + .json (backward compat)
+    # Legacy mode: output .py + .json (generates slim runtime app)
     # Auto-detect: if output path ends in .py, use legacy mode
     if output and Path(output).suffix == ".py":
         legacy = True
@@ -361,7 +369,7 @@ def serve(package: str, port: int, host: str, deploy: str, no_strict_channels: b
                     click.echo(f"WARNING: Checksum mismatch for {filename}", err=True)
 
     elif pkg_path.suffix == ".json":
-        # Raw IR JSON (backward compat)
+        # Raw IR JSON (for development/debugging)
         ir_json = pkg_path.read_text(encoding="utf-8")
         seed_data = None
         seed_path = pkg_path.with_name(pkg_path.stem.replace("_ir", "") + "_seed.json")

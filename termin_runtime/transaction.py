@@ -23,6 +23,49 @@ import uuid
 from datetime import datetime
 
 
+class ContentSnapshot:
+    """A frozen, read-only snapshot of content state for postcondition evaluation.
+
+    Supports .content_query(content_name) which returns a list of records.
+    This is injected into the CEL context as Before and After objects.
+    """
+
+    def __init__(self, data: dict[str, list[dict]], result=None):
+        """Initialize a snapshot.
+
+        Args:
+            data: Dict of {content_name: [record_dicts]} for all content types.
+            result: The compute result value (if any).
+        """
+        self._data = {k: list(v) for k, v in data.items()}
+        self._result = result
+
+    def content_query(self, content_name: str) -> list[dict]:
+        """Return the list of records for a content type."""
+        return list(self._data.get(content_name, []))
+
+    @property
+    def result(self):
+        """The compute result value."""
+        return self._result
+
+    def __getattr__(self, name):
+        """Allow attribute-style access for content types: snapshot.findings."""
+        if name.startswith("_"):
+            raise AttributeError(name)
+        if name in self._data:
+            return list(self._data[name])
+        raise AttributeError(f"ContentSnapshot has no content type '{name}'")
+
+    def __getitem__(self, key):
+        """Allow dict-style access: snapshot['findings']."""
+        if key == "result":
+            return self._result
+        if key in self._data:
+            return list(self._data[key])
+        raise KeyError(key)
+
+
 class StagedWrite:
     """A single write operation in the staging area."""
     __slots__ = ("content_name", "record_id", "data", "operation", "sequence")

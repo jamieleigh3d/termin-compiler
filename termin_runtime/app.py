@@ -26,9 +26,10 @@ from .confidentiality import (
     check_compute_access, check_taint_integrity, enforce_output_taint,
     check_for_redacted_values, is_redacted,
 )
-from .transaction import Transaction
+from .transaction import Transaction, ContentSnapshot
 from .channels import ChannelDispatcher, ChannelError, ChannelScopeError, ChannelValidationError, ChannelConfigError, load_deploy_config, check_deploy_config_warnings
 from .ai_provider import AIProvider, AIProviderError, build_output_tool, build_agent_tools
+from .scheduler import Scheduler, parse_schedule_interval
 
 
 def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
@@ -77,10 +78,92 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     # Build Compute lookup with trigger index
     compute_specs = {}  # snake_name -> compute IR dict
     trigger_computes = []  # computes with event triggers
+    schedule_computes = []  # computes with schedule triggers (interval_seconds, comp)
     for comp in ir.get("computes", []):
         compute_specs[comp["name"]["snake"]] = comp
-        if (comp.get("trigger") or "").startswith("event "):
+        trigger = comp.get("trigger") or ""
+        if trigger.startswith("event "):
             trigger_computes.append(comp)
+        else:
+            interval = parse_schedule_interval(trigger)
+            if interval is not None:
+                schedule_computes.append((comp, interval))
+
+    # ── Block C: Boundary containment map ──
+    # The app itself is always a boundary. Content not in any explicit sub-boundary
+    # lives in the implicit app boundary "__app__". There is no "unrestricted" —
+    # every content type and every Compute is in exactly one boundary.
+    APP_BOUNDARY = "__app__"
+
+    # Maps content_name (snake) -> boundary_name (snake)
+    boundary_for_content: dict[str, str] = {}
+    # Maps compute_name (snake) -> boundary_name (snake)
+    boundary_for_compute: dict[str, str] = {}
+
+    # Assign content to explicit sub-boundaries
+    for bnd in ir.get("boundaries", []):
+        bnd_snake = bnd["name"]["snake"]
+        for content_snake in bnd.get("contains_content", []):
+            boundary_for_content[content_snake] = bnd_snake
+
+    # Content not in any explicit boundary → app boundary
+    for ct in ir.get("content", []):
+        ct_snake = ct["name"]["snake"]
+        if ct_snake not in boundary_for_content:
+            boundary_for_content[ct_snake] = APP_BOUNDARY
+
+    # Infer boundary for each Compute from its Accesses: a Compute is "in" a boundary
+    # if any of its Accesses content is in that boundary (first match wins)
+    for comp in ir.get("computes", []):
+        comp_snake = comp["name"]["snake"]
+        for acc in comp.get("accesses", []):
+            if acc in boundary_for_content:
+                boundary_for_compute[comp_snake] = boundary_for_content[acc]
+                break
+        # Compute with no Accesses or no matched content → app boundary
+        if comp_snake not in boundary_for_compute:
+            boundary_for_compute[comp_snake] = APP_BOUNDARY
+
+    # C2: Boundary identity restriction map
+    # Maps content_name -> required scopes (from boundary identity_mode: restrict)
+    boundary_identity_scopes: dict[str, list[str]] = {}
+    for bnd in ir.get("boundaries", []):
+        if bnd.get("identity_mode") == "restrict" and bnd.get("identity_scopes"):
+            for content_snake in bnd.get("contains_content", []):
+                boundary_identity_scopes[content_snake] = list(bnd["identity_scopes"])
+
+    def check_boundary_access(compute_snake: str, target_content: str) -> str | None:
+        """Check if a Compute can access a content type across boundaries.
+
+        Returns None if access is allowed, or an error message if denied.
+        """
+        compute_bnd = boundary_for_compute.get(compute_snake, APP_BOUNDARY)
+        content_bnd = boundary_for_content.get(target_content, APP_BOUNDARY)
+        # Same boundary → allow
+        if compute_bnd == content_bnd:
+            return None
+        # Different boundary → reject
+        return (f"Cross-boundary access denied: Compute '{compute_snake}' "
+                f"(boundary '{compute_bnd}') cannot directly access "
+                f"content '{target_content}' (boundary '{content_bnd}'). "
+                f"Cross-boundary access requires a channel.")
+
+    def check_boundary_identity(content_snake: str, user_scopes: list[str]) -> str | None:
+        """C2: Check if the caller's identity satisfies boundary restrictions.
+
+        If the content is in a boundary with identity_mode: restrict, the caller
+        must hold all declared identity_scopes. Returns None if OK, error message if denied.
+        """
+        required = boundary_identity_scopes.get(content_snake)
+        if not required:
+            return None  # No restriction or inherit mode
+        missing = [s for s in required if s not in user_scopes]
+        if missing:
+            bnd_name = boundary_for_content.get(content_snake, APP_BOUNDARY)
+            return (f"Boundary identity restriction: content '{content_snake}' "
+                    f"is in boundary '{bnd_name}' which requires scopes "
+                    f"{required}. Missing: {missing}")
+        return None
 
     # Identity
     roles = {}
@@ -120,6 +203,87 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
             if g["content"] == content_snake and verb in g["verbs"]:
                 return g["scope"]
         return None
+
+    # ── D-19: Dependent value validation ──
+    def validate_dependent_values(content_name: str, data: dict):
+        """Validate dependent value constraints (When clauses) on create/update.
+
+        Evaluates all matching When conditions and validates constraints.
+        Raises HTTPException(422) if a must be one of or must be constraint is violated.
+        """
+        schema = content_lookup.get(content_name, {})
+        dep_vals = schema.get("dependent_values", [])
+        if not dep_vals:
+            return
+
+        # Also validate field-level one_of_values constraints
+        for field_def in schema.get("fields", []):
+            fname = field_def["name"]
+            one_of = field_def.get("one_of_values", [])
+            if one_of and fname in data and data[fname] is not None and data[fname] != "":
+                val = data[fname]
+                # Type-coerce for comparison
+                if isinstance(one_of[0], (int, float)):
+                    try:
+                        val = type(one_of[0])(val)
+                    except (ValueError, TypeError):
+                        pass
+                if val not in one_of:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Invalid value '{data[fname]}' for {fname}. "
+                               f"Must be one of: {', '.join(str(v) for v in one_of)}")
+
+        for dv in dep_vals:
+            # Evaluate When condition (or unconditional if when is None)
+            if dv.get("when"):
+                try:
+                    matched = expr_eval.evaluate(dv["when"], data)
+                    if not matched:
+                        continue  # Condition not met, skip this rule
+                except Exception:
+                    continue  # Eval error — skip silently
+
+            field_name = dv["field"]
+            constraint = dv["constraint"]
+
+            if constraint == "one_of":
+                allowed = list(dv.get("values", []))
+                if field_name in data and data[field_name] is not None and data[field_name] != "":
+                    val = data[field_name]
+                    # Type-coerce for comparison
+                    if allowed and isinstance(allowed[0], (int, float)):
+                        try:
+                            val = type(allowed[0])(val)
+                        except (ValueError, TypeError):
+                            pass
+                    if val not in allowed:
+                        when_desc = f" (when {dv['when']})" if dv.get("when") else ""
+                        raise HTTPException(
+                            status_code=422,
+                            detail=f"Invalid value '{data[field_name]}' for {field_name}{when_desc}. "
+                                   f"Must be one of: {', '.join(str(v) for v in allowed)}")
+
+            elif constraint == "equals":
+                required_val = dv.get("value")
+                if field_name in data and data[field_name] is not None:
+                    val = data[field_name]
+                    if isinstance(required_val, (int, float)):
+                        try:
+                            val = type(required_val)(val)
+                        except (ValueError, TypeError):
+                            pass
+                    if val != required_val:
+                        when_desc = f" (when {dv['when']})" if dv.get("when") else ""
+                        raise HTTPException(
+                            status_code=422,
+                            detail=f"Value for {field_name}{when_desc} must be {required_val}")
+
+            elif constraint == "default":
+                # Set default if field not provided
+                default_val = dv.get("value")
+                if field_name not in data or data[field_name] is None or data[field_name] == "":
+                    data[field_name] = default_val
 
     # Register reflection with expression evaluator
     register_reflection_with_expr_eval(reflection, expr_eval)
@@ -236,6 +400,14 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         config_warnings = check_deploy_config_warnings(deploy_config, ir)
         for w in config_warnings:
             print(f"[Termin] WARNING: {w}")
+        # Schedule-triggered Computes
+        scheduler = Scheduler()
+        for comp, interval in schedule_computes:
+            scheduler.register(comp, interval, _execute_compute)
+        if scheduler.task_count:
+            await scheduler.start()
+            print(f"[Termin] Phase 4c: Scheduler started ({scheduler.task_count} task(s))")
+
         configured_channels = [ch["name"]["display"] for ch in ir.get("channels", []) if channel_dispatcher.is_configured(ch["name"]["display"])]
         if configured_channels:
             print(f"[Termin] Phase 4a: Channels connected: {', '.join(configured_channels)}")
@@ -264,6 +436,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         print(f"[Termin] Phase 5: Ready to serve")
         yield
         forwarder.cancel()
+        await scheduler.stop()
         await channel_dispatcher.shutdown()
         print(f"[Termin] Shutting down...")
 
@@ -659,6 +832,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         user_msg = f"{objective}\n\nTriggering record:\n{json.dumps(record, indent=2, default=str)}"
 
         # Tool execution function
+        comp_snake = comp["name"]["snake"]
         async def execute_tool(tool_name: str, tool_input: dict) -> dict:
             db = await get_db(db_path)
             try:
@@ -666,6 +840,9 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                     cname = tool_input.get("content_name", "")
                     if cname not in accesses:
                         return {"error": f"Access denied: {cname} not in Accesses"}
+                    bnd_err = check_boundary_access(comp_snake, cname)
+                    if bnd_err:
+                        return {"error": bnd_err}
                     filters = tool_input.get("filters", {})
                     if filters:
                         where = " AND ".join(f"{k} = ?" for k in filters)
@@ -678,6 +855,9 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                     cname = tool_input.get("content_name", "")
                     if cname not in accesses:
                         return {"error": f"Access denied: {cname} not in Accesses"}
+                    bnd_err = check_boundary_access(comp_snake, cname)
+                    if bnd_err:
+                        return {"error": bnd_err}
                     data = tool_input.get("data", {})
                     sm_info = sm_lookup.get(cname)
                     if sm_info:
@@ -697,6 +877,9 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                     cname = tool_input.get("content_name", "")
                     if cname not in accesses:
                         return {"error": f"Access denied: {cname} not in Accesses"}
+                    bnd_err = check_boundary_access(comp_snake, cname)
+                    if bnd_err:
+                        return {"error": bnd_err}
                     rid = tool_input.get("record_id")
                     data = tool_input.get("data", {})
                     await update_record(db, cname, rid, data, "id", terminator, event_bus)
@@ -706,6 +889,9 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                     cname = tool_input.get("content_name", "")
                     if cname not in accesses:
                         return {"error": f"Access denied: {cname} not in Accesses"}
+                    bnd_err = check_boundary_access(comp_snake, cname)
+                    if bnd_err:
+                        return {"error": bnd_err}
                     rid = tool_input.get("record_id")
                     target = tool_input.get("target_state")
                     result = await do_state_transition(db, cname, rid, target,
@@ -745,6 +931,13 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                 deps = [Depends(require_scope(sc))] if sc else []
                 @app.get(p, dependencies=deps)
                 async def list_route(request: Request, _cr=cr):
+                    # C2: Boundary identity restriction check
+                    user = get_current_user(request)
+                    user_scopes = list(user.get("scopes", []))
+                    bnd_id_err = check_boundary_identity(_cr, user_scopes)
+                    if bnd_id_err:
+                        raise HTTPException(status_code=403, detail=bnd_id_err)
+
                     db = await get_db(db_path)
                     try:
                         cursor = await db.execute(f"SELECT * FROM {_cr}")
@@ -752,9 +945,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                         records = [dict(r) for r in rows]
                         # Redact confidential fields
                         schema = content_lookup.get(_cr, {})
-                        user = get_current_user(request)
-                        user_scopes = set(user.get("scopes", []))
-                        return redact_records(records, schema, user_scopes)
+                        return redact_records(records, schema, set(user_scopes))
                     finally:
                         await db.close()
             make_list_route(path, content_ref, scope)
@@ -764,6 +955,13 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                 deps = [Depends(require_scope(sc))] if sc else []
                 @app.post(p, status_code=201, dependencies=deps)
                 async def create_route(request: Request, _cr=cr, _sm=sm_info):
+                    # C2: Boundary identity restriction check
+                    user = get_current_user(request)
+                    user_scopes = list(user.get("scopes", []))
+                    bnd_id_err = check_boundary_identity(_cr, user_scopes)
+                    if bnd_id_err:
+                        raise HTTPException(status_code=403, detail=bnd_id_err)
+
                     body = await request.json()
                     # Set initial state from state machine (API creates)
                     # Always override — clients cannot set initial status directly
@@ -810,6 +1008,9 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                             raise HTTPException(
                                 status_code=422,
                                 detail=f"Value {val} for {fname} exceeds maximum {fmax}")
+                    # D-19: Validate dependent value constraints
+                    validate_dependent_values(_cr, body)
+
                     # Strip unknown fields (mass assignment protection)
                     known_fields = {f["name"] for f in schema.get("fields", [])}
                     known_fields.add("status")
@@ -867,8 +1068,17 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                     write_err = check_write_access(body, schema, user_scopes)
                     if write_err:
                         raise HTTPException(status_code=403, detail=write_err)
+                    # D-19: Validate dependent value constraints
+                    # For updates, merge with existing data for condition evaluation
                     db = await get_db(db_path)
                     try:
+                        existing = await get_record(db, _cr, param_val, _lc)
+                        if existing:
+                            merged = dict(existing)
+                            merged.update(body)
+                            validate_dependent_values(_cr, merged)
+                        else:
+                            validate_dependent_values(_cr, body)
                         record = await update_record(db, _cr, param_val, body, _lc, terminator, event_bus)
                         await run_event_handlers(db, _cr, "updated", record)
                         return redact_record(record, schema, user_scopes)
@@ -1039,6 +1249,14 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                 tx.rollback()
                 raise HTTPException(status_code=500, detail=f"Precondition evaluation error: {e}")
 
+        # Block C: Boundary enforcement for CEL Compute content access
+        comp_snake_name = comp["name"]["snake"]
+        for acc_content in comp.get("accesses", []):
+            bnd_err = check_boundary_access(comp_snake_name, acc_content)
+            if bnd_err:
+                tx.rollback()
+                raise HTTPException(status_code=403, detail=bnd_err)
+
         # Execute the CEL body
         body_lines = comp.get("body_lines", [])
         if not body_lines:
@@ -1072,29 +1290,41 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         output = {"result": result, "transaction_id": tx.id}
 
         # Build Before/After snapshots for postcondition evaluation
-        # Before: content data as it was before execution
-        # After: content data with staged changes applied + compute result
-        before_snapshot = {"result": None}
-        after_snapshot = {"result": result}
+        # Before: frozen read-only snapshot of content state at transaction start
+        # After: current state (staging merged with DB) at postcondition evaluation time
+        before_data = {"result": None}
+        after_data = {"result": result}
 
         # Load content data for input/output content types referenced by this Compute
         try:
             db = await get_db(db_path)
-            for content_name in set(comp.get("input_content", []) + comp.get("output_content", [])):
+            all_content_refs = set(
+                comp.get("input_content", [])
+                + comp.get("output_content", [])
+                + comp.get("accesses", [])
+            )
+            for content_name in all_content_refs:
                 cursor = await db.execute(f"SELECT * FROM {content_name}")
                 rows = await cursor.fetchall()
                 records = [dict(r) for r in rows]
-                before_snapshot[content_name] = records
-                # After = same as before + any staged writes (currently CEL-only = no writes)
-                after_snapshot[content_name] = await tx.read_all(content_name, records)
+                before_data[content_name] = records
+                # After = production records with staged changes applied
+                after_data[content_name] = await tx.read_all(content_name, records)
             await db.close()
         except Exception:
             pass  # If content loading fails, postconditions use simplified snapshots
 
-        # Evaluate postconditions
+        # Also store as ContentSnapshot objects for Python-side use
+        before_snapshot_obj = ContentSnapshot(
+            {k: v for k, v in before_data.items() if k != "result"}, result=None)
+        after_snapshot_obj = ContentSnapshot(
+            {k: v for k, v in after_data.items() if k != "result"}, result=result)
+
+        # Evaluate postconditions — Before/After are CEL-compatible dicts
+        # with content_query available as a registered function
         post_ctx = dict(compute_ctx)
-        post_ctx["After"] = after_snapshot
-        post_ctx["Before"] = before_snapshot
+        post_ctx["After"] = after_data
+        post_ctx["Before"] = before_data
         for i, postcond in enumerate(comp.get("postconditions", [])):
             try:
                 check = expr_eval.evaluate(postcond, post_ctx)

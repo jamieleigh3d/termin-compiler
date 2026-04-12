@@ -17,7 +17,6 @@ The compiler has a pluggable architecture with an explicit Intermediate Represen
 - **Frontend** (termin/): PEG parser (TatSu), analyzer — produces a validated AST
 - **IR** (termin/ir.py + termin/lower.py): Lowers AST to AppSpec — fully resolved, immutable, backend-agnostic
 - **Backends** (termin/backends/): Read AppSpec and generate output
-  - `fastapi.py` — Legacy backend: generates a single self-contained app.py (~2000 lines, being deprecated)
   - `runtime.py` — Runtime backend: generates slim 24-line app.py + companion IR JSON, uses termin_runtime package
 - **Runtime** (termin_runtime/): Python package with 9 modules implementing the runtime subsystems
 
@@ -35,7 +34,6 @@ termin/                     # Compiler package (pip install -e .)
   lower.py                  # Lowering pass: Program AST -> AppSpec IR (component trees)
   backend.py                # Backend protocol + plugin discovery via entry points
   backends/
-    fastapi.py              # Legacy backend (deprecated): AppSpec -> single Python file
     runtime.py              # Runtime backend: AppSpec -> slim app.py + companion .json
 termin_runtime/             # Runtime package — reads IR JSON, serves the app
   __init__.py               # Exports create_termin_app()
@@ -80,11 +78,8 @@ setup.py                    # Package config, entry_points -> termin CLI
 # Install compiler in dev mode
 pip install -e .
 
-# Compile with runtime backend (preferred)
-termin compile examples/warehouse.termin -o app.py --backend runtime
-
-# Compile with legacy backend
-termin compile examples/warehouse.termin -o app.py --backend fastapi
+# Compile
+termin compile examples/warehouse.termin -o app.py
 
 # Dump IR
 termin compile examples/warehouse.termin -o app.py --emit-ir warehouse_ir.json
@@ -122,7 +117,7 @@ The IR (`AppSpec` in ir.py) is immutable and fully resolved. Key types:
 - `EventSpec` with CEL conditions and log levels
 - `ComputeSpec`, `ChannelSpec` (Direction/Delivery intents), `BoundarySpec`
 
-Legacy `PageSpec` (22 flat fields) is retained for backward compat with `page_entry_to_pagespec()` shim.
+Legacy `PageSpec` and `page_entry_to_pagespec()` shim removed in v0.6.
 
 ## Runtime Backend
 

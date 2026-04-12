@@ -3,7 +3,7 @@
 Backends implement the Backend protocol and register via entry points:
 
     [project.entry-points."termin.backends"]
-    fastapi = "termin.backends.fastapi:FastApiBackend"
+    runtime = "termin.backends.runtime:RuntimeBackend"
 
 The CLI discovers backends at runtime via importlib.metadata.
 """

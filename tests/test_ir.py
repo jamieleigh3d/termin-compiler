@@ -831,3 +831,45 @@ As anonymous, I want to see a page "Board" so that I can see tasks:
         assert agg is not None
         assert agg.props["agg_type"] == "count"
         assert agg.props["source"] == "tasks"
+
+
+# ── D-18: Audit on ContentSchema ──
+
+class TestContentSchemaAudit:
+    _AUTH_PREAMBLE = '''Users authenticate with stub
+Scopes are "read"
+A "user" has "read"
+'''
+
+    def _parse_and_lower(self, source):
+        program, errors = parse(self._AUTH_PREAMBLE + source)
+        assert errors.ok, errors.format()
+        result = analyze(program)
+        assert result.ok, result.format()
+        return lower(program)
+
+    def test_audit_actions_in_ir(self):
+        source = '''Content called "events":
+  Each event has a title which is text
+  Anyone with "read" can view events
+  Audit level: actions
+'''
+        spec = self._parse_and_lower(source)
+        assert spec.content[0].audit == "actions"
+
+    def test_audit_none_in_ir(self):
+        source = '''Content called "events":
+  Each event has a title which is text
+  Anyone with "read" can view events
+  Audit level: none
+'''
+        spec = self._parse_and_lower(source)
+        assert spec.content[0].audit == "none"
+
+    def test_audit_default_actions_in_ir(self):
+        source = '''Content called "events":
+  Each event has a title which is text
+  Anyone with "read" can view events
+'''
+        spec = self._parse_and_lower(source)
+        assert spec.content[0].audit == "actions"

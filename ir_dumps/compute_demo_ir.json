@@ -47,6 +47,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -63,6 +64,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -83,6 +85,7 @@
             "medium",
             "high"
           ],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -94,7 +97,9 @@
       "storage_intent": "auto",
       "has_state_machine": true,
       "initial_state": "pending",
-      "confidentiality_scopes": []
+      "confidentiality_scopes": [],
+      "audit": "actions",
+      "dependent_values": []
     },
     {
       "name": {
@@ -113,6 +118,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": "orders",
           "is_auto": false,
           "list_type": null,
@@ -129,6 +135,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -145,6 +152,7 @@
           "minimum": 1,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -161,6 +169,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -172,7 +181,9 @@
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,
-      "confidentiality_scopes": []
+      "confidentiality_scopes": [],
+      "audit": "actions",
+      "dependent_values": []
     },
     {
       "name": {
@@ -191,6 +202,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -207,6 +219,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -218,7 +231,9 @@
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,
-      "confidentiality_scopes": []
+      "confidentiality_scopes": [],
+      "audit": "actions",
+      "dependent_values": []
     }
   ],
   "access_grants": [
@@ -735,8 +750,7 @@
       "boundary_type": "application",
       "contains_content": [
         "orders",
-        "order_lines",
-        "reports"
+        "order_lines"
       ],
       "contains_boundaries": [],
       "identity_mode": "inherit",

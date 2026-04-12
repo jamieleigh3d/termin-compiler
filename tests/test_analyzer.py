@@ -455,3 +455,161 @@ def test_compute_demo_passes():
     assert parse_errors.ok, parse_errors.format()
     result = analyze(program)
     assert result.ok, result.format()
+
+
+# ── D-18: Audit level validation ──
+
+def test_audit_level_valid_values():
+    """Valid audit levels should pass analysis."""
+    preamble = '''Users authenticate with stub
+Scopes are "read"
+A "user" has "read"
+'''
+    for level in ("actions", "debug", "none"):
+        src = preamble + f'''Content called "events":
+  Each event has a title which is text
+  Anyone with "read" can view events
+  Audit level: {level}'''
+        result = _analyze(src)
+        assert result.ok, f"Audit level '{level}' should be valid: {result.format()}"
+
+
+def test_audit_level_invalid_detected():
+    """Invalid audit levels should be caught by the analyzer."""
+    from termin.ast_nodes import Content, Field, TypeExpr
+    # Manually create a Content with bad audit to test the analyzer check
+    from termin.ast_nodes import Program
+    prog = Program()
+    prog.contents.append(Content(name="items", singular="item", audit="verbose"))
+    result = analyze(prog)
+    assert not result.ok
+    assert any("audit level" in str(e.message).lower() for e in result.errors)
+
+
+# ── Structured error codes and fuzzy matching ──
+
+def test_error_codes_present():
+    """All errors should have error codes."""
+    src = '''Users authenticate with stub
+Scopes are "read"
+A "admin" has "reed"'''
+    result = _analyze(src)
+    assert not result.ok
+    for e in result.errors:
+        assert e.code is not None, f"Error should have a code: {e}"
+        assert e.code.startswith("TERMIN-"), f"Error code should start with TERMIN-: {e.code}"
+
+
+def test_fuzzy_match_scope_suggestion():
+    """Fuzzy matching should suggest similar scope names."""
+    src = '''Users authenticate with stub
+Scopes are "orders.read", "orders.write"
+A "clerk" has "orders.reed"'''
+    result = _analyze(src)
+    assert not result.ok
+    err = result.errors[0]
+    assert err.code == "TERMIN-S002"
+    assert err.suggestion is not None
+    assert "orders.read" in err.suggestion
+
+
+def test_fuzzy_match_role_suggestion():
+    """Fuzzy matching should suggest similar role names."""
+    src = '''Users authenticate with stub
+Scopes are "read"
+A "admin" has "read"
+As admni, I want to see a page "Dashboard" so that I can manage:
+  Show a page called "Dashboard"
+  Display text "hello"'''
+    result = _analyze(src)
+    assert not result.ok
+    role_errors = [e for e in result.errors if "role" in e.message.lower() and e.code == "TERMIN-S011"]
+    assert len(role_errors) >= 1
+    assert role_errors[0].suggestion is not None
+    assert "admin" in role_errors[0].suggestion
+
+
+def test_fuzzy_match_content_suggestion():
+    """Fuzzy matching should suggest similar content names."""
+    from termin.ast_nodes import Content, Field, TypeExpr, AccessRule, Program, Identity
+    prog = Program()
+    prog.identity = Identity(provider="stub", scopes=["read"])
+    prog.contents.append(Content(
+        name="orders", singular="order",
+        fields=[Field("title", TypeExpr("text"))],
+        access_rules=[AccessRule("read", ["view"])],
+    ))
+    prog.contents.append(Content(
+        name="items", singular="item",
+        fields=[Field("title", TypeExpr("text")),
+                Field("ref", TypeExpr("reference", references="ordrs"))],  # typo
+        access_rules=[AccessRule("read", ["view"])],
+    ))
+    result = analyze(prog)
+    assert not result.ok
+    ref_errors = [e for e in result.errors if e.code == "TERMIN-S003"]
+    assert len(ref_errors) == 1
+    assert ref_errors[0].suggestion is not None
+    assert "orders" in ref_errors[0].suggestion
+
+
+def test_error_to_dict():
+    """Errors should serialize to JSON dicts."""
+    src = '''Users authenticate with stub
+Scopes are "read"
+A "admin" has "reed"'''
+    result = _analyze(src)
+    assert not result.ok
+    json_list = result.to_json_list()
+    assert isinstance(json_list, list)
+    assert len(json_list) >= 1
+    entry = json_list[0]
+    assert "code" in entry
+    assert "message" in entry
+    assert "line" in entry
+    assert "suggestion" in entry
+    assert "severity" in entry
+    assert entry["severity"] == "error"
+
+
+def test_security_error_codes():
+    """Security errors should have TERMIN-X codes."""
+    src = '''Content called "items":
+  Each item has a title which is text'''
+    result = _analyze(src)
+    assert not result.ok
+    sec_errors = [e for e in result.errors if isinstance(e, SecurityError)]
+    assert len(sec_errors) >= 1
+    for e in sec_errors:
+        assert e.code is not None
+        assert e.code.startswith("TERMIN-X"), f"Security errors should have X codes: {e.code}"
+
+
+def test_parse_error_codes():
+    """Parse errors should have TERMIN-P codes."""
+    from termin.peg_parser import parse_peg as parse_fn
+    _, errors = parse_fn("This is not valid Termin syntax at all!")
+    assert not errors.ok
+    for e in errors.errors:
+        assert e.code is not None
+        assert e.code.startswith("TERMIN-P"), f"Parse errors should have P codes: {e.code}"
+
+
+def test_levenshtein_basic():
+    """Levenshtein distance function should work correctly."""
+    from termin.analyzer import _levenshtein
+    assert _levenshtein("", "") == 0
+    assert _levenshtein("abc", "abc") == 0
+    assert _levenshtein("abc", "abd") == 1
+    assert _levenshtein("abc", "abcd") == 1
+    assert _levenshtein("kitten", "sitting") == 3
+
+
+def test_fuzzy_match_no_suggestion_for_distant():
+    """Fuzzy matching should not suggest names that are too far away."""
+    from termin.analyzer import _fuzzy_match
+    candidates = {"orders", "items", "users"}
+    # "xyz" is too far from any candidate
+    assert _fuzzy_match("xyz", candidates) is None
+    # "ordrs" is close to "orders" (distance 1)
+    assert _fuzzy_match("ordrs", candidates) == "orders"

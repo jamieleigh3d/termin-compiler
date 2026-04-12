@@ -538,3 +538,39 @@ def test_parse_compute_demo():
     assert len(program.computes) == 5
     assert len(program.channels) == 4
     assert len(program.boundaries) == 2
+
+
+# ── D-18: Audit declaration on Content ──
+
+class TestContentAudit:
+    def test_audit_level_actions(self):
+        src = '''Content called "events":
+  Each event has a title which is text
+  Audit level: actions'''
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        assert program.contents[0].audit == "actions"
+
+    def test_audit_level_debug(self):
+        src = '''Content called "events":
+  Each event has a title which is text
+  Audit level: debug'''
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        assert program.contents[0].audit == "debug"
+
+    def test_audit_level_none(self):
+        src = '''Content called "events":
+  Each event has a title which is text
+  Audit level: none'''
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        assert program.contents[0].audit == "none"
+
+    def test_audit_default_is_actions(self):
+        """When no Audit line is present, default is 'actions' (pit of success)."""
+        src = '''Content called "events":
+  Each event has a title which is text'''
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        assert program.contents[0].audit == "actions"

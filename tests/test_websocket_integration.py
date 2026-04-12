@@ -75,9 +75,9 @@ class UvicornTestServer:
             self.thread.join(timeout=5)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def agent_simple_server():
-    """Start a real server with agent_simple app."""
+    """Start a real server with agent_simple app (shared across module)."""
     ir_json = _load_ir("agent_simple")
     app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
     server = UvicornTestServer(app)
@@ -86,11 +86,10 @@ def agent_simple_server():
     server.stop()
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def channel_simple_server():
-    """Start a real server with channel_simple app."""
+    """Start a real server with channel_simple app (shared across module)."""
     ir_json = _load_ir("channel_simple")
-    # channel_simple has no external channels that need config
     app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
     server = UvicornTestServer(app)
     server.start()

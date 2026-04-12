@@ -302,10 +302,14 @@ class WebSocketConnection:
                 asyncio.create_task(self._reconnect())
 
     async def _reconnect(self):
-        """Reconnect with exponential backoff."""
+        """Reconnect with exponential backoff, up to max_retries attempts."""
         self._reconnect_count += 1
+        if self._reconnect_count > self.config.max_retries:
+            logger.warning(f"Channel '{self.channel_name}': max reconnect attempts ({self.config.max_retries}) reached, giving up")
+            self._state = "failed"
+            return
         backoff = min(self.config.backoff_ms * (2 ** (self._reconnect_count - 1)) / 1000.0, 60.0)
-        logger.info(f"Channel '{self.channel_name}': reconnecting in {backoff:.1f}s (attempt {self._reconnect_count})")
+        logger.info(f"Channel '{self.channel_name}': reconnecting in {backoff:.1f}s (attempt {self._reconnect_count}/{self.config.max_retries})")
         await asyncio.sleep(backoff)
         await self.connect()
 
