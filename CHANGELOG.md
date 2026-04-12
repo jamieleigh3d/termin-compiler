@@ -1,5 +1,68 @@
 # Changelog
 
+## v0.6.0 "Boundaries" (2026-04-11)
+
+### Theme: Enforcement, Quality, Cleanup
+
+### Boundary Enforcement (Block C)
+- **Implicit app boundary:** The app itself is always a boundary. Content not in any explicit sub-boundary lives in the implicit `__app__` boundary. No "unrestricted" mode.
+- **Containment map:** Built at startup. Every content type and Compute is in exactly one boundary.
+- **Channel-only crossing:** Cross-boundary access rejected with 403. `from` clause for explicit channel crossing deferred to v1.0.
+- **Duplicate content check:** TERMIN-S030 — content cannot appear in multiple boundaries.
+
+### Cross-Boundary Identity Propagation (C2)
+- **Boundary identity_mode: restrict** enforced at CRUD level. Route scope grants API access; boundary scope gates entry to the boundary. Defense-in-depth.
+- **Webhook scope enforcement** verified — inbound channels check caller's scopes before accepting data.
+
+### Audit Levels (D-18)
+- Three levels: `actions` (default), `debug`, `none` — pit of success design.
+- `actions` logs event type, record ID, field names, identity, timestamp. Never field values.
+- `audit` field on ContentSchema in IR.
+
+### Dependent Field Values (D-19)
+- **When clauses:** `When \`expr\`, field must be one of:` / `must be` / `defaults to`
+- **Unified is-one-of:** Constraint modifier on any base type, not just enums
+- **Runtime enforcement:** 422 on constraint violation, default application on create/update
+
+### Other Features
+- **G1:** Compute system type in CEL precondition context
+- **G2:** Before/After snapshots for postcondition evaluation (ContentSnapshot class)
+- **G5:** Runtime scheduler for `Trigger on schedule`
+- **Structured compiler errors:** Error codes (TERMIN-S/X/W), fuzzy-match suggestions, `--format json`
+- **WebSocket reconnect limit:** Max retries (default 3) instead of infinite retry
+
+### Removals (No Backward Compatibility)
+- **Legacy pyjexl backend** deleted (~2,100 lines). Only the runtime backend remains.
+- **PageSpec + page_entry_to_pagespec** removed from IR — component tree is the only representation.
+- All stale xfails removed. All skipped tests removed.
+
+### Quality
+- **Code coverage:** pytest-cov with 69% floor. v0.6 new code at 95.2%.
+- **Compiler coverage:** 89%. **Runtime coverage:** 73%. Measured separately.
+- **Conformance suite:** 671 tests covering HTTP, WebSocket, and Agent tool API.
+- **Agent tool conformance:** `deploy_with_agent_mock()` adapter method. Tests content_query, content_create, access control through mock tool calls.
+- **Test performance:** Module-scoped WS fixtures, DB isolation. 23% faster suite.
+
+### IR Schema
+- `ContentSchema.audit`: actions/debug/none
+- `ContentSchema.dependent_values`: array of DependentValueSpec
+- `FieldSpec.one_of_values`: field-level constraint
+- `DependentValueSpec`: when, field, constraint, values, value
+- `BoundarySpec.identity_scopes`: boundary restriction scopes
+
+### Documentation
+- Phase 0 roadmap: all items marked DONE
+- Design decisions D-03, D-04, D-17, D-18, D-19 decided and documented
+- Resolved decisions archived to `termin-roadmap-archive.md`
+- IR version references synced (0.2.0/0.3.0 → 0.5.0)
+- `termin-ir-spec.md` marked SUPERSEDED
+- Sub-agent TDD instructions in CLAUDE.md
+
+### Stats
+- 690 tests in main repo, 671 in conformance suite = 1,361 total
+- 0 failures, 0 skips, 0 xfails
+- 12 examples, all compile cleanly
+
 ## v0.5.0 (2026-04-10)
 
 ### New DSL Features

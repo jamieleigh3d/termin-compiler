@@ -55,6 +55,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -78,6 +79,7 @@
             "state-deadlock",
             "error-spike"
           ],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -99,6 +101,7 @@
             "medium",
             "low"
           ],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -115,6 +118,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -131,6 +135,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -147,6 +152,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -163,6 +169,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": true,
           "list_type": null,
@@ -179,6 +186,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -190,7 +198,9 @@
       "storage_intent": "auto",
       "has_state_machine": true,
       "initial_state": "detected",
-      "confidentiality_scopes": []
+      "confidentiality_scopes": [],
+      "audit": "actions",
+      "dependent_values": []
     },
     {
       "name": {
@@ -214,6 +224,7 @@
             "confidentiality-check",
             "secret-rotation-check"
           ],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -230,6 +241,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": true,
           "list_type": null,
@@ -246,6 +258,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -262,6 +275,7 @@
           "minimum": null,
           "maximum": null,
           "enum_values": [],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -282,6 +296,7 @@
             "completed",
             "failed"
           ],
+          "one_of_values": [],
           "foreign_key": null,
           "is_auto": false,
           "list_type": null,
@@ -293,7 +308,9 @@
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,
-      "confidentiality_scopes": []
+      "confidentiality_scopes": [],
+      "audit": "actions",
+      "dependent_values": []
     }
   ],
   "access_grants": [
