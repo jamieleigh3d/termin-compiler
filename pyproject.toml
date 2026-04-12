@@ -15,9 +15,13 @@ exclude_lines = [
     "raise NotImplementedError",
 ]
 
-# To measure compiler and runtime separately:
-#   Compiler only: python -m pytest tests/ --cov=termin --cov-report=term-missing
-#   Runtime only:  python -m pytest tests/ --cov=termin_runtime --cov-report=term-missing
-# The fail_under applies to combined. Individual targets:
-#   Compiler: 87% (target 95%)
-#   Runtime:  73% (target 85% by v0.7, 95% by v1.0)
+# Measure compiler and runtime separately:
+#   Compiler only:    python -m pytest tests/ --cov=termin --cov-report=term-missing
+#   Runtime only:     python -m pytest tests/ --cov=termin_runtime --cov-report=term-missing
+#   Conformance only: cd ../termin-conformance && python -m pytest tests/ --cov=termin_runtime
+#
+# Current coverage (April 2026):
+#   Compiler (termin/):        89%  — target 95% by v0.7
+#   Runtime (termin_runtime/): 73%  — target 85% by v0.7, 95% by v1.0
+#   Conformance → runtime:    63%  — the HTTP-accessible contract
+#   v0.6 new code:            95.2%
