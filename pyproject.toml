@@ -14,3 +14,10 @@ exclude_lines = [
     "if __name__ ==",
     "raise NotImplementedError",
 ]
+
+# To measure compiler and runtime separately:
+#   Compiler only: python -m pytest tests/ --cov=termin --cov-report=term-missing
+#   Runtime only:  python -m pytest tests/ --cov=termin_runtime --cov-report=term-missing
+# The fail_under applies to combined. Individual targets:
+#   Compiler: 87% (target 95%)
+#   Runtime:  73% (target 85% by v0.7, 95% by v1.0)
