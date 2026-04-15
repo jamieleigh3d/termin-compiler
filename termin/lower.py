@@ -77,62 +77,6 @@ def _scope_for_verb(access_rules: list[AccessRule], verb: str) -> Optional[str]:
     return None
 
 
-# ── Content inference from path ──
-
-def _infer_content_for_path(path: str, contents: list[Content]) -> Optional[Content]:
-    parts = path.strip("/").split("/")
-    segment = parts[0].replace("-", " ") if parts else ""
-    for c in contents:
-        if _snake(c.name) == _snake(segment):
-            return c
-        if segment in c.name or c.name.endswith(segment):
-            return c
-    return None
-
-
-# ── Verb-to-state mapping ──
-
-VERB_STATE_MAP = {
-    "activate": "active",
-    "discontinue": "discontinued",
-    "acknowledge": "acknowledged",
-    "close": "closed",
-    "resolve": "resolved",
-    "reopen": "in progress",
-    "start": "in progress",
-    "wait": "waiting on customer",
-    "complete": "done",
-    "cancel": "cancelled",
-    "approve": "approved",
-    "reject": "rejected",
-    "archive": "archived",
-    "suspend": "suspended",
-    "resume": "active",
-    "plan": "in sprint",
-    "review": "in review",
-    "rework": "in progress",
-}
-
-
-def _resolve_target_state(action: str, sm: StateMachine, ep_description: str = "") -> str:
-    """Map an API action word to an actual state name."""
-    if action in [s for s in sm.states]:
-        return action
-    if action in VERB_STATE_MAP and VERB_STATE_MAP[action] in sm.states:
-        return VERB_STATE_MAP[action]
-    # Fuzzy: state starts with action
-    for state in sm.states:
-        if state.startswith(action) or action.startswith(state.split()[0]):
-            return state
-    # Match from endpoint description
-    if ep_description:
-        desc_lower = ep_description.lower()
-        for state in sm.states:
-            if state in desc_lower:
-                return state
-    return action
-
-
 # ── Best-match content for form fields ──
 
 def _best_content_for_fields(field_names: list[str], contents: list[Content]) -> Optional[Content]:
@@ -409,75 +353,79 @@ def lower(program: Program) -> AppSpec:
             log_level=ev.log_level or "INFO",
         ))
 
-    # ── Lower API routes ──
+    # ── Auto-generate CRUD routes for every Content (D-11) ──
     routes = []
-    if program.api:
-        for ep in program.api.endpoints:
-            path = program.api.base_path.rstrip("/") + ep.path
-            content = _infer_content_for_path(ep.path, program.contents)
-            content_ref = _snake(content.name) if content else ""
-            method = HttpMethod(ep.method)
+    for c in program.contents:
+        content_ref = _snake(c.name)
+        base_path = f"/api/v1/{content_ref}"
 
-            # Determine route kind
-            has_param = "{" in ep.path
-            is_transition = False
-            kind = RouteKind.LIST
+        # Resolve scopes for each CRUD verb
+        view_scope = _scope_for_verb(c.access_rules, "view")
+        create_scope = _scope_for_verb(c.access_rules, "create")
+        update_scope = _scope_for_verb(c.access_rules, "update")
+        delete_scope = _scope_for_verb(c.access_rules, "delete")
 
-            if content and content.name in sm_by_content:
-                # Check if this is a transition endpoint
-                action = ep.path.rstrip("/").split("/")[-1]
-                if not action.startswith("{") and has_param and method == HttpMethod.POST:
-                    is_transition = True
+        # GET list
+        routes.append(RouteSpec(
+            method=HttpMethod.GET,
+            path=base_path,
+            kind=RouteKind.LIST,
+            content_ref=content_ref,
+            required_scope=view_scope,
+        ))
+        # POST create
+        routes.append(RouteSpec(
+            method=HttpMethod.POST,
+            path=base_path,
+            kind=RouteKind.CREATE,
+            content_ref=content_ref,
+            required_scope=create_scope,
+        ))
+        # GET one
+        routes.append(RouteSpec(
+            method=HttpMethod.GET,
+            path=f"{base_path}/{{id}}",
+            kind=RouteKind.GET_ONE,
+            content_ref=content_ref,
+            required_scope=view_scope,
+        ))
+        # PUT update
+        routes.append(RouteSpec(
+            method=HttpMethod.PUT,
+            path=f"{base_path}/{{id}}",
+            kind=RouteKind.UPDATE,
+            content_ref=content_ref,
+            required_scope=update_scope,
+        ))
+        # DELETE
+        routes.append(RouteSpec(
+            method=HttpMethod.DELETE,
+            path=f"{base_path}/{{id}}",
+            kind=RouteKind.DELETE,
+            content_ref=content_ref,
+            required_scope=delete_scope,
+        ))
 
-            if is_transition:
-                kind = RouteKind.TRANSITION
-            elif method == HttpMethod.GET and not has_param:
-                kind = RouteKind.LIST
-            elif method == HttpMethod.GET and has_param:
-                kind = RouteKind.GET_ONE
-            elif method == HttpMethod.POST and not has_param:
-                kind = RouteKind.CREATE
-            elif method == HttpMethod.PUT:
-                kind = RouteKind.UPDATE
-            elif method == HttpMethod.DELETE:
-                kind = RouteKind.DELETE
-
-            # Resolve scope
-            scope = None
-            if content:
-                if kind == RouteKind.LIST or kind == RouteKind.GET_ONE:
-                    scope = _scope_for_verb(content.access_rules, "view")
-                elif kind == RouteKind.CREATE:
-                    scope = _scope_for_verb(content.access_rules, "create")
-                elif kind == RouteKind.UPDATE:
-                    scope = _scope_for_verb(content.access_rules, "update")
-                elif kind == RouteKind.DELETE:
-                    scope = _scope_for_verb(content.access_rules, "delete")
-
-            # Resolve lookup column
-            lookup_col = "id"
-            if content and has_param:
-                for f in content.fields:
-                    if f.type_expr.unique:
-                        lookup_col = _snake(f.name)
-                        break
-
-            # Resolve target state for transitions
-            target_state = None
-            if is_transition and content and content.name in sm_by_content:
-                action = ep.path.rstrip("/").split("/")[-1]
-                sm = sm_by_content[content.name]
-                target_state = _resolve_target_state(action, sm, ep.description)
-
-            routes.append(RouteSpec(
-                method=method,
-                path=path,
-                kind=kind,
-                content_ref=content_ref,
-                required_scope=scope,
-                lookup_column=lookup_col,
-                target_state=target_state,
-            ))
+        # State transition routes (D-11.2)
+        # Deduplicate by target_state — multiple transitions may lead to the
+        # same state from different source states with different scopes.
+        # The runtime's do_state_transition() handler checks scopes based on
+        # the actual (from_state, to_state) pair, so we don't set a route-level
+        # scope here.
+        if c.name in sm_by_content:
+            sm = sm_by_content[c.name]
+            seen_targets = set()
+            for tr in sm.transitions:
+                if tr.to_state not in seen_targets:
+                    seen_targets.add(tr.to_state)
+                    routes.append(RouteSpec(
+                        method=HttpMethod.POST,
+                        path=f"{base_path}/{{id}}/_transition/{tr.to_state}",
+                        kind=RouteKind.TRANSITION,
+                        content_ref=content_ref,
+                        required_scope=None,  # enforced by do_state_transition
+                        target_state=tr.to_state,
+                    ))
 
     # ── Lower pages (Presentation v2: component trees) ──
     pages = []

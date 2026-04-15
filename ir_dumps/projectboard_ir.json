@@ -676,7 +676,7 @@
       "kind": "GET_ONE",
       "content_ref": "projects",
       "required_scope": "projects.view",
-      "lookup_column": "name",
+      "lookup_column": "id",
       "target_state": null
     },
     {
@@ -685,7 +685,7 @@
       "kind": "UPDATE",
       "content_ref": "projects",
       "required_scope": "projects.admin",
-      "lookup_column": "name",
+      "lookup_column": "id",
       "target_state": null
     },
     {
@@ -694,12 +694,12 @@
       "kind": "DELETE",
       "content_ref": "projects",
       "required_scope": "projects.admin",
-      "lookup_column": "name",
+      "lookup_column": "id",
       "target_state": null
     },
     {
       "method": "GET",
-      "path": "/api/v1/team-members",
+      "path": "/api/v1/team_members",
       "kind": "LIST",
       "content_ref": "team_members",
       "required_scope": "projects.view",
@@ -708,10 +708,37 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/team-members",
+      "path": "/api/v1/team_members",
       "kind": "CREATE",
       "content_ref": "team_members",
       "required_scope": "projects.admin",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/team_members/{id}",
+      "kind": "GET_ONE",
+      "content_ref": "team_members",
+      "required_scope": "projects.view",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/team_members/{id}",
+      "kind": "UPDATE",
+      "content_ref": "team_members",
+      "required_scope": "projects.admin",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/team_members/{id}",
+      "kind": "DELETE",
+      "content_ref": "team_members",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     },
@@ -730,6 +757,15 @@
       "kind": "CREATE",
       "content_ref": "sprints",
       "required_scope": "sprints.manage",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sprints/{id}",
+      "kind": "GET_ONE",
+      "content_ref": "sprints",
+      "required_scope": "projects.view",
       "lookup_column": "id",
       "target_state": null
     },
@@ -739,6 +775,15 @@
       "kind": "UPDATE",
       "content_ref": "sprints",
       "required_scope": "sprints.manage",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/sprints/{id}",
+      "kind": "DELETE",
+      "content_ref": "sprints",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     },
@@ -789,7 +834,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/tasks/{id}/plan",
+      "path": "/api/v1/tasks/{id}/_transition/in sprint",
       "kind": "TRANSITION",
       "content_ref": "tasks",
       "required_scope": null,
@@ -798,7 +843,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/tasks/{id}/start",
+      "path": "/api/v1/tasks/{id}/_transition/in progress",
       "kind": "TRANSITION",
       "content_ref": "tasks",
       "required_scope": null,
@@ -807,7 +852,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/tasks/{id}/review",
+      "path": "/api/v1/tasks/{id}/_transition/in review",
       "kind": "TRANSITION",
       "content_ref": "tasks",
       "required_scope": null,
@@ -816,7 +861,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/tasks/{id}/complete",
+      "path": "/api/v1/tasks/{id}/_transition/done",
       "kind": "TRANSITION",
       "content_ref": "tasks",
       "required_scope": null,
@@ -824,17 +869,8 @@
       "target_state": "done"
     },
     {
-      "method": "POST",
-      "path": "/api/v1/tasks/{id}/rework",
-      "kind": "TRANSITION",
-      "content_ref": "tasks",
-      "required_scope": null,
-      "lookup_column": "id",
-      "target_state": "in progress"
-    },
-    {
       "method": "GET",
-      "path": "/api/v1/time-logs",
+      "path": "/api/v1/time_logs",
       "kind": "LIST",
       "content_ref": "time_logs",
       "required_scope": "projects.view",
@@ -843,10 +879,37 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/time-logs",
+      "path": "/api/v1/time_logs",
       "kind": "CREATE",
       "content_ref": "time_logs",
       "required_scope": "tasks.manage",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/time_logs/{id}",
+      "kind": "GET_ONE",
+      "content_ref": "time_logs",
+      "required_scope": "projects.view",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/time_logs/{id}",
+      "kind": "UPDATE",
+      "content_ref": "time_logs",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/time_logs/{id}",
+      "kind": "DELETE",
+      "content_ref": "time_logs",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     }

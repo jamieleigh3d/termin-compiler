@@ -113,20 +113,4 @@ Navigation bar:
   "Add Product" links to "Add Product" visible to manager
   "Overview" links to "Inventory Overview" visible to executive
 
---- API ---
-
-Expose a REST API at /api/v1:
-  GET    /products                lists products
-  POST   /products                creates a product
-  GET    /products/{sku}          gets a product by SKU
-  PUT    /products/{sku}          updates a product by SKU
-  DELETE /products/{sku}          deletes a product by SKU
-  POST   /products/{sku}/activate       transitions to active
-  POST   /products/{sku}/discontinue    transitions to discontinued
-  GET    /stock-levels            lists stock levels
-  POST   /stock-levels            creates a stock level
-  PUT    /stock-levels/{id}       updates a stock level
-  GET    /alerts                  lists reorder alerts
-  POST   /alerts/{id}/acknowledge acknowledges an alert
-
 Stream stock updates and alerts at /api/v1/stream

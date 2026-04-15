@@ -141,19 +141,6 @@ def test_parse_navigation():
     assert nav.items[1].visible_to == ["admin"]
 
 
-def test_parse_api():
-    program, errors = parse('''Expose a REST API at /api/v1:
-  GET    /items       lists items
-  POST   /items       creates an item
-  DELETE /items/{id}  deletes an item''')
-    assert errors.ok
-    api = program.api
-    assert api.base_path == "/api/v1"
-    assert len(api.endpoints) == 3
-    assert api.endpoints[0].method == "GET"
-    assert api.endpoints[2].method == "DELETE"
-
-
 def test_parse_warehouse_example():
     from pathlib import Path
     source = Path("examples/warehouse.termin").read_text()
@@ -165,7 +152,6 @@ def test_parse_warehouse_example():
     assert len(program.events) == 1
     assert len(program.stories) == 5
     assert program.navigation is not None
-    assert program.api is not None
     assert len(program.streams) == 1
 
 

@@ -84,20 +84,4 @@ Navigation bar:
   "Submit" links to "Submit Ticket" visible to all
   "Dashboard" links to "Support Dashboard" visible to manager
 
---- API ---
-
-Expose a REST API at /api/v1:
-  GET    /tickets              lists tickets
-  POST   /tickets              creates a ticket
-  GET    /tickets/{id}         gets a ticket
-  PUT    /tickets/{id}         updates a ticket
-  DELETE /tickets/{id}         deletes a ticket
-  POST   /tickets/{id}/start          transitions to in progress
-  POST   /tickets/{id}/wait           transitions to waiting on customer
-  POST   /tickets/{id}/resolve        transitions to resolved
-  POST   /tickets/{id}/close          transitions to closed
-  POST   /tickets/{id}/reopen         transitions to in progress
-  GET    /comments             lists comments
-  POST   /comments             creates a comment
-
 Stream ticket updates at /api/v1/stream

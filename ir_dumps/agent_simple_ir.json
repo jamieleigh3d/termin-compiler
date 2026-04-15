@@ -3,7 +3,7 @@
   "reflection_enabled": true,
   "app_id": "2b909f99-d936-4469-843c-2fdc6aceef60",
   "name": "Agent Simple",
-  "description": "Minimal AI agent \u00e2\u20ac\u201d submit a prompt, get a completion",
+  "description": "Minimal AI agent \u2014 submit a prompt, get a completion",
   "auth": {
     "provider": "stub",
     "scopes": [
@@ -117,6 +117,15 @@
       "kind": "UPDATE",
       "content_ref": "completions",
       "required_scope": "agent.use",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/completions/{id}",
+      "kind": "DELETE",
+      "content_ref": "completions",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     }

@@ -478,8 +478,17 @@
       "target_state": null
     },
     {
+      "method": "DELETE",
+      "path": "/api/v1/findings/{id}",
+      "kind": "DELETE",
+      "content_ref": "findings",
+      "required_scope": "findings.remediate",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
       "method": "POST",
-      "path": "/api/v1/findings/{id}/analyze",
+      "path": "/api/v1/findings/{id}/_transition/analyzing",
       "kind": "TRANSITION",
       "content_ref": "findings",
       "required_scope": null,
@@ -488,7 +497,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/findings/{id}/auto-fix",
+      "path": "/api/v1/findings/{id}/_transition/auto-fix-applied",
       "kind": "TRANSITION",
       "content_ref": "findings",
       "required_scope": null,
@@ -497,7 +506,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/findings/{id}/flag",
+      "path": "/api/v1/findings/{id}/_transition/flagged-for-human",
       "kind": "TRANSITION",
       "content_ref": "findings",
       "required_scope": null,
@@ -506,7 +515,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/findings/{id}/verify",
+      "path": "/api/v1/findings/{id}/_transition/verified",
       "kind": "TRANSITION",
       "content_ref": "findings",
       "required_scope": null,
@@ -515,7 +524,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/findings/{id}/close",
+      "path": "/api/v1/findings/{id}/_transition/closed",
       "kind": "TRANSITION",
       "content_ref": "findings",
       "required_scope": null,
@@ -524,7 +533,7 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/scan-runs",
+      "path": "/api/v1/scan_runs",
       "kind": "LIST",
       "content_ref": "scan_runs",
       "required_scope": "findings.view",
@@ -533,7 +542,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/scan-runs",
+      "path": "/api/v1/scan_runs",
       "kind": "CREATE",
       "content_ref": "scan_runs",
       "required_scope": "findings.triage",
@@ -542,10 +551,28 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/scan-runs/{id}",
+      "path": "/api/v1/scan_runs/{id}",
       "kind": "GET_ONE",
       "content_ref": "scan_runs",
       "required_scope": "findings.view",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/scan_runs/{id}",
+      "kind": "UPDATE",
+      "content_ref": "scan_runs",
+      "required_scope": "findings.triage",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/scan_runs/{id}",
+      "kind": "DELETE",
+      "content_ref": "scan_runs",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     }

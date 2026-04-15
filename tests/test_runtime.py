@@ -586,7 +586,7 @@ class TestStateTransitionScopeGating:
     """State transitions must enforce required_scope from the state machine."""
 
     def _create_product(self, client):
-        """Create a product and return its SKU (used as lookup column in routes)."""
+        """Create a product and return its numeric ID (D-11: auto-CRUD uses {id})."""
         import uuid
         sku = uuid.uuid4().hex[:6]
         client.cookies.set("termin_role", "warehouse manager")
@@ -595,34 +595,34 @@ class TestStateTransitionScopeGating:
             "unit_cost": 10.0,
         })
         assert r.status_code == 201
-        return sku
+        return r.json()["id"]
 
     def test_valid_transition_succeeds(self):
         """A user with the right scope can perform a valid transition."""
         with _make_client("warehouse") as client:
-            sku = self._create_product(client)
+            pid = self._create_product(client)
             # warehouse manager has "inventory.write" scope -> can activate
             client.cookies.set("termin_role", "warehouse manager")
-            r = client.post(f"/api/v1/products/{sku}/activate")
+            r = client.post(f"/api/v1/products/{pid}/_transition/active")
             assert r.status_code == 200
             assert r.json()["status"] == "active"
 
     def test_invalid_transition_rejected(self):
         """Transitioning to an undeclared target state returns 409."""
         with _make_client("warehouse") as client:
-            sku = self._create_product(client)
+            pid = self._create_product(client)
             # draft -> discontinued is not a declared transition
             client.cookies.set("termin_role", "warehouse manager")
-            r = client.post(f"/api/v1/products/{sku}/discontinue")
+            r = client.post(f"/api/v1/products/{pid}/_transition/discontinued")
             assert r.status_code == 409
 
     def test_insufficient_scope_rejected(self):
         """A user without the required scope gets 403."""
         with _make_client("warehouse") as client:
-            sku = self._create_product(client)
+            pid = self._create_product(client)
             # executive has "inventory.read" only — cannot activate (needs "inventory.write")
             client.cookies.set("termin_role", "executive")
-            r = client.post(f"/api/v1/products/{sku}/activate")
+            r = client.post(f"/api/v1/products/{pid}/_transition/active")
             assert r.status_code == 403
 
 

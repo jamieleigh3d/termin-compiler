@@ -586,7 +586,7 @@
       "kind": "GET_ONE",
       "content_ref": "departments",
       "required_scope": "employees.view",
-      "lookup_column": "name",
+      "lookup_column": "id",
       "target_state": null
     },
     {
@@ -595,7 +595,7 @@
       "kind": "UPDATE",
       "content_ref": "departments",
       "required_scope": "hr.manage",
-      "lookup_column": "name",
+      "lookup_column": "id",
       "target_state": null
     },
     {
@@ -604,12 +604,12 @@
       "kind": "DELETE",
       "content_ref": "departments",
       "required_scope": "hr.manage",
-      "lookup_column": "name",
+      "lookup_column": "id",
       "target_state": null
     },
     {
       "method": "GET",
-      "path": "/api/v1/salary-reviews",
+      "path": "/api/v1/salary_reviews",
       "kind": "LIST",
       "content_ref": "salary_reviews",
       "required_scope": "salary.access",
@@ -618,7 +618,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/salary-reviews",
+      "path": "/api/v1/salary_reviews",
       "kind": "CREATE",
       "content_ref": "salary_reviews",
       "required_scope": "hr.manage",
@@ -627,7 +627,7 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/salary-reviews/{id}",
+      "path": "/api/v1/salary_reviews/{id}",
       "kind": "GET_ONE",
       "content_ref": "salary_reviews",
       "required_scope": "salary.access",
@@ -636,12 +636,39 @@
     },
     {
       "method": "PUT",
-      "path": "/api/v1/salary-reviews/{id}",
+      "path": "/api/v1/salary_reviews/{id}",
       "kind": "UPDATE",
       "content_ref": "salary_reviews",
       "required_scope": "hr.manage",
       "lookup_column": "id",
       "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/salary_reviews/{id}",
+      "kind": "DELETE",
+      "content_ref": "salary_reviews",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/salary_reviews/{id}/_transition/approved",
+      "kind": "TRANSITION",
+      "content_ref": "salary_reviews",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": "approved"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/salary_reviews/{id}/_transition/applied",
+      "kind": "TRANSITION",
+      "content_ref": "salary_reviews",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": "applied"
     }
   ],
   "pages": [

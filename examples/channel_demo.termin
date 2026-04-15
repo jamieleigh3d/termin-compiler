@@ -226,19 +226,3 @@ Navigation bar:
   "Operations" links to "Operations Center" visible to operator
   "History" links to "Incident History" visible to all
 
---- API ---
-
-Expose a REST API at /api/v1:
-  GET    /incidents                    lists incidents
-  POST   /incidents                    creates an incident
-  GET    /incidents/{id}               gets an incident
-  PUT    /incidents/{id}               updates an incident
-  POST   /incidents/{id}/investigate   transitions to investigating
-  POST   /incidents/{id}/mitigate      transitions to mitigating
-  POST   /incidents/{id}/resolve       transitions to resolved
-  POST   /incidents/{id}/close         transitions to closed
-  GET    /deployments                  lists deployments
-  POST   /deployments                  creates a deployment
-  GET    /deployments/{id}             gets a deployment
-  GET    /alerts                       lists alerts
-  POST   /alerts                       creates an alert

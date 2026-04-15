@@ -113,22 +113,4 @@ Navigation bar:
   "Add Employee" links to "Add Employee" visible to hr business partner
   "Salary Reviews" links to "Salary Reviews" visible to hr business partner
 
---- API ---
-
-Expose a REST API at /api/v1:
-  GET    /employees              lists employees
-  POST   /employees              creates an employee
-  GET    /employees/{id}         gets an employee
-  PUT    /employees/{id}         updates an employee
-  DELETE /employees/{id}         deletes an employee
-  GET    /departments            lists departments
-  POST   /departments            creates a department
-  GET    /departments/{id}       gets a department
-  PUT    /departments/{id}       updates a department
-  DELETE /departments/{id}       deletes a department
-  GET    /salary-reviews         lists salary reviews
-  POST   /salary-reviews         creates a salary review
-  GET    /salary-reviews/{id}    gets a salary review
-  PUT    /salary-reviews/{id}    updates a salary review
-
 Stream employee updates at /api/v1/stream

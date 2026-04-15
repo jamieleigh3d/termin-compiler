@@ -160,16 +160,3 @@ Navigation bar:
   "Review" links to "Review Queue" visible to platform engineer, security reviewer
   "My Apps" links to "My Apps" visible to all
 
-Expose a REST API at /api/v1:
-  GET    /findings                    lists findings
-  POST   /findings                    creates a finding
-  GET    /findings/{id}               gets a finding
-  PUT    /findings/{id}               updates a finding
-  POST   /findings/{id}/analyze       transitions to analyzing
-  POST   /findings/{id}/auto-fix      transitions to auto-fix-applied
-  POST   /findings/{id}/flag          transitions to flagged-for-human
-  POST   /findings/{id}/verify        transitions to verified
-  POST   /findings/{id}/close         transitions to closed
-  GET    /scan-runs                   lists scan runs
-  POST   /scan-runs                   creates a scan run
-  GET    /scan-runs/{id}              gets a scan run

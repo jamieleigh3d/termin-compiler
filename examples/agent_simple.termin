@@ -37,8 +37,3 @@ As an anonymous, I want to submit prompts and see responses
 Navigation bar:
   "Agent" links to "Agent" visible to all
 
-Expose a REST API at /api/v1:
-  GET    /completions              lists completions
-  POST   /completions              creates a completion
-  GET    /completions/{id}         gets a completion
-  PUT    /completions/{id}         updates a completion

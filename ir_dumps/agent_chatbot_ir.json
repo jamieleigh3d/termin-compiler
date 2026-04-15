@@ -112,6 +112,24 @@
       "required_scope": "chat.use",
       "lookup_column": "id",
       "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/messages/{id}",
+      "kind": "UPDATE",
+      "content_ref": "messages",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/messages/{id}",
+      "kind": "DELETE",
+      "content_ref": "messages",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": null
     }
   ],
   "pages": [

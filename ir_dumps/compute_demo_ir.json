@@ -317,7 +317,170 @@
     }
   ],
   "events": [],
-  "routes": [],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/v1/orders",
+      "kind": "LIST",
+      "content_ref": "orders",
+      "required_scope": "orders.read",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orders",
+      "kind": "CREATE",
+      "content_ref": "orders",
+      "required_scope": "orders.write",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/orders/{id}",
+      "kind": "GET_ONE",
+      "content_ref": "orders",
+      "required_scope": "orders.read",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/orders/{id}",
+      "kind": "UPDATE",
+      "content_ref": "orders",
+      "required_scope": "orders.write",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/orders/{id}",
+      "kind": "DELETE",
+      "content_ref": "orders",
+      "required_scope": "orders.admin",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orders/{id}/_transition/confirmed",
+      "kind": "TRANSITION",
+      "content_ref": "orders",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": "confirmed"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orders/{id}/_transition/shipped",
+      "kind": "TRANSITION",
+      "content_ref": "orders",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": "shipped"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orders/{id}/_transition/cancelled",
+      "kind": "TRANSITION",
+      "content_ref": "orders",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": "cancelled"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/order_lines",
+      "kind": "LIST",
+      "content_ref": "order_lines",
+      "required_scope": "orders.read",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/order_lines",
+      "kind": "CREATE",
+      "content_ref": "order_lines",
+      "required_scope": "orders.write",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/order_lines/{id}",
+      "kind": "GET_ONE",
+      "content_ref": "order_lines",
+      "required_scope": "orders.read",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/order_lines/{id}",
+      "kind": "UPDATE",
+      "content_ref": "order_lines",
+      "required_scope": "orders.write",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/order_lines/{id}",
+      "kind": "DELETE",
+      "content_ref": "order_lines",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reports",
+      "kind": "LIST",
+      "content_ref": "reports",
+      "required_scope": "orders.read",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/reports",
+      "kind": "CREATE",
+      "content_ref": "reports",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reports/{id}",
+      "kind": "GET_ONE",
+      "content_ref": "reports",
+      "required_scope": "orders.read",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/reports/{id}",
+      "kind": "UPDATE",
+      "content_ref": "reports",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/reports/{id}",
+      "kind": "DELETE",
+      "content_ref": "reports",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": null
+    }
+  ],
   "pages": [
     {
       "name": "Order Dashboard",

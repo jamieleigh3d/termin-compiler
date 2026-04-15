@@ -1,0 +1,390 @@
+{
+  "ir_version": "0.7.0",
+  "reflection_enabled": true,
+  "app_id": "d11a0000-0000-0000-0000-000000000001",
+  "name": "Order Service",
+  "description": "A headless order processing service",
+  "auth": {
+    "provider": "stub",
+    "scopes": [
+      "orders.read",
+      "orders.write",
+      "orders.admin"
+    ],
+    "roles": [
+      {
+        "name": "writer",
+        "scopes": [
+          "orders.read",
+          "orders.write"
+        ]
+      },
+      {
+        "name": "admin",
+        "scopes": [
+          "orders.read",
+          "orders.write",
+          "orders.admin"
+        ]
+      }
+    ]
+  },
+  "content": [
+    {
+      "name": {
+        "display": "orders",
+        "snake": "orders",
+        "pascal": "Orders"
+      },
+      "fields": [
+        {
+          "name": "customer",
+          "display_name": "customer",
+          "business_type": "text",
+          "column_type": "TEXT",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "total",
+          "display_name": "total",
+          "business_type": "currency",
+          "column_type": "REAL",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "priority",
+          "display_name": "priority",
+          "business_type": "enum",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        }
+      ],
+      "singular": "order",
+      "storage_intent": "auto",
+      "has_state_machine": true,
+      "initial_state": "pending",
+      "confidentiality_scopes": [],
+      "audit": "actions",
+      "dependent_values": []
+    },
+    {
+      "name": {
+        "display": "order items",
+        "snake": "order_items",
+        "pascal": "OrderItems"
+      },
+      "fields": [
+        {
+          "name": "order",
+          "display_name": "order",
+          "business_type": "reference",
+          "column_type": "INTEGER",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": "orders",
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "product_name",
+          "display_name": "product name",
+          "business_type": "text",
+          "column_type": "TEXT",
+          "required": true,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "quantity",
+          "display_name": "quantity",
+          "business_type": "whole_number",
+          "column_type": "INTEGER",
+          "required": true,
+          "unique": false,
+          "minimum": 1,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "unit_price",
+          "display_name": "unit price",
+          "business_type": "currency",
+          "column_type": "REAL",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        }
+      ],
+      "singular": "order_item",
+      "storage_intent": "auto",
+      "has_state_machine": false,
+      "initial_state": null,
+      "confidentiality_scopes": [],
+      "audit": "actions",
+      "dependent_values": []
+    }
+  ],
+  "access_grants": [
+    {
+      "content": "orders",
+      "scope": "orders.read",
+      "verbs": [
+        "VIEW"
+      ]
+    },
+    {
+      "content": "orders",
+      "scope": "orders.write",
+      "verbs": [
+        "CREATE",
+        "UPDATE"
+      ]
+    },
+    {
+      "content": "orders",
+      "scope": "orders.admin",
+      "verbs": [
+        "DELETE"
+      ]
+    },
+    {
+      "content": "order_items",
+      "scope": "orders.read",
+      "verbs": [
+        "VIEW"
+      ]
+    },
+    {
+      "content": "order_items",
+      "scope": "orders.write",
+      "verbs": [
+        "CREATE",
+        "UPDATE"
+      ]
+    }
+  ],
+  "state_machines": [
+    {
+      "content_ref": "orders",
+      "machine_name": "order lifecycle",
+      "initial_state": "pending",
+      "states": [
+        "pending",
+        "confirmed",
+        "shipped",
+        "delivered"
+      ],
+      "transitions": [
+        {
+          "from_state": "pending",
+          "to_state": "confirmed",
+          "required_scope": "orders.write",
+          "feedback": []
+        },
+        {
+          "from_state": "confirmed",
+          "to_state": "shipped",
+          "required_scope": "orders.admin",
+          "feedback": []
+        },
+        {
+          "from_state": "shipped",
+          "to_state": "delivered",
+          "required_scope": "orders.admin",
+          "feedback": []
+        }
+      ],
+      "primitive_type": "content"
+    }
+  ],
+  "events": [],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/v1/orders",
+      "kind": "LIST",
+      "content_ref": "orders",
+      "required_scope": "orders.read",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orders",
+      "kind": "CREATE",
+      "content_ref": "orders",
+      "required_scope": "orders.write",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/orders/{id}",
+      "kind": "GET_ONE",
+      "content_ref": "orders",
+      "required_scope": "orders.read",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/orders/{id}",
+      "kind": "UPDATE",
+      "content_ref": "orders",
+      "required_scope": "orders.write",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/orders/{id}",
+      "kind": "DELETE",
+      "content_ref": "orders",
+      "required_scope": "orders.admin",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orders/{id}/_transition/confirmed",
+      "kind": "TRANSITION",
+      "content_ref": "orders",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": "confirmed"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orders/{id}/_transition/shipped",
+      "kind": "TRANSITION",
+      "content_ref": "orders",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": "shipped"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orders/{id}/_transition/delivered",
+      "kind": "TRANSITION",
+      "content_ref": "orders",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": "delivered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/order_items",
+      "kind": "LIST",
+      "content_ref": "order_items",
+      "required_scope": "orders.read",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/order_items",
+      "kind": "CREATE",
+      "content_ref": "order_items",
+      "required_scope": "orders.write",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/order_items/{id}",
+      "kind": "GET_ONE",
+      "content_ref": "order_items",
+      "required_scope": "orders.read",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/order_items/{id}",
+      "kind": "UPDATE",
+      "content_ref": "order_items",
+      "required_scope": "orders.write",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/order_items/{id}",
+      "kind": "DELETE",
+      "content_ref": "order_items",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": null
+    }
+  ],
+  "pages": [],
+  "nav_items": [],
+  "streams": [],
+  "computes": [],
+  "channels": [],
+  "boundaries": [],
+  "error_handlers": [],
+  "reclassification_points": []
+}

@@ -504,52 +504,52 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/products/{sku}",
+      "path": "/api/v1/products/{id}",
       "kind": "GET_ONE",
       "content_ref": "products",
       "required_scope": "inventory.read",
-      "lookup_column": "sku",
+      "lookup_column": "id",
       "target_state": null
     },
     {
       "method": "PUT",
-      "path": "/api/v1/products/{sku}",
+      "path": "/api/v1/products/{id}",
       "kind": "UPDATE",
       "content_ref": "products",
       "required_scope": "inventory.write",
-      "lookup_column": "sku",
+      "lookup_column": "id",
       "target_state": null
     },
     {
       "method": "DELETE",
-      "path": "/api/v1/products/{sku}",
+      "path": "/api/v1/products/{id}",
       "kind": "DELETE",
       "content_ref": "products",
       "required_scope": "inventory.admin",
-      "lookup_column": "sku",
+      "lookup_column": "id",
       "target_state": null
     },
     {
       "method": "POST",
-      "path": "/api/v1/products/{sku}/activate",
+      "path": "/api/v1/products/{id}/_transition/active",
       "kind": "TRANSITION",
       "content_ref": "products",
       "required_scope": null,
-      "lookup_column": "sku",
+      "lookup_column": "id",
       "target_state": "active"
     },
     {
       "method": "POST",
-      "path": "/api/v1/products/{sku}/discontinue",
+      "path": "/api/v1/products/{id}/_transition/discontinued",
       "kind": "TRANSITION",
       "content_ref": "products",
       "required_scope": null,
-      "lookup_column": "sku",
+      "lookup_column": "id",
       "target_state": "discontinued"
     },
     {
       "method": "GET",
-      "path": "/api/v1/stock-levels",
+      "path": "/api/v1/stock_levels",
       "kind": "LIST",
       "content_ref": "stock_levels",
       "required_scope": "inventory.read",
@@ -558,7 +558,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/stock-levels",
+      "path": "/api/v1/stock_levels",
       "kind": "CREATE",
       "content_ref": "stock_levels",
       "required_scope": "inventory.write",
@@ -566,8 +566,17 @@
       "target_state": null
     },
     {
+      "method": "GET",
+      "path": "/api/v1/stock_levels/{id}",
+      "kind": "GET_ONE",
+      "content_ref": "stock_levels",
+      "required_scope": "inventory.read",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
       "method": "PUT",
-      "path": "/api/v1/stock-levels/{id}",
+      "path": "/api/v1/stock_levels/{id}",
       "kind": "UPDATE",
       "content_ref": "stock_levels",
       "required_scope": "inventory.write",
@@ -575,8 +584,17 @@
       "target_state": null
     },
     {
+      "method": "DELETE",
+      "path": "/api/v1/stock_levels/{id}",
+      "kind": "DELETE",
+      "content_ref": "stock_levels",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
       "method": "GET",
-      "path": "/api/v1/alerts",
+      "path": "/api/v1/reorder_alerts",
       "kind": "LIST",
       "content_ref": "reorder_alerts",
       "required_scope": "inventory.read",
@@ -585,10 +603,37 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/alerts/{id}/acknowledge",
-      "kind": "LIST",
+      "path": "/api/v1/reorder_alerts",
+      "kind": "CREATE",
+      "content_ref": "reorder_alerts",
+      "required_scope": "inventory.write",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reorder_alerts/{id}",
+      "kind": "GET_ONE",
       "content_ref": "reorder_alerts",
       "required_scope": "inventory.read",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/reorder_alerts/{id}",
+      "kind": "UPDATE",
+      "content_ref": "reorder_alerts",
+      "required_scope": "inventory.admin",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/reorder_alerts/{id}",
+      "kind": "DELETE",
+      "content_ref": "reorder_alerts",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     }

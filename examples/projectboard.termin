@@ -123,30 +123,4 @@ Navigation bar:
   "Team" links to "Team Management" visible to project manager
   "Dashboard" links to "Project Dashboard" visible to project manager, stakeholder
 
---- API ---
-
-Expose a REST API at /api/v1:
-  GET    /projects             lists projects
-  POST   /projects             creates a project
-  GET    /projects/{id}        gets a project
-  PUT    /projects/{id}        updates a project
-  DELETE /projects/{id}        deletes a project
-  GET    /team-members         lists team members
-  POST   /team-members         creates a team member
-  GET    /sprints              lists sprints
-  POST   /sprints              creates a sprint
-  PUT    /sprints/{id}         updates a sprint
-  GET    /tasks                lists tasks
-  POST   /tasks                creates a task
-  GET    /tasks/{id}           gets a task
-  PUT    /tasks/{id}           updates a task
-  DELETE /tasks/{id}           deletes a task
-  POST   /tasks/{id}/plan              transitions to in sprint
-  POST   /tasks/{id}/start             transitions to in progress
-  POST   /tasks/{id}/review            transitions to in review
-  POST   /tasks/{id}/complete          transitions to done
-  POST   /tasks/{id}/rework            transitions to in progress
-  GET    /time-logs            lists time logs
-  POST   /time-logs            creates a time log
-
 Stream task updates at /api/v1/stream

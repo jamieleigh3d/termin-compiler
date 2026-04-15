@@ -306,23 +306,6 @@ class NavBar:
     line: int = 0
 
 
-# --- API ---
-
-@dataclass
-class ApiEndpoint:
-    method: str  # GET, POST, PUT, DELETE
-    path: str
-    description: str
-    line: int = 0
-
-
-@dataclass
-class ApiSection:
-    base_path: str
-    endpoints: list[ApiEndpoint] = field(default_factory=list)
-    line: int = 0
-
-
 # --- Streams ---
 
 @dataclass
@@ -474,7 +457,6 @@ class Program:
     events: list[EventRule] = field(default_factory=list)
     stories: list[UserStory] = field(default_factory=list)
     navigation: Optional[NavBar] = None
-    api: Optional[ApiSection] = None
     streams: list[Stream] = field(default_factory=list)
     computes: list[ComputeNode] = field(default_factory=list)
     channels: list[ChannelDecl] = field(default_factory=list)

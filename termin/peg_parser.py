@@ -18,7 +18,7 @@ from .ast_nodes import (
     HighlightRows, MarkAs, AllowFilter, AllowSearch, SubscribeTo, AcceptInput,
     ValidateUnique, CreateAs, AfterSave, ShowChart, DisplayAggregation,
     StructuredAggregation, SectionStart, ActionHeader, ActionButtonDef,
-    NavBar, NavItem, ApiSection, ApiEndpoint, Stream, Directive,
+    NavBar, NavItem, Stream, Directive,
     ComputeNode, ComputeParam, ChannelDecl, ChannelRequirement, ActionDecl, ActionParam, BoundaryDecl,
     BoundaryProperty, DisplayText, ErrorHandler, ErrorAction, LinkColumn,
 )
@@ -112,7 +112,7 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Display minimum of", "structured_agg_line"),
     ("Display maximum of", "structured_agg_line"),
     ("Display ", "display_agg_line"),
-    ("Navigation bar:", "nav_bar_line"), ("Expose a REST API at", "api_header_line"),
+    ("Navigation bar:", "nav_bar_line"),
     ("Stream ", "stream_line"), ("Compute called", "compute_header"),
     ("Channel called", "channel_header"), ("Carries ", "channel_carries_line"),
     ("Direction:", "channel_direction_line"), ("Delivery:", "channel_delivery_line"),
@@ -138,7 +138,6 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Exposes property", "boundary_exposes_line"),
 ]
 _SHAPE_KW = ("Transform:", "Reduce:", "Expand:", "Correlate:", "Route:")
-_HTTP_METHODS = ("GET ", "POST ", "PUT ", "DELETE ", "PATCH ")
 
 def _classify_line(text: str) -> str:
     # Transition feedback must be checked early — CEL messages can contain " has " which triggers role_bare_line
@@ -175,7 +174,6 @@ def _classify_line(text: str) -> str:
             return rule
     if text.startswith('"') and " transitions to " in text: return "action_button_line"
     if text.startswith('"') and " links to " in text: return "nav_item_line"
-    if any(text.startswith(m) or text.lstrip().startswith(m) for m in _HTTP_METHODS): return "api_endpoint_line"
     if any(text.startswith(kw) for kw in _SHAPE_KW): return "compute_shape_line"
     if text.startswith("```") and text.endswith("```") and len(text) > 6: return "compute_body_multiline"
     if text.startswith("`") and text.endswith("`") and not text.startswith("```"): return "compute_body_expr_line"
@@ -978,15 +976,6 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule); return ("directive", DisplayAggregation(description=str(r.get("text","")).strip() if r else text[len("Display "):].strip(), line=ln))
     if rule == "nav_bar_line": return ("nav_bar",)
     if rule == "nav_item_line": return ("nav_item", _build_nav(text, ln))
-    if rule == "api_header_line":
-        r = P(text, rule); return ("api_header", ApiSection(base_path=str(r.get("path","")).strip().rstrip(":") if r else text[len("Expose a REST API at "):].strip().rstrip(":"), line=ln))
-    if rule == "api_endpoint_line":
-        r = P(text, rule)
-        if r: return ("api_endpoint", ApiEndpoint(method=str(r.get("method","")).strip(), path=str(r.get("path","")).strip(),
-                                                   description=str(r.get("desc","")).strip() if r.get("desc") else "", line=ln))
-        ps = text.strip().split(None, 2)
-        return ("api_endpoint", ApiEndpoint(method=ps[0] if ps else "", path=ps[1] if len(ps)>1 else "",
-                                             description=ps[2].strip() if len(ps)>2 else "", line=ln))
     if rule == "stream_line":
         rest = text[len("Stream "):].strip(); ai = rest.rfind(" at ")
         if ai < 0: return ("stream", Stream(description=rest, path="", line=ln))
@@ -1211,10 +1200,6 @@ def _assemble(parsed: list) -> Program:
             nav = NavBar(); i += 1
             for ch in _collect(lambda x: x == "nav_item"): nav.items.append(ch[1])
             prog.navigation = nav
-        elif k == "api_header":
-            api = item[1]; i += 1
-            for ch in _collect(lambda x: x == "api_endpoint"): api.endpoints.append(ch[1])
-            prog.api = api
         elif k == "stream": prog.streams.append(item[1]); i += 1
         elif k == "compute_header":
             nd = item[1]; i += 1

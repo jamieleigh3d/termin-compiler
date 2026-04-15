@@ -134,10 +134,10 @@ class TestWarehouseIR:
     def test_routes(self):
         routes_by_path = {r.path: r for r in self.spec.routes}
         assert "/api/v1/products" in routes_by_path
-        # Check transition routes
-        activate = next(r for r in self.spec.routes if "activate" in r.path)
+        # D-11: Auto-generated transition routes use /_transition/{target_state}
+        activate = next(r for r in self.spec.routes if r.target_state == "active")
         assert activate.kind == RouteKind.TRANSITION
-        assert activate.target_state == "active"
+        assert activate.path == "/api/v1/products/{id}/_transition/active"
 
     def test_route_scopes(self):
         create_route = next(r for r in self.spec.routes
@@ -230,12 +230,13 @@ class TestHelpdeskIR:
         assert "resolved" in sm.states
 
     def test_transition_resolution(self):
-        start_route = next(r for r in self.spec.routes if "start" in r.path)
-        assert start_route.target_state == "in progress"
-        wait_route = next(r for r in self.spec.routes if "wait" in r.path)
-        assert wait_route.target_state == "waiting on customer"
-        resolve_route = next(r for r in self.spec.routes if "resolve" in r.path)
-        assert resolve_route.target_state == "resolved"
+        # D-11: Auto-generated transition routes use /_transition/{target_state}
+        transition_routes = [r for r in self.spec.routes if r.kind == RouteKind.TRANSITION and r.content_ref == "tickets"]
+        target_states = {r.target_state for r in transition_routes}
+        assert "in progress" in target_states
+        assert "waiting on customer" in target_states
+        assert "resolved" in target_states
+        assert "closed" in target_states
 
     def test_ticket_priority_enum(self):
         tickets = next(t for t in self.spec.content if t.name.snake == "tickets")
@@ -293,8 +294,10 @@ class TestProjectBoardIR:
         assert "done" in sm.states
 
     def test_plan_transition(self):
-        plan_route = next(r for r in self.spec.routes if "plan" in r.path)
-        assert plan_route.target_state == "in sprint"
+        # D-11: Auto-generated transition routes use /_transition/{target_state}
+        plan_route = next(r for r in self.spec.routes if r.target_state == "in sprint")
+        assert plan_route.kind == RouteKind.TRANSITION
+        assert plan_route.path == "/api/v1/tasks/{id}/_transition/in sprint"
 
     def test_create_task_form_fields(self):
         ct = next(p for p in self.spec.pages if p.slug == "create_task")

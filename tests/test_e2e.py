@@ -2,6 +2,10 @@
 
 Uses FastAPI's TestClient for in-process testing — no subprocess needed.
 The generated app.py is compiled, imported, and tested directly.
+
+D-11: Routes are now auto-generated. All CRUD uses /api/v1/{content}/{id}.
+Transition routes use /api/v1/{content}/{id}/_transition/{target_state}.
+Content paths use snake_case (e.g., /api/v1/stock_levels, not /stock-levels).
 """
 
 import importlib
@@ -47,16 +51,26 @@ def client():
         DB_PATH.unlink()
 
 
+# ── Helper: create a product and return its ID ──
+
+def _create_product(client, sku, name, **extras):
+    """Create a product and return its numeric ID."""
+    body = {"sku": sku, "name": name, **extras}
+    r = client.post("/api/v1/products", json=body)
+    assert r.status_code == 201, f"Failed to create product: {r.text}"
+    return r.json()["id"]
+
+
 # ============================================================
 # SPEC 8.1: Content tables with correct columns/types/constraints
 # ============================================================
 
 class TestSpec81_DatabaseSchema:
     def test_tables_exist(self, client):
-        """All Content tables accessible via API."""
+        """All Content tables accessible via API (D-11: auto-generated routes)."""
         assert client.get("/api/v1/products").status_code == 200
-        assert client.get("/api/v1/stock-levels").status_code == 200
-        assert client.get("/api/v1/alerts").status_code == 200
+        assert client.get("/api/v1/stock_levels").status_code == 200
+        assert client.get("/api/v1/reorder_alerts").status_code == 200
 
     def test_product_fields_and_initial_state(self, client):
         r = client.post("/api/v1/products", json={
@@ -92,46 +106,45 @@ class TestSpec82_APIRoutes:
         assert r.status_code == 200
         assert isinstance(r.json(), list)
 
-    def test_get_by_sku(self, client):
-        client.post("/api/v1/products", json={"sku": "GET-001", "name": "Gettable"})
-        r = client.get("/api/v1/products/GET-001")
+    def test_get_by_id(self, client):
+        pid = _create_product(client, "GET-001", "Gettable")
+        r = client.get(f"/api/v1/products/{pid}")
         assert r.status_code == 200
         assert r.json()["name"] == "Gettable"
 
     def test_update_product(self, client):
-        client.post("/api/v1/products", json={"sku": "UPD-001", "name": "Before"})
-        r = client.put("/api/v1/products/UPD-001", json={"name": "After"})
+        pid = _create_product(client, "UPD-001", "Before")
+        r = client.put(f"/api/v1/products/{pid}", json={"name": "After"})
         assert r.status_code == 200
         assert r.json()["name"] == "After"
 
     def test_delete_product(self, client):
-        client.post("/api/v1/products", json={"sku": "DEL-001", "name": "Deletable"})
-        r = client.delete("/api/v1/products/DEL-001",
+        pid = _create_product(client, "DEL-001", "Deletable")
+        r = client.delete(f"/api/v1/products/{pid}",
                           cookies={"termin_role": "warehouse manager"})
         assert r.status_code == 200
         assert r.json()["deleted"] is True
 
     def test_get_nonexistent(self, client):
-        assert client.get("/api/v1/products/NOPE").status_code == 404
+        assert client.get("/api/v1/products/99999").status_code == 404
 
     def test_create_stock_level(self, client):
-        r = client.post("/api/v1/products", json={"sku": "STK-001", "name": "Stocked"})
-        pid = r.json()["id"]
-        r2 = client.post("/api/v1/stock-levels", json={
+        pid = _create_product(client, "STK-001", "Stocked")
+        r2 = client.post("/api/v1/stock_levels", json={
             "product": pid, "warehouse": "Main", "quantity": 50, "reorder_threshold": 10
         })
         assert r2.status_code == 201
 
     def test_activate_product(self, client):
-        client.post("/api/v1/products", json={"sku": "ACT-001", "name": "Activatable"})
-        r = client.post("/api/v1/products/ACT-001/activate")
+        pid = _create_product(client, "ACT-001", "Activatable")
+        r = client.post(f"/api/v1/products/{pid}/_transition/active")
         assert r.status_code == 200
         assert r.json()["status"] == "active"
 
     def test_discontinue_product(self, client):
-        client.post("/api/v1/products", json={"sku": "DIS-001", "name": "Discontinuable"})
-        client.post("/api/v1/products/DIS-001/activate")
-        r = client.post("/api/v1/products/DIS-001/discontinue",
+        pid = _create_product(client, "DIS-001", "Discontinuable")
+        client.post(f"/api/v1/products/{pid}/_transition/active")
+        r = client.post(f"/api/v1/products/{pid}/_transition/discontinued",
                         cookies={"termin_role": "warehouse manager"})
         assert r.status_code == 200
         assert r.json()["status"] == "discontinued"
@@ -143,8 +156,8 @@ class TestSpec82_APIRoutes:
 
 class TestSpec83_AccessControl:
     def test_clerk_cannot_delete(self, client):
-        client.post("/api/v1/products", json={"sku": "PERM-001", "name": "Protected"})
-        r = client.delete("/api/v1/products/PERM-001",
+        pid = _create_product(client, "PERM-001", "Protected")
+        r = client.delete(f"/api/v1/products/{pid}",
                           cookies={"termin_role": "warehouse clerk"})
         assert r.status_code == 403
 
@@ -155,8 +168,8 @@ class TestSpec83_AccessControl:
         assert r.status_code == 403
 
     def test_executive_cannot_update(self, client):
-        client.post("/api/v1/products", json={"sku": "NOUPD-001", "name": "NoUpdate"})
-        r = client.put("/api/v1/products/NOUPD-001", json={"name": "Changed"},
+        pid = _create_product(client, "NOUPD-001", "NoUpdate")
+        r = client.put(f"/api/v1/products/{pid}", json={"name": "Changed"},
                        cookies={"termin_role": "executive"})
         assert r.status_code == 403
 
@@ -171,33 +184,33 @@ class TestSpec83_AccessControl:
 
 class TestSpec84_StateTransitions:
     def test_cannot_activate_already_active(self, client):
-        client.post("/api/v1/products", json={"sku": "ST-001", "name": "State Test"})
-        client.post("/api/v1/products/ST-001/activate")
-        r = client.post("/api/v1/products/ST-001/activate")
+        pid = _create_product(client, "ST-001", "State Test")
+        client.post(f"/api/v1/products/{pid}/_transition/active")
+        r = client.post(f"/api/v1/products/{pid}/_transition/active")
         assert r.status_code == 409
 
     def test_cannot_discontinue_draft(self, client):
         """No direct draft -> discontinued path exists."""
-        client.post("/api/v1/products", json={"sku": "ST-002", "name": "Draft Only"})
-        r = client.post("/api/v1/products/ST-002/discontinue",
+        pid = _create_product(client, "ST-002", "Draft Only")
+        r = client.post(f"/api/v1/products/{pid}/_transition/discontinued",
                         cookies={"termin_role": "warehouse manager"})
         assert r.status_code == 409
 
     def test_clerk_cannot_discontinue(self, client):
         """Clerk lacks admin scope for active -> discontinued."""
-        client.post("/api/v1/products", json={"sku": "ST-003", "name": "Clerk Block"})
-        client.post("/api/v1/products/ST-003/activate")
-        r = client.post("/api/v1/products/ST-003/discontinue",
+        pid = _create_product(client, "ST-003", "Clerk Block")
+        client.post(f"/api/v1/products/{pid}/_transition/active")
+        r = client.post(f"/api/v1/products/{pid}/_transition/discontinued",
                         cookies={"termin_role": "warehouse clerk"})
         assert r.status_code == 403
 
     def test_reactivate_discontinued(self, client):
         """Discontinued -> active with admin scope."""
-        client.post("/api/v1/products", json={"sku": "ST-004", "name": "Reactivate"})
-        client.post("/api/v1/products/ST-004/activate")
-        client.post("/api/v1/products/ST-004/discontinue",
+        pid = _create_product(client, "ST-004", "Reactivate")
+        client.post(f"/api/v1/products/{pid}/_transition/active")
+        client.post(f"/api/v1/products/{pid}/_transition/discontinued",
                     cookies={"termin_role": "warehouse manager"})
-        r = client.post("/api/v1/products/ST-004/activate",
+        r = client.post(f"/api/v1/products/{pid}/_transition/active",
                         cookies={"termin_role": "warehouse manager"})
         assert r.status_code == 200
         assert r.json()["status"] == "active"
@@ -209,35 +222,33 @@ class TestSpec84_StateTransitions:
 
 class TestSpec85_Events:
     def test_low_stock_creates_alert(self, client):
-        r = client.post("/api/v1/products", json={"sku": "EVT-001", "name": "Event Test"})
-        pid = r.json()["id"]
-        r2 = client.post("/api/v1/stock-levels", json={
+        pid = _create_product(client, "EVT-001", "Event Test")
+        r2 = client.post("/api/v1/stock_levels", json={
             "product": pid, "warehouse": "WH-A",
             "quantity": 50, "reorder_threshold": 10
         })
         sl_id = r2.json()["id"]
 
         # Update stock below threshold
-        client.put(f"/api/v1/stock-levels/{sl_id}",
+        client.put(f"/api/v1/stock_levels/{sl_id}",
                    json={"quantity": 5, "reorder_threshold": 10})
 
-        alerts = client.get("/api/v1/alerts").json()
+        alerts = client.get("/api/v1/reorder_alerts").json()
         matching = [a for a in alerts if a["product"] == pid]
         assert len(matching) >= 1
         assert matching[0]["current_quantity"] == 5
         assert matching[0]["threshold"] == 10
 
     def test_stock_above_threshold_no_alert(self, client):
-        before_count = len(client.get("/api/v1/alerts").json())
-        r = client.post("/api/v1/products", json={"sku": "EVT-002", "name": "No Alert"})
-        pid = r.json()["id"]
-        r2 = client.post("/api/v1/stock-levels", json={
+        before_count = len(client.get("/api/v1/reorder_alerts").json())
+        pid = _create_product(client, "EVT-002", "No Alert")
+        r2 = client.post("/api/v1/stock_levels", json={
             "product": pid, "warehouse": "WH-B",
             "quantity": 100, "reorder_threshold": 10
         })
         sl_id = r2.json()["id"]
-        client.put(f"/api/v1/stock-levels/{sl_id}", json={"quantity": 80})
-        after_count = len(client.get("/api/v1/alerts").json())
+        client.put(f"/api/v1/stock_levels/{sl_id}", json={"quantity": 80})
+        after_count = len(client.get("/api/v1/reorder_alerts").json())
         assert after_count == before_count
 
 
@@ -287,10 +298,12 @@ class TestSpec86_UIRendering:
         }, follow_redirects=False)
         assert r.status_code == 303
 
-        r2 = client.get("/api/v1/products/FORM-001")
-        assert r2.status_code == 200
-        assert r2.json()["name"] == "Form Created"
-        assert r2.json()["status"] == "draft"
+        # D-11: Verify via list + filter since routes now use {id} not {sku}
+        products = client.get("/api/v1/products").json()
+        form_product = next((p for p in products if p["sku"] == "FORM-001"), None)
+        assert form_product is not None
+        assert form_product["name"] == "Form Created"
+        assert form_product["status"] == "draft"
 
 
 # ============================================================
@@ -354,8 +367,8 @@ class TestSecurityInvariants:
         assert r.status_code == 403
 
     def test_invalid_transition_rejected(self, client):
-        client.post("/api/v1/products", json={"sku": "SEC-001", "name": "Security"})
-        r = client.post("/api/v1/products/SEC-001/discontinue",
+        pid = _create_product(client, "SEC-001", "Security")
+        r = client.post(f"/api/v1/products/{pid}/_transition/discontinued",
                         cookies={"termin_role": "warehouse manager"})
         assert r.status_code == 409
 

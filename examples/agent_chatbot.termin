@@ -39,7 +39,3 @@ As an anonymous, I want to chat with the AI
 Navigation bar:
   "Chat" links to "Chat" visible to all
 
-Expose a REST API at /api/v1:
-  GET    /messages              lists messages
-  POST   /messages              creates a message
-  GET    /messages/{id}         gets a message

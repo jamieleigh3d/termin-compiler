@@ -464,7 +464,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/tickets/{id}/start",
+      "path": "/api/v1/tickets/{id}/_transition/in progress",
       "kind": "TRANSITION",
       "content_ref": "tickets",
       "required_scope": null,
@@ -473,7 +473,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/tickets/{id}/wait",
+      "path": "/api/v1/tickets/{id}/_transition/waiting on customer",
       "kind": "TRANSITION",
       "content_ref": "tickets",
       "required_scope": null,
@@ -482,7 +482,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/tickets/{id}/resolve",
+      "path": "/api/v1/tickets/{id}/_transition/resolved",
       "kind": "TRANSITION",
       "content_ref": "tickets",
       "required_scope": null,
@@ -491,21 +491,12 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/tickets/{id}/close",
+      "path": "/api/v1/tickets/{id}/_transition/closed",
       "kind": "TRANSITION",
       "content_ref": "tickets",
       "required_scope": null,
       "lookup_column": "id",
       "target_state": "closed"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/tickets/{id}/reopen",
-      "kind": "TRANSITION",
-      "content_ref": "tickets",
-      "required_scope": null,
-      "lookup_column": "id",
-      "target_state": "in progress"
     },
     {
       "method": "GET",
@@ -522,6 +513,33 @@
       "kind": "CREATE",
       "content_ref": "comments",
       "required_scope": "tickets.create",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/comments/{id}",
+      "kind": "GET_ONE",
+      "content_ref": "comments",
+      "required_scope": "tickets.view",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/comments/{id}",
+      "kind": "UPDATE",
+      "content_ref": "comments",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/comments/{id}",
+      "kind": "DELETE",
+      "content_ref": "comments",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     }

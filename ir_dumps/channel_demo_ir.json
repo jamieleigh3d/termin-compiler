@@ -3,7 +3,7 @@
   "reflection_enabled": true,
   "app_id": "e4f29a81-6c33-4f2d-b1a9-2c8e5d73f410",
   "name": "Incident Response Hub",
-  "description": "Demonstrates all Channel patterns \u00e2\u20ac\u201d data, action, hybrid, streaming, and event-driven sends",
+  "description": "Demonstrates all Channel patterns \u2014 data, action, hybrid, streaming, and event-driven sends",
   "auth": {
     "provider": "stub",
     "scopes": [
@@ -579,8 +579,17 @@
       "target_state": null
     },
     {
+      "method": "DELETE",
+      "path": "/api/v1/incidents/{id}",
+      "kind": "DELETE",
+      "content_ref": "incidents",
+      "required_scope": "incidents.manage",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
       "method": "POST",
-      "path": "/api/v1/incidents/{id}/investigate",
+      "path": "/api/v1/incidents/{id}/_transition/investigating",
       "kind": "TRANSITION",
       "content_ref": "incidents",
       "required_scope": null,
@@ -589,7 +598,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/incidents/{id}/mitigate",
+      "path": "/api/v1/incidents/{id}/_transition/mitigating",
       "kind": "TRANSITION",
       "content_ref": "incidents",
       "required_scope": null,
@@ -598,7 +607,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/incidents/{id}/resolve",
+      "path": "/api/v1/incidents/{id}/_transition/resolved",
       "kind": "TRANSITION",
       "content_ref": "incidents",
       "required_scope": null,
@@ -607,7 +616,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/incidents/{id}/close",
+      "path": "/api/v1/incidents/{id}/_transition/closed",
       "kind": "TRANSITION",
       "content_ref": "incidents",
       "required_scope": null,
@@ -642,6 +651,24 @@
       "target_state": null
     },
     {
+      "method": "PUT",
+      "path": "/api/v1/deployments/{id}",
+      "kind": "UPDATE",
+      "content_ref": "deployments",
+      "required_scope": "incidents.manage",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/deployments/{id}",
+      "kind": "DELETE",
+      "content_ref": "deployments",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
       "method": "GET",
       "path": "/api/v1/alerts",
       "kind": "LIST",
@@ -656,6 +683,33 @@
       "kind": "CREATE",
       "content_ref": "alerts",
       "required_scope": "incidents.manage",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/alerts/{id}",
+      "kind": "GET_ONE",
+      "content_ref": "alerts",
+      "required_scope": "incidents.view",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/alerts/{id}",
+      "kind": "UPDATE",
+      "content_ref": "alerts",
+      "required_scope": null,
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/alerts/{id}",
+      "kind": "DELETE",
+      "content_ref": "alerts",
+      "required_scope": null,
       "lookup_column": "id",
       "target_state": null
     }

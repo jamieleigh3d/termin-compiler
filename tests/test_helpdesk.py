@@ -121,32 +121,33 @@ class TestHelpdeskStateTransitions:
             "priority": "low", "category": "question",
             "submitted_by": "user@test.com"
         })
-        r = client.post("/api/v1/tickets/2/start",
+        # D-11: Transition routes use /_transition/{target_state}
+        r = client.post("/api/v1/tickets/2/_transition/in progress",
                         cookies={"termin_role": "support agent"})
         assert r.status_code == 200
         assert r.json()["status"] == "in progress"
 
     def test_in_progress_to_waiting(self, client):
-        r = client.post("/api/v1/tickets/2/wait",
+        r = client.post("/api/v1/tickets/2/_transition/waiting on customer",
                         cookies={"termin_role": "support agent"})
         assert r.status_code == 200
         assert r.json()["status"] == "waiting on customer"
 
     def test_waiting_to_in_progress(self, client):
         """Customer responds, ticket goes back to in progress."""
-        r = client.post("/api/v1/tickets/2/reopen",
+        r = client.post("/api/v1/tickets/2/_transition/in progress",
                         cookies={"termin_role": "customer"})
         assert r.status_code == 200
         assert r.json()["status"] == "in progress"
 
     def test_in_progress_to_resolved(self, client):
-        r = client.post("/api/v1/tickets/2/resolve",
+        r = client.post("/api/v1/tickets/2/_transition/resolved",
                         cookies={"termin_role": "support agent"})
         assert r.status_code == 200
         assert r.json()["status"] == "resolved"
 
     def test_resolved_to_closed(self, client):
-        r = client.post("/api/v1/tickets/2/close",
+        r = client.post("/api/v1/tickets/2/_transition/closed",
                         cookies={"termin_role": "support manager"})
         assert r.status_code == 200
         assert r.json()["status"] == "closed"
@@ -158,7 +159,7 @@ class TestHelpdeskStateTransitions:
             "priority": "critical", "category": "bug",
             "submitted_by": "user@test.com"
         })
-        r = client.post("/api/v1/tickets/3/close",
+        r = client.post("/api/v1/tickets/3/_transition/closed",
                         cookies={"termin_role": "support manager"})
         assert r.status_code == 409
 
@@ -169,9 +170,9 @@ class TestHelpdeskStateTransitions:
             "priority": "low", "category": "question",
             "submitted_by": "user@test.com"
         })
-        client.post("/api/v1/tickets/4/start",
+        client.post("/api/v1/tickets/4/_transition/in progress",
                     cookies={"termin_role": "support agent"})
-        r = client.post("/api/v1/tickets/4/resolve",
+        r = client.post("/api/v1/tickets/4/_transition/resolved",
                         cookies={"termin_role": "customer"})
         assert r.status_code == 403
 

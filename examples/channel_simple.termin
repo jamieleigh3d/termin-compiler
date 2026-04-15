@@ -50,10 +50,3 @@ Navigation bar:
   "Notes" links to "Notes" visible to all
   "Echoes" links to "Echoes" visible to all
 
-Expose a REST API at /api/v1:
-  GET    /notes                lists notes
-  POST   /notes                creates a note
-  GET    /notes/{id}           gets a note
-  PUT    /notes/{id}           updates a note
-  GET    /echoes               lists echoes
-  POST   /echoes               creates an echo

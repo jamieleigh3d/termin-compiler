@@ -319,8 +319,23 @@ class Analyzer:
                 ))
 
     def _check_api(self) -> None:
-        # API endpoints are validated loosely at this stage
-        pass
+        # D-11: 'api' is a reserved page slug — auto-CRUD routes live at /api/v1/
+        for page in self.page_names:
+            slug = page.lower().replace(" ", "_")
+            if slug == "api":
+                # Find the line number for the page definition
+                line = 0
+                for story in self.program.stories:
+                    for d in story.directives:
+                        if isinstance(d, ShowPage) and d.page_name == page:
+                            line = d.line or story.line
+                            break
+                self.errors.add(SemanticError(
+                    message=f'Page slug "api" is reserved for auto-generated REST API '
+                            f'routes (/api/v1/...). Choose a different page name.',
+                    line=line,
+                    code="TERMIN-S032",
+                ))
 
     # ── Security Invariant Checks ──
 
