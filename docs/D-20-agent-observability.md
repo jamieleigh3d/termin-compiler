@@ -104,6 +104,34 @@ The `compute_audit_log_` prefix visually groups audit tables together. The autho
 }
 ```
 
+**CEL compute trace structure:**
+
+CEL computes (Transform, Reduce, Expand, Correlate, Route) have no LLM calls but still process data that may be confidential. Their trace captures the data flow:
+
+```json
+{
+  "compute_type": "cel",
+  "shape": "Reduce",
+  "expression": "sum(items.map(i, i.quantity * i.unit_cost))",
+  "input": {
+    "source": "order_lines",
+    "record_count": 12,
+    "records": [
+      {"id": 1, "quantity": 5, "unit_cost": 12.50},
+      {"id": 2, "quantity": 3, "unit_cost": 8.00}
+    ]
+  },
+  "output": {
+    "target": "orders",
+    "field": "total",
+    "value": 1234.56
+  },
+  "duration_ms": 3
+}
+```
+
+The trace is polymorphic — the outer envelope (D-20.2 fields) is the same for all compute types. The `trace` JSON field contains either the AI agent structure (with `calls` array) or the CEL structure (with `expression`, `input`, `output`), distinguished by the `compute_type` field (`"agent"` vs `"cel"`).
+
 **Note on storage:** The logical model is a Content table row with a `trace` text field containing JSON. How runtimes physically store the trace blob is an implementation detail:
 - **Reference runtime:** SQLite (the trace JSON is stored inline in the text column). Durable, debuggable, queryable with `json_extract()`.
 - **AWS-native Termin runtime:** Trace blob in S3 (zipped), DynamoDB row stores metadata + S3 pointer. Cost-efficient for large traces.
@@ -117,12 +145,19 @@ Trace data contains sensitive information: LLM reasoning, tool call inputs/outpu
 
 **Layer 2 — Redaction in flight:** When a trace is served to a caller via the API, the runtime redacts confidential field values based on the caller's scopes. A caller with `AUDIT` scope but lacking a field's `confidentiality_scope` sees redacted output. A caller with both `AUDIT` and the field's `confidentiality_scope` sees the full trace.
 
-**What gets redacted:** Any LLM-generated content that could contain leaked field values:
+**What gets redacted:** Any content in the trace that could contain confidential field values:
+
+*AI agent traces:*
 - LLM thinking/reasoning
 - LLM response text
 - Tool call results (return values from execute_tool)
 - Tool call input parameters
 - User input (which may quote or reference confidential values)
+
+*CEL compute traces:*
+- Input records (field values from source Content)
+- Output values (derived values inherit input confidentiality per D-20.5)
+- CEL expression text (if it contains literal confidential values — rare but possible)
 
 **What is NEVER redacted (structural elements):**
 - JSON keys and field names
@@ -135,7 +170,7 @@ Trace data contains sensitive information: LLM reasoning, tool call inputs/outpu
 
 **Conformance contract (minimum guarantee):**
 
-> When a trace record is returned to a caller who holds the `AUDIT` scope but lacks a field's `confidentiality_scope`, the runtime MUST scan all LLM-generated content in the trace (thinking, response, tool call inputs, tool call results, user input) for exact substrings of that field's current value. Matches of 4+ characters MUST be replaced with `[REDACTED:{field_name}]`.
+> When a trace record is returned to a caller who holds the `AUDIT` scope but lacks a field's `confidentiality_scope`, the runtime MUST scan all non-structural content in the trace (AI: thinking, response, tool call inputs/results, user input; CEL: input records, output values) for exact substrings of that field's current value. Matches of 4+ characters MUST be replaced with `[REDACTED:{field_name}]`. Derived output values whose confidentiality scope (per D-20.5) the caller lacks MUST also be redacted.
 
 **Why the 4-character minimum:** Short values like "a", "the", "42", "yes" would cause massive over-redaction, making traces unreadable. The minimum length limits false positives while still catching meaningful PII (names, emails, account numbers).
 
@@ -146,7 +181,22 @@ Trace data contains sensitive information: LLM reasoning, tool call inputs/outpu
 - **AWS-native Termin runtime:** Bedrock Guardrails PII detection on trace content before serving. S3 SSE-KMS for encryption at rest.
 - **Other production runtimes:** Can use any PII detection and encryption mechanism. The conformance test only verifies the minimum exact-match redaction contract.
 
-### D-20.5: Over-Redaction as an Attack Vector
+### D-20.5: Derivative Value Confidentiality
+
+Computed/derived values inherit the confidentiality scopes of their inputs. If a CEL expression reads fields with confidentiality scopes, the output carries the union of all input scopes.
+
+**Rule:** The confidentiality scope of a derived value is the union of the confidentiality scopes of all fields it reads.
+
+**Examples:**
+- `sum(employees.map(e, e.salary))` where `salary` requires `salary.access` → the sum also requires `salary.access`
+- `employee.salary * employee.bonus_rate` where `salary` requires `salary.access` and `bonus_rate` requires `hr.compensation` → the product requires both `salary.access` AND `hr.compensation`
+- `upper(employee.name)` where `name` has no confidentiality scope → the result has no scope (not confidential)
+
+**In audit traces:** This rule applies to the `output.value` field in CEL compute traces. If the output is derived from confidential inputs, the output value is redacted for callers who lack the required scopes — even though the caller might be able to VIEW the aggregate in the app. The audit trace shows the raw computation with exact values, which is more sensitive than the displayed result.
+
+**Compiler enforcement:** The compiler can statically analyze CEL expressions to determine which fields they reference and propagate confidentiality scopes to the output. This is tracked on the ComputeSpec's `output_confidentiality_scope` field (already exists in IR).
+
+### D-20.6: Over-Redaction as an Attack Vector
 
 **Threat:** A user with write access to a confidential field could set its value to a structural trace keyword (e.g., `"execute_tool"`, `"CREATE"`, a tool name). The redaction mechanism would then replace every occurrence of that string in the LLM-generated portions of the trace, hiding what the agent actually did.
 
