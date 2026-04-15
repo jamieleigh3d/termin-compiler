@@ -62,7 +62,40 @@ The `compute_audit_log_` prefix visually groups audit tables together. The autho
 | trace | text (JSON) | Full structured trace (see D-20.3) |
 | error_message | text | Error details if outcome != "success" |
 
-### D-20.3: One Trace Record Per Invocation
+### D-20.3: Audit Levels for Compute Traces
+
+Compute audit levels reuse the same vocabulary as Content audit levels (D-18): `none`, `actions`, `debug`. The default is `actions` (pit of success).
+
+**DSL syntax:**
+```
+Compute called "order summary":
+  ...
+  Audit level: actions
+```
+
+**Level semantics:**
+
+| Field | `none` | `actions` | `debug` |
+|-------|--------|-----------|---------|
+| invocation_id, trigger, timing, outcome | — | yes | yes |
+| token counts | — | yes | yes |
+| error_message | — | yes | yes |
+| tool calls made (names + targets) | — | yes | yes |
+| tool call params & results | — | — | yes |
+| final LLM response | — | yes | yes |
+| LLM thinking/reasoning | — | — | yes |
+| system prompt | — | — | yes |
+| CEL expression | — | yes | yes |
+| CEL output value | — | yes | yes |
+| CEL input records | — | — | yes |
+
+- **`none`**: No trace written. Useful for high-frequency CEL computes (aggregations, transforms) where per-invocation logging would be expensive.
+- **`actions`** (default): Outcome + what the compute *did*. Enough to answer "what happened?" For AI agents: tool calls, final response, tokens. For CEL: expression, output. No thinking, no system prompt, no input record dump.
+- **`debug`**: Everything. Full system prompt, thinking/reasoning, all tool call params and results, all input records. Expensive, needed for investigation.
+
+The audit level is stored on ComputeSpec in the IR and controls what the runtime writes to the audit log table. The `actions` default means compute tracing is always on unless explicitly disabled — bugs are investigated with traces, not reproduced.
+
+### D-20.4: One Trace Record Per Invocation
 
 **Decision:** Option A — one record per invocation, with the full trace as a structured JSON field.
 
@@ -137,7 +170,7 @@ The trace is polymorphic — the outer envelope (D-20.2 fields) is the same for 
 - **AWS-native Termin runtime:** Trace blob in S3 (zipped), DynamoDB row stores metadata + S3 pointer. Cost-efficient for large traces.
 - **Other runtimes:** Could use any durable store. The conformance contract only tests the logical Content API.
 
-### D-20.4: Encryption at Rest, Redaction in Flight
+### D-20.5: Encryption at Rest, Redaction in Flight
 
 Trace data contains sensitive information: LLM reasoning, tool call inputs/outputs, user inputs, system prompts, and potentially leaked confidential field values. The security model has two layers:
 
@@ -156,7 +189,7 @@ Trace data contains sensitive information: LLM reasoning, tool call inputs/outpu
 
 *CEL compute traces:*
 - Input records (field values from source Content)
-- Output values (derived values inherit input confidentiality per D-20.5)
+- Output values (derived values inherit input confidentiality per D-20.6)
 - CEL expression text (if it contains literal confidential values — rare but possible)
 
 **What is NEVER redacted (structural elements):**
@@ -170,7 +203,7 @@ Trace data contains sensitive information: LLM reasoning, tool call inputs/outpu
 
 **Conformance contract (minimum guarantee):**
 
-> When a trace record is returned to a caller who holds the `AUDIT` scope but lacks a field's `confidentiality_scope`, the runtime MUST scan all non-structural content in the trace (AI: thinking, response, tool call inputs/results, user input; CEL: input records, output values) for exact substrings of that field's current value. Matches of 4+ characters MUST be replaced with `[REDACTED:{field_name}]`. Derived output values whose confidentiality scope (per D-20.5) the caller lacks MUST also be redacted.
+> When a trace record is returned to a caller who holds the `AUDIT` scope but lacks a field's `confidentiality_scope`, the runtime MUST scan all non-structural content in the trace (AI: thinking, response, tool call inputs/results, user input; CEL: input records, output values) for exact substrings of that field's current value. Matches of 4+ characters MUST be replaced with `[REDACTED:{field_name}]`. Derived output values whose confidentiality scope (per D-20.6) the caller lacks MUST also be redacted.
 
 **Why the 4-character minimum:** Short values like "a", "the", "42", "yes" would cause massive over-redaction, making traces unreadable. The minimum length limits false positives while still catching meaningful PII (names, emails, account numbers).
 
@@ -181,7 +214,7 @@ Trace data contains sensitive information: LLM reasoning, tool call inputs/outpu
 - **AWS-native Termin runtime:** Bedrock Guardrails PII detection on trace content before serving. S3 SSE-KMS for encryption at rest.
 - **Other production runtimes:** Can use any PII detection and encryption mechanism. The conformance test only verifies the minimum exact-match redaction contract.
 
-### D-20.5: Derivative Value Confidentiality
+### D-20.6: Derivative Value Confidentiality
 
 Computed/derived values inherit the confidentiality scopes of their inputs. If a CEL expression reads fields with confidentiality scopes, the output carries the union of all input scopes.
 
@@ -196,7 +229,7 @@ Computed/derived values inherit the confidentiality scopes of their inputs. If a
 
 **Compiler enforcement:** The compiler can statically analyze CEL expressions to determine which fields they reference and propagate confidentiality scopes to the output. This is tracked on the ComputeSpec's `output_confidentiality_scope` field (already exists in IR).
 
-### D-20.6: Over-Redaction as an Attack Vector
+### D-20.7: Over-Redaction as an Attack Vector
 
 **Threat:** A user with write access to a confidential field could set its value to a structural trace keyword (e.g., `"execute_tool"`, `"CREATE"`, a tool name). The redaction mechanism would then replace every occurrence of that string in the LLM-generated portions of the trace, hiding what the agent actually did.
 
