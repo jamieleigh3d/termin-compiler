@@ -377,9 +377,40 @@
       }
     },
 
+    "TransitionFeedbackSpec": {
+      "type": "object",
+      "description": "Feedback notification shown to the user after a state transition succeeds or fails.",
+      "required": ["trigger", "style", "message", "is_expr"],
+      "additionalProperties": false,
+      "properties": {
+        "trigger": {
+          "type": "string",
+          "enum": ["success", "error"],
+          "description": "When to show this feedback: on successful transition or on failure."
+        },
+        "style": {
+          "type": "string",
+          "enum": ["toast", "banner"],
+          "description": "Notification style. Toast: auto-dismiss (default 5s), bottom-right. Banner: persistent, stackable, inline."
+        },
+        "message": {
+          "type": "string",
+          "description": "Message text. If is_expr is true, this is a CEL expression with {singular}.*, from_state, to_state, and User.* in scope."
+        },
+        "is_expr": {
+          "type": "boolean",
+          "description": "True if message is a CEL expression (backtick-delimited in DSL), false if literal string."
+        },
+        "dismiss_seconds": {
+          "type": ["integer", "null"],
+          "description": "Auto-dismiss timer in seconds. Null means use type default (toast: 5s, banner: no auto-dismiss)."
+        }
+      }
+    },
+
     "TransitionSpec": {
       "type": "object",
-      "description": "A single allowed state transition, with a required scope.",
+      "description": "A single allowed state transition, with a required scope and optional user feedback.",
       "required": ["from_state", "to_state", "required_scope"],
       "additionalProperties": false,
       "properties": {
@@ -388,6 +419,11 @@
         "required_scope": {
           "type": "string",
           "description": "Scope the caller's identity must hold to perform this transition."
+        },
+        "feedback": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TransitionFeedbackSpec" },
+          "description": "Optional notification feedback to show the user after this transition. Empty array if no feedback declared."
         }
       }
     },
