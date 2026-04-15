@@ -325,7 +325,7 @@ def _parse_type_text(text: str, ln: int = 0) -> TypeExpr:
         if not changed: break
     text = text.strip()
     if text.startswith("unique "):
-        expr.unique = True; text = text[7:].strip()
+        expr.unique = True; text = text[len("unique "):].strip()
     TM = {"text": "text", "currency": "currency", "number": "number",
           "percentage": "percentage", "true/false": "boolean", "boolean": "boolean",
           "date and time": "datetime", "date": "date", "automatic": "automatic",
@@ -333,15 +333,15 @@ def _parse_type_text(text: str, ln: int = 0) -> TypeExpr:
     if text in TM: expr.base_type = TM[text]
     elif text.startswith("one of:"):
         expr.base_type = "enum"
-        expr.enum_values = [v.strip().strip('"') for v in _scal(text[7:])]
+        expr.enum_values = [v.strip().strip('"') for v in _scal(text[len("one of:"):])]
     elif text.startswith("list of "):
-        expr.base_type = "list"; expr.list_type = text[8:].strip().strip('"')
+        expr.base_type = "list"; expr.list_type = text[len("list of "):].strip().strip('"')
     return expr
 
 def _parse_field_type(text: str, ln: int) -> TypeExpr:
-    if text.startswith("is "): return _parse_type_text(text[3:], ln)
+    if text.startswith("is "): return _parse_type_text(text[len("is "):], ln)
     if text.startswith("references "):
-        rt = text[11:].strip(); ci = rt.find(","); ct = ""
+        rt = text[len("references "):].strip(); ci = rt.find(","); ct = ""
         if ci >= 0: ct = rt[ci:]; rt = rt[:ci].strip()
         te = TypeExpr(base_type="reference", references=rt.strip('"'), line=ln)
         if "required" in ct: te.required = True
@@ -390,7 +390,7 @@ def _build_story(text, ln) -> UserStory:
         s = UserStory(role=role, action=at, objective=obj, line=ln)
         if pn: s.directives.append(ShowPage(page_name=pn, line=ln))
         return s
-    rest = text[3:].strip()
+    rest = text[len("As "):].strip()
     for a in ("a ", "an ", "the "):
         if rest.startswith(a): rest = rest[len(a):]; break
     mk = ", I want to "; idx = rest.find(mk)
@@ -501,7 +501,7 @@ def _build_ev1(text, ln) -> EventRule:
             mk = " is "+op+" its "; mi = text.find(mk)
             if mi >= 0: ev.condition.field2 = text[mi+len(mk):].strip().rstrip(":")
         return ev
-    rest = text[5:].strip().rstrip(":")
+    rest = text[len("When "):].strip().rstrip(":")
     for a in ("a ","an ","the "):
         if rest.startswith(a): rest = rest[len(a):]; break
     for trig in ("created","updated","deleted"):
@@ -532,8 +532,8 @@ def _build_err_act(text, ln) -> ErrorAction:
                                                      expr=_qs(ar.get("expr","")), line=ln)
         if rn == "ActionCreate": return ErrorAction(kind="create", target=_qs(ar.get("name","")), line=ln)
         if rn == "ActionSet": return ErrorAction(kind="set", expr=_qs(ar.get("expr","")), line=ln)
-    rest = text[5:].strip()
-    if rest.startswith("disable "): return ErrorAction(kind="disable", target=rest[8:].strip(), line=ln)
+    rest = text[len("Then "):].strip()
+    if rest.startswith("disable "): return ErrorAction(kind="disable", target=rest[len("disable "):].strip(), line=ln)
     if rest == "escalate": return ErrorAction(kind="escalate", line=ln)
     if rest.startswith("notify "): return ErrorAction(kind="notify", target=_fq(rest), expr=_eb(rest) or "", line=ln)
     if rest.startswith("create "): return ErrorAction(kind="create", target=_fq(rest), line=ln)
@@ -617,12 +617,13 @@ def _parse_literal_list(text: str) -> list:
 def _parse_content_when(text: str, ln: int):
     """Parse a content When clause: When `expr`, field must be one of: / must be / defaults to."""
     # Extract the condition expression
-    cond = _eb(text[5:])  # after "When "
+    cond = _eb(text[len("When "):])  # after "When "
     if not cond:
         return None
 
     # Find the comma after the closing backtick/bracket
-    bt_close = text.find("`", 6) if "`" in text[5:7] else text.find("]", 6)
+    when_prefix_len = len("When ")
+    bt_close = text.find("`", when_prefix_len + 1) if "`" in text[when_prefix_len:when_prefix_len + 2] else text.find("]", when_prefix_len + 1)
     if bt_close < 0:
         return None
     comma_pos = text.find(",", bt_close)
@@ -669,11 +670,11 @@ def _parse_line(text: str, rule: str, ln: int):
     P = _try_parse  # alias
 
     if rule == "application_line":
-        r = P(text, rule); return ("application", Application(name=str(r["name"]).strip() if r else text[12:].strip(), line=ln))
+        r = P(text, rule); return ("application", Application(name=str(r["name"]).strip() if r else text[len("Application:"):].strip(), line=ln))
     if rule == "description_line":
-        r = P(text, rule); return ("description", str(r["desc"]).strip() if r else text[12:].strip())
+        r = P(text, rule); return ("description", str(r["desc"]).strip() if r else text[len("Description:"):].strip())
     if rule == "id_line":
-        r = P(text, rule); return ("app_id", str(r["id"]).strip() if r else text[3:].strip())
+        r = P(text, rule); return ("app_id", str(r["id"]).strip() if r else text[len("Id:"):].strip())
     if rule == "identity_line":
         r = P(text, rule); return ("identity", Identity(provider=str(r["provider"]).strip() if r else text.split("with",1)[1].strip(), line=ln))
     if rule == "scopes_line":
@@ -702,14 +703,14 @@ def _parse_line(text: str, rule: str, ln: int):
         else:
             hi = text.find(" has ")
             if hi < 0: return ("field", Field(name="unknown", type_expr=TypeExpr(base_type="text"), line=ln), "")
-            sg = text[5:hi].strip(); ah = text[hi+5:].strip()
+            sg = text[len("Each "):hi].strip(); ah = text[hi+len(" has "):].strip()
             for a in ("a ","an ","the "):
                 if ah.startswith(a): ah = ah[len(a):]; break
             wi = ah.find(" which ")
             if wi < 0: return ("field", Field(name="unknown", type_expr=TypeExpr(base_type="text"), line=ln), sg)
             fn = ah[:wi].strip()
         wi = text.find(" which ")
-        te = _parse_field_type(text[wi+7:].strip(), ln) if wi >= 0 else TypeExpr(base_type="text", line=ln)
+        te = _parse_field_type(text[wi+len(" which "):].strip(), ln) if wi >= 0 else TypeExpr(base_type="text", line=ln)
         return ("field", Field(name=fn, type_expr=te, line=ln), sg)
     if rule == "access_line":
         r = P(text, rule)
@@ -769,7 +770,7 @@ def _parse_line(text: str, rule: str, ln: int):
     if rule == "event_action_line":
         r = P(text, rule)
         if r: return ("event_action", EventAction(create_content=_qs(r.get("name","")), fields=_cl(r.get("fields")), line=ln))
-        rest = text[7:].strip()
+        rest = text[len("Create "):].strip()
         for a in ("a ","an ","the "):
             if rest.startswith(a): rest = rest[len(a):]; break
         wi = rest.find(" with ")
@@ -785,7 +786,7 @@ def _parse_line(text: str, rule: str, ln: int):
             channel = _qs(r.get("channel",""))
         else:
             # Fallback: "Send X to "Y""
-            parts = text[5:].strip()  # strip "Send "
+            parts = text[len("Send "):].strip()
             if " to " in parts:
                 content, channel = parts.split(" to ", 1)
                 content = content.strip()
@@ -815,16 +816,16 @@ def _parse_line(text: str, rule: str, ln: int):
     if rule == "story_header":
         return ("story_header", _build_story(text, ln))
     if rule == "so_that_line":
-        r = P(text, rule); return ("so_that", str(r.get("text","")).strip().rstrip(":") if r else text[8:].strip().rstrip(":"))
+        r = P(text, rule); return ("so_that", str(r.get("text","")).strip().rstrip(":") if r else text[len("so that "):].strip().rstrip(":"))
     if rule == "show_page_line":
         r = P(text, rule); return ("directive", ShowPage(page_name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "display_table_line":
-        rest = text[19:].strip(); wi = rest.find(" with columns:")
+        rest = text[len("Display a table of "):].strip(); wi = rest.find(" with columns:")
         cn = rest[:wi].strip() if wi>=0 else rest.strip()
         cols = _scal(rest[wi+14:]) if wi>=0 else []
         return ("directive", DisplayTable(content_name=cn, columns=cols, line=ln))
     if rule == "show_related_line":
-        rest = text[9:].strip(); ci = rest.find(",")
+        rest = text[len("For each "):].strip(); ci = rest.find(",")
         if ci < 0: return ("directive", ShowRelated(singular=rest, line=ln))
         sg = rest[:ci].strip(); af = rest[ci+1:].strip()
         if af.lower().startswith("show "): af = af[5:].strip()
@@ -844,12 +845,12 @@ def _parse_line(text: str, rule: str, ln: int):
         scope = "row"
         if text.startswith("Mark ") and not text.startswith("Mark rows"):
             # "Mark <field> where ..." — extract field name
-            after_mark = text[5:].strip()
+            after_mark = text[len("Mark "):].strip()
             if " where " in after_mark:
                 scope = after_mark.split(" where ", 1)[0].strip()
         return ("directive", MarkAs(condition_expr=cel, label=label, scope=scope, line=ln))
     if rule == "highlight_rows_line":
-        rest = text[21:].strip(); j = _eb(rest)
+        rest = text[len("Highlight rows where "):].strip(); j = _eb(rest)
         if j: return ("directive", HighlightRows(condition_expr=j, line=ln))
         for op in (" is at or below "," is above "," is below "," is equal to "):
             idx = rest.find(op)
@@ -881,23 +882,23 @@ def _parse_line(text: str, rule: str, ln: int):
             template = parts[1] if len(parts) > 1 else ""
         return ("directive", LinkColumn(column=col, link_template=template, line=ln))
     if rule == "subscribes_to_line":
-        rest = text[25:].strip()
+        rest = text[len("This table subscribes to "):].strip()
         if rest.endswith(" changes"): rest = rest[:-8].strip()
         return ("directive", SubscribeTo(content_name=rest, line=ln))
     if rule == "accept_input_line":
         r = P(text, rule); return ("directive", AcceptInput(fields=_cl(r.get("fields")) if r else _scal(text[len("Accept input for "):]), line=ln))
     if rule == "validate_unique_line":
-        rest = text[14:].strip()
+        rest = text[len("Validate that "):].strip()
         if rest.startswith("["):
             be = rest.find("]"); return ("directive", ValidateUnique(condition_expr=rest[1:be].strip() if be>0 else rest[1:].strip(), line=ln))
         ii = rest.find(" is unique"); return ("directive", ValidateUnique(field=rest[:ii].strip() if ii>=0 else rest.strip(), line=ln))
     if rule == "create_as_line":
-        rest = text[11:].strip(); ai = rest.rfind(" as ")
+        rest = text[len("Create the "):].strip(); ai = rest.rfind(" as ")
         return ("directive", CreateAs(initial_state=rest[ai+4:].strip() if ai>=0 else "", line=ln))
     if rule == "after_saving_line":
-        r = P(text, rule); return ("directive", AfterSave(instruction=str(r.get("text","")).strip() if r else text[14:].strip(), line=ln))
+        r = P(text, rule); return ("directive", AfterSave(instruction=str(r.get("text","")).strip() if r else text[len("After saving, "):].strip(), line=ln))
     if rule == "show_chart_line":
-        rest = text[16:].strip(); oi = rest.find(" over the past ")
+        rest = text[len("Show a chart of "):].strip(); oi = rest.find(" over the past ")
         if oi < 0: return ("directive", ShowChart(content_name=rest, days=30, line=ln))
         cn = rest[:oi].strip(); af = rest[oi+15:].strip(); sp = af.find(" ")
         return ("directive", ShowChart(content_name=cn, days=_si(af[:sp] if sp>0 else af, 30), line=ln))
@@ -907,7 +908,7 @@ def _parse_line(text: str, rule: str, ln: int):
             if r.get("cel"): return ("directive", DisplayText(text=_qs(r["cel"]), is_expression=True, line=ln))
             if r.get("text"): return ("directive", DisplayText(text=_qs(r["text"]), line=ln))
             if r.get("expr"): return ("directive", DisplayText(text=str(r["expr"]).strip(), is_expression=True, line=ln))
-        rest = text[12:].strip(); j = _eb(rest)
+        rest = text[len("Display text"):].strip(); j = _eb(rest)
         if j: return ("directive", DisplayText(text=j, is_expression=True, line=ln))
         q = _fq(rest)
         if q: return ("directive", DisplayText(text=q, line=ln))
@@ -930,9 +931,9 @@ def _parse_line(text: str, rule: str, ln: int):
             # count of X (no grouping, no func)
             return ("directive", StructuredAggregation(agg_type="count", source_content=content, line=ln))
         # Fallback: parse manually
-        rest = text[8:].strip()
+        rest = text[len("Display "):].strip()
         if rest.lower().startswith("count of"):
-            content = rest[8:].strip()
+            content = rest[len("count of"):].strip()
             gi = content.lower().find(" grouped by ")
             if gi >= 0:
                 return ("directive", StructuredAggregation(agg_type="count", source_content=content[:gi].strip(),
@@ -944,14 +945,14 @@ def _parse_line(text: str, rule: str, ln: int):
         title = _qs(r.get("title","")) if r else ""
         if not title:
             # Fallback: extract quoted string
-            title = _fq(text[8:].strip().rstrip(":")) or text[8:].strip().rstrip(":")
+            title = _fq(text[len("Section "):].strip().rstrip(":")) or text[len("Section "):].strip().rstrip(":")
         return ("directive", SectionStart(title=title, line=ln))
     if rule == "action_header_line":
         r = P(text, rule)
         singular = str(r.get("singular","")).strip() if r else ""
         if not singular:
             # Extract from "For each X, show actions:"
-            rest = text[9:].strip()
+            rest = text[len("For each "):].strip()
             ci = rest.find(",")
             singular = rest[:ci].strip() if ci >= 0 else ""
         return ("directive", ActionHeader(singular=singular, line=ln))
@@ -974,11 +975,11 @@ def _parse_line(text: str, rule: str, ln: int):
         behavior = "hide" if "hide otherwise" in parts.lower() else "disable"
         return ("directive", ActionButtonDef(label=label, target_state=state, unavailable_behavior=behavior, line=ln))
     if rule == "display_agg_line":
-        r = P(text, rule); return ("directive", DisplayAggregation(description=str(r.get("text","")).strip() if r else text[8:].strip(), line=ln))
+        r = P(text, rule); return ("directive", DisplayAggregation(description=str(r.get("text","")).strip() if r else text[len("Display "):].strip(), line=ln))
     if rule == "nav_bar_line": return ("nav_bar",)
     if rule == "nav_item_line": return ("nav_item", _build_nav(text, ln))
     if rule == "api_header_line":
-        r = P(text, rule); return ("api_header", ApiSection(base_path=str(r.get("path","")).strip().rstrip(":") if r else text[21:].strip().rstrip(":"), line=ln))
+        r = P(text, rule); return ("api_header", ApiSection(base_path=str(r.get("path","")).strip().rstrip(":") if r else text[len("Expose a REST API at "):].strip().rstrip(":"), line=ln))
     if rule == "api_endpoint_line":
         r = P(text, rule)
         if r: return ("api_endpoint", ApiEndpoint(method=str(r.get("method","")).strip(), path=str(r.get("path","")).strip(),
@@ -987,7 +988,7 @@ def _parse_line(text: str, rule: str, ln: int):
         return ("api_endpoint", ApiEndpoint(method=ps[0] if ps else "", path=ps[1] if len(ps)>1 else "",
                                              description=ps[2].strip() if len(ps)>2 else "", line=ln))
     if rule == "stream_line":
-        rest = text[7:].strip(); ai = rest.rfind(" at ")
+        rest = text[len("Stream "):].strip(); ai = rest.rfind(" at ")
         if ai < 0: return ("stream", Stream(description=rest, path="", line=ln))
         return ("stream", Stream(description=rest[:ai].strip(), path=rest[ai+4:].strip(), line=ln))
     if rule == "compute_header":
@@ -1025,7 +1026,7 @@ def _parse_line(text: str, rule: str, ln: int):
         provider = _qs(r.get("provider", "")) if r else _fq(text)
         return ("compute_provider", provider)
     if rule == "compute_trigger_line":
-        rest = text[11:].strip()  # after "Trigger on "
+        rest = text[len("Trigger on "):].strip()
         # Parse optional "where `expr`" clause
         where_expr = None
         if " where " in rest:
@@ -1039,41 +1040,41 @@ def _parse_line(text: str, rule: str, ln: int):
         return ("compute_postconditions_header",)
     if rule == "compute_objective_line":
         # Content may be inline ```...``` or just text after "Objective is "
-        rest = text[13:].strip()  # after "Objective is "
+        rest = text[len("Objective is "):].strip()
         # Strip triple-backtick wrapper if present
         if rest.startswith("```") and rest.endswith("```"):
             rest = rest[3:-3].strip()
         return ("compute_objective", rest)
     if rule == "compute_strategy_line":
-        rest = text[12:].strip()  # after "Strategy is "
+        rest = text[len("Strategy is "):].strip()
         if rest.startswith("```") and rest.endswith("```"):
             rest = rest[3:-3].strip()
         return ("compute_strategy", rest)
     if rule == "compute_directive_line":
-        rest = text[13:].strip()  # after "Directive is "
+        rest = text[len("Directive is "):].strip()
         if rest.startswith("```") and rest.endswith("```"):
             rest = rest[3:-3].strip()
         return ("compute_directive", rest)
     if rule == "compute_accesses_line":
-        rest = text[9:].strip()  # after "Accesses "
+        rest = text[len("Accesses "):].strip()
         # Parse comma/and-separated list: "messages, findings, and alerts"
         items = [w.strip().strip('"') for w in rest.replace(" and ", ",").split(",") if w.strip()]
         return ("compute_accesses", items)
     if rule == "compute_input_field_line":
-        rest = text[17:].strip()  # after "Input from field "
+        rest = text[len("Input from field "):].strip()
         # Parse "content.field" dot notation
         if "." in rest:
             parts = rest.split(".", 1)
             return ("compute_input_field", (parts[0].strip(), parts[1].strip()))
         return ("compute_input_field", (rest, ""))
     if rule == "compute_output_field_line":
-        rest = text[18:].strip()  # after "Output into field "
+        rest = text[len("Output into field "):].strip()
         if "." in rest:
             parts = rest.split(".", 1)
             return ("compute_output_field", (parts[0].strip(), parts[1].strip()))
         return ("compute_output_field", (rest, ""))
     if rule == "compute_output_creates_line":
-        rest = text[15:].strip()  # after "Output creates "
+        rest = text[len("Output creates "):].strip()
         return ("compute_output_creates", rest.strip().strip('"'))
     if rule == "content_scoped_line":
         r = P(text, rule)
@@ -1090,7 +1091,7 @@ def _parse_line(text: str, rule: str, ln: int):
     if rule == "channel_header":
         r = P(text, rule); return ("channel_header", ChannelDecl(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "channel_carries_line":
-        r = P(text, rule); return ("channel_prop", "carries", str(r.get("content","")).strip() if r else text[8:].strip())
+        r = P(text, rule); return ("channel_prop", "carries", str(r.get("content","")).strip() if r else text[len("Carries "):].strip())
     if rule == "channel_direction_line":
         r = P(text, rule); return ("channel_prop", "direction", str(r.get("dir","")).strip().lower() if r else text.split(":",1)[1].strip().lower())
     if rule == "channel_delivery_line":
@@ -1119,9 +1120,9 @@ def _parse_line(text: str, rule: str, ln: int):
     if rule == "boundary_header":
         r = P(text, rule); return ("boundary_header", BoundaryDecl(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "boundary_contains_line":
-        r = P(text, rule); return ("boundary_prop", "contains", _cl(r.get("items_") or r.get("items")) if r else _scal(text[9:]))
+        r = P(text, rule); return ("boundary_prop", "contains", _cl(r.get("items_") or r.get("items")) if r else _scal(text[len("Contains "):]))
     if rule == "boundary_inherits_line":
-        r = P(text, rule); return ("boundary_prop", "inherits", str(r.get("parent","")).strip() if r else text[24:].strip())
+        r = P(text, rule); return ("boundary_prop", "inherits", str(r.get("parent","")).strip() if r else text[len("Identity inherits from "):].strip())
     if rule == "boundary_restricts_line":
         r = P(text, rule); return ("boundary_prop", "restricts", _ql(r.get("scopes")) if r else _eqs(text))
     if rule == "boundary_exposes_line":
