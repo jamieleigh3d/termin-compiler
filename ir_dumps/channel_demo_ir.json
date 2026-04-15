@@ -407,214 +407,6 @@
     },
     {
       "name": {
-        "display": "compute audit log classify alert",
-        "snake": "compute_audit_log_classify_alert",
-        "pascal": "ComputeAuditLogClassifyAlert"
-      },
-      "fields": [
-        {
-          "name": "compute_name",
-          "display_name": "compute name",
-          "business_type": "text",
-          "column_type": "TEXT",
-          "required": false,
-          "unique": false,
-          "minimum": null,
-          "maximum": null,
-          "enum_values": [],
-          "one_of_values": [],
-          "foreign_key": null,
-          "is_auto": false,
-          "list_type": null,
-          "default_expr": null,
-          "confidentiality_scopes": []
-        },
-        {
-          "name": "invocation_id",
-          "display_name": "invocation id",
-          "business_type": "text",
-          "column_type": "TEXT",
-          "required": false,
-          "unique": false,
-          "minimum": null,
-          "maximum": null,
-          "enum_values": [],
-          "one_of_values": [],
-          "foreign_key": null,
-          "is_auto": false,
-          "list_type": null,
-          "default_expr": null,
-          "confidentiality_scopes": []
-        },
-        {
-          "name": "trigger",
-          "display_name": "trigger",
-          "business_type": "text",
-          "column_type": "TEXT",
-          "required": false,
-          "unique": false,
-          "minimum": null,
-          "maximum": null,
-          "enum_values": [],
-          "one_of_values": [],
-          "foreign_key": null,
-          "is_auto": false,
-          "list_type": null,
-          "default_expr": null,
-          "confidentiality_scopes": []
-        },
-        {
-          "name": "started_at",
-          "display_name": "started at",
-          "business_type": "datetime",
-          "column_type": "TIMESTAMP",
-          "required": false,
-          "unique": false,
-          "minimum": null,
-          "maximum": null,
-          "enum_values": [],
-          "one_of_values": [],
-          "foreign_key": null,
-          "is_auto": false,
-          "list_type": null,
-          "default_expr": null,
-          "confidentiality_scopes": []
-        },
-        {
-          "name": "completed_at",
-          "display_name": "completed at",
-          "business_type": "datetime",
-          "column_type": "TIMESTAMP",
-          "required": false,
-          "unique": false,
-          "minimum": null,
-          "maximum": null,
-          "enum_values": [],
-          "one_of_values": [],
-          "foreign_key": null,
-          "is_auto": false,
-          "list_type": null,
-          "default_expr": null,
-          "confidentiality_scopes": []
-        },
-        {
-          "name": "duration_ms",
-          "display_name": "duration ms",
-          "business_type": "number",
-          "column_type": "REAL",
-          "required": false,
-          "unique": false,
-          "minimum": null,
-          "maximum": null,
-          "enum_values": [],
-          "one_of_values": [],
-          "foreign_key": null,
-          "is_auto": false,
-          "list_type": null,
-          "default_expr": null,
-          "confidentiality_scopes": []
-        },
-        {
-          "name": "outcome",
-          "display_name": "outcome",
-          "business_type": "enum",
-          "column_type": "TEXT",
-          "required": false,
-          "unique": false,
-          "minimum": null,
-          "maximum": null,
-          "enum_values": [
-            "success",
-            "error",
-            "timeout",
-            "cancelled"
-          ],
-          "one_of_values": [],
-          "foreign_key": null,
-          "is_auto": false,
-          "list_type": null,
-          "default_expr": null,
-          "confidentiality_scopes": []
-        },
-        {
-          "name": "total_input_tokens",
-          "display_name": "total input tokens",
-          "business_type": "number",
-          "column_type": "INTEGER",
-          "required": false,
-          "unique": false,
-          "minimum": null,
-          "maximum": null,
-          "enum_values": [],
-          "one_of_values": [],
-          "foreign_key": null,
-          "is_auto": false,
-          "list_type": null,
-          "default_expr": null,
-          "confidentiality_scopes": []
-        },
-        {
-          "name": "total_output_tokens",
-          "display_name": "total output tokens",
-          "business_type": "number",
-          "column_type": "INTEGER",
-          "required": false,
-          "unique": false,
-          "minimum": null,
-          "maximum": null,
-          "enum_values": [],
-          "one_of_values": [],
-          "foreign_key": null,
-          "is_auto": false,
-          "list_type": null,
-          "default_expr": null,
-          "confidentiality_scopes": []
-        },
-        {
-          "name": "trace",
-          "display_name": "trace",
-          "business_type": "text",
-          "column_type": "TEXT",
-          "required": false,
-          "unique": false,
-          "minimum": null,
-          "maximum": null,
-          "enum_values": [],
-          "one_of_values": [],
-          "foreign_key": null,
-          "is_auto": false,
-          "list_type": null,
-          "default_expr": null,
-          "confidentiality_scopes": []
-        },
-        {
-          "name": "error_message",
-          "display_name": "error message",
-          "business_type": "text",
-          "column_type": "TEXT",
-          "required": false,
-          "unique": false,
-          "minimum": null,
-          "maximum": null,
-          "enum_values": [],
-          "one_of_values": [],
-          "foreign_key": null,
-          "is_auto": false,
-          "list_type": null,
-          "default_expr": null,
-          "confidentiality_scopes": []
-        }
-      ],
-      "singular": "",
-      "storage_intent": "auto",
-      "has_state_machine": false,
-      "initial_state": null,
-      "confidentiality_scopes": [],
-      "audit": "none",
-      "dependent_values": []
-    },
-    {
-      "name": {
         "display": "compute audit log auto mitigate",
         "snake": "compute_audit_log_auto_mitigate",
         "pascal": "ComputeAuditLogAutoMitigate"
@@ -866,6 +658,20 @@
       "scope": "incidents.manage",
       "verbs": [
         "CREATE"
+      ]
+    },
+    {
+      "content": "compute_audit_log_auto_mitigate",
+      "scope": "incidents.manage",
+      "verbs": [
+        "AUDIT"
+      ]
+    },
+    {
+      "content": "compute_audit_log_auto_mitigate",
+      "scope": "incidents.manage",
+      "verbs": [
+        "VIEW"
       ]
     }
   ],
@@ -1131,28 +937,10 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/compute_audit_log_classify_alert",
-      "kind": "LIST",
-      "content_ref": "compute_audit_log_classify_alert",
-      "required_scope": null,
-      "lookup_column": "id",
-      "target_state": null
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/compute_audit_log_classify_alert/{id}",
-      "kind": "GET_ONE",
-      "content_ref": "compute_audit_log_classify_alert",
-      "required_scope": null,
-      "lookup_column": "id",
-      "target_state": null
-    },
-    {
-      "method": "GET",
       "path": "/api/v1/compute_audit_log_auto_mitigate",
       "kind": "LIST",
       "content_ref": "compute_audit_log_auto_mitigate",
-      "required_scope": null,
+      "required_scope": "incidents.manage",
       "lookup_column": "id",
       "target_state": null
     },
@@ -1161,7 +949,7 @@
       "path": "/api/v1/compute_audit_log_auto_mitigate/{id}",
       "kind": "GET_ONE",
       "content_ref": "compute_audit_log_auto_mitigate",
-      "required_scope": null,
+      "required_scope": "incidents.manage",
       "lookup_column": "id",
       "target_state": null
     }
@@ -1615,9 +1403,9 @@
       "input_fields": [],
       "output_fields": [],
       "output_creates": null,
-      "audit_level": "actions",
+      "audit_level": "none",
       "audit_scope": null,
-      "audit_content_ref": "compute_audit_log_classify_alert"
+      "audit_content_ref": null
     },
     {
       "name": {
@@ -1669,7 +1457,7 @@
       "output_fields": [],
       "output_creates": null,
       "audit_level": "actions",
-      "audit_scope": null,
+      "audit_scope": "incidents.manage",
       "audit_content_ref": "compute_audit_log_auto_mitigate"
     }
   ],

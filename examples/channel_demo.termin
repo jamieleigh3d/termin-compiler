@@ -134,6 +134,7 @@ Compute called "classify-alert":
   `incident.affected_service = alert.monitor_name`
   `incident.summary = alert.metric + " at " + string(alert.current_value) + " (threshold: " + string(alert.threshold) + ")"`
   Anyone with "incidents.manage" can execute this
+  Audit level: none
 
 Compute called "auto-mitigate":
   Transform: takes incident : incidents, produces incident : incidents
@@ -162,6 +163,8 @@ Compute called "auto-mitigate":
   Postconditions are:
     `After.content_query("incidents").filter(i, i.response_lifecycle == "opened").size() <= Before.content_query("incidents").filter(i, i.response_lifecycle == "opened").size()`
   Anyone with "incidents.manage" can execute this
+  Audit level: actions
+  Anyone with "incidents.manage" can audit
 
 --- Events ---
 

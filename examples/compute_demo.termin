@@ -64,11 +64,13 @@ Compute called "split order into lines":
   Expand: takes an order, produces order lines
   `order.lines.map(line => ({ parent_order: order.id, product_name: line.product_name, quantity: line.quantity, unit_price: line.unit_price }))`
   Anyone with "orders.write" can execute this
+  Audit level: none
 
 Compute called "match orders to lines":
   Correlate: takes orders and order lines, produces reports
   `orders.join(order_lines, (o, l) => o.id == l.parent_order)`
   Anyone with "orders.read" can execute this
+  Audit level: none
 
 Compute called "triage order":
   Route: takes an order, produces one of orders or reports

@@ -284,8 +284,8 @@
       "scope": "agent.use",
       "verbs": [
         "CREATE",
-        "UPDATE",
-        "VIEW"
+        "VIEW",
+        "UPDATE"
       ]
     },
     {
