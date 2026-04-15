@@ -293,7 +293,7 @@ Theme: polish, observability, developer experience.
 |------|--------|-------|
 | G8: Agent observability (trace logging) | D-07, D-20 | AUDIT verb, auto-generated `compute_audit_log_{name}` Content per Compute, one trace record per invocation, redaction is runtime concern (conformance: exact-match 4+ chars, structural elements exempt). Design complete in D-20. |
 | Chat presentation component | D-09 | New `chat` IR component type. Not AI-specific — any Content with role+content fields. Integrated input with file attach, streaming via WebSocket. Design complete in D-09. |
-| Auto-generated REST API (convention over configuration) | D-11 | Content types get CRUD routes automatically |
+| Auto-generated REST API (convention over configuration) | D-11 | Every Content gets CRUD at `/api/v1/{content}` automatically. Headless services (no user stories) fully supported. `Expose a REST API` syntax removed. Design complete in D-11. |
 | Examples audit: remove boilerplate, use latest syntax | — | All examples updated to use v0.6 features |
 | **Code coverage: ai_provider.py** | — | Currently 37%. Needs mock LLM tests for agent loop, tool building |
 | **Code coverage: channels.py** | — | Currently 54%. WebSocket reconnect, metrics, error paths |
