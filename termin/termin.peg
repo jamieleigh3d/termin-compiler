@@ -75,8 +75,11 @@ content_header
 
 field_line
     = 'Each' singular:words_before_has 'has' [article]
-      field_name:words_before_which 'which' clause:field_clause $
+      field_name:words_before_which 'which' clause:field_clause_rest $
     ;
+
+field_clause_rest
+    = /.*/ ;
 
 field_clause
     = 'is' te:type_expr                                #FieldIsType
@@ -107,7 +110,12 @@ base_type
     ;
 
 enum_vals
-    = val+:quoted_string { ',' ['and'] val+:quoted_string }*
+    = val+:enum_val { ',' ['and'] val+:enum_val }*
+    ;
+
+enum_val
+    = quoted_string
+    | /[A-Za-z_]\w*/
     ;
 
 constraints
@@ -270,8 +278,12 @@ comparison_op
     ;
 
 event_action_line
-    = 'Create' article name:word_or_quoted
+    = 'Create' article name:quoted_string
       'with' ['the'] fields:comma_list $
+    | 'Create' article name:words_before_with
+      'with' ['the'] fields:comma_list $
+    | 'Create' article name:quoted_string $
+    | 'Create' article name:words $
     ;
 
 event_send_line
@@ -282,7 +294,7 @@ log_level_line
     = 'Log' 'level:' level:log_level $
     ;
 
-log_level = 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' ;
+log_level = 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | /[A-Z]+/ ;
 
 
 # ==================================================================
@@ -596,10 +608,10 @@ channel_carries_line = 'Carries' content:words $                        ;
 channel_direction_line = 'Direction:' dir:direction $                    ;
 channel_delivery_line = 'Delivery:' del:delivery $                      ;
 channel_requires_line = 'Requires' scope:quoted_string 'to' dir:send_recv $ ;
-channel_endpoint_line = 'Endpoint:' path:api_path $                     ;
+channel_endpoint_line = 'Endpoint:' path:endpoint_path $                 ;
 
-direction = 'inbound' | 'outbound' | 'bidirectional' | 'internal' ;
-delivery = 'realtime' | 'reliable' | 'batch' | 'auto' ;
+direction = 'inbound' | 'outbound' | 'bidirectional' | 'internal' | word ;
+delivery = 'realtime' | 'reliable' | 'batch' | 'auto' | word ;
 send_recv = 'send' | 'receive' | 'invoke' ;
 
 # Channel Actions (typed RPC verbs)
@@ -654,7 +666,12 @@ boundary_restricts_line
 
 boundary_exposes_line
     = 'Exposes' 'property' name:quoted_string ':'
-      type_name:words '=' cel:expr $
+      type_name:words '=' cel:expr_or_bracket $
+    ;
+
+expr_or_bracket
+    = expr
+    | '[' content:/[^\]]+/ ']'
     ;
 
 
@@ -749,3 +766,4 @@ duration = /\d+\s*(?:seconds?|minutes?|hours?)/ ;
 
 # API path
 api_path = /\/\S+/ ;
+endpoint_path = /\S+/ ;
