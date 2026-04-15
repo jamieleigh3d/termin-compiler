@@ -27,7 +27,12 @@ venv/
 .vscode/
 .idea/
 
-# Note: ir_dumps/*.json and examples/*_seed.json are intentionally tracked
+# Generated app files in ir_dumps/ (only *_ir.json is tracked)
+ir_dumps/*_app.py
+ir_dumps/*_app.json
+ir_dumps/*_app_seed.json
+
+# Note: ir_dumps/*_ir.json and examples/*_seed.json are intentionally tracked
 /*.termin.pkg
 /*.deploy.json
 # Coverage
