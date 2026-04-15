@@ -163,6 +163,13 @@ class ShowPage(Directive):
 
 
 @dataclass
+class ChatDirective(Directive):
+    source: str = ""            # Content name to display as chat
+    role_field: str = "role"    # field name for message role
+    content_field: str = "content"  # field name for message body
+
+
+@dataclass
 class DisplayTable(Directive):
     content_name: str = ""
     columns: list[str] = field(default_factory=list)

@@ -626,10 +626,10 @@
         "type": {
           "type": "string",
           "enum": [
-            "text", "data_table", "form", "field_input", "section",
+            "text", "data_table", "chat", "form", "field_input", "section",
             "aggregation", "stat_breakdown", "chart",
             "filter", "search", "highlight", "subscribe",
-            "related", "action_button"
+            "related", "action_button", "semantic_mark"
           ],
           "description": "Component type. Determines which props are expected and how the component renders."
         },

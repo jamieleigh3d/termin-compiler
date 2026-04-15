@@ -357,6 +357,50 @@ def _render_section(node: dict) -> str:
     return '\n'.join(parts)
 
 
+def _render_chat(node: dict) -> str:
+    """Render a chat component — scrolling message list with input area."""
+    props = node.get("props", {})
+    source = props.get("source", "")
+    role_field = props.get("role_field", "role")
+    content_field = props.get("content_field", "content")
+    children = node.get("children", [])
+
+    # Check for subscribe child
+    subscribe_attr = ""
+    for child in children:
+        if child.get("type") == "subscribe":
+            sub_content = child.get("props", {}).get("content", source)
+            subscribe_attr = f' data-termin-subscribe="{sub_content}"'
+
+    parts = [
+        f'<div class="flex flex-col h-[600px] bg-white shadow rounded overflow-hidden"'
+        f' data-termin-chat data-termin-source="{source}"{subscribe_attr}>',
+        f'  <div class="flex-1 overflow-y-auto p-4 space-y-3" data-termin-chat-messages>',
+        f'    {{% for item in items %}}',
+        f'    <div class="flex {{% if item.{role_field} == "user" %}}justify-end{{% else %}}justify-start{{% endif %}}"'
+        f' data-termin-chat-message data-termin-role="{{{{ item.{role_field} }}}}">',
+        f'      <div class="{{% if item.{role_field} == "user" %}}bg-blue-500 text-white{{% else %}}bg-gray-200 text-gray-800{{% endif %}}'
+        f' rounded-lg px-4 py-2 max-w-[70%]">',
+        f'        <div class="text-xs opacity-70 mb-1">{{{{ item.{role_field} }}}}</div>',
+        f'        <div>{{{{ item.{content_field}|default("") }}}}</div>',
+        f'      </div>',
+        f'    </div>',
+        f'    {{% endfor %}}',
+        f'  </div>',
+        f'  <div class="border-t p-3" data-termin-chat-input>',
+        f'    <form class="flex space-x-2" data-termin-chat-form data-action="/api/v1/{source}">',
+        f'      <input type="text" name="{content_field}" placeholder="Type a message..."'
+        f' class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"'
+        f' autocomplete="off">',
+        f'      <button type="submit"'
+        f' class="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors">Send</button>',
+        f'    </form>',
+        f'  </div>',
+        f'</div>',
+    ]
+    return '\n'.join(parts)
+
+
 def _render_action_button(node: dict) -> str:
     props = node.get("props", {})
     label = props.get("label", "Action")
@@ -373,6 +417,7 @@ def _render_unknown(node: dict) -> str:
 RENDERERS = {
     "text": _render_text,
     "data_table": _render_data_table,
+    "chat": _render_chat,
     "form": _render_form,
     "field_input": _render_field_input,
     "aggregation": _render_aggregation,

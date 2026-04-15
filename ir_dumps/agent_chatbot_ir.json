@@ -377,22 +377,14 @@
       "name": "Chat",
       "slug": "chat",
       "role": "anonymous",
-      "required_scope": "chat.use",
+      "required_scope": null,
       "children": [
         {
-          "type": "data_table",
+          "type": "chat",
           "props": {
             "source": "messages",
-            "columns": [
-              {
-                "field": "role",
-                "label": "role"
-              },
-              {
-                "field": "body",
-                "label": "body"
-              }
-            ]
+            "role_field": "role",
+            "content_field": "content"
           },
           "style": {},
           "layout": {},
@@ -401,29 +393,6 @@
               "type": "subscribe",
               "props": {
                 "content": "messages"
-              },
-              "style": {},
-              "layout": {},
-              "children": []
-            }
-          ]
-        },
-        {
-          "type": "form",
-          "props": {
-            "target": "messages",
-            "submit_scope": "chat.use"
-          },
-          "style": {},
-          "layout": {},
-          "children": [
-            {
-              "type": "field_input",
-              "props": {
-                "field": "body",
-                "label": "body",
-                "input_type": "text",
-                "required": true
               },
               "style": {},
               "layout": {},

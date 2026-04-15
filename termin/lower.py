@@ -13,7 +13,7 @@ from .ast_nodes import (
     ShowRelated, HighlightRows, MarkAs, AllowFilter, AllowSearch, SubscribeTo,
     AcceptInput, ValidateUnique, CreateAs, AfterSave, ShowChart,
     DisplayAggregation, DisplayText, StructuredAggregation, SectionStart,
-    ActionHeader, ActionButtonDef, LinkColumn,
+    ActionHeader, ActionButtonDef, LinkColumn, ChatDirective,
     ComputeNode, ChannelDecl, BoundaryDecl,
     BoundaryProperty, ErrorHandler, ErrorAction,
 )
@@ -439,6 +439,21 @@ def lower(program: Program) -> AppSpec:
         for d in story.directives:
             if isinstance(d, ShowPage):
                 page_name = d.page_name
+
+            elif isinstance(d, ChatDirective):
+                chat_source = _snake(d.source)
+                chat_node = ComponentNode(
+                    type="chat",
+                    props={
+                        "source": chat_source,
+                        "role_field": d.role_field,
+                        "content_field": d.content_field,
+                    },
+                    children=(
+                        ComponentNode(type="subscribe", props={"content": chat_source}),
+                    ),
+                )
+                children.append(chat_node)
 
             elif isinstance(d, DisplayTable):
                 dt_content = content_by_name.get(d.content_name)

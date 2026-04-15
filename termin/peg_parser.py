@@ -18,7 +18,7 @@ from .ast_nodes import (
     HighlightRows, MarkAs, AllowFilter, AllowSearch, SubscribeTo, AcceptInput,
     ValidateUnique, CreateAs, AfterSave, ShowChart, DisplayAggregation,
     StructuredAggregation, SectionStart, ActionHeader, ActionButtonDef,
-    NavBar, NavItem, Stream, Directive,
+    NavBar, NavItem, Stream, Directive, ChatDirective,
     ComputeNode, ComputeParam, ChannelDecl, ChannelRequirement, ActionDecl, ActionParam, BoundaryDecl,
     BoundaryProperty, DisplayText, ErrorHandler, ErrorAction, LinkColumn,
 )
@@ -95,6 +95,7 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Log level:", "log_level_line"), ("On error from", "error_from_line"),
     ("On any error:", "error_catch_all_line"), ("Retry ", "error_retry_line"),
     ("Then ", "error_then_line"), ("As ", "story_header"), ("so that ", "so_that_line"),
+    ("Show a chat for", "chat_line"),
     ("Show a page called", "show_page_line"), ("Display a table of", "display_table_line"),
     ("For each ", "show_related_line"),  # also handles action_header_line — disambiguated in _classify_line
     ("Mark ", "mark_rows_line"),
@@ -819,6 +820,30 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule); return ("so_that", str(r.get("text","")).strip().rstrip(":") if r else text[len("so that "):].strip().rstrip(":"))
     if rule == "show_page_line":
         r = P(text, rule); return ("directive", ShowPage(page_name=_qs(r.get("name","")) if r else _fq(text), line=ln))
+    if rule == "chat_line":
+        r = P(text, rule)
+        if r:
+            source = str(r.get("source", "")).strip()
+            # Distinguish ChatMapped (has role_field) from ChatDefault
+            if r.get("role_field") is not None:
+                role_field = _qs(r.get("role_field", ""))
+                content_field = _qs(r.get("content_field", ""))
+                return ("directive", ChatDirective(source=source, role_field=role_field, content_field=content_field, line=ln))
+            else:
+                return ("directive", ChatDirective(source=source, line=ln))
+        # Fallback: parse manually
+        rest = text[len("Show a chat for "):].strip()
+        wi = rest.find(" with role ")
+        if wi >= 0:
+            source = rest[:wi].strip()
+            mapping = rest[wi:]
+            role_field = _fq(mapping.split(",")[0]) if "," in mapping else "role"
+            content_field = ""
+            ci = mapping.find(', content "')
+            if ci >= 0:
+                content_field = _fq(mapping[ci+10:])
+            return ("directive", ChatDirective(source=source, role_field=role_field or "role", content_field=content_field or "content", line=ln))
+        return ("directive", ChatDirective(source=rest, line=ln))
     if rule == "display_table_line":
         rest = text[len("Display a table of "):].strip(); wi = rest.find(" with columns:")
         cn = rest[:wi].strip() if wi>=0 else rest.strip()

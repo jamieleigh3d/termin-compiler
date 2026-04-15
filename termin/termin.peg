@@ -349,6 +349,11 @@ show_page_line
     = 'Show' 'a' 'page' 'called' name:quoted_string $
     ;
 
+chat_line
+    = 'Show' 'a' 'chat' 'for' source:words_before_with 'with' 'role' role_field:quoted_string ',' 'content' content_field:quoted_string $  #ChatMapped
+    | 'Show' 'a' 'chat' 'for' source:rest_of_text $  #ChatDefault
+    ;
+
 display_table_line
     = 'Display' 'a' 'table' 'of' content:words_before_with
       'with' 'columns:' cols:comma_list $         #DisplayTableCols
