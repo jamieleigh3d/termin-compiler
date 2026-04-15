@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.7.0 (unreleased)
+
+### Theme: Polish, Observability, Developer Experience
+
+### Compiler
+- **Compound verb fix (#007):** PEG grammar now handles all verb combinations (`view or create`, `create, update, or delete`, etc.). Previously only `create or update` worked; all others silently dropped verbs. Security bug affecting 6/12 examples.
+- **TERMIN-S031 safety net:** Lowering raises `SemanticError` if any access grant has zero recognized verbs after mapping.
+- **Transition feedback (#006):** New DSL syntax for toast/banner notifications on state transitions. CEL or literal messages, configurable dismiss timers.
+- **`--emit-ir` standalone:** When used without `-o`, dumps IR JSON and exits without building a package.
+
+### IR (0.5.0 → 0.7.0)
+- **TransitionFeedbackSpec:** New IR type for transition feedback (trigger, style, message, is_expr, dismiss_seconds).
+- **TransitionSpec.feedback:** Array of feedback specs on each transition (empty when not declared).
+
+### Runtime (0.3.0 → 0.7.0)
+- **Toast/banner rendering:** `data-termin-toast` and `data-termin-banner` HTML elements with auto-dismiss JS. Flash data via `_flash` query params on redirect.
+
+### Conformance
+- **Verb completeness tests:** `test_access_grants_have_nonempty_verbs`, `test_access_grants_reference_declared_scopes`.
+- **Transition feedback tests:** 14 tests for IR structure across all fixtures.
+
+---
+
 ## v0.6.0 "Boundaries" (2026-04-11)
 
 ### Theme: Enforcement, Quality, Cleanup
