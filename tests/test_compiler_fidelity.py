@@ -1222,3 +1222,43 @@ class TestAllExamplesRoles:
         for role in spec.auth.roles:
             assert role.name != "", f"Empty role name in {example}"
             assert len(role.scopes) > 0, f"Role '{role.name}' has no scopes in {example}"
+
+
+# ============================================================
+# Zero PEG fallbacks: verify TatSu succeeds on every line
+# ============================================================
+
+class TestZeroPEGFallbacks:
+    """Verify TatSu successfully parses every classified line in every example.
+
+    When _try_parse returns None, the parser falls back to Python string
+    manipulation. This test ensures no line triggers a fallback — the PEG
+    grammar handles every line the classifier identifies.
+    """
+
+    def test_no_tatsu_fallbacks(self):
+        import sys
+        sys.setrecursionlimit(5000)
+        import tatsu
+        from termin.peg_parser import _preprocess, _classify_line, _model
+
+        fallbacks = []
+        for f in sorted(EXAMPLES_DIR.glob("*.termin")):
+            source = f.read_text()
+            lines = _preprocess(source)
+            for line_num, text in lines:
+                rule = _classify_line(text)
+                if rule == "unknown":
+                    continue
+                try:
+                    result = _model.parse(text, rule_name=rule)
+                    if result is None:
+                        fallbacks.append((f.name, line_num, rule, text[:80]))
+                except Exception:
+                    fallbacks.append((f.name, line_num, rule, text[:80]))
+
+        if fallbacks:
+            msg = f"{len(fallbacks)} TatSu fallback(s):\n"
+            for fname, ln, rule, text in fallbacks:
+                msg += f"  {fname}:{ln} [{rule}] {text}\n"
+            pytest.fail(msg)

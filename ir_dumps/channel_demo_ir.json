@@ -3,7 +3,7 @@
   "reflection_enabled": true,
   "app_id": "e4f29a81-6c33-4f2d-b1a9-2c8e5d73f410",
   "name": "Incident Response Hub",
-  "description": "Demonstrates all Channel patterns \u2014 data, action, hybrid, streaming, and event-driven sends",
+  "description": "Demonstrates all Channel patterns \u00e2\u20ac\u201d data, action, hybrid, streaming, and event-driven sends",
   "auth": {
     "provider": "stub",
     "scopes": [

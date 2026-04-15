@@ -74,13 +74,13 @@ content_header
     ;
 
 field_line
-    = 'Each' singular:words_before_has 'has' article
+    = 'Each' singular:words_before_has 'has' [article]
       field_name:words_before_which 'which' clause:field_clause $
     ;
 
 field_clause
     = 'is' te:type_expr                                #FieldIsType
-    | 'references' ref:word_or_quoted constraints:constraints  #FieldReferences
+    | 'references' ref:words_or_quoted constraints:constraints  #FieldReferences
     ;
 
 type_expr
@@ -91,26 +91,23 @@ type_expr
 base_type
     = 'text'                       #TypeText
     | 'currency'                   #TypeCurrency
-    | 'number'                     #TypeNumber
     | 'percentage'                 #TypePercentage
     | 'true/false'                 #TypeBoolean
     | 'boolean'                    #TypeBoolean
     | 'date' 'and' 'time'         #TypeDatetime
+    | 'a' 'date'                   #TypeDate
     | 'date'                       #TypeDate
     | 'automatic'                  #TypeAutomatic
     | 'a' 'whole' 'number'        #TypeWholeNumber
     | 'whole' 'number'            #TypeWholeNumber
+    | 'a' 'number'                 #TypeNumber
+    | 'number'                     #TypeNumber
     | 'one' 'of:' vals:enum_vals  #TypeEnum
     | 'list' 'of' inner:word      #TypeList
     ;
 
 enum_vals
-    = val+:enum_val { ',' ['and'] val+:enum_val }*
-    ;
-
-enum_val
-    = quoted_string
-    | /\w+(?:\s+\w+)*/
+    = val+:quoted_string { ',' ['and'] val+:quoted_string }*
     ;
 
 constraints
@@ -211,16 +208,16 @@ state_starts_line
     ;
 
 state_also_line
-    = article word 'can' 'also' 'be' states:quoted_or_list $
+    = article word 'can' 'also' 'be' states:quoted_comma_or_list $
     ;
 
 state_transition_line
     = article from_state:words_before_word_can
-      singular:word 'can' 'become' to_state:word
+      singular:word 'can' 'become' to_state:words_before_again_if
       ['again'] 'if' 'the' 'user' 'has' scope:quoted_string $
       #TransitionScope
     | article from_state:words_before_word_can
-      singular:word 'can' 'become' to_state:word
+      singular:word 'can' 'become' to_state:words_before_again_if
       ['again'] 'if' cel:expr $
       #TransitionExpr
     ;
@@ -241,7 +238,8 @@ transition_feedback_line
     ;
 
 transition_dismiss
-    = 'dismiss' 'after' seconds:/\d+/ 'seconds'
+    = /dismiss\s+after\s+/ seconds:/\d+/ 'seconds'
+    | /dismiss\s+after\s+/ seconds:/\d+/ 'second'
     ;
 
 
@@ -399,7 +397,8 @@ validate_unique_line
     ;
 
 create_as_line
-    = 'Create' 'the' words_before_as 'as' state:word $
+    = 'Create' 'the' words_before_as 'as' state:rest_of_line $
+    | 'Create' 'the' rest_of_line $                              #CreateNoState
     ;
 
 after_saving_line
@@ -436,8 +435,8 @@ section_header_line
     ;
 
 action_header_line
-    = 'For' 'each' singular:word ',' 'show' 'actions' ':' $
-    | 'For' 'each' singular:word ',' 'show' 'actions:' $
+    = 'For' 'each' singular:words_before_comma ',' 'show' 'actions' ':' $
+    | 'For' 'each' singular:words_before_comma ',' 'show' 'actions:' $
     ;
 
 action_button_line
@@ -554,11 +553,11 @@ compute_postconditions_line
     ;
 
 compute_objective_line
-    = 'Objective' 'is' rest:rest_of_line $
+    = 'Objective' 'is' rest:rest_of_text $
     ;
 
 compute_strategy_line
-    = 'Strategy' 'is' rest:rest_of_line $
+    = 'Strategy' 'is' rest:rest_of_text $
     ;
 
 compute_accesses_line
@@ -578,7 +577,7 @@ compute_output_creates_line
     ;
 
 compute_directive_line
-    = 'Directive' 'is' rest:rest_of_line $
+    = 'Directive' 'is' rest:rest_of_text $
     ;
 
 field_ref
@@ -586,7 +585,8 @@ field_ref
     ;
 
 compute_access_line
-    = role:word_or_quoted 'can' 'execute' 'this' $
+    = 'Anyone' 'with' role:quoted_string 'can' 'execute' 'this' $  #ComputeAccessAnyone
+    | role:word_or_quoted 'can' 'execute' 'this' $                  #ComputeAccessRole
     ;
 
 
@@ -630,7 +630,7 @@ action_param_list
     ;
 
 action_param
-    = name:word 'which' 'is' type:words_before_comma_or_eol
+    = name:words_before_which 'which' 'is' type:words_before_comma_or_eol
     ;
 
 words_before_comma_or_eol
@@ -693,6 +693,11 @@ quoted_or_list
     = val+:quoted_string { 'or' val+:quoted_string }*
     ;
 
+# Quoted comma-or list: "a", "b", "c", or "d" (commas + final 'or')
+quoted_comma_or_list
+    = val+:quoted_string { (',' ['or'] | 'or') val+:quoted_string }*
+    ;
+
 
 # ==================================================================
 # TERMINALS
@@ -712,6 +717,8 @@ word = /\w+/ ;
 
 word_or_quoted = quoted_string | word ;
 
+words_or_quoted = quoted_string | words_before_comma_or_eol ;
+
 # Multiple words (greedy)
 words = /\w+(?:\s+\w+)*/ ;
 
@@ -721,7 +728,7 @@ words_before_which = /\w+(?:\s+(?!which\b)\w+)*/ ;
 words_before_called = /\w+(?:\s+(?!called\b)\w+)*/ ;
 words_before_is = /\w+(?:\s+(?!is\b)\w+)*/ ;
 words_before_comma = /\w+(?:\s+(?!,)\w+)*/ ;
-words_before_word_can = /\w+(?:\s+\w+)*?(?=\s+\w+\s+can\b)/ ;
+words_before_word_can = /[\w-]+(?:\s+[\w-]+)*?(?=\s+[\w-]+\s+can\b)/ ;
 words_before_with = /\w+(?:\s+(?!with\b)\w+)*/ ;
 words_before_grouped = /\w+(?:\s+(?!grouped\b)\w+)*/ ;
 words_before_over = /\w+(?:\s+(?!over\b)\w+)*/ ;
@@ -729,9 +736,13 @@ words_before_at = /\w+(?:\s+(?!at\b)\w+)*/ ;
 words_before_as = /\w+(?:\s+(?!as\b)\w+)*/ ;
 words_before_changes = /\w+(?:\s+(?!changes\b)\w+)*/ ;
 words_before_or = /\w+(?:\s+(?!or\b)\w+)*/ ;
+words_before_again_if = /[\w-]+(?:\s+(?!again\b|if\b)[\w-]+)*/ ;
 
-# Free text (rest of line, greedy)
+# Free text (rest of line, greedy — no newlines)
 rest_of_line = /\S[^\n]*/ ;
+
+# Free text (rest of text, greedy — includes newlines for multi-line blocks)
+rest_of_text = /\S[\s\S]*/ ;
 
 # Free text stopping before colon
 free_text_to_colon = /[^\n:]+/ ;

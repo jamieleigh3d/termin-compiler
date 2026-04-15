@@ -3,7 +3,7 @@
   "reflection_enabled": true,
   "app_id": "b7e1c3a0-4f89-4d1e-a293-8c0d1f6e2b57",
   "name": "Channel Simple",
-  "description": "Minimal channel demo with loopback \u2014 outbound channel sends to the app's own inbound webhook, proving the full dispatch pipeline without external services",
+  "description": "Minimal channel demo with loopback \u00e2\u20ac\u201d outbound channel sends to the app's own inbound webhook, proving the full dispatch pipeline without external services",
   "auth": {
     "provider": "stub",
     "scopes": [

@@ -3,7 +3,7 @@
   "reflection_enabled": true,
   "app_id": "2b909f99-d936-4469-843c-2fdc6aceef60",
   "name": "Agent Simple",
-  "description": "Minimal AI agent \u2014 submit a prompt, get a completion",
+  "description": "Minimal AI agent \u00e2\u20ac\u201d submit a prompt, get a completion",
   "auth": {
     "provider": "stub",
     "scopes": [

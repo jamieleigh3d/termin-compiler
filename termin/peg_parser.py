@@ -151,6 +151,10 @@ def _classify_line(text: str) -> str:
         if " starts as " in text: return "state_starts_line"
         if " can also be " in text: return "state_also_line"
         if " can become " in text: return "state_transition_line"
+    # "can execute this" must be checked BEFORE the prefix loop — lines like
+    # 'Anyone with "scope" can execute this' match the "Anyone with" prefix
+    # and would be misclassified as access_line instead of compute_access_line
+    if " can execute this" in text: return "compute_access_line"
     for prefix, rule in _PREFIXES:
         if text.startswith(prefix):
             # Disambiguate "For each X, show actions:" from "For each X, show Y grouped by Z"
@@ -176,7 +180,6 @@ def _classify_line(text: str) -> str:
     if text.startswith("```") and text.endswith("```") and len(text) > 6: return "compute_body_multiline"
     if text.startswith("`") and text.endswith("`") and not text.startswith("```"): return "compute_body_expr_line"
     if text.startswith("[") and text.endswith("]"): return "compute_body_expr_line"  # legacy bracket support
-    if " can execute this" in text: return "compute_access_line"
     # D-19: Unconditional constraint: "field must be one of: ..."
     if " must be one of:" in text: return "unconditional_constraint_line"
     return "unknown"
@@ -994,8 +997,17 @@ def _parse_line(text: str, rule: str, ln: int):
     if rule == "compute_body_multiline": return ("compute_body_multiline", text[3:-3].strip())
     if rule == "compute_access_line":
         r = P(text, rule)
-        if r: return ("compute_access", _qs(r.get("role","")))
-        ci = text.find(" can execute this"); return ("compute_access", text[:ci].strip().strip('"') if ci>=0 else "")
+        if r:
+            val = _qs(r.get("role",""))
+            # "Anyone with" form → scope-based access; bare "role" form → role-based
+            if _rule(r) == "ComputeAccessAnyone" or text.startswith("Anyone with"):
+                return ("access", AccessRule(scope=val, verbs=["execute"], line=ln))
+            return ("compute_access", val)
+        ci = text.find(" can execute this")
+        raw = text[:ci].strip().strip('"') if ci>=0 else ""
+        if text.startswith("Anyone with"):
+            return ("access", AccessRule(scope=_fq(text), verbs=["execute"], line=ln))
+        return ("compute_access", raw)
     if rule == "compute_identity_line":
         r = P(text, rule)
         mode = str(r.get("mode", "")).strip().lower() if r else text.split(":", 1)[1].strip().lower()
