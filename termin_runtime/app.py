@@ -1364,6 +1364,39 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
             log = [e for e in log if order.get(e.get("log_level", "INFO"), 2) >= min_l]
         return log
 
+    # ── Build transition feedback lookup from IR ──
+    _transition_feedback = {}  # (content_ref, from_state, to_state) → [feedback_specs]
+    for sm in ir.get("state_machines", []):
+        for t in sm.get("transitions", []):
+            feedback = t.get("feedback", [])
+            if feedback:
+                key = (sm["content_ref"], t["from_state"], t["to_state"])
+                _transition_feedback[key] = feedback
+
+    def _get_feedback(content: str, from_state: str, to_state: str, trigger: str) -> list:
+        """Look up transition feedback specs for a given trigger (success/error)."""
+        specs = _transition_feedback.get((content, from_state, to_state), [])
+        return [fb for fb in specs if fb["trigger"] == trigger]
+
+    def _append_flash_params(url: str, feedback_specs: list, record: dict = None) -> str:
+        """Append _flash query params to a URL for feedback rendering."""
+        if not feedback_specs:
+            return url
+        fb = feedback_specs[0]  # use first matching feedback
+        msg = fb["message"]
+        # CEL expression evaluation would go here in a full implementation;
+        # for now, literal messages pass through and expr messages show as-is
+        separator = "&" if "?" in url else "?"
+        import urllib.parse
+        params = urllib.parse.urlencode({
+            "_flash": msg,
+            "_flash_style": fb["style"],
+            "_flash_level": fb["trigger"],
+        })
+        if fb.get("dismiss_seconds") is not None:
+            params += f"&_flash_dismiss={fb['dismiss_seconds']}"
+        return url + separator + params
+
     # ── Generic transition endpoint (used by presentation action buttons) ──
     @app.post("/_transition/{content}/{record_id}/{target_state}")
     async def generic_transition(content: str, record_id: int, target_state: str,
@@ -1374,10 +1407,25 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         user = get_current_user(request)
         db = await get_db(db_path)
         try:
+            # Get current state before transition for feedback lookup
+            cursor = await db.execute(f"SELECT status FROM {content} WHERE id = ?", (record_id,))
+            row = await cursor.fetchone()
+            from_state = row["status"] if row else None
+
             result = await do_state_transition(db, content, record_id, target, user,
                                                sm_lookup, terminator, event_bus)
-            # Redirect back to referring page
+            # Redirect back to referring page with success feedback
             referer = request.headers.get("referer", "/")
+            if from_state:
+                success_fb = _get_feedback(content, from_state, target, "success")
+                referer = _append_flash_params(referer, success_fb)
+            return RedirectResponse(url=referer, status_code=303)
+        except HTTPException:
+            # On transition error, redirect with error feedback
+            referer = request.headers.get("referer", "/")
+            if from_state:
+                error_fb = _get_feedback(content, from_state, target, "error")
+                referer = _append_flash_params(referer, error_fb)
             return RedirectResponse(url=referer, status_code=303)
         finally:
             await db.close()
@@ -1515,6 +1563,12 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                         except Exception:
                             return "..."
 
+                    # Extract flash notification params (from transition feedback)
+                    flash_msg = request.query_params.get("_flash")
+                    flash_style = request.query_params.get("_flash_style", "toast")
+                    flash_level = request.query_params.get("_flash_level", "success")
+                    flash_dismiss = request.query_params.get("_flash_dismiss")
+
                     ctx = {
                         "page_title": _pg["name"],
                         "current_role": user["role"],
@@ -1526,6 +1580,10 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                         "_sm_transitions": all_transitions,
                         "user_scopes": set(user["scopes"]),
                         "termin_eval": _termin_eval,
+                        "flash_msg": flash_msg,
+                        "flash_style": flash_style,
+                        "flash_level": flash_level,
+                        "flash_dismiss": int(flash_dismiss) if flash_dismiss else None,
                     }
 
                     # Load data sources (data_table, aggregations)

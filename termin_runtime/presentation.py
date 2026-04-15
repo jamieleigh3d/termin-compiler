@@ -487,6 +487,24 @@ def build_base_template(app_name: str, nav_html: str) -> object:
         </div>
     </nav>
     <main class="max-w-7xl mx-auto px-4">
+        {{% if flash_msg %}}
+        {{% if flash_style == "banner" %}}
+        <div data-termin-banner role="alert" data-level="{{{{ flash_level }}}}"
+             class="mb-4 p-4 rounded-lg border {{% if flash_level == 'error' %}}bg-red-50 border-red-200 text-red-800{{% else %}}bg-green-50 border-green-200 text-green-800{{% endif %}}"
+             {{% if flash_dismiss %}}data-dismiss="{{{{ flash_dismiss }}}}" {{% endif %}}>
+            <div class="flex items-center justify-between">
+                <span>{{{{ flash_msg }}}}</span>
+                <button onclick="this.parentElement.parentElement.remove()" class="ml-4 text-lg font-bold opacity-50 hover:opacity-100">&times;</button>
+            </div>
+        </div>
+        {{% else %}}
+        <div data-termin-toast role="status" data-level="{{{{ flash_level }}}}"
+             class="fixed bottom-4 right-4 z-50 p-4 rounded-lg shadow-lg {{% if flash_level == 'error' %}}bg-red-600 text-white{{% else %}}bg-green-600 text-white{{% endif %}}"
+             data-dismiss="{{{{ flash_dismiss or 5 }}}}">
+            {{{{ flash_msg }}}}
+        </div>
+        {{% endif %}}
+        {{% endif %}}
         {{{{ content|safe }}}}
     </main>
     <script id="termin-user-data" type="application/json">{{{{ user_profile_json|safe }}}}</script>
@@ -505,6 +523,24 @@ def build_base_template(app_name: str, nav_html: str) -> object:
             el.textContent = "[Error: " + err.message + "]";
         }}
     }});
+    </script>
+    <script>
+    // Auto-dismiss toast/banner notifications
+    document.querySelectorAll("[data-termin-toast], [data-termin-banner]").forEach(function(el) {{
+        var dismiss = parseInt(el.dataset.dismiss);
+        if (dismiss > 0) {{
+            setTimeout(function() {{ el.style.transition = "opacity 0.3s"; el.style.opacity = "0"; setTimeout(function() {{ el.remove(); }}, 300); }}, dismiss * 1000);
+        }}
+    }});
+    // Clean _flash params from URL to prevent re-showing on refresh
+    if (window.location.search.includes("_flash")) {{
+        var url = new URL(window.location);
+        url.searchParams.delete("_flash");
+        url.searchParams.delete("_flash_style");
+        url.searchParams.delete("_flash_level");
+        url.searchParams.delete("_flash_dismiss");
+        window.history.replaceState({{}}, "", url);
+    }}
     </script>
     <script type="module" src="/runtime/termin.js?v={_js_version_hash()}"></script>
 </body>
