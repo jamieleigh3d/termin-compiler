@@ -213,7 +213,7 @@ def lower(program: Program) -> AppSpec:
     )
 
     # ── Lower access grants ──
-    verb_map = {"view": Verb.VIEW, "create": Verb.CREATE, "update": Verb.UPDATE, "delete": Verb.DELETE}
+    verb_map = {"view": Verb.VIEW, "create": Verb.CREATE, "update": Verb.UPDATE, "delete": Verb.DELETE, "audit": Verb.AUDIT}
     grants = []
     for c in program.contents:
         for rule in c.access_rules:
@@ -229,7 +229,7 @@ def lower(program: Program) -> AppSpec:
                 raise SemanticError(
                     f"TERMIN-S031: Access grant for '{c.name}' with scope '{rule.scope}' "
                     f"has no recognized verbs (got {rule.verbs!r}). "
-                    f"Valid verbs: view, create, update, delete.",
+                    f"Valid verbs: view, create, update, delete, audit.",
                     line=rule.line,
                 )
             grants.append(AccessGrant(
@@ -805,6 +805,12 @@ def lower(program: Program) -> AppSpec:
             and shape == ComputeShape.TRANSFORM
             and not comp.access_scope
         )
+        # D-20: Compute audit level and audit content reference
+        audit_level = comp.audit_level  # "none", "actions", "debug"
+        audit_scope = comp.audit_scope
+        comp_snake = _snake(comp.name)
+        audit_content_ref = f"compute_audit_log_{comp_snake}" if audit_level != "none" else None
+
         computes.append(ComputeSpec(
             name=_qname(comp.name),
             shape=shape,
@@ -838,6 +844,9 @@ def lower(program: Program) -> AppSpec:
             input_fields=tuple(comp.input_fields),
             output_fields=tuple(comp.output_fields),
             output_creates=_resolve_to_content(comp.output_creates) if comp.output_creates else None,
+            audit_level=audit_level,
+            audit_scope=audit_scope,
+            audit_content_ref=audit_content_ref,
         ))
 
     # ── Lower channels ──
@@ -951,6 +960,93 @@ def lower(program: Program) -> AppSpec:
             actions=tuple(actions),
             is_catch_all=eh.is_catch_all,
         ))
+
+    # ── D-20: Auto-generate audit log Content per Compute ──
+    audit_log_schemas = []
+    audit_log_grants = []
+    audit_log_routes = []
+    for cs in computes:
+        if cs.audit_level == "none" or cs.audit_content_ref is None:
+            continue
+
+        audit_table_name = cs.audit_content_ref  # "compute_audit_log_{snake_name}"
+        audit_qname = QualifiedName(
+            display=audit_table_name.replace("_", " "),
+            snake=audit_table_name,
+            pascal=_pascal(audit_table_name),
+        )
+
+        # Standard fields from D-20.2
+        # Note: 'id' is omitted here — the runtime storage module auto-adds
+        # "id INTEGER PRIMARY KEY AUTOINCREMENT" to every Content table.
+        audit_fields = (
+            FieldSpec(name="compute_name", display_name="compute name",
+                      business_type="text", column_type=FieldType.TEXT),
+            FieldSpec(name="invocation_id", display_name="invocation id",
+                      business_type="text", column_type=FieldType.TEXT),
+            FieldSpec(name="trigger", display_name="trigger",
+                      business_type="text", column_type=FieldType.TEXT),
+            FieldSpec(name="started_at", display_name="started at",
+                      business_type="datetime", column_type=FieldType.TIMESTAMP),
+            FieldSpec(name="completed_at", display_name="completed at",
+                      business_type="datetime", column_type=FieldType.TIMESTAMP),
+            FieldSpec(name="duration_ms", display_name="duration ms",
+                      business_type="number", column_type=FieldType.REAL),
+            FieldSpec(name="outcome", display_name="outcome",
+                      business_type="enum", column_type=FieldType.TEXT,
+                      enum_values=("success", "error", "timeout", "cancelled")),
+            FieldSpec(name="total_input_tokens", display_name="total input tokens",
+                      business_type="number", column_type=FieldType.INTEGER),
+            FieldSpec(name="total_output_tokens", display_name="total output tokens",
+                      business_type="number", column_type=FieldType.INTEGER),
+            FieldSpec(name="trace", display_name="trace",
+                      business_type="text", column_type=FieldType.TEXT),
+            FieldSpec(name="error_message", display_name="error message",
+                      business_type="text", column_type=FieldType.TEXT),
+        )
+
+        audit_log_schemas.append(ContentSchema(
+            name=audit_qname,
+            fields=audit_fields,
+            singular="",
+            audit="none",  # audit logs don't recursively audit themselves
+        ))
+
+        # Generate access grants: AUDIT + VIEW for the audit scope
+        if cs.audit_scope:
+            audit_log_grants.append(AccessGrant(
+                content=audit_table_name,
+                scope=cs.audit_scope,
+                verbs=frozenset({Verb.AUDIT}),
+            ))
+            audit_log_grants.append(AccessGrant(
+                content=audit_table_name,
+                scope=cs.audit_scope,
+                verbs=frozenset({Verb.VIEW}),
+            ))
+
+        # Generate CRUD routes for the audit log Content (LIST + GET_ONE)
+        audit_base_path = f"/api/v1/{audit_table_name}"
+        audit_view_scope = cs.audit_scope  # may be None
+        audit_log_routes.append(RouteSpec(
+            method=HttpMethod.GET,
+            path=audit_base_path,
+            kind=RouteKind.LIST,
+            content_ref=audit_table_name,
+            required_scope=audit_view_scope,
+        ))
+        audit_log_routes.append(RouteSpec(
+            method=HttpMethod.GET,
+            path=f"{audit_base_path}/{{id}}",
+            kind=RouteKind.GET_ONE,
+            content_ref=audit_table_name,
+            required_scope=audit_view_scope,
+        ))
+
+    # Merge audit log schemas, grants, and routes into the main lists
+    content_schemas.extend(audit_log_schemas)
+    grants.extend(audit_log_grants)
+    routes.extend(audit_log_routes)
 
     # ── Build reclassification points from Compute specs ──
     reclass_points = []

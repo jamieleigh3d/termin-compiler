@@ -26,6 +26,8 @@ Compute called "complete":
     Answer the following prompt from the user.
   ```
   Anyone with "agent.use" can execute this
+  Audit level: actions
+  Anyone with "agent.use" can audit
 
 As an anonymous, I want to submit prompts and see responses
   so that I can test the AI agent:

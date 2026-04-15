@@ -547,7 +547,9 @@ class TestComputeDemoFidelity:
 
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}
-        assert names == {"orders", "order_lines", "reports"}
+        # D-20: Filter out auto-generated audit log Content
+        user_content = {n for n in names if not n.startswith("compute_audit_log_")}
+        assert user_content == {"orders", "order_lines", "reports"}
 
     def test_order_priority_enum(self):
         f = _field(_content(self.spec, "orders"), "priority")
@@ -662,7 +664,9 @@ class TestSecurityAgentFidelity:
 
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}
-        assert names == {"findings", "scan_runs"}
+        # D-20: Filter out auto-generated audit log Content
+        user_content = {n for n in names if not n.startswith("compute_audit_log_")}
+        assert user_content == {"findings", "scan_runs"}
 
     def test_finding_type_enum(self):
         f = _field(_content(self.spec, "findings"), "finding_type")
@@ -794,7 +798,9 @@ class TestHRPortalFidelity:
 
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}
-        assert names == {"employees", "departments", "salary_reviews"}
+        # D-20: Filter out auto-generated audit log Content
+        user_content = {n for n in names if not n.startswith("compute_audit_log_")}
+        assert user_content == {"employees", "departments", "salary_reviews"}
 
     def test_salary_field_confidentiality(self):
         f = _field(_content(self.spec, "employees"), "salary")
@@ -1018,7 +1024,9 @@ class TestAgentSimpleFidelity:
 
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}
-        assert names == {"completions"}
+        # D-20: Filter out auto-generated audit log Content
+        user_content = {n for n in names if not n.startswith("compute_audit_log_")}
+        assert user_content == {"completions"}
 
     def test_complete_compute(self):
         c = _compute(self.spec, "complete")
@@ -1051,7 +1059,9 @@ class TestAgentChatbotFidelity:
 
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}
-        assert names == {"messages"}
+        # D-20: Filter out auto-generated audit log Content
+        user_content = {n for n in names if not n.startswith("compute_audit_log_")}
+        assert user_content == {"messages"}
 
     def test_message_role_enum(self):
         f = _field(_content(self.spec, "messages"), "role")
@@ -1111,7 +1121,7 @@ class TestAllExamplesAccessGrantVerbs:
         for grant in spec.access_grants:
             assert len(grant.verbs) > 0, f"Empty verbs in grant for {grant.content}"
             for v in grant.verbs:
-                assert v in (Verb.VIEW, Verb.CREATE, Verb.UPDATE, Verb.DELETE), \
+                assert v in (Verb.VIEW, Verb.CREATE, Verb.UPDATE, Verb.DELETE, Verb.AUDIT), \
                     f"Invalid verb {v} in grant for {grant.content}"
 
     def test_grant_scopes_are_declared(self, example):

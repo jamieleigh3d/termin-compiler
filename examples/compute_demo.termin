@@ -50,11 +50,15 @@ Compute called "calculate order total":
   Transform: takes an order, produces an order
   `order.total = order.lines.reduce((acc, line) => acc + line.quantity * line.unit_price, 0)`
   Anyone with "orders.write" can execute this
+  Audit level: actions
+  Anyone with "orders.admin" can audit
 
 Compute called "revenue report":
   Reduce: takes orders, produces a report
   `report.total_count = orders.length; report.total_revenue = orders.reduce((acc, o) => acc + o.total, 0)`
   Anyone with "orders.read" can execute this
+  Audit level: actions
+  Anyone with "orders.admin" can audit
 
 Compute called "split order into lines":
   Expand: takes an order, produces order lines
@@ -70,6 +74,7 @@ Compute called "triage order":
   Route: takes an order, produces one of orders or reports
   `order.priority == "high" ? "orders" : "reports"`
   Anyone with "orders.write" can execute this
+  Audit level: none
 
 --- Channels ---
 

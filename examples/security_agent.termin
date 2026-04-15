@@ -99,6 +99,8 @@ Compute called "scanner":
   Postconditions are:
     `After.content_query("findings").size() <= Before.content_query("findings").size() + 100`
   Anyone with "findings.remediate" can execute this
+  Audit level: debug
+  Anyone with "findings.remediate" can audit
 
 Compute called "remediator":
   Transform: takes finding : findings, produces finding : findings
@@ -126,6 +128,8 @@ Compute called "remediator":
   Postconditions are:
     `After.content_query("findings").filter(f, f.remediation == "detected").size() <= Before.content_query("findings").filter(f, f.remediation == "detected").size()`
   Anyone with "findings.remediate" can execute this
+  Audit level: debug
+  Anyone with "findings.remediate" can audit
 
 When `finding.remediation.enters("flagged-for-human")`:
   Send finding to "slack"

@@ -431,6 +431,214 @@
       ],
       "audit": "actions",
       "dependent_values": []
+    },
+    {
+      "name": {
+        "display": "compute audit log calculate team bonus pool",
+        "snake": "compute_audit_log_calculate_team_bonus_pool",
+        "pascal": "ComputeAuditLogCalculateTeamBonusPool"
+      },
+      "fields": [
+        {
+          "name": "compute_name",
+          "display_name": "compute name",
+          "business_type": "text",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "invocation_id",
+          "display_name": "invocation id",
+          "business_type": "text",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "trigger",
+          "display_name": "trigger",
+          "business_type": "text",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "started_at",
+          "display_name": "started at",
+          "business_type": "datetime",
+          "column_type": "TIMESTAMP",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "completed_at",
+          "display_name": "completed at",
+          "business_type": "datetime",
+          "column_type": "TIMESTAMP",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "duration_ms",
+          "display_name": "duration ms",
+          "business_type": "number",
+          "column_type": "REAL",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "outcome",
+          "display_name": "outcome",
+          "business_type": "enum",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [
+            "success",
+            "error",
+            "timeout",
+            "cancelled"
+          ],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "total_input_tokens",
+          "display_name": "total input tokens",
+          "business_type": "number",
+          "column_type": "INTEGER",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "total_output_tokens",
+          "display_name": "total output tokens",
+          "business_type": "number",
+          "column_type": "INTEGER",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "trace",
+          "display_name": "trace",
+          "business_type": "text",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        },
+        {
+          "name": "error_message",
+          "display_name": "error message",
+          "business_type": "text",
+          "column_type": "TEXT",
+          "required": false,
+          "unique": false,
+          "minimum": null,
+          "maximum": null,
+          "enum_values": [],
+          "one_of_values": [],
+          "foreign_key": null,
+          "is_auto": false,
+          "list_type": null,
+          "default_expr": null,
+          "confidentiality_scopes": []
+        }
+      ],
+      "singular": "",
+      "storage_intent": "auto",
+      "has_state_machine": false,
+      "initial_state": null,
+      "confidentiality_scopes": [],
+      "audit": "none",
+      "dependent_values": []
     }
   ],
   "access_grants": [
@@ -485,6 +693,20 @@
       "verbs": [
         "CREATE",
         "UPDATE"
+      ]
+    },
+    {
+      "content": "compute_audit_log_calculate_team_bonus_pool",
+      "scope": "hr.manage",
+      "verbs": [
+        "AUDIT"
+      ]
+    },
+    {
+      "content": "compute_audit_log_calculate_team_bonus_pool",
+      "scope": "hr.manage",
+      "verbs": [
+        "VIEW"
       ]
     }
   ],
@@ -669,6 +891,24 @@
       "required_scope": null,
       "lookup_column": "id",
       "target_state": "applied"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/compute_audit_log_calculate_team_bonus_pool",
+      "kind": "LIST",
+      "content_ref": "compute_audit_log_calculate_team_bonus_pool",
+      "required_scope": "hr.manage",
+      "lookup_column": "id",
+      "target_state": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/compute_audit_log_calculate_team_bonus_pool/{id}",
+      "kind": "GET_ONE",
+      "content_ref": "compute_audit_log_calculate_team_bonus_pool",
+      "required_scope": "hr.manage",
+      "lookup_column": "id",
+      "target_state": null
     }
   ],
   "pages": [
@@ -1154,7 +1394,10 @@
       "accesses": [],
       "input_fields": [],
       "output_fields": [],
-      "output_creates": null
+      "output_creates": null,
+      "audit_level": "actions",
+      "audit_scope": "hr.manage",
+      "audit_content_ref": "compute_audit_log_calculate_team_bonus_pool"
     }
   ],
   "channels": [],

@@ -309,8 +309,8 @@
 
     "Verb": {
       "type": "string",
-      "enum": ["VIEW", "CREATE", "UPDATE", "DELETE"],
-      "description": "CRUD operation verb for access control."
+      "enum": ["VIEW", "CREATE", "UPDATE", "DELETE", "AUDIT"],
+      "description": "CRUD+Audit operation verb for access control. AUDIT gates read access to execution traces (D-20)."
     },
 
     "AccessGrant": {
@@ -895,6 +895,22 @@
           "type": ["string", "null"],
           "default": null,
           "description": "Content type name for 'Output creates X'. When set, the LLM response creates a new record in this content type instead of updating the triggering record."
+        },
+        "audit_level": {
+          "type": "string",
+          "enum": ["none", "actions", "debug"],
+          "default": "actions",
+          "description": "D-20: Audit level for compute traces. 'none': no trace. 'actions' (default): outcome + what the compute did. 'debug': everything including system prompt and thinking."
+        },
+        "audit_scope": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "D-20: Scope string from 'Anyone with X can audit'. Gates AUDIT access to this compute's trace log."
+        },
+        "audit_content_ref": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "D-20: Snake_case name of the auto-generated audit log Content table (compute_audit_log_{name}). Null when audit_level is 'none'."
         }
       }
     },

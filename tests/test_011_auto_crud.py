@@ -316,12 +316,19 @@ class TestExistingExamplesCompile:
         spec = lower(program)
         assert spec is not None
         # After D-11, every Content should have auto-generated CRUD routes
+        # D-20: Audit log Content (compute_audit_log_*) is read-only — only LIST + GET
         for content in spec.content:
             routes = _find_routes(spec, content.name.snake)
-            assert len(routes) >= 4, (
-                f"{example_name}: Content '{content.name.display}' has only "
-                f"{len(routes)} routes, expected at least 4 CRUD routes"
-            )
+            if content.name.snake.startswith("compute_audit_log_"):
+                assert len(routes) >= 2, (
+                    f"{example_name}: Audit log Content '{content.name.display}' has only "
+                    f"{len(routes)} routes, expected at least 2 read routes"
+                )
+            else:
+                assert len(routes) >= 4, (
+                    f"{example_name}: Content '{content.name.display}' has only "
+                    f"{len(routes)} routes, expected at least 4 CRUD routes"
+                )
 
     def test_example_has_state_transition_routes(self, example_name):
         path = Path(__file__).parent.parent / "examples" / example_name

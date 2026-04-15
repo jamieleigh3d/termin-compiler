@@ -28,6 +28,8 @@ Compute called "reply":
     "body": your_reply}).
   ```
   Anyone with "chat.use" can execute this
+  Audit level: actions
+  Anyone with "chat.use" can audit
 
 As an anonymous, I want to chat with the AI
   so that I can have a conversation:

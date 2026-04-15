@@ -95,6 +95,7 @@ class Verb(Enum):
     CREATE = "create"
     UPDATE = "update"
     DELETE = "delete"
+    AUDIT = "audit"
 
 
 @dataclass(frozen=True)
@@ -321,6 +322,9 @@ class ComputeSpec:
     input_fields: tuple[tuple[str, str], ...] = ()         # (content_ref, field_name) pairs
     output_fields: tuple[tuple[str, str], ...] = ()        # (content_ref, field_name) pairs
     output_creates: Optional[str] = None                   # content type for "Output creates X"
+    audit_level: str = "actions"                              # "none", "actions" (default), "debug" (D-20)
+    audit_scope: Optional[str] = None                         # scope for "can audit" access (D-20)
+    audit_content_ref: Optional[str] = None                   # snake_name of auto-generated audit log Content (D-20)
 
 
 # ── Channels ──

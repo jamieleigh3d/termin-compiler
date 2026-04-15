@@ -456,9 +456,11 @@ class TestComputeDemoIR:
         assert "order_lines" in b.contains_content
         assert b.identity_mode == "inherit"
 
-    def test_hello_user_no_tables(self):
+    def test_hello_user_no_user_tables(self):
         spec = _load_and_lower("hello_user.termin")
-        assert spec.content == ()
+        # D-20: Computes get auto-generated audit log Content; no user-declared Content
+        user_content = [c for c in spec.content if not c.name.snake.startswith("compute_audit_log_")]
+        assert user_content == []
 
     def test_hello_user_compute_typed_params(self):
         spec = _load_and_lower("hello_user.termin")

@@ -5,6 +5,7 @@ creates all subsystems, registers routes, and returns a FastAPI app.
 """
 
 import asyncio
+import datetime as _dt
 import json
 import uuid
 from contextlib import asynccontextmanager
@@ -726,6 +727,8 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     async def _execute_llm_compute(comp: dict, record: dict, content_name: str, main_loop=None):
         """Execute a Level 1 LLM Compute — field-to-field completion."""
         comp_name = comp["name"]["display"]
+        _llm_started = _dt.datetime.utcnow()
+        _llm_invocation_id = str(uuid.uuid4())
 
         if not ai_provider.is_configured:
             print(f"[Termin] Compute '{comp_name}': AI provider not configured, skipped")
@@ -795,12 +798,40 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                             await event_bus.publish(event_data)
                     finally:
                         await db.close()
+            # D-20: Write audit trace on LLM success
+            _llm_completed = _dt.datetime.utcnow()
+            _llm_duration = (_llm_completed - _llm_started).total_seconds() * 1000
+            audit_level = comp.get("audit_level", "actions")
+            trace_data = {"compute_type": "agent", "calls": [{"response": thinking[:200] if thinking else ""}]}
+            if audit_level == "debug":
+                trace_data["calls"][0]["system_prompt"] = directive
+                trace_data["calls"][0]["thinking"] = thinking
+            await _write_audit_trace(
+                comp, invocation_id=_llm_invocation_id, trigger="event",
+                started_at=_llm_started.isoformat() + "Z",
+                completed_at=_llm_completed.isoformat() + "Z",
+                duration_ms=_llm_duration, outcome="success",
+                trace_data=trace_data,
+            )
         except AIProviderError as e:
             print(f"[Termin] [ERROR] Compute '{comp_name}': {e}")
+            # D-20: Write audit trace on LLM error
+            _llm_err_completed = _dt.datetime.utcnow()
+            _llm_err_duration = (_llm_err_completed - _llm_started).total_seconds() * 1000
+            await _write_audit_trace(
+                comp, invocation_id=_llm_invocation_id, trigger="event",
+                started_at=_llm_started.isoformat() + "Z",
+                completed_at=_llm_err_completed.isoformat() + "Z",
+                duration_ms=_llm_err_duration, outcome="error",
+                error_message=str(e),
+                trace_data={"compute_type": "agent", "error": str(e)},
+            )
 
     async def _execute_agent_compute(comp: dict, record: dict, content_name: str, main_loop=None):
         """Execute a Level 3 Agent Compute — autonomous with tool calls."""
         comp_name = comp["name"]["display"]
+        _agent_started = _dt.datetime.utcnow()
+        _agent_invocation_id = str(uuid.uuid4())
 
         if not ai_provider.is_configured:
             print(f"[Termin] Compute '{comp_name}': AI provider not configured, skipped")
@@ -911,8 +942,34 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
             thinking = result.get("thinking", "")
             if thinking:
                 print(f"[Termin] Compute '{comp_name}' completed: {thinking[:100]}")
+            # D-20: Write audit trace on agent success
+            _agent_completed = _dt.datetime.utcnow()
+            _agent_duration = (_agent_completed - _agent_started).total_seconds() * 1000
+            audit_level = comp.get("audit_level", "actions")
+            trace_data = {"compute_type": "agent", "calls": [{"response": thinking[:200] if thinking else ""}]}
+            if audit_level == "debug":
+                trace_data["calls"][0]["system_prompt"] = directive
+                trace_data["calls"][0]["thinking"] = thinking
+            await _write_audit_trace(
+                comp, invocation_id=_agent_invocation_id, trigger="event",
+                started_at=_agent_started.isoformat() + "Z",
+                completed_at=_agent_completed.isoformat() + "Z",
+                duration_ms=_agent_duration, outcome="success",
+                trace_data=trace_data,
+            )
         except AIProviderError as e:
             print(f"[Termin] [ERROR] Compute '{comp_name}': {e}")
+            # D-20: Write audit trace on agent error
+            _agent_err_completed = _dt.datetime.utcnow()
+            _agent_err_duration = (_agent_err_completed - _agent_started).total_seconds() * 1000
+            await _write_audit_trace(
+                comp, invocation_id=_agent_invocation_id, trigger="event",
+                started_at=_agent_started.isoformat() + "Z",
+                completed_at=_agent_err_completed.isoformat() + "Z",
+                duration_ms=_agent_err_duration, outcome="error",
+                error_message=str(e),
+                trace_data={"compute_type": "agent", "error": str(e)},
+            )
 
     # ── API routes from IR ──
     for route in ir.get("routes", []):
@@ -945,7 +1002,12 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                         records = [dict(r) for r in rows]
                         # Redact confidential fields
                         schema = content_lookup.get(_cr, {})
-                        return redact_records(records, schema, set(user_scopes))
+                        records = redact_records(records, schema, set(user_scopes))
+                        # D-20: Redact audit trace content for audit log tables
+                        if _cr.startswith("compute_audit_log_"):
+                            records = await _redact_audit_traces(
+                                records, _cr, set(user_scopes))
+                        return records
                     finally:
                         await db.close()
             make_list_route(path, content_ref, scope)
@@ -1049,7 +1111,13 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                         schema = content_lookup.get(_cr, {})
                         user = get_current_user(request)
                         user_scopes = set(user.get("scopes", []))
-                        return redact_record(record, schema, user_scopes)
+                        record = redact_record(record, schema, user_scopes)
+                        # D-20: Redact audit trace content for audit log tables
+                        if _cr.startswith("compute_audit_log_"):
+                            records = await _redact_audit_traces(
+                                [record], _cr, set(user_scopes))
+                            record = records[0] if records else record
+                        return record
                     finally:
                         await db.close()
             make_get_route(path, content_ref, scope, lookup_col)
@@ -1175,6 +1243,123 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     for comp in ir.get("computes", []):
         compute_lookup[comp["name"]["snake"]] = comp
 
+    # ── D-20: Audit trace recording helper ──
+    async def _write_audit_trace(comp: dict, invocation_id: str, trigger: str,
+                                  started_at: str, completed_at: str, duration_ms: float,
+                                  outcome: str, trace_data: dict = None,
+                                  error_message: str = None,
+                                  total_input_tokens: int = 0,
+                                  total_output_tokens: int = 0):
+        """Write a trace record to the compute's audit log Content table."""
+        audit_level = comp.get("audit_level", "actions")
+        audit_ref = comp.get("audit_content_ref")
+        if audit_level == "none" or not audit_ref:
+            return
+
+        trace_json = json.dumps(trace_data) if trace_data else "{}"
+        record_data = {
+            "compute_name": comp["name"]["display"],
+            "invocation_id": invocation_id,
+            "trigger": trigger,
+            "started_at": started_at,
+            "completed_at": completed_at,
+            "duration_ms": duration_ms,
+            "outcome": outcome,
+            "total_input_tokens": total_input_tokens,
+            "total_output_tokens": total_output_tokens,
+            "trace": trace_json,
+            "error_message": error_message or "",
+        }
+
+        try:
+            db = await get_db(db_path)
+            try:
+                columns = list(record_data.keys())
+                placeholders = ", ".join("?" for _ in columns)
+                cols_sql = ", ".join(columns)
+                vals = tuple(record_data[c] for c in columns)
+                await db.execute(
+                    f"INSERT INTO {audit_ref} ({cols_sql}) VALUES ({placeholders})",
+                    vals,
+                )
+                await db.commit()
+            finally:
+                await db.close()
+        except Exception as e:
+            print(f"[Termin] [WARN] Failed to write audit trace for '{comp['name']['display']}': {e}")
+
+    # ── D-20: Redaction helper for audit log records ──
+    async def _redact_audit_traces(records: list, audit_table_name: str, user_scopes: set) -> list:
+        """Apply redaction to audit trace records based on caller scopes.
+
+        For each confidential field that the caller lacks the scope to see,
+        load current values from the DB, scan the trace text for exact
+        substrings of 4+ characters, and replace with [REDACTED:{field_name}].
+        Structural elements (JSON keys, tool names, timestamps) are never redacted.
+        """
+        # Find the compute that owns this audit log
+        comp = None
+        for c in ir.get("computes", []):
+            if c.get("audit_content_ref") == audit_table_name:
+                comp = c
+                break
+        if not comp:
+            return records
+
+        # Collect confidential fields the caller cannot see
+        all_content_refs = set(
+            comp.get("input_content", []) + comp.get("output_content", []) + comp.get("accesses", [])
+        )
+        redact_fields = []  # (content_name, field_name)
+        for cr in all_content_refs:
+            schema = content_lookup.get(cr, {})
+            for field_def in schema.get("fields", []):
+                conf_scopes = tuple(field_def.get("confidentiality_scopes", []))
+                if conf_scopes and not all(s in user_scopes for s in conf_scopes):
+                    redact_fields.append((cr, field_def["name"]))
+
+        if not redact_fields:
+            return records
+
+        # Load current values of confidential fields from DB
+        redact_values = []  # (value_str, field_name) pairs
+        try:
+            db = await get_db(db_path)
+            try:
+                for content_name, field_name in redact_fields:
+                    try:
+                        cursor = await db.execute(f"SELECT {field_name} FROM {content_name}")
+                        rows = await cursor.fetchall()
+                        for row in rows:
+                            val = str(dict(row).get(field_name, ""))
+                            if len(val) >= 4:
+                                redact_values.append((val, field_name))
+                    except Exception:
+                        pass
+            finally:
+                await db.close()
+        except Exception:
+            return records
+
+        if not redact_values:
+            return records
+
+        # Apply redaction to trace fields in each record
+        for rec in records:
+            trace_val = rec.get("trace", "")
+            if trace_val:
+                for val, fname in redact_values:
+                    trace_val = trace_val.replace(val, f"[REDACTED:{fname}]")
+                rec["trace"] = trace_val
+            # Also redact error_message
+            err_val = rec.get("error_message", "")
+            if err_val:
+                for val, fname in redact_values:
+                    err_val = err_val.replace(val, f"[REDACTED:{fname}]")
+                rec["error_message"] = err_val
+
+        return records
+
     # ── Server-side Compute invocation endpoint ──
     @app.post("/api/v1/compute/{compute_name}")
     async def invoke_compute(compute_name: str, request: Request):
@@ -1214,6 +1399,10 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                     raise HTTPException(status_code=500, detail=taint_err)
 
         # ── Transaction + Pre/Postcondition Framework ──
+
+        # D-20: Audit timing
+        _audit_started = _dt.datetime.utcnow()
+        _audit_started_str = _audit_started.isoformat() + "Z"
 
         # Create transaction for snapshot isolation
         tx = Transaction()
@@ -1285,6 +1474,20 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
             raise
         except Exception as e:
             tx.rollback()
+            # D-20: Write audit trace on error
+            _audit_err_completed = _dt.datetime.utcnow()
+            _audit_err_duration = (_audit_err_completed - _audit_started).total_seconds() * 1000
+            await _write_audit_trace(
+                comp,
+                invocation_id=tx.id,
+                trigger="api",
+                started_at=_audit_started_str,
+                completed_at=_audit_err_completed.isoformat() + "Z",
+                duration_ms=_audit_err_duration,
+                outcome="error",
+                error_message=str(e),
+                trace_data={"compute_type": "cel", "expression": cel_body, "error": str(e)},
+            )
             raise HTTPException(status_code=500, detail=f"Compute evaluation failed: {e}")
 
         output = {"result": result, "transaction_id": tx.id}
@@ -1352,6 +1555,24 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         # Transaction succeeds — in a full implementation, tx.commit() would
         # write staged changes to production. For CEL-only Computes, there's
         # nothing to commit (the result is returned directly).
+
+        # D-20: Write audit trace on success
+        _audit_completed = _dt.datetime.utcnow()
+        _audit_duration = (_audit_completed - _audit_started).total_seconds() * 1000
+        audit_level = comp.get("audit_level", "actions")
+        trace_data = {"compute_type": "cel", "expression": cel_body, "output": result}
+        if audit_level == "debug":
+            trace_data["input"] = input_data
+        await _write_audit_trace(
+            comp,
+            invocation_id=tx.id,
+            trigger="api",
+            started_at=_audit_started_str,
+            completed_at=_audit_completed.isoformat() + "Z",
+            duration_ms=_audit_duration,
+            outcome="success",
+            trace_data=trace_data,
+        )
 
         return final_output
 

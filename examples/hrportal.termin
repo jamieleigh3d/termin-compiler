@@ -65,6 +65,8 @@ Compute called "Calculate Team Bonus Pool":
   Requires "salary.access"
   Output confidentiality: "team_metrics.view"
   Anyone with "team_metrics.view" can execute this
+  Audit level: actions
+  Anyone with "hr.manage" can audit
   `team_bonus = sum(employees.salary * employees.bonus_rate)`
 
 --- User Stories ---

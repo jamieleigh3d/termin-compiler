@@ -350,6 +350,8 @@ class ComputeNode:
     input_fields: list[tuple[str, str]] = field(default_factory=list)   # (content_ref, field_name)
     output_fields: list[tuple[str, str]] = field(default_factory=list)  # (content_ref, field_name)
     output_creates: Optional[str] = None          # content type for "Output creates X"
+    audit_scope: Optional[str] = None             # scope for "can audit" (D-20)
+    audit_level: str = "actions"                  # "none", "actions" (default), "debug" (D-20)
     line: int = 0
 
 

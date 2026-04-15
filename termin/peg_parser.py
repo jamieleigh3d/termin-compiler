@@ -154,6 +154,8 @@ def _classify_line(text: str) -> str:
     # 'Anyone with "scope" can execute this' match the "Anyone with" prefix
     # and would be misclassified as access_line instead of compute_access_line
     if " can execute this" in text: return "compute_access_line"
+    # D-20: "can audit" inside Compute blocks — must also be checked before prefix loop
+    if " can audit" in text and text.startswith("Anyone with"): return "compute_audit_access_line"
     for prefix, rule in _PREFIXES:
         if text.startswith(prefix):
             # Disambiguate "For each X, show actions:" from "For each X, show Y grouped by Z"
@@ -998,6 +1000,15 @@ def _parse_line(text: str, rule: str, ln: int):
         if text.startswith("Anyone with"):
             return ("access", AccessRule(scope=_fq(text), verbs=["execute"], line=ln))
         return ("compute_access", raw)
+    if rule == "compute_audit_access_line":
+        # D-20: "Anyone with X can audit" inside Compute blocks
+        r = P(text, "compute_audit_access_line")
+        if r:
+            scope = _qs(r.get("scope", ""))
+        else:
+            # Fallback: extract quoted scope manually
+            scope = _fq(text)
+        return ("compute_audit_access", scope)
     if rule == "compute_identity_line":
         r = P(text, rule)
         mode = str(r.get("mode", "")).strip().lower() if r else text.split(":", 1)[1].strip().lower()
@@ -1209,7 +1220,7 @@ def _assemble(parsed: list) -> Program:
                 "compute_preconditions_header","compute_postconditions_header",
                 "compute_objective","compute_strategy","compute_directive",
                 "compute_accesses","compute_input_field","compute_output_field",
-                "compute_output_creates")
+                "compute_output_creates","compute_audit_access","content_audit")
             collecting_pre = False
             collecting_post = False
             for ch in _collect(lambda x: x in _compute_child_kinds):
@@ -1244,6 +1255,8 @@ def _assemble(parsed: list) -> Program:
                 elif ch[0] == "compute_input_field": nd.input_fields.append(ch[1])
                 elif ch[0] == "compute_output_field": nd.output_fields.append(ch[1])
                 elif ch[0] == "compute_output_creates": nd.output_creates = ch[1]
+                elif ch[0] == "compute_audit_access": nd.audit_scope = ch[1]
+                elif ch[0] == "content_audit": nd.audit_level = ch[1]
             prog.computes.append(nd)
         elif k == "channel_header":
             ch_ = item[1]; i += 1
