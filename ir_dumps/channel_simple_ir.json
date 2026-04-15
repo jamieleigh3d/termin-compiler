@@ -125,6 +125,9 @@
       "content": "notes",
       "scope": "messages.all",
       "verbs": [
+        "CREATE",
+        "DELETE",
+        "UPDATE",
         "VIEW"
       ]
     },
@@ -132,6 +135,7 @@
       "content": "echoes",
       "scope": "messages.all",
       "verbs": [
+        "CREATE",
         "VIEW"
       ]
     }
@@ -167,7 +171,7 @@
       "path": "/api/v1/notes",
       "kind": "CREATE",
       "content_ref": "notes",
-      "required_scope": null,
+      "required_scope": "messages.all",
       "lookup_column": "id",
       "target_state": null
     },
@@ -185,7 +189,7 @@
       "path": "/api/v1/notes/{id}",
       "kind": "UPDATE",
       "content_ref": "notes",
-      "required_scope": null,
+      "required_scope": "messages.all",
       "lookup_column": "id",
       "target_state": null
     },
@@ -203,7 +207,7 @@
       "path": "/api/v1/echoes",
       "kind": "CREATE",
       "content_ref": "echoes",
-      "required_scope": null,
+      "required_scope": "messages.all",
       "lookup_column": "id",
       "target_state": null
     }
@@ -213,7 +217,7 @@
       "name": "Notes",
       "slug": "notes",
       "role": "anonymous",
-      "required_scope": null,
+      "required_scope": "messages.all",
       "children": [
         {
           "type": "data_table",
@@ -247,7 +251,8 @@
         {
           "type": "form",
           "props": {
-            "target": "notes"
+            "target": "notes",
+            "submit_scope": "messages.all"
           },
           "style": {},
           "layout": {},

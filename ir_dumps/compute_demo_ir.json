@@ -297,17 +297,20 @@
         {
           "from_state": "pending",
           "to_state": "confirmed",
-          "required_scope": "orders.write"
+          "required_scope": "orders.write",
+          "feedback": []
         },
         {
           "from_state": "confirmed",
           "to_state": "shipped",
-          "required_scope": "orders.write"
+          "required_scope": "orders.write",
+          "feedback": []
         },
         {
           "from_state": "pending",
           "to_state": "cancelled",
-          "required_scope": "orders.admin"
+          "required_scope": "orders.admin",
+          "feedback": []
         }
       ],
       "primitive_type": "content"

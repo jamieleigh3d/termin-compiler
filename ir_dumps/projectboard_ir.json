@@ -613,32 +613,38 @@
         {
           "from_state": "backlog",
           "to_state": "in sprint",
-          "required_scope": "sprints.manage"
+          "required_scope": "sprints.manage",
+          "feedback": []
         },
         {
           "from_state": "in sprint",
           "to_state": "in progress",
-          "required_scope": "tasks.manage"
+          "required_scope": "tasks.manage",
+          "feedback": []
         },
         {
           "from_state": "in progress",
           "to_state": "in review",
-          "required_scope": "tasks.manage"
+          "required_scope": "tasks.manage",
+          "feedback": []
         },
         {
           "from_state": "in review",
           "to_state": "done",
-          "required_scope": "tasks.manage"
+          "required_scope": "tasks.manage",
+          "feedback": []
         },
         {
           "from_state": "in review",
           "to_state": "in progress",
-          "required_scope": "tasks.manage"
+          "required_scope": "tasks.manage",
+          "feedback": []
         },
         {
           "from_state": "done",
           "to_state": "in progress",
-          "required_scope": "tasks.manage"
+          "required_scope": "tasks.manage",
+          "feedback": []
         }
       ],
       "primitive_type": "content"

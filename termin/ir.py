@@ -122,10 +122,20 @@ class AuthSpec:
 # ── State Machines ──
 
 @dataclass(frozen=True)
+class TransitionFeedbackSpec:
+    trigger: str                # "success" or "error"
+    style: str                  # "toast" or "banner"
+    message: str                # literal string or CEL expression
+    is_expr: bool = False       # True if message is a CEL expression
+    dismiss_seconds: Optional[int] = None  # auto-dismiss timer; None = type default
+
+
+@dataclass(frozen=True)
 class TransitionSpec:
     from_state: str
     to_state: str
     required_scope: str
+    feedback: tuple = ()        # tuple[TransitionFeedbackSpec, ...]
 
 
 @dataclass(frozen=True)

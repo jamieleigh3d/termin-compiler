@@ -467,7 +467,9 @@
       "content": "departments",
       "scope": "hr.manage",
       "verbs": [
-        "CREATE"
+        "CREATE",
+        "DELETE",
+        "UPDATE"
       ]
     },
     {
@@ -500,12 +502,14 @@
         {
           "from_state": "pending",
           "to_state": "approved",
-          "required_scope": "hr.manage"
+          "required_scope": "hr.manage",
+          "feedback": []
         },
         {
           "from_state": "approved",
           "to_state": "applied",
-          "required_scope": "hr.manage"
+          "required_scope": "hr.manage",
+          "feedback": []
         }
       ],
       "primitive_type": "content"
@@ -590,7 +594,7 @@
       "path": "/api/v1/departments/{id}",
       "kind": "UPDATE",
       "content_ref": "departments",
-      "required_scope": null,
+      "required_scope": "hr.manage",
       "lookup_column": "name",
       "target_state": null
     },
@@ -599,7 +603,7 @@
       "path": "/api/v1/departments/{id}",
       "kind": "DELETE",
       "content_ref": "departments",
-      "required_scope": null,
+      "required_scope": "hr.manage",
       "lookup_column": "name",
       "target_state": null
     },

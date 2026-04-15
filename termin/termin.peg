@@ -171,11 +171,29 @@ access_line
     ;
 
 verb_phrase
-    = 'create' 'or' 'update'      #VerbCreateOrUpdate
-    | 'view'                       #VerbView
-    | 'create'                     #VerbCreate
-    | 'update'                     #VerbUpdate
-    | 'delete'                     #VerbDelete
+    = verb_list_four               #VerbListFour
+    | verb_list_three              #VerbListThree
+    | verb_list_two                #VerbListTwo
+    | verb:single_verb             #VerbSingle
+    ;
+
+verb_list_four
+    = v1:single_verb ',' v2:single_verb ',' v3:single_verb ',' 'or' v4:single_verb
+    | v1:single_verb ',' v2:single_verb ',' v3:single_verb ',' 'and' v4:single_verb
+    ;
+
+verb_list_three
+    = v1:single_verb ',' v2:single_verb ',' 'or' v3:single_verb
+    | v1:single_verb ',' v2:single_verb ',' 'and' v3:single_verb
+    ;
+
+verb_list_two
+    = v1:single_verb 'or' v2:single_verb
+    | v1:single_verb 'and' v2:single_verb
+    ;
+
+single_verb
+    = 'view' | 'create' | 'update' | 'delete'
     ;
 
 
@@ -205,6 +223,25 @@ state_transition_line
       singular:word 'can' 'become' to_state:word
       ['again'] 'if' cel:expr $
       #TransitionExpr
+    ;
+
+transition_feedback_line
+    = trigger:('success'|'error') 'shows' style:('toast'|'banner')
+      message:expr dismiss:transition_dismiss $
+      #FeedbackExpr
+    | trigger:('success'|'error') 'shows' style:('toast'|'banner')
+      message:quoted_string dismiss:transition_dismiss $
+      #FeedbackLiteral
+    | trigger:('success'|'error') 'shows' style:('toast'|'banner')
+      message:expr $
+      #FeedbackExprNoDismiss
+    | trigger:('success'|'error') 'shows' style:('toast'|'banner')
+      message:quoted_string $
+      #FeedbackLiteralNoDismiss
+    ;
+
+transition_dismiss
+    = 'dismiss' 'after' seconds:/\d+/ 'seconds'
     ;
 
 

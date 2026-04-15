@@ -19,7 +19,7 @@ from .ast_nodes import (
 )
 from .ir import (
     QualifiedName, FieldType, FieldSpec, ContentSchema, Verb, AccessGrant,
-    RoleSpec, AuthSpec, TransitionSpec, StateMachineSpec,
+    RoleSpec, AuthSpec, TransitionFeedbackSpec, TransitionSpec, StateMachineSpec,
     EventConditionSpec, EventActionSpec, EventSpec,
     HttpMethod, RouteKind, RouteSpec,
     PropValue, ComponentNode, PageEntry,
@@ -269,22 +269,25 @@ def lower(program: Program) -> AppSpec:
     )
 
     # ── Lower access grants ──
+    verb_map = {"view": Verb.VIEW, "create": Verb.CREATE, "update": Verb.UPDATE, "delete": Verb.DELETE}
     grants = []
     for c in program.contents:
         for rule in c.access_rules:
             verbs = set()
             for v in rule.verbs:
-                if v == "create or update":
+                if v in verb_map:
+                    verbs.add(verb_map[v])
+                elif v == "create or update":  # legacy compound form
                     verbs.add(Verb.CREATE)
                     verbs.add(Verb.UPDATE)
-                elif v == "view":
-                    verbs.add(Verb.VIEW)
-                elif v == "create":
-                    verbs.add(Verb.CREATE)
-                elif v == "update":
-                    verbs.add(Verb.UPDATE)
-                elif v == "delete":
-                    verbs.add(Verb.DELETE)
+            if not verbs:
+                from termin.errors import SemanticError
+                raise SemanticError(
+                    f"TERMIN-S031: Access grant for '{c.name}' with scope '{rule.scope}' "
+                    f"has no recognized verbs (got {rule.verbs!r}). "
+                    f"Valid verbs: view, create, update, delete.",
+                    line=rule.line,
+                )
             grants.append(AccessGrant(
                 content=_snake(c.name),
                 scope=rule.scope,
@@ -317,6 +320,15 @@ def lower(program: Program) -> AppSpec:
                     from_state=t.from_state,
                     to_state=t.to_state,
                     required_scope=t.required_scope,
+                    feedback=tuple(
+                        TransitionFeedbackSpec(
+                            trigger=fb.trigger,
+                            style=fb.style,
+                            message=fb.message,
+                            is_expr=fb.is_expr,
+                            dismiss_seconds=fb.dismiss_seconds,
+                        ) for fb in t.feedback
+                    ),
                 ) for t in sm.transitions
             ),
             primitive_type=prim_type,

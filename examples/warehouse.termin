@@ -49,8 +49,12 @@ State for products called "product lifecycle":
   A product starts as "draft"
   A product can also be "active" or "discontinued"
   A draft product can become active if the user has "inventory.write"
+    success shows toast `product.name + " is now active"`
+    error shows banner "Could not activate product"
   An active product can become discontinued if the user has "inventory.admin"
+    success shows toast `product.name + " has been discontinued"`
   A discontinued product can become active again if the user has "inventory.admin"
+    success shows toast `product.name + " reactivated"`
 
 --- Events ---
 

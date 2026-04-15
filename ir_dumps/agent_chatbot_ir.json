@@ -78,6 +78,7 @@
       "content": "messages",
       "scope": "chat.use",
       "verbs": [
+        "CREATE",
         "VIEW"
       ]
     }
@@ -99,7 +100,7 @@
       "path": "/api/v1/messages",
       "kind": "CREATE",
       "content_ref": "messages",
-      "required_scope": null,
+      "required_scope": "chat.use",
       "lookup_column": "id",
       "target_state": null
     },
@@ -118,7 +119,7 @@
       "name": "Chat",
       "slug": "chat",
       "role": "anonymous",
-      "required_scope": null,
+      "required_scope": "chat.use",
       "children": [
         {
           "type": "data_table",
@@ -152,7 +153,8 @@
         {
           "type": "form",
           "props": {
-            "target": "messages"
+            "target": "messages",
+            "submit_scope": "chat.use"
           },
           "style": {},
           "layout": {},

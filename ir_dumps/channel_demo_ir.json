@@ -418,7 +418,9 @@
       "content": "incidents",
       "scope": "incidents.manage",
       "verbs": [
-        "CREATE"
+        "CREATE",
+        "DELETE",
+        "UPDATE"
       ]
     },
     {
@@ -467,27 +469,32 @@
         {
           "from_state": "opened",
           "to_state": "investigating",
-          "required_scope": "incidents.manage"
+          "required_scope": "incidents.manage",
+          "feedback": []
         },
         {
           "from_state": "investigating",
           "to_state": "mitigating",
-          "required_scope": "incidents.manage"
+          "required_scope": "incidents.manage",
+          "feedback": []
         },
         {
           "from_state": "mitigating",
           "to_state": "resolved",
-          "required_scope": "incidents.manage"
+          "required_scope": "incidents.manage",
+          "feedback": []
         },
         {
           "from_state": "resolved",
           "to_state": "closed",
-          "required_scope": "incidents.manage"
+          "required_scope": "incidents.manage",
+          "feedback": []
         },
         {
           "from_state": "investigating",
           "to_state": "resolved",
-          "required_scope": "incidents.manage"
+          "required_scope": "incidents.manage",
+          "feedback": []
         }
       ],
       "primitive_type": "content"
@@ -567,7 +574,7 @@
       "path": "/api/v1/incidents/{id}",
       "kind": "UPDATE",
       "content_ref": "incidents",
-      "required_scope": null,
+      "required_scope": "incidents.manage",
       "lookup_column": "id",
       "target_state": null
     },

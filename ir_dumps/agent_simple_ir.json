@@ -75,6 +75,8 @@
       "content": "completions",
       "scope": "agent.use",
       "verbs": [
+        "CREATE",
+        "UPDATE",
         "VIEW"
       ]
     }
@@ -96,7 +98,7 @@
       "path": "/api/v1/completions",
       "kind": "CREATE",
       "content_ref": "completions",
-      "required_scope": null,
+      "required_scope": "agent.use",
       "lookup_column": "id",
       "target_state": null
     },
@@ -114,7 +116,7 @@
       "path": "/api/v1/completions/{id}",
       "kind": "UPDATE",
       "content_ref": "completions",
-      "required_scope": null,
+      "required_scope": "agent.use",
       "lookup_column": "id",
       "target_state": null
     }
@@ -124,7 +126,7 @@
       "name": "Agent",
       "slug": "agent",
       "role": "anonymous",
-      "required_scope": null,
+      "required_scope": "agent.use",
       "children": [
         {
           "type": "data_table",
@@ -158,7 +160,8 @@
         {
           "type": "form",
           "props": {
-            "target": "completions"
+            "target": "completions",
+            "submit_scope": "agent.use"
           },
           "style": {},
           "layout": {},

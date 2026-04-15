@@ -13,7 +13,7 @@ import tatsu
 
 from .ast_nodes import (
     Program, Application, Identity, Role, RoleAlias, Content, Field, TypeExpr,
-    AccessRule, DependentValue, StateMachine, Transition, EventRule, EventCondition,
+    AccessRule, DependentValue, StateMachine, Transition, TransitionFeedback, EventRule, EventCondition,
     EventAction, UserStory, ShowPage, DisplayTable, ShowRelated,
     HighlightRows, MarkAs, AllowFilter, AllowSearch, SubscribeTo, AcceptInput,
     ValidateUnique, CreateAs, AfterSave, ShowChart, DisplayAggregation,
@@ -141,6 +141,8 @@ _SHAPE_KW = ("Transform:", "Reduce:", "Expand:", "Correlate:", "Route:")
 _HTTP_METHODS = ("GET ", "POST ", "PUT ", "DELETE ", "PATCH ")
 
 def _classify_line(text: str) -> str:
+    # Transition feedback must be checked early — CEL messages can contain " has " which triggers role_bare_line
+    if text.startswith(("success ", "error ")) and " shows " in text: return "transition_feedback_line"
     if text.startswith('"') and " is alias for " in text: return "role_alias_line"
     if text.startswith(('A "', 'An "')) and " has " in text: return "role_standard_line"
     if " has " in text and '"' in text and not text.startswith(("A ", "An ", '"', "Content", "Each")):
@@ -348,15 +350,23 @@ def _parse_field_type(text: str, ln: int) -> TypeExpr:
 def _build_access(r, ln) -> AccessRule:
     scope = _qs(r.get("scope", ""))
     vr = r.get("verbs")
-    vm = {"VerbView": ["view"], "VerbCreate": ["create"], "VerbUpdate": ["update"],
-          "VerbDelete": ["delete"], "VerbCreateOrUpdate": ["create or update"]}
     rn = _rule(vr)
-    if rn in vm: return AccessRule(scope=scope, verbs=vm[rn], line=ln)
-    if isinstance(vr, (list, tuple)):
-        j = " ".join(str(v) for v in vr).strip()
-        vs = ["create or update"] if j == "create or update" else [str(v).strip() for v in vr if str(v).strip() != "or"]
-    elif isinstance(vr, str): vs = [vr.strip()]
-    else: vs = ["view"]
+    # New grammar: VerbListTwo/Three/Four have v1..vN keys, VerbSingle has verb key
+    if rn == "VerbSingle":
+        vs = [str(vr.get("verb", "view")).strip()]
+    elif rn in ("VerbListTwo", "VerbListThree", "VerbListFour"):
+        vs = [str(vr[k]).strip() for k in sorted(vr) if k.startswith("v")]
+    else:
+        # Legacy fallback: handle old-style results or string values
+        if isinstance(vr, dict):
+            vs = [str(vr[k]).strip() for k in sorted(vr) if k.startswith("v")]
+            if not vs:
+                v = str(vr.get("verb", "view")).strip()
+                vs = [v]
+        elif isinstance(vr, str):
+            vs = [vr.strip()]
+        else:
+            vs = ["view"]
     return AccessRule(scope=scope, verbs=vs, line=ln)
 
 def _build_story(text, ln) -> UserStory:
@@ -402,6 +412,52 @@ def _build_nav(text, ln) -> NavItem:
         if bi >= 0: badge = vt[bi+8:].strip(); vt = vt[:bi]
         vis = _scal(vt)
     return NavItem(label=label, page_name=page, visible_to=vis, badge=badge, line=ln)
+
+def _build_feedback(text, ln) -> 'TransitionFeedback':
+    """Parse a transition feedback line: success/error shows toast/banner message."""
+    r = _try_parse(text, "transition_feedback_line")
+    if r is not None:
+        trigger = str(r.get("trigger", "")).strip()
+        style = str(r.get("style", "")).strip()
+        raw_msg = r.get("message")
+        msg = str(raw_msg["content"]).strip() if isinstance(raw_msg, dict) and "content" in raw_msg else _qs(raw_msg) if raw_msg else ""
+        # Distinguish CEL expr (backtick-delimited) from literal (quote-delimited)
+        # by checking the original text for backticks after the style keyword
+        style_idx = text.find(style)
+        after_style = text[style_idx + len(style):].strip() if style_idx >= 0 else ""
+        is_expr = after_style.startswith("`")
+        dismiss = r.get("dismiss")
+        dismiss_seconds = int(dismiss["seconds"]) if dismiss else None
+        return TransitionFeedback(trigger=trigger, style=style, message=msg,
+                                  is_expr=is_expr, dismiss_seconds=dismiss_seconds, line=ln)
+    # Fallback: manual parse
+    trigger = "success" if text.startswith("success") else "error"
+    si = text.find(" shows ")
+    rest = text[si + 7:].strip() if si >= 0 else text
+    style = "toast" if rest.startswith("toast") else "banner"
+    rest = rest[len(style):].strip()
+    # Check for CEL expression (backtick-delimited)
+    if rest.startswith("`"):
+        end = rest.find("`", 1)
+        msg = rest[1:end] if end > 0 else rest[1:]
+        is_expr = True
+        rest = rest[end + 1:].strip() if end > 0 else ""
+    else:
+        msg = _fq(rest)
+        is_expr = False
+        # Advance past the quoted string
+        qi = rest.find('"', rest.find('"') + 1 + len(msg))
+        rest = rest[qi + 1:].strip() if qi >= 0 else ""
+    # Check for dismiss clause
+    dismiss_seconds = None
+    if "dismiss after" in rest:
+        import re
+        dm = re.search(r'dismiss\s+after\s+(\d+)\s+seconds?', rest)
+        if dm:
+            dismiss_seconds = int(dm.group(1))
+    return TransitionFeedback(trigger=trigger, style=style, message=msg,
+                              is_expr=is_expr, dismiss_seconds=dismiss_seconds, line=ln)
+
 
 def _build_trans(text, ln) -> Optional[Transition]:
     r = _try_parse(text, "state_transition_line")
@@ -657,9 +713,22 @@ def _parse_line(text: str, rule: str, ln: int):
         if r: return ("access", _build_access(r, ln))
         sc = _fq(text); ci = text.find(" can ")
         if ci >= 0:
-            rest = text[ci+5:].strip(); si = rest.rfind(" ")
-            v = rest[:si].strip() if si >= 0 else rest
-            return ("access", AccessRule(scope=sc, verbs=[v], line=ln))
+            rest = text[ci+5:].strip()
+            # Extract known verbs from the front of rest, stop at first non-verb word
+            known = {"view", "create", "update", "delete"}
+            words = rest.replace(",", " ").split()
+            verbs = []
+            for w in words:
+                w = w.strip()
+                if w in known:
+                    verbs.append(w)
+                elif w in ("or", "and"):
+                    continue  # skip conjunctions between verbs
+                else:
+                    break  # first non-verb, non-conjunction word = start of content name
+            if not verbs:
+                verbs = ["view"]
+            return ("access", AccessRule(scope=sc, verbs=verbs, line=ln))
         return ("access", AccessRule(scope=sc, verbs=["view"], line=ln))
     if rule == "state_header":
         r = P(text, rule)
@@ -687,6 +756,8 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule); return ("state_also", _ql(r.get("states")) if r else _eqs(text))
     if rule == "state_transition_line":
         t = _build_trans(text, ln); return ("state_transition", t) if t else None
+    if rule == "transition_feedback_line":
+        return ("transition_feedback", _build_feedback(text, ln))
     if rule == "event_expr_line":
         r = P(text, rule); j = _qs(r.get("cel","")) if r else (_eb(text) or "")
         return ("event_header", EventRule(content_name="", trigger="expr", condition_expr=j, line=ln))
@@ -1095,10 +1166,15 @@ def _assemble(parsed: list) -> Program:
             prog.contents.append(ct)
         elif k == "state_header":
             sm = item[1]; i += 1
-            for ch in _collect(lambda x: x in ("state_starts","state_also","state_transition")):
+            last_transition = None
+            for ch in _collect(lambda x: x in ("state_starts","state_also","state_transition","transition_feedback")):
                 if ch[0] == "state_starts": sm.singular = ch[1]; sm.initial_state = ch[2]; sm.states.append(sm.initial_state)
                 elif ch[0] == "state_also": sm.states.extend(ch[1])
-                elif ch[0] == "state_transition": sm.transitions.append(ch[1])
+                elif ch[0] == "state_transition":
+                    sm.transitions.append(ch[1])
+                    last_transition = ch[1]
+                elif ch[0] == "transition_feedback" and last_transition is not None:
+                    last_transition.feedback.append(ch[1])
             prog.state_machines.append(sm)
         elif k == "event_header":
             ev = item[1]; i += 1

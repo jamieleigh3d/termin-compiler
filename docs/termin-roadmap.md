@@ -301,6 +301,12 @@ Theme: polish, observability, developer experience.
 | **Code coverage: expression.py** | — | Currently 68%. More CEL edge cases |
 | **Code coverage: reflection.py** | — | Currently 40%. Reflection engine query paths |
 | **Code coverage: errors.py (runtime)** | — | Currently 37%. Error router paths |
+| **Compiler fidelity tests** | Issue 007 post-mortem | For every example, compile and assert specific IR properties (verbs, transitions, field types) — not just `errors.ok`. The examples are the spec; tests must verify the spec compiled faithfully. |
+| **Fail-loud parser fallbacks** | Issue 007 post-mortem | 14 fallback paths in `peg_parser.py` silently return defaults (`name="unknown"`, `verbs=["view"]`, `channel=""`) instead of erroring. Replace silent defaults with explicit errors. |
+| **Round-trip DSL→IR fidelity** | Issue 007 post-mortem | Parse DSL → compile to IR → verify every declared feature appears correctly in IR. Catches silent semantic data loss during compilation. |
+| **Replace hard-coded string offsets** | Issue 007 post-mortem | 25+ locations use brittle `text[19:]` magic numbers. Replace with `len("prefix")` constants. One was already a historical bug site. |
+| Flash/toast notification primitive | Thread 006 | Toast (auto-dismiss) and banner (persistent) feedback for state transitions and actions. CEL interpolation with `{singular}.*`, `from_state`, `to_state`, `User.*` context. |
+| Fix conformance button assertion coupling | Thread 008 | `test_active_product_disables_activate` tests rendering strategy (disabled attr) not behavioral contract (no transition URL). Decouple. |
 
 ---
 

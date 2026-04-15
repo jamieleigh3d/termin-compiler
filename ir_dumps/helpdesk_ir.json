@@ -330,32 +330,86 @@
         {
           "from_state": "open",
           "to_state": "in progress",
-          "required_scope": "tickets.manage"
+          "required_scope": "tickets.manage",
+          "feedback": [
+            {
+              "trigger": "success",
+              "style": "toast",
+              "message": "ticket.title + \" is now in progress\"",
+              "is_expr": true,
+              "dismiss_seconds": null
+            }
+          ]
         },
         {
           "from_state": "in progress",
           "to_state": "waiting on customer",
-          "required_scope": "tickets.manage"
+          "required_scope": "tickets.manage",
+          "feedback": [
+            {
+              "trigger": "success",
+              "style": "toast",
+              "message": "Ticket moved to waiting on customer",
+              "is_expr": false,
+              "dismiss_seconds": null
+            }
+          ]
         },
         {
           "from_state": "waiting on customer",
           "to_state": "in progress",
-          "required_scope": "tickets.create"
+          "required_scope": "tickets.create",
+          "feedback": [
+            {
+              "trigger": "success",
+              "style": "toast",
+              "message": "Ticket reopened",
+              "is_expr": false,
+              "dismiss_seconds": null
+            }
+          ]
         },
         {
           "from_state": "in progress",
           "to_state": "resolved",
-          "required_scope": "tickets.manage"
+          "required_scope": "tickets.manage",
+          "feedback": [
+            {
+              "trigger": "success",
+              "style": "banner",
+              "message": "ticket.title + \" resolved\"",
+              "is_expr": true,
+              "dismiss_seconds": 10
+            }
+          ]
         },
         {
           "from_state": "resolved",
           "to_state": "closed",
-          "required_scope": "tickets.admin"
+          "required_scope": "tickets.admin",
+          "feedback": [
+            {
+              "trigger": "success",
+              "style": "toast",
+              "message": "Ticket closed",
+              "is_expr": false,
+              "dismiss_seconds": null
+            }
+          ]
         },
         {
           "from_state": "resolved",
           "to_state": "in progress",
-          "required_scope": "tickets.create"
+          "required_scope": "tickets.create",
+          "feedback": [
+            {
+              "trigger": "success",
+              "style": "toast",
+              "message": "Ticket reopened from resolved",
+              "is_expr": false,
+              "dismiss_seconds": null
+            }
+          ]
         }
       ],
       "primitive_type": "content"

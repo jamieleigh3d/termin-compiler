@@ -332,6 +332,7 @@
       "content": "findings",
       "scope": "findings.remediate",
       "verbs": [
+        "DELETE",
         "UPDATE"
       ]
     },
@@ -368,37 +369,44 @@
         {
           "from_state": "detected",
           "to_state": "analyzing",
-          "required_scope": "findings.triage"
+          "required_scope": "findings.triage",
+          "feedback": []
         },
         {
           "from_state": "analyzing",
           "to_state": "auto-fix-applied",
-          "required_scope": "findings.remediate"
+          "required_scope": "findings.remediate",
+          "feedback": []
         },
         {
           "from_state": "analyzing",
           "to_state": "flagged-for-human",
-          "required_scope": "findings.triage"
+          "required_scope": "findings.triage",
+          "feedback": []
         },
         {
           "from_state": "auto-fix-applied",
           "to_state": "verified",
-          "required_scope": "findings.remediate"
+          "required_scope": "findings.remediate",
+          "feedback": []
         },
         {
           "from_state": "auto-fix-applied",
           "to_state": "flagged-for-human",
-          "required_scope": "findings.triage"
+          "required_scope": "findings.triage",
+          "feedback": []
         },
         {
           "from_state": "verified",
           "to_state": "closed",
-          "required_scope": "findings.triage"
+          "required_scope": "findings.triage",
+          "feedback": []
         },
         {
           "from_state": "flagged-for-human",
           "to_state": "closed",
-          "required_scope": "findings.remediate"
+          "required_scope": "findings.remediate",
+          "feedback": []
         }
       ],
       "primitive_type": "content"

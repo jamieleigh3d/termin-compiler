@@ -42,11 +42,17 @@ State for tickets called "ticket lifecycle":
   A ticket starts as "open"
   A ticket can also be "in progress", "waiting on customer", "resolved", or "closed"
   An open ticket can become in progress if the user has "tickets.manage"
+    success shows toast `ticket.title + " is now in progress"`
   An in progress ticket can become waiting on customer if the user has "tickets.manage"
+    success shows toast "Ticket moved to waiting on customer"
   A waiting on customer ticket can become in progress if the user has "tickets.create"
+    success shows toast "Ticket reopened"
   An in progress ticket can become resolved if the user has "tickets.manage"
+    success shows banner `ticket.title + " resolved"` dismiss after 10 seconds
   A resolved ticket can become closed if the user has "tickets.admin"
+    success shows toast "Ticket closed"
   A resolved ticket can become in progress if the user has "tickets.create"
+    success shows toast "Ticket reopened from resolved"
 
 --- User Stories ---
 

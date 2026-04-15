@@ -401,17 +401,51 @@
         {
           "from_state": "draft",
           "to_state": "active",
-          "required_scope": "inventory.write"
+          "required_scope": "inventory.write",
+          "feedback": [
+            {
+              "trigger": "success",
+              "style": "toast",
+              "message": "product.name + \" is now active\"",
+              "is_expr": true,
+              "dismiss_seconds": null
+            },
+            {
+              "trigger": "error",
+              "style": "banner",
+              "message": "Could not activate product",
+              "is_expr": false,
+              "dismiss_seconds": null
+            }
+          ]
         },
         {
           "from_state": "active",
           "to_state": "discontinued",
-          "required_scope": "inventory.admin"
+          "required_scope": "inventory.admin",
+          "feedback": [
+            {
+              "trigger": "success",
+              "style": "toast",
+              "message": "product.name + \" has been discontinued\"",
+              "is_expr": true,
+              "dismiss_seconds": null
+            }
+          ]
         },
         {
           "from_state": "discontinued",
           "to_state": "active",
-          "required_scope": "inventory.admin"
+          "required_scope": "inventory.admin",
+          "feedback": [
+            {
+              "trigger": "success",
+              "style": "toast",
+              "message": "product.name + \" reactivated\"",
+              "is_expr": true,
+              "dismiss_seconds": null
+            }
+          ]
         }
       ],
       "primitive_type": "content"

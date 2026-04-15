@@ -91,10 +91,21 @@ class RoleAlias:
 # --- State ---
 
 @dataclass
+class TransitionFeedback:
+    trigger: str             # "success" or "error"
+    style: str               # "toast" or "banner"
+    message: str             # literal string or CEL expression
+    is_expr: bool = False    # True if message is a CEL expression (backtick-delimited)
+    dismiss_seconds: Optional[int] = None  # auto-dismiss timer; None = use type default
+    line: int = 0
+
+
+@dataclass
 class Transition:
     from_state: str
     to_state: str
     required_scope: str
+    feedback: list = field(default_factory=list)  # list[TransitionFeedback]
     line: int = 0
 
 
