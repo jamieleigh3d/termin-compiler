@@ -291,7 +291,7 @@ Theme: polish, observability, developer experience.
 
 | Item | Source | Notes |
 |------|--------|-------|
-| G8: Agent observability (trace logging) | D-07 | Standardized trace schema, content table, queryable via reflection |
+| G8: Agent observability (trace logging) | D-07, D-20 | AUDIT verb, auto-generated `compute_audit_log_{name}` Content per Compute, one trace record per invocation, redaction is runtime concern (conformance: exact-match 4+ chars, structural elements exempt). Design complete in D-20. |
 | Chat presentation component | D-09 | Replace table-of-messages with proper chat UI in agent_chatbot |
 | Auto-generated REST API (convention over configuration) | D-11 | Content types get CRUD routes automatically |
 | Examples audit: remove boilerplate, use latest syntax | — | All examples updated to use v0.6 features |
