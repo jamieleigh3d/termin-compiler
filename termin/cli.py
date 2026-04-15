@@ -183,7 +183,14 @@ def compile(source: str, output: str | None, seed_path: str | None,
     _simplify_props(ir_dict)
     ir_json = json.dumps(ir_dict, indent=2, default=_ir_json_default)
 
-    # Optionally dump IR separately
+    # --emit-ir without -o: just dump the IR and exit (no package needed)
+    if ir_output and not output:
+        ir_path = Path(ir_output)
+        ir_path.write_text(ir_json, encoding="utf-8")
+        click.echo(f"IR dumped to {ir_path.name}")
+        return
+
+    # --emit-ir with -o: dump IR as a side effect of packaging
     if ir_output:
         ir_path = Path(ir_output)
         ir_path.write_text(ir_json, encoding="utf-8")
