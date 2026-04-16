@@ -384,7 +384,7 @@
           "props": {
             "source": "messages",
             "role_field": "role",
-            "content_field": "content"
+            "content_field": "body"
           },
           "style": {},
           "layout": {},

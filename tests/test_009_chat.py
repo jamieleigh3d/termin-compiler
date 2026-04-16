@@ -348,17 +348,14 @@ class TestAgentChatbotMigration:
         chat = _find_component(page, "chat")
         assert chat.props["source"] == "messages"
 
-    def test_chat_component_field_defaults(self):
-        """agent_chatbot uses default field names (role -> role, body -> body).
-        Since the DSL says 'Show a chat for messages' without explicit mapping,
-        defaults of role_field='role' and content_field='content' apply.
-        But the Content has 'body' not 'content', so the runtime adapts."""
+    def test_chat_component_field_mapping(self):
+        """agent_chatbot maps role='role', content='body' explicitly
+        because the Content field is named 'body', not 'content'."""
         spec = _compile_file("agent_chatbot.termin")
         page = next(p for p in spec.pages if p.slug == "chat")
         chat = _find_component(page, "chat")
-        # Default field names from the DSL
         assert chat.props["role_field"] == "role"
-        assert chat.props["content_field"] == "content"
+        assert chat.props["content_field"] == "body"
 
     def test_no_data_table_in_chat_page(self):
         """The old data_table should be gone after migration."""

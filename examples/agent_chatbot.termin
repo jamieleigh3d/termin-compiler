@@ -34,7 +34,7 @@ Compute called "reply":
 As an anonymous, I want to chat with the AI
   so that I can have a conversation:
     Show a page called "Chat"
-    Show a chat for messages
+    Show a chat for messages with role "role", content "body"
 
 Navigation bar:
   "Chat" links to "Chat" visible to all
