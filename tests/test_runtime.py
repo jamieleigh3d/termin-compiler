@@ -112,6 +112,7 @@ class TestAPIRoutes:
     def test_create_route(self):
         import uuid
         with _make_client("warehouse") as client:
+            client.cookies.set("termin_role", "warehouse manager")
             r = client.post("/api/v1/products", json={
                 "sku": f"RT-{uuid.uuid4().hex[:6]}", "name": "Runtime Test",
                 "category": "raw material",
@@ -277,6 +278,7 @@ class TestHydrationAttributes:
         with _make_client("warehouse") as client:
             import uuid
             sku = f"HYD-{uuid.uuid4().hex[:6]}"
+            client.cookies.set("termin_role", "warehouse manager")
             client.post("/api/v1/products", json={
                 "sku": sku, "name": "Hydration Test", "category": "raw material"
             })
@@ -288,6 +290,7 @@ class TestHydrationAttributes:
         with _make_client("warehouse") as client:
             import uuid
             sku = f"HYD-{uuid.uuid4().hex[:6]}"
+            client.cookies.set("termin_role", "warehouse manager")
             client.post("/api/v1/products", json={
                 "sku": sku, "name": "Field Test", "category": "raw material"
             })

@@ -143,7 +143,7 @@ class TestWarehouseIR:
         create_route = next(r for r in self.spec.routes
                            if r.path == "/api/v1/products" and r.method == HttpMethod.POST)
         assert create_route.kind == RouteKind.CREATE
-        assert create_route.required_scope == "inventory.write"
+        assert create_route.required_scope == "inventory.admin"
 
     def test_pages(self):
         slugs = [p.slug for p in self.spec.pages]

@@ -22,8 +22,8 @@ Content called "products":
   Each product has a unit cost which is currency
   Each product has a category which is one of: "raw material", "finished good", "packaging"
   Anyone with "inventory.read" can view products
-  Anyone with "inventory.write" can create or update products
-  Anyone with "inventory.admin" can delete products
+  Anyone with "inventory.write" can update products
+  Anyone with "inventory.admin" can create or delete products
 
 Content called "stock levels":
   Each stock level has a product which references products, required

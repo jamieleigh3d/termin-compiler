@@ -54,10 +54,15 @@ def client():
 # ── Helper: create a product and return its ID ──
 
 def _create_product(client, sku, name, **extras):
-    """Create a product and return its numeric ID."""
+    """Create a product and return its numeric ID.
+    Requires warehouse manager role (inventory.admin grants CREATE)."""
+    saved = client.cookies.get("termin_role")
+    client.cookies.set("termin_role", "warehouse manager")
     body = {"sku": sku, "name": name, **extras}
     r = client.post("/api/v1/products", json=body)
     assert r.status_code == 201, f"Failed to create product: {r.text}"
+    if saved:
+        client.cookies.set("termin_role", saved)
     return r.json()["id"]
 
 
@@ -73,6 +78,7 @@ class TestSpec81_DatabaseSchema:
         assert client.get("/api/v1/reorder_alerts").status_code == 200
 
     def test_product_fields_and_initial_state(self, client):
+        client.cookies.set("termin_role", "warehouse manager")
         r = client.post("/api/v1/products", json={
             "sku": "SCHEMA-001", "name": "Schema Test",
             "unit_cost": 10.50, "category": "finished good"
@@ -84,6 +90,7 @@ class TestSpec81_DatabaseSchema:
         assert d["status"] == "draft"
 
     def test_unique_sku_constraint(self, client):
+        client.cookies.set("termin_role", "warehouse manager")
         client.post("/api/v1/products", json={"sku": "DUP-001", "name": "First"})
         r = client.post("/api/v1/products", json={"sku": "DUP-001", "name": "Second"})
         assert r.status_code == 409
@@ -95,6 +102,7 @@ class TestSpec81_DatabaseSchema:
 
 class TestSpec82_APIRoutes:
     def test_create_product(self, client):
+        client.cookies.set("termin_role", "warehouse manager")
         r = client.post("/api/v1/products", json={
             "sku": "CRUD-001", "name": "CRUD Test", "category": "raw material"
         })

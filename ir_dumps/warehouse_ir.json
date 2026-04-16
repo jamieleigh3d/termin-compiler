@@ -339,7 +339,6 @@
       "content": "products",
       "scope": "inventory.write",
       "verbs": [
-        "CREATE",
         "UPDATE"
       ]
     },
@@ -347,6 +346,7 @@
       "content": "products",
       "scope": "inventory.admin",
       "verbs": [
+        "CREATE",
         "DELETE"
       ]
     },
@@ -498,7 +498,7 @@
       "path": "/api/v1/products",
       "kind": "CREATE",
       "content_ref": "products",
-      "required_scope": "inventory.write",
+      "required_scope": "inventory.admin",
       "lookup_column": "id",
       "target_state": null
     },
@@ -915,7 +915,7 @@
       "name": "Add Product",
       "slug": "add_product",
       "role": "warehouse manager",
-      "required_scope": "inventory.write",
+      "required_scope": "inventory.admin",
       "children": [
         {
           "type": "form",
@@ -923,7 +923,7 @@
             "target": "products",
             "create_as": "draft",
             "after_save": "offer to set initial stock levels per warehouse",
-            "submit_scope": "inventory.write"
+            "submit_scope": "inventory.admin"
           },
           "style": {},
           "layout": {},

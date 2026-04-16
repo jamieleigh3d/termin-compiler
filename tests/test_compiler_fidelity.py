@@ -235,16 +235,16 @@ class TestWarehouseFidelity:
         view_grants = [g for g in grants if Verb.VIEW in g.verbs]
         assert any(g.scope == "inventory.read" for g in view_grants)
 
-    def test_products_create_update_grant(self):
+    def test_products_update_grant(self):
         grants = _grants_for(self.spec, "products")
-        create_grants = [g for g in grants if Verb.CREATE in g.verbs]
         update_grants = [g for g in grants if Verb.UPDATE in g.verbs]
-        assert any(g.scope == "inventory.write" for g in create_grants)
         assert any(g.scope == "inventory.write" for g in update_grants)
 
-    def test_products_delete_grant(self):
+    def test_products_create_delete_grant(self):
         grants = _grants_for(self.spec, "products")
+        create_grants = [g for g in grants if Verb.CREATE in g.verbs]
         delete_grants = [g for g in grants if Verb.DELETE in g.verbs]
+        assert any(g.scope == "inventory.admin" for g in create_grants)
         assert any(g.scope == "inventory.admin" for g in delete_grants)
 
     def test_stock_levels_no_delete(self):
