@@ -1,0 +1,112 @@
+"""Line classifier — maps raw DSL lines to PEG rule names.
+
+Level 1 of the two-level parser: prefix matching + disambiguation
+to determine which PEG grammar rule should parse each line.
+"""
+
+# Prefix → rule mapping (order matters: first match wins)
+_PREFIXES: list[tuple[str, str]] = [
+    ("Application:", "application_line"), ("Description:", "description_line"), ("Id:", "id_line"),
+    ("Users authenticate with", "identity_line"), ("Scopes are", "scopes_line"),
+    ("Content called", "content_header"), ("Scoped to", "content_scoped_line"), ("Audit level:", "content_audit_line"), ("Each ", "field_line"),
+    ("Anyone with", "access_line"), ("State for", "state_header"),
+    ("When `", "event_expr_line"), ("When [", "event_expr_line"),  # backtick first, bracket legacy  # disambiguated in _classify_line for content When
+    ("When a ", "event_v1_line"), ("When an ", "event_v1_line"),
+    ("Create a ", "event_action_line"), ("Create an ", "event_action_line"),
+    ("Send ", "event_send_line"),
+    ("Log level:", "log_level_line"), ("On error from", "error_from_line"),
+    ("On any error:", "error_catch_all_line"), ("Retry ", "error_retry_line"),
+    ("Then ", "error_then_line"), ("As ", "story_header"), ("so that ", "so_that_line"),
+    ("Show a chat for", "chat_line"),
+    ("Show a page called", "show_page_line"), ("Display a table of", "display_table_line"),
+    ("For each ", "show_related_line"),  # also handles action_header_line — disambiguated below
+    ("Mark ", "mark_rows_line"),
+    ("Highlight rows where", "highlight_rows_line"),
+    ("Allow filtering by", "allow_filtering_line"), ("Allow searching by", "allow_searching_line"),
+    ("Link ", "link_column_line"),
+    ("This table subscribes to", "subscribes_to_line"), ("Accept input for", "accept_input_line"),
+    ("Validate that", "validate_unique_line"), ("Create the ", "create_as_line"),
+    ("After saving,", "after_saving_line"), ("Show a chart of", "show_chart_line"),
+    ("Section ", "section_header_line"),
+    ("Display text", "display_text_line"),
+    ("Display count of", "structured_agg_line"),
+    ("Display sum of", "structured_agg_line"),
+    ("Display average of", "structured_agg_line"),
+    ("Display minimum of", "structured_agg_line"),
+    ("Display maximum of", "structured_agg_line"),
+    ("Display ", "display_agg_line"),
+    ("Navigation bar:", "nav_bar_line"),
+    ("Stream ", "stream_line"), ("Compute called", "compute_header"),
+    ("Channel called", "channel_header"), ("Carries ", "channel_carries_line"),
+    ("Direction:", "channel_direction_line"), ("Delivery:", "channel_delivery_line"),
+    ("Requires ", "channel_requires_line"),  # disambiguated below for Compute context
+    ("Endpoint:", "channel_endpoint_line"),
+    ("Action called", "action_header"),
+    ("Takes ", "action_takes_line"), ("Returns ", "action_returns_line"),
+    ("Boundary called", "boundary_header"), ("Contains ", "boundary_contains_line"),
+    ("Identity inherits", "boundary_inherits_line"), ("Identity restricts", "boundary_restricts_line"),
+    ("Identity:", "compute_identity_line"),
+    ("Provider is", "compute_provider_line"),
+    ("Accesses ", "compute_accesses_line"),
+    ("Input from field", "compute_input_field_line"),
+    ("Output into field", "compute_output_field_line"),
+    ("Output creates", "compute_output_creates_line"),
+    ("Output confidentiality:", "compute_output_conf_line"),
+    ("Directive is", "compute_directive_line"),
+    ("Trigger on", "compute_trigger_line"),
+    ("Preconditions are:", "compute_preconditions_line"),
+    ("Postconditions are:", "compute_postconditions_line"),
+    ("Objective is", "compute_objective_line"),
+    ("Strategy is", "compute_strategy_line"),
+    ("Exposes property", "boundary_exposes_line"),
+]
+
+_SHAPE_KW = ("Transform:", "Reduce:", "Expand:", "Correlate:", "Route:")
+
+
+def classify_line(text: str) -> str:
+    """Classify a DSL line to determine which PEG rule to use.
+
+    Returns the rule name string, or "unknown" if unrecognized.
+    """
+    # Transition feedback must be checked early — CEL messages can contain " has " which triggers role_bare_line
+    if text.startswith(("success ", "error ")) and " shows " in text: return "transition_feedback_line"
+    if text.startswith('"') and " is alias for " in text: return "role_alias_line"
+    if text.startswith(('A "', 'An "')) and " has " in text: return "role_standard_line"
+    if " has " in text and '"' in text and not text.startswith(("A ", "An ", '"', "Content", "Each")):
+        return "role_bare_line"
+    if text.startswith(("A ", "An ")):
+        if " starts as " in text: return "state_starts_line"
+        if " can also be " in text: return "state_also_line"
+        if " can become " in text: return "state_transition_line"
+    # "can execute this" must be checked BEFORE the prefix loop — lines like
+    # 'Anyone with "scope" can execute this' match the "Anyone with" prefix
+    # and would be misclassified as access_line instead of compute_access_line
+    if " can execute this" in text: return "compute_access_line"
+    # D-20: "can audit" inside Compute blocks — must also be checked before prefix loop
+    if " can audit" in text and text.startswith("Anyone with"): return "compute_audit_access_line"
+    for prefix, rule in _PREFIXES:
+        if text.startswith(prefix):
+            # Disambiguate "For each X, show actions:" from "For each X, show Y grouped by Z"
+            if rule == "show_related_line" and "show actions" in text.lower():
+                return "action_header_line"
+            # Disambiguate "Requires" — channel/action (has "to send/receive/invoke") vs compute confidentiality
+            if rule == "channel_requires_line" and " to send" not in text and " to receive" not in text and " to invoke" not in text:
+                return "compute_requires_conf_line"
+            # Disambiguate "When `expr`" — content dependent value vs event trigger
+            # Content When: "When `expr`, field must be..." or "When `expr`, field defaults to..."
+            if rule == "event_expr_line" and (text.startswith("When `") or text.startswith("When [")):
+                if " must be " in text or " defaults to " in text:
+                    bt_close = text.find("`", 6) if text.startswith("When `") else text.find("]", 6)
+                    if bt_close >= 0 and "," in text[bt_close:bt_close+3]:
+                        return "content_when_line"
+            return rule
+    if text.startswith('"') and " transitions to " in text: return "action_button_line"
+    if text.startswith('"') and " links to " in text: return "nav_item_line"
+    if any(text.startswith(kw) for kw in _SHAPE_KW): return "compute_shape_line"
+    if text.startswith("```") and text.endswith("```") and len(text) > 6: return "compute_body_multiline"
+    if text.startswith("`") and text.endswith("`") and not text.startswith("```"): return "compute_body_expr_line"
+    if text.startswith("[") and text.endswith("]"): return "compute_body_expr_line"  # legacy bracket support
+    # D-19: Unconditional constraint: "field must be one of: ..."
+    if " must be one of:" in text: return "unconditional_constraint_line"
+    return "unknown"
