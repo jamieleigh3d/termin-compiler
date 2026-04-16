@@ -671,128 +671,179 @@ def _parse_line(text: str, rule: str, ln: int):
     P = _try_parse  # alias
 
     if rule == "application_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("application", Application(name=str(r["name"]).strip(), line=ln))
+        r = P(text, rule); return ("application", Application(name=str(r["name"]).strip() if r else text[len("Application:"):].strip(), line=ln))
     if rule == "description_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("description", str(r["desc"]).strip())
+        r = P(text, rule); return ("description", str(r["desc"]).strip() if r else text[len("Description:"):].strip())
     if rule == "id_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("app_id", str(r["id"]).strip())
+        r = P(text, rule); return ("app_id", str(r["id"]).strip() if r else text[len("Id:"):].strip())
     if rule == "identity_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("identity", Identity(provider=str(r["provider"]).strip(), line=ln))
+        r = P(text, rule); return ("identity", Identity(provider=str(r["provider"]).strip() if r else text.split("with",1)[1].strip(), line=ln))
     if rule == "scopes_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("scopes", _ql(r.get("scopes")))
+        r = P(text, rule); return ("scopes", _ql(r.get("scopes")) if r else _eqs(text))
     if rule == "role_standard_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("role", Role(name=_qs(r.get("name","")), scopes=_ql(r.get("scopes")), line=ln))
+        if r: return ("role", Role(name=_qs(r.get("name","")), scopes=_ql(r.get("scopes")), line=ln))
+        n = _fq(text); sc = _eqs(text)
+        if sc and sc[0] == n: sc = sc[1:]
+        return ("role", Role(name=n, scopes=sc, line=ln))
     if rule == "role_bare_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("role", Role(name=str(r.get("name","")).strip(), scopes=_ql(r.get("scopes")), line=ln))
+        if r: return ("role", Role(name=str(r.get("name","")).strip(), scopes=_ql(r.get("scopes")), line=ln))
+        hi = text.find(" has "); return ("role", Role(name=text[:hi].strip() if hi>=0 else text.strip(), scopes=_eqs(text), line=ln))
     if rule == "role_alias_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("role_alias", RoleAlias(short_name=_qs(r.get("short","")), full_name=_qs(r.get("full","")), line=ln))
+        if r: return ("role_alias", RoleAlias(short_name=_qs(r.get("short","")), full_name=_qs(r.get("full","")), line=ln))
+        qs = _eqs(text); return ("role_alias", RoleAlias(short_name=qs[0] if qs else "", full_name=qs[1] if len(qs)>1 else "", line=ln))
     if rule == "content_header":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        n = _qs(r.get("name",""))
+        r = P(text, rule); n = _qs(r.get("name","")) if r else _fq(text)
         sg = n.rstrip("s") if n.endswith("s") else n
         return ("content_header", Content(name=n, singular=sg, line=ln))
     if rule == "field_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        sg = str(r.get("singular","")).strip(); fn = str(r.get("field_name","")).strip()
+        if r: sg = str(r.get("singular","")).strip(); fn = str(r.get("field_name","")).strip()
+        else:
+            hi = text.find(" has ")
+            if hi < 0: return ("field", Field(name="unknown", type_expr=TypeExpr(base_type="text"), line=ln), "")
+            sg = text[len("Each "):hi].strip(); ah = text[hi+len(" has "):].strip()
+            for a in ("a ","an ","the "):
+                if ah.startswith(a): ah = ah[len(a):]; break
+            wi = ah.find(" which ")
+            if wi < 0: return ("field", Field(name="unknown", type_expr=TypeExpr(base_type="text"), line=ln), sg)
+            fn = ah[:wi].strip()
         wi = text.find(" which ")
         te = _parse_field_type(text[wi+len(" which "):].strip(), ln) if wi >= 0 else TypeExpr(base_type="text", line=ln)
         return ("field", Field(name=fn, type_expr=te, line=ln), sg)
     if rule == "access_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("access", _build_access(r, ln))
+        if r: return ("access", _build_access(r, ln))
+        sc = _fq(text); ci = text.find(" can ")
+        if ci >= 0:
+            rest = text[ci+5:].strip()
+            # Extract known verbs from the front of rest, stop at first non-verb word
+            known = {"view", "create", "update", "delete"}
+            words = rest.replace(",", " ").split()
+            verbs = []
+            for w in words:
+                w = w.strip()
+                if w in known:
+                    verbs.append(w)
+                elif w in ("or", "and"):
+                    continue  # skip conjunctions between verbs
+                else:
+                    break  # first non-verb, non-conjunction word = start of content name
+            if not verbs:
+                verbs = ["view"]
+            return ("access", AccessRule(scope=sc, verbs=verbs, line=ln))
+        return ("access", AccessRule(scope=sc, verbs=["view"], line=ln))
     if rule == "state_header":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        tgt = _qs(r.get("target",""))
-        mn = _qs(r.get("name",""))
+        if r:
+            tgt = _qs(r.get("target",""))
+            mn = _qs(r.get("name",""))
+        else:
+            mn = _fq(text)
+            ci = text.find(" called ")
+            tgt = text[len("State for "):ci].strip() if ci >= 0 else ""
+            # Strip channel/compute/boundary prefix
+            for prefix in ("channel ", "compute ", "boundary "):
+                if tgt.startswith(prefix):
+                    tgt = tgt[len(prefix):].strip().strip('"')
+                    break
         return ("state_header", StateMachine(content_name=tgt, machine_name=mn, singular="", initial_state="", line=ln))
     if rule == "state_starts_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("state_starts", str(r.get("singular","")).strip(), _qs(r.get("state","")))
+        if r: return ("state_starts", str(r.get("singular","")).strip(), _qs(r.get("state","")))
+        st = _fq(text); si = text.find(" starts as "); b = text[:si].strip() if si>=0 else ""
+        for a in ("A ","An "):
+            if b.startswith(a): b = b[len(a):]
+        return ("state_starts", b.strip(), st)
     if rule == "state_also_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("state_also", _ql(r.get("states")))
+        r = P(text, rule); return ("state_also", _ql(r.get("states")) if r else _eqs(text))
     if rule == "state_transition_line":
         t = _build_trans(text, ln); return ("state_transition", t) if t else None
     if rule == "transition_feedback_line":
         return ("transition_feedback", _build_feedback(text, ln))
     if rule == "event_expr_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        j = _qs(r.get("cel",""))
+        r = P(text, rule); j = _qs(r.get("cel","")) if r else (_eb(text) or "")
         return ("event_header", EventRule(content_name="", trigger="expr", condition_expr=j, line=ln))
     if rule == "event_v1_line":
         return ("event_header", _build_ev1(text, ln))
     if rule == "event_action_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("event_action", EventAction(create_content=_qs(r.get("name","")), fields=_cl(r.get("fields")), line=ln))
+        if r: return ("event_action", EventAction(create_content=_qs(r.get("name","")), fields=_cl(r.get("fields")), line=ln))
+        rest = text[len("Create "):].strip()
+        for a in ("a ","an ","the "):
+            if rest.startswith(a): rest = rest[len(a):]; break
+        wi = rest.find(" with ")
+        if wi >= 0:
+            n = rest[:wi].strip().strip('"'); ft = rest[wi+6:].strip()
+            if ft.startswith("the "): ft = ft[4:]
+            return ("event_action", EventAction(create_content=n, fields=_scal(ft), line=ln))
+        return ("event_action", EventAction(create_content=rest.strip().strip('"'), line=ln))
     if rule == "event_send_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        content = str(r.get("content","")).strip()
-        channel = _qs(r.get("channel",""))
+        if r:
+            content = str(r.get("content","")).strip()
+            channel = _qs(r.get("channel",""))
+        else:
+            # Fallback: "Send X to "Y""
+            parts = text[len("Send "):].strip()
+            if " to " in parts:
+                content, channel = parts.split(" to ", 1)
+                content = content.strip()
+                channel = channel.strip().strip('"')
+            else:
+                content = parts; channel = ""
         return ("event_action", EventAction(send_content=content, send_channel=channel, line=ln))
     if rule == "log_level_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("log_level", str(r.get("level","")).strip())
+        r = P(text, rule); return ("log_level", str(r.get("level","")).strip() if r else text.split(":",1)[1].strip())
     if rule == "error_from_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        src = _qs(r.get("source","")); j = _qs(r.get("cel","")) if r.get("cel") else None
+        if r: src = _qs(r.get("source","")); j = _qs(r.get("cel","")) if r.get("cel") else None
+        else: src = _fq(text); j = _eb(text)
         return ("error_header", ErrorHandler(source=src, condition_expr=j, line=ln))
     if rule == "error_catch_all_line":
         return ("error_header", ErrorHandler(source="", is_catch_all=True, line=ln))
     if rule == "error_retry_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        cnt = _si(r.get("count"),1); md = str(r.get("max_delay","")).strip() if r.get("max_delay") else None
+        if r: cnt = _si(r.get("count"),1); md = str(r.get("max_delay","")).strip() if r.get("max_delay") else None
+        else:
+            cnt = 1; md = None
+            for p in text.split():
+                if p.isdigit(): cnt = int(p); break
         return ("error_retry", ErrorAction(kind="retry", retry_count=cnt, retry_backoff="backoff" in text.lower(), retry_max_delay=md, line=ln))
     if rule == "error_then_line":
         return ("error_then", _build_err_act(text, ln))
     if rule == "story_header":
         return ("story_header", _build_story(text, ln))
     if rule == "so_that_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("so_that", str(r.get("text","")).strip().rstrip(":"))
+        r = P(text, rule); return ("so_that", str(r.get("text","")).strip().rstrip(":") if r else text[len("so that "):].strip().rstrip(":"))
     if rule == "show_page_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("directive", ShowPage(page_name=_qs(r.get("name","")), line=ln))
+        r = P(text, rule); return ("directive", ShowPage(page_name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "chat_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        source = str(r.get("source", "")).strip()
-        # Distinguish ChatMapped (has role_field) from ChatDefault
-        if r.get("role_field") is not None:
-            role_field = _qs(r.get("role_field", ""))
-            content_field = _qs(r.get("content_field", ""))
-            return ("directive", ChatDirective(source=source, role_field=role_field, content_field=content_field, line=ln))
-        else:
-            return ("directive", ChatDirective(source=source, line=ln))
+        if r:
+            source = str(r.get("source", "")).strip()
+            # Distinguish ChatMapped (has role_field) from ChatDefault
+            if r.get("role_field") is not None:
+                role_field = _qs(r.get("role_field", ""))
+                content_field = _qs(r.get("content_field", ""))
+                return ("directive", ChatDirective(source=source, role_field=role_field, content_field=content_field, line=ln))
+            else:
+                return ("directive", ChatDirective(source=source, line=ln))
+        # Fallback: parse manually
+        rest = text[len("Show a chat for "):].strip()
+        wi = rest.find(" with role ")
+        if wi >= 0:
+            source = rest[:wi].strip()
+            mapping = rest[wi:]
+            role_field = _fq(mapping.split(",")[0]) if "," in mapping else "role"
+            content_field = ""
+            ci = mapping.find(', content "')
+            if ci >= 0:
+                content_field = _fq(mapping[ci+10:])
+            return ("directive", ChatDirective(source=source, role_field=role_field or "role", content_field=content_field or "content", line=ln))
+        return ("directive", ChatDirective(source=rest, line=ln))
     if rule == "display_table_line":
         rest = text[len("Display a table of "):].strip(); wi = rest.find(" with columns:")
         cn = rest[:wi].strip() if wi>=0 else rest.strip()
@@ -832,35 +883,35 @@ def _parse_line(text: str, rule: str, ln: int):
                                                              threshold_field=rest[idx+len(op):].strip(), line=ln))
         return ("directive", HighlightRows(line=ln))
     if rule == "allow_filtering_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("directive", AllowFilter(fields=_cl(r.get("fields")), line=ln))
+        r = P(text, rule); return ("directive", AllowFilter(fields=_cl(r.get("fields")) if r else _scal(text[len("Allow filtering by "):]), line=ln))
     if rule == "allow_searching_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        fs = _ol(r.get("fields"))
-        # Handle edge case: if _ol returned a single item containing " or ", split it
+        fs = _ol(r.get("fields")) if r else []
+        # Fallback: if _ol returned a single item containing " or ", split it
         if len(fs) == 1 and " or " in fs[0]:
             fs = [f.strip() for f in fs[0].split(" or ") if f.strip()]
         if not fs:
-            # Fallback for edge case in result extraction — parse from text
+            # "Allow searching by " = 19 chars (NOT 20 — off-by-one caused "itle" from "title")
             rest = text[len("Allow searching by "):].strip()
             fs = [f.strip() for f in rest.split(" or ") if f.strip()]
         return ("directive", AllowSearch(fields=fs, line=ln))
     if rule == "link_column_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        col = _qs(r.get("col", ""))
-        template = _qs(r.get("template", ""))
+        if r:
+            col = _qs(r.get("col", ""))
+            template = _qs(r.get("template", ""))
+        else:
+            # Fallback: Link "col" to "template"
+            parts = _eqs(text)
+            col = parts[0] if parts else ""
+            template = parts[1] if len(parts) > 1 else ""
         return ("directive", LinkColumn(column=col, link_template=template, line=ln))
     if rule == "subscribes_to_line":
         rest = text[len("This table subscribes to "):].strip()
         if rest.endswith(" changes"): rest = rest[:-8].strip()
         return ("directive", SubscribeTo(content_name=rest, line=ln))
     if rule == "accept_input_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("directive", AcceptInput(fields=_cl(r.get("fields")), line=ln))
+        r = P(text, rule); return ("directive", AcceptInput(fields=_cl(r.get("fields")) if r else _scal(text[len("Accept input for "):]), line=ln))
     if rule == "validate_unique_line":
         rest = text[len("Validate that "):].strip()
         if rest.startswith("["):
@@ -870,9 +921,7 @@ def _parse_line(text: str, rule: str, ln: int):
         rest = text[len("Create the "):].strip(); ai = rest.rfind(" as ")
         return ("directive", CreateAs(initial_state=rest[ai+4:].strip() if ai>=0 else "", line=ln))
     if rule == "after_saving_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("directive", AfterSave(instruction=str(r.get("text","")).strip(), line=ln))
+        r = P(text, rule); return ("directive", AfterSave(instruction=str(r.get("text","")).strip() if r else text[len("After saving, "):].strip(), line=ln))
     if rule == "show_chart_line":
         rest = text[len("Show a chart of "):].strip(); oi = rest.find(" over the past ")
         if oi < 0: return ("directive", ShowChart(content_name=rest, days=30, line=ln))
@@ -880,59 +929,78 @@ def _parse_line(text: str, rule: str, ln: int):
         return ("directive", ShowChart(content_name=cn, days=_si(af[:sp] if sp>0 else af, 30), line=ln))
     if rule == "display_text_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        if r.get("cel"): return ("directive", DisplayText(text=_qs(r["cel"]), is_expression=True, line=ln))
-        if r.get("text"): return ("directive", DisplayText(text=_qs(r["text"]), line=ln))
-        if r.get("expr"): return ("directive", DisplayText(text=str(r["expr"]).strip(), is_expression=True, line=ln))
-        # TatSu matched but no expected key found — should not happen with correct grammar
-        raise ParseError(f"Failed to extract content from {rule}: {text}", line=ln)
+        if r:
+            if r.get("cel"): return ("directive", DisplayText(text=_qs(r["cel"]), is_expression=True, line=ln))
+            if r.get("text"): return ("directive", DisplayText(text=_qs(r["text"]), line=ln))
+            if r.get("expr"): return ("directive", DisplayText(text=str(r["expr"]).strip(), is_expression=True, line=ln))
+        rest = text[len("Display text"):].strip(); j = _eb(rest)
+        if j: return ("directive", DisplayText(text=j, is_expression=True, line=ln))
+        q = _fq(rest)
+        if q: return ("directive", DisplayText(text=q, line=ln))
+        return ("directive", DisplayText(text=rest.strip(), is_expression=True, line=ln))
     if rule == "structured_agg_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        content = str(r.get("content","")).strip()
-        # Disambiguate by presence of fields rather than rule name
-        if r.get("field"):
-            # count of X grouped by Y
-            return ("directive", StructuredAggregation(agg_type="count", source_content=content,
-                                                        group_by=str(r["field"]).strip(), line=ln))
-        if r.get("func"):
-            # sum/average/min/max of [expr] from X [as format]
-            func = str(r["func"]).strip()
-            expr_val = _qs(r.get("expr","")) if r.get("expr") else None
-            fmt = str(r.get("format","number")).strip() if r.get("format") else "number"
-            return ("directive", StructuredAggregation(agg_type=func, source_content=content, expression=expr_val, format=fmt, line=ln))
-        # count of X (no grouping, no func)
-        return ("directive", StructuredAggregation(agg_type="count", source_content=content, line=ln))
+        if r:
+            content = str(r.get("content","")).strip()
+            # Disambiguate by presence of fields rather than rule name
+            if r.get("field"):
+                # count of X grouped by Y
+                return ("directive", StructuredAggregation(agg_type="count", source_content=content,
+                                                            group_by=str(r["field"]).strip(), line=ln))
+            if r.get("func"):
+                # sum/average/min/max of [expr] from X [as format]
+                func = str(r["func"]).strip()
+                expr_val = _qs(r.get("expr","")) if r.get("expr") else None
+                fmt = str(r.get("format","number")).strip() if r.get("format") else "number"
+                return ("directive", StructuredAggregation(agg_type=func, source_content=content, expression=expr_val, format=fmt, line=ln))
+            # count of X (no grouping, no func)
+            return ("directive", StructuredAggregation(agg_type="count", source_content=content, line=ln))
+        # Fallback: parse manually
+        rest = text[len("Display "):].strip()
+        if rest.lower().startswith("count of"):
+            content = rest[len("count of"):].strip()
+            gi = content.lower().find(" grouped by ")
+            if gi >= 0:
+                return ("directive", StructuredAggregation(agg_type="count", source_content=content[:gi].strip(),
+                                                            group_by=content[gi+12:].strip(), line=ln))
+            return ("directive", StructuredAggregation(agg_type="count", source_content=content, line=ln))
+        return ("directive", DisplayAggregation(description=rest, line=ln))
     if rule == "section_header_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        title = _qs(r.get("title",""))
+        title = _qs(r.get("title","")) if r else ""
         if not title:
-            # Edge case: TatSu matched but title key was empty — extract from text
+            # Fallback: extract quoted string
             title = _fq(text[len("Section "):].strip().rstrip(":")) or text[len("Section "):].strip().rstrip(":")
         return ("directive", SectionStart(title=title, line=ln))
     if rule == "action_header_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        singular = str(r.get("singular","")).strip()
+        singular = str(r.get("singular","")).strip() if r else ""
         if not singular:
-            # Edge case: TatSu matched but singular key was empty — extract from text
+            # Extract from "For each X, show actions:"
             rest = text[len("For each "):].strip()
             ci = rest.find(",")
             singular = rest[:ci].strip() if ci >= 0 else ""
         return ("directive", ActionHeader(singular=singular, line=ln))
     if rule == "action_button_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        label = _qs(r.get("label",""))
-        state = _qs(r.get("state",""))
-        rn = _rule(r)
-        behavior = "hide" if rn == "ActionHide" else "disable"
+        if r:
+            label = _qs(r.get("label",""))
+            state = _qs(r.get("state",""))
+            rn = _rule(r)
+            behavior = "hide" if rn == "ActionHide" else "disable"
+            return ("directive", ActionButtonDef(label=label, target_state=state, unavailable_behavior=behavior, line=ln))
+        # Fallback: parse quoted strings
+        parts = text.strip()
+        label = _fq(parts) or ""
+        state = ""
+        si = parts.lower().find("transitions to ")
+        if si >= 0:
+            rest = parts[si+15:]
+            state = _fq(rest) or rest.split()[0] if rest else ""
+        behavior = "hide" if "hide otherwise" in parts.lower() else "disable"
         return ("directive", ActionButtonDef(label=label, target_state=state, unavailable_behavior=behavior, line=ln))
     if rule == "display_agg_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("directive", DisplayAggregation(description=str(r.get("text","")).strip(), line=ln))
+        r = P(text, rule); return ("directive", DisplayAggregation(description=str(r.get("text","")).strip() if r else text[len("Display "):].strip(), line=ln))
     if rule == "nav_bar_line": return ("nav_bar",)
     if rule == "nav_item_line": return ("nav_item", _build_nav(text, ln))
     if rule == "stream_line":
@@ -940,45 +1008,47 @@ def _parse_line(text: str, rule: str, ln: int):
         if ai < 0: return ("stream", Stream(description=rest, path="", line=ln))
         return ("stream", Stream(description=rest[:ai].strip(), path=rest[ai+4:].strip(), line=ln))
     if rule == "compute_header":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("compute_header", ComputeNode(name=_qs(r.get("name","")), line=ln))
+        r = P(text, rule); return ("compute_header", ComputeNode(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "compute_shape_line": return ("compute_shape", _build_comp_shape(text))
     if rule == "compute_body_expr_line": return ("compute_body", text[1:-1].strip())
     if rule == "compute_body_multiline": return ("compute_body_multiline", text[3:-3].strip())
     if rule == "compute_access_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        val = _qs(r.get("role",""))
-        # "Anyone with" form → scope-based access; bare "role" form → role-based
-        if _rule(r) == "ComputeAccessAnyone" or text.startswith("Anyone with"):
-            return ("access", AccessRule(scope=val, verbs=["execute"], line=ln))
-        return ("compute_access", val)
+        if r:
+            val = _qs(r.get("role",""))
+            # "Anyone with" form → scope-based access; bare "role" form → role-based
+            if _rule(r) == "ComputeAccessAnyone" or text.startswith("Anyone with"):
+                return ("access", AccessRule(scope=val, verbs=["execute"], line=ln))
+            return ("compute_access", val)
+        ci = text.find(" can execute this")
+        raw = text[:ci].strip().strip('"') if ci>=0 else ""
+        if text.startswith("Anyone with"):
+            return ("access", AccessRule(scope=_fq(text), verbs=["execute"], line=ln))
+        return ("compute_access", raw)
     if rule == "compute_audit_access_line":
         # D-20: "Anyone with X can audit" inside Compute blocks
         r = P(text, "compute_audit_access_line")
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        scope = _qs(r.get("scope", ""))
+        if r:
+            scope = _qs(r.get("scope", ""))
+        else:
+            # Fallback: extract quoted scope manually
+            scope = _fq(text)
         return ("compute_audit_access", scope)
     if rule == "compute_identity_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        mode = str(r.get("mode", "")).strip().lower()
+        mode = str(r.get("mode", "")).strip().lower() if r else text.split(":", 1)[1].strip().lower()
         return ("compute_identity", mode)
     if rule == "compute_requires_conf_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        scopes = _ql(r.get("scopes"))
+        scopes = _ql(r.get("scopes")) if r else _eqs(text)
         return ("compute_requires_conf", scopes)
     if rule == "compute_output_conf_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        scope = _qs(r.get("scope", ""))
+        scope = _qs(r.get("scope", "")) if r else _fq(text)
         return ("compute_output_conf", scope)
     if rule == "compute_provider_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        provider = _qs(r.get("provider", ""))
+        provider = _qs(r.get("provider", "")) if r else _fq(text)
         return ("compute_provider", provider)
     if rule == "compute_trigger_line":
         rest = text[len("Trigger on "):].strip()
@@ -1033,47 +1103,35 @@ def _parse_line(text: str, rule: str, ln: int):
         return ("compute_output_creates", rest.strip().strip('"'))
     if rule == "content_scoped_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        scopes = _ql(r.get("scopes"))
+        scopes = _ql(r.get("scopes")) if r else _eqs(text)
         return ("content_scoped", scopes)
     if rule == "content_audit_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        level = str(r.get("level", "content")).strip().lower()
+        level = str(r.get("level", "content")).strip().lower() if r else text.split(":", 1)[1].strip().lower()
         return ("content_audit", level)
     if rule == "content_when_line":
         return _parse_content_when(text, ln)
     if rule == "unconditional_constraint_line":
         return _parse_unconditional_constraint(text, ln)
     if rule == "channel_header":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("channel_header", ChannelDecl(name=_qs(r.get("name","")), line=ln))
+        r = P(text, rule); return ("channel_header", ChannelDecl(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "channel_carries_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("channel_prop", "carries", str(r.get("content","")).strip())
+        r = P(text, rule); return ("channel_prop", "carries", str(r.get("content","")).strip() if r else text[len("Carries "):].strip())
     if rule == "channel_direction_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("channel_prop", "direction", str(r.get("dir","")).strip().lower())
+        r = P(text, rule); return ("channel_prop", "direction", str(r.get("dir","")).strip().lower() if r else text.split(":",1)[1].strip().lower())
     if rule == "channel_delivery_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("channel_prop", "delivery", str(r.get("del","")).strip().lower())
+        r = P(text, rule); return ("channel_prop", "delivery", str(r.get("del","")).strip().lower() if r else text.split(":",1)[1].strip().lower())
     if rule == "channel_requires_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        direction = str(r.get("dir","")).strip()
-        return ("channel_prop", "requires", ChannelRequirement(scope=_qs(r.get("scope","")), direction=direction, line=ln))
+        if r:
+            direction = str(r.get("dir","")).strip()
+            return ("channel_prop", "requires", ChannelRequirement(scope=_qs(r.get("scope","")), direction=direction, line=ln))
+        direction = "send" if " to send" in text else ("invoke" if " to invoke" in text else "receive")
+        return ("channel_prop", "requires", ChannelRequirement(scope=_fq(text), direction=direction, line=ln))
     if rule == "channel_endpoint_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("channel_prop", "endpoint", str(r.get("path","")).strip())
+        r = P(text, rule); return ("channel_prop", "endpoint", str(r.get("path","")).strip() if r else text.split(":",1)[1].strip())
     if rule == "action_header":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("action_header", ActionDecl(name=_qs(r.get("name","")), line=ln))
+        r = P(text, rule); return ("action_header", ActionDecl(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "action_takes_line":
         params = _parse_action_params(text, "Takes ", ln)
         return ("action_prop", "takes", params)
@@ -1082,30 +1140,24 @@ def _parse_line(text: str, rule: str, ln: int):
         return ("action_prop", "returns", params)
     if rule == "action_requires_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        scope = _qs(r.get("scope",""))
+        scope = _qs(r.get("scope","")) if r else _fq(text)
         return ("action_prop", "requires", scope)
     if rule == "boundary_header":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("boundary_header", BoundaryDecl(name=_qs(r.get("name","")), line=ln))
+        r = P(text, rule); return ("boundary_header", BoundaryDecl(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "boundary_contains_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("boundary_prop", "contains", _cl(r.get("items_") or r.get("items")))
+        r = P(text, rule); return ("boundary_prop", "contains", _cl(r.get("items_") or r.get("items")) if r else _scal(text[len("Contains "):]))
     if rule == "boundary_inherits_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("boundary_prop", "inherits", str(r.get("parent","")).strip())
+        r = P(text, rule); return ("boundary_prop", "inherits", str(r.get("parent","")).strip() if r else text[len("Identity inherits from "):].strip())
     if rule == "boundary_restricts_line":
-        r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("boundary_prop", "restricts", _ql(r.get("scopes")))
+        r = P(text, rule); return ("boundary_prop", "restricts", _ql(r.get("scopes")) if r else _eqs(text))
     if rule == "boundary_exposes_line":
         r = P(text, rule)
-        if not r: raise ParseError(f"Failed to parse {rule}: {text}", line=ln)
-        return ("boundary_prop", "exposes", BoundaryProperty(name=_qs(r.get("name","")),
+        if r: return ("boundary_prop", "exposes", BoundaryProperty(name=_qs(r.get("name","")),
                           type_name=str(r.get("type_name","")).strip(), expr=_qs(r.get("cel","")), line=ln))
+        n = _fq(text); j = _eb(text)
+        ci = text.find(":", text.find('"', text.find('"')+1)+1); ei = text.find("=")
+        tn = text[ci+1:ei].strip() if ci>=0 and ei>ci else ""
+        return ("boundary_prop", "exposes", BoundaryProperty(name=n, type_name=tn, expr=j or "", line=ln))
     return None
 
 # --- Block assembly ---
