@@ -904,12 +904,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                     schema = content_lookup.get(cname, {})
                     rec = await create_record(db, cname, data, schema, sm_info, terminator, event_bus)
                     # DON'T call run_event_handlers here to avoid recursive agent invocation
-                    # Publish to main loop for WebSocket subscribers
-                    event_data = {"channel_id": f"content.{cname}.created", "data": rec}
-                    if main_loop and main_loop.is_running():
-                        asyncio.run_coroutine_threadsafe(event_bus.publish(event_data), main_loop)
-                    else:
-                        await event_bus.publish(event_data)
+                    # DON'T publish here — create_record already publishes to event_bus
                     return rec
 
                 elif tool_name == "content_update":

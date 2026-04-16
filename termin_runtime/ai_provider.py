@@ -176,13 +176,13 @@ class AIProvider:
             text_blocks = [b.text for b in response.content if b.type == "text"]
 
             if text_blocks:
-                logger.debug(f"  Turn {turn} thinking: {text_blocks[0][:100]}...")
+                print(f"[Termin]   Turn {turn} thinking: {text_blocks[0][:100]}...")
 
             if not tool_calls:
                 # Agent finished without calling set_output — extract text
                 return {"thinking": " ".join(text_blocks), "summary": "Agent completed without set_output"}
 
-            logger.info(f"  Turn {turn}: {len(tool_calls)} tool call(s): {', '.join(tc.name for tc in tool_calls)}")
+            print(f"[Termin]   Turn {turn}: {len(tool_calls)} tool call(s): {', '.join(tc.name for tc in tool_calls)}")
 
             # Process tool calls
             messages.append({"role": "assistant", "content": response.content})
@@ -191,21 +191,21 @@ class AIProvider:
             for tool_call in tool_calls:
                 if tool_call.name == "set_output":
                     # Agent signals completion
-                    logger.info(f"  Agent called set_output — completing")
+                    print(f"[Termin]   Agent called set_output — completing")
                     return tool_call.input
 
                 # Execute the tool via ComputeContext
                 try:
                     result = await execute_tool(tool_call.name, tool_call.input)
                     result_summary = json.dumps(result)[:200] if isinstance(result, (dict, list)) else str(result)[:200]
-                    logger.info(f"    {tool_call.name}() -> {result_summary}")
+                    print(f"[Termin]     {tool_call.name}() -> {result_summary}")
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": tool_call.id,
                         "content": json.dumps(result) if isinstance(result, (dict, list)) else str(result),
                     })
                 except Exception as e:
-                    logger.warning(f"    {tool_call.name}() ERROR: {e}")
+                    print(f"[Termin]     {tool_call.name}() ERROR: {e}")
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": tool_call.id,
