@@ -120,6 +120,21 @@ Test files over 500 lines are normal — they're flat lists of independent test 
 
 ---
 
+## Status (Updated April 16, 2026)
+
+All Priority 1 files completed. Two Priority 2 files deferred (under 800 lines, acceptable for class-based/renderer code).
+
+| File | Before | After | Status |
+|------|--------|-------|--------|
+| `termin_runtime/app.py` | 2105 | 385 | ✅ Split into 8 modules |
+| `termin/peg_parser.py` | 1345 | 273 | ✅ Split into 4 modules |
+| `termin/lower.py` | 1096 | 745 | ✅ Pages extracted (remaining sections tightly coupled) |
+| `termin_runtime/channels.py` | 826 | 415 | ✅ Config + WS extracted |
+| `termin/analyzer.py` | 780 | 780 | ⏸ Deferred — single class, flat methods, acceptable |
+| `termin_runtime/presentation.py` | 599 | 599 | ⏸ Deferred — renderers + templates, acceptable |
+
+New modules created: `context.py`, `websocket_manager.py`, `boundaries.py`, `validation.py`, `compute_runner.py`, `transitions.py`, `routes.py`, `pages.py`, `classify.py`, `parse_helpers.py`, `parse_builders.py`, `parse_handlers.py`, `lower_pages.py`, `channel_config.py`, `channel_ws.py`.
+
 ## Implementation approach
 
 1. **One module at a time.** Extract, test, commit. Don't refactor everything at once.
