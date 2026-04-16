@@ -1800,7 +1800,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
             for child in (children or []):
                 t = child.get("type", "")
                 p = child.get("props", {})
-                if t == "data_table":
+                if t in ("data_table", "chat"):
                     src = p.get("source")
                     if src:
                         reqs["sources"].add(src)

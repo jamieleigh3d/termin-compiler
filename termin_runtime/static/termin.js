@@ -145,6 +145,7 @@ function connectWebSocket() {
   state.ws.onmessage = (event) => {
     try {
       const frame = JSON.parse(event.data);
+      console.debug("[Termin] WS recv:", frame.op, frame.ch, frame.ref || "");
       handleFrame(frame);
     } catch (err) {
       console.warn("[Termin] Bad frame:", err.message);
@@ -190,6 +191,7 @@ function handleFrame(frame) {
       state.identity = payload;
       return;
     }
+    console.log("[Termin] Push:", ch, payload && payload.id ? `id=${payload.id}` : "");
     updateCache(ch, payload);
     notifySubscribers(ch, payload);
   } else if (op === "response") {
@@ -292,8 +294,70 @@ function notifySubscribers(channelId, data) {
 
 function hydrateAll() {
   hydrateDataTables();
+  hydrateChatComponents();
   hydrateAggregations();
   hydrateForms();
+}
+
+function hydrateChatComponents() {
+  const chats = document.querySelectorAll("[data-termin-chat]");
+  for (const chat of chats) {
+    const source = chat.dataset.terminSource;
+    if (!source) continue;
+
+    const messagesContainer = chat.querySelector("[data-termin-chat-messages]");
+    if (!messagesContainer) continue;
+
+    // Auto-scroll to bottom on load
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+    // Determine field names from the rendered HTML or fallback to defaults
+    const roleField = chat.querySelector("[data-termin-role]")
+      ? "data-termin-role" : null;
+
+    // Subscribe for live message updates
+    const channelPrefix = `content.${source}`;
+    console.log("[Termin] Chat subscribing to:", channelPrefix);
+    subscribe(channelPrefix, (ch, data) => {
+      const action = ch.split(".")[2]; // created, updated
+      if (action === "created" && data) {
+        console.log("[Termin] Chat new message:", data);
+        appendChatMessage(messagesContainer, data, chat);
+      }
+    });
+  }
+}
+
+function appendChatMessage(container, data, chatEl) {
+  // Determine role and content field names from the chat component
+  const firstMsg = chatEl.querySelector("[data-termin-chat-message]");
+  // Extract role from data — try common field names
+  const role = data.role || data.sender || "user";
+  const body = data.body || data.content || data.message || "";
+
+  const isUser = role === "user";
+  const wrapper = document.createElement("div");
+  wrapper.className = `flex ${isUser ? "justify-end" : "justify-start"}`;
+  wrapper.setAttribute("data-termin-chat-message", "");
+  wrapper.setAttribute("data-termin-role", role);
+
+  const bubble = document.createElement("div");
+  bubble.className = `${isUser ? "bg-blue-500 text-white" : "bg-gray-200 text-gray-800"} rounded-lg px-4 py-2 max-w-[70%]`;
+
+  const roleLabel = document.createElement("div");
+  roleLabel.className = "text-xs opacity-70 mb-1";
+  roleLabel.textContent = role;
+
+  const bodyDiv = document.createElement("div");
+  bodyDiv.textContent = body;
+
+  bubble.appendChild(roleLabel);
+  bubble.appendChild(bodyDiv);
+  wrapper.appendChild(bubble);
+  container.appendChild(wrapper);
+
+  // Auto-scroll to bottom
+  container.scrollTop = container.scrollHeight;
 }
 
 function hydrateDataTables() {
