@@ -3,361 +3,29 @@
 Reads channel declarations from the IR and connection config from
 termin.deploy.json. Provides send/invoke/receive operations with
 scope enforcement, type validation, and delivery semantics.
+
+Subsystem modules:
+  - channel_config.py: Deploy config loading, validation, config types
+  - channel_ws.py: Outbound WebSocket connection with auto-reconnect
 """
 
 import asyncio
 import json
 import logging
-import os
-import re
-from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine, Optional
 
 import httpx
 
-try:
-    import websockets
-    import websockets.client
-    HAS_WEBSOCKETS = True
-except ImportError:
-    HAS_WEBSOCKETS = False
+from .channel_config import (
+    load_deploy_config, check_deploy_config_warnings, validate_channel_config,
+    ChannelConfigError, ChannelAuthConfig, ChannelConfig,
+    ChannelError, ChannelScopeError, ChannelValidationError,
+    _resolve_env_vars, _resolve_config_env, _check_unresolved_vars,
+)
+from .channel_ws import WebSocketConnection
 
 logger = logging.getLogger("termin.channels")
-
-
-# ── Deploy config loading ──
-
-def _resolve_env_vars(value: str) -> str:
-    """Replace ${ENV_VAR} patterns with environment variable values."""
-    def _sub(match):
-        var_name = match.group(1)
-        return os.environ.get(var_name, match.group(0))
-    if isinstance(value, str):
-        return re.sub(r'\$\{(\w+)\}', _sub, value)
-    return value
-
-
-def _resolve_config_env(obj):
-    """Recursively resolve ${ENV_VAR} in all string values of a config dict."""
-    if isinstance(obj, dict):
-        return {k: _resolve_config_env(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_resolve_config_env(v) for v in obj]
-    if isinstance(obj, str):
-        return _resolve_env_vars(obj)
-    return obj
-
-
-def load_deploy_config(path: str = None, app_name: str = None) -> dict:
-    """Load and resolve a deploy config file.
-
-    Search order:
-      1. Explicit path if provided
-      2. {app_name}.deploy.json (app-specific)
-
-    Args:
-        path: Explicit path to deploy config file.
-        app_name: Snake_case app name for config lookup.
-
-    Returns:
-        Resolved config dict with ${ENV_VAR} substituted, or empty dict if not found.
-    """
-    candidates = []
-    if path:
-        candidates.append(path)
-    elif app_name:
-        candidates.append(f"{app_name}.deploy.json")
-
-    for candidate in candidates:
-        try:
-            with open(candidate, "r", encoding="utf-8") as f:
-                raw = json.load(f)
-            logger.info(f"Loaded deploy config from {candidate}")
-            return _resolve_config_env(raw)
-        except FileNotFoundError:
-            continue
-        except (json.JSONDecodeError, OSError) as e:
-            print(f"[Termin] Warning: Failed to load deploy config from {candidate}: {e}")
-            continue
-    return {}
-
-
-def check_deploy_config_warnings(deploy_config: dict, ir: dict) -> list[str]:
-    """Check for unset environment variables and uncustomized placeholder values.
-
-    Returns a list of warning messages.
-    """
-    warnings = []
-    channels_config = deploy_config.get("channels", {})
-
-    for ch in ir.get("channels", []):
-        direction = ch.get("direction", "")
-        if direction == "INTERNAL":
-            continue
-        display = ch["name"]["display"]
-        snake = ch["name"]["snake"]
-        ch_config = channels_config.get(display) or channels_config.get(snake, {})
-        if not ch_config:
-            continue
-
-        # Check for unresolved ${ENV_VAR} patterns (env var not set)
-        _check_unresolved_vars(ch_config, f"channels.{display}", warnings)
-
-        # Check for placeholder URLs that weren't customized
-        url = ch_config.get("url", "")
-        if url and ("example.com" in url or "placeholder" in url.lower()
-                     or url.startswith("https://TODO") or url.startswith("http://TODO")):
-            warnings.append(
-                f"Channel '{display}': URL looks like a placeholder ({url}). "
-                f"Update the deploy config with the actual service URL."
-            )
-
-    return warnings
-
-
-def _check_unresolved_vars(obj, path: str, warnings: list):
-    """Recursively check for unresolved ${ENV_VAR} patterns in a config dict."""
-    import re
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            _check_unresolved_vars(v, f"{path}.{k}", warnings)
-    elif isinstance(obj, list):
-        for i, v in enumerate(obj):
-            _check_unresolved_vars(v, f"{path}[{i}]", warnings)
-    elif isinstance(obj, str):
-        unresolved = re.findall(r'\$\{(\w+)\}', obj)
-        for var in unresolved:
-            warnings.append(
-                f"Environment variable ${{{var}}} is not set (referenced in {path}). "
-                f"Set it before starting the application."
-            )
-
-
-def validate_channel_config(ir: dict, deploy_config: dict) -> list[str]:
-    """Validate that all non-internal channels have deploy configuration.
-
-    Returns a list of error messages. Empty list means valid.
-    """
-    errors = []
-    channel_configs = deploy_config.get("channels", {})
-
-    for ch in ir.get("channels", []):
-        direction = ch.get("direction", "")
-        if direction == "INTERNAL":
-            continue  # internal channels never need config
-
-        display = ch["name"]["display"]
-        snake = ch["name"]["snake"]
-
-        if display not in channel_configs and snake not in channel_configs:
-            errors.append(
-                f"Channel '{display}' (direction: {direction}) has no deploy configuration. "
-                f"Add an entry to the deploy config file or change direction to 'internal'."
-            )
-            continue
-
-        # Validate config has a URL
-        config = channel_configs.get(display) or channel_configs.get(snake, {})
-        if not config.get("url"):
-            errors.append(
-                f"Channel '{display}' has a deploy config entry but no 'url'. "
-                f"Every external channel must have a URL."
-            )
-
-    return errors
-
-
-class ChannelConfigError(Exception):
-    """Raised when the deploy config is missing or invalid for required channels."""
-    pass
-
-
-# ── Channel config types ──
-
-@dataclass
-class ChannelAuthConfig:
-    auth_type: str = "none"         # bearer, api_key, mtls, oauth2, hmac, none
-    token: str = ""
-    header: str = "Authorization"
-    secret: str = ""                # HMAC
-    # Additional fields stored as extras
-    extras: dict = field(default_factory=dict)
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "ChannelAuthConfig":
-        return cls(
-            auth_type=d.get("type", "none"),
-            token=d.get("token", ""),
-            header=d.get("header", "Authorization"),
-            secret=d.get("secret", ""),
-            extras={k: v for k, v in d.items() if k not in ("type", "token", "header", "secret")},
-        )
-
-
-@dataclass
-class ChannelConfig:
-    url: str = ""
-    protocol: str = "http"          # http, websocket, grpc
-    auth: ChannelAuthConfig = field(default_factory=ChannelAuthConfig)
-    timeout_ms: int = 30000
-    max_retries: int = 3
-    backoff_ms: int = 1000
-    reconnect: bool = True
-    heartbeat_ms: int = 30000
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "ChannelConfig":
-        auth = ChannelAuthConfig.from_dict(d.get("auth", {}))
-        retry = d.get("retry", {})
-        return cls(
-            url=d.get("url", ""),
-            protocol=d.get("protocol", "http"),
-            auth=auth,
-            timeout_ms=d.get("timeout_ms", 30000),
-            max_retries=retry.get("max_attempts", 3),
-            backoff_ms=retry.get("backoff_ms", 1000),
-            reconnect=d.get("reconnect", True),
-            heartbeat_ms=d.get("heartbeat_ms", 30000),
-        )
-
-
-# ── WebSocket connection manager ──
-
-class WebSocketConnection:
-    """Manages a single persistent outbound WebSocket connection with auto-reconnect."""
-
-    def __init__(self, channel_name: str, config: ChannelConfig,
-                 on_message: Callable[[str, dict], Coroutine] = None):
-        self.channel_name = channel_name
-        self.config = config
-        self.on_message = on_message
-        self._ws = None
-        self._reader_task: Optional[asyncio.Task] = None
-        self._state = "disconnected"  # disconnected, connecting, connected, error
-        self._reconnect_count = 0
-
-    @property
-    def state(self) -> str:
-        return self._state
-
-    async def connect(self):
-        """Establish the WebSocket connection and start the reader loop."""
-        if not HAS_WEBSOCKETS:
-            self._state = "error"
-            logger.error(f"Channel '{self.channel_name}': websockets package not installed")
-            return
-
-        self._state = "connecting"
-        url = self.config.url
-
-        # Build extra headers for auth
-        extra_headers = {}
-        auth = self.config.auth
-        if auth.auth_type == "bearer" and auth.token:
-            extra_headers["Authorization"] = f"Bearer {auth.token}"
-        elif auth.auth_type == "api_key" and auth.token:
-            extra_headers[auth.header] = auth.token
-
-        try:
-            self._ws = await websockets.client.connect(
-                url,
-                additional_headers=extra_headers,
-                ping_interval=self.config.heartbeat_ms / 1000.0 if self.config.heartbeat_ms else None,
-            )
-            self._state = "connected"
-            self._reconnect_count = 0
-            logger.info(f"Channel '{self.channel_name}': WebSocket connected to {url}")
-
-            # Start reader loop
-            self._reader_task = asyncio.create_task(self._reader_loop())
-        except Exception as e:
-            self._state = "error"
-            logger.error(f"Channel '{self.channel_name}': WebSocket connect failed: {e}")
-            if self.config.reconnect:
-                asyncio.create_task(self._reconnect())
-
-    async def _reader_loop(self):
-        """Read messages from the WebSocket and dispatch to on_message callback."""
-        try:
-            async for raw_message in self._ws:
-                try:
-                    if isinstance(raw_message, bytes):
-                        raw_message = raw_message.decode("utf-8")
-                    data = json.loads(raw_message)
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    data = {"raw": raw_message}
-
-                if self.on_message:
-                    try:
-                        await self.on_message(self.channel_name, data)
-                    except Exception as e:
-                        logger.error(f"Channel '{self.channel_name}': message handler error: {e}")
-        except websockets.exceptions.ConnectionClosed:
-            logger.info(f"Channel '{self.channel_name}': WebSocket connection closed")
-        except Exception as e:
-            logger.error(f"Channel '{self.channel_name}': WebSocket reader error: {e}")
-        finally:
-            self._state = "disconnected"
-            if self.config.reconnect:
-                asyncio.create_task(self._reconnect())
-
-    async def _reconnect(self):
-        """Reconnect with exponential backoff, up to max_retries attempts."""
-        self._reconnect_count += 1
-        if self._reconnect_count > self.config.max_retries:
-            logger.warning(f"Channel '{self.channel_name}': max reconnect attempts ({self.config.max_retries}) reached, giving up")
-            self._state = "failed"
-            return
-        backoff = min(self.config.backoff_ms * (2 ** (self._reconnect_count - 1)) / 1000.0, 60.0)
-        logger.info(f"Channel '{self.channel_name}': reconnecting in {backoff:.1f}s (attempt {self._reconnect_count}/{self.config.max_retries})")
-        await asyncio.sleep(backoff)
-        await self.connect()
-
-    async def send(self, data: dict) -> bool:
-        """Send a JSON message over the WebSocket."""
-        if self._state != "connected" or not self._ws:
-            raise ChannelError(f"Channel '{self.channel_name}': WebSocket not connected (state={self._state})")
-        try:
-            await self._ws.send(json.dumps(data))
-            return True
-        except Exception as e:
-            raise ChannelError(f"Channel '{self.channel_name}': WebSocket send failed: {e}")
-
-    async def invoke(self, action_name: str, params: dict) -> dict:
-        """Invoke an action over WebSocket using request/response convention.
-
-        Sends: {"action": action_name, "params": params, "id": <uuid>}
-        The response convention is for the remote to echo back the id.
-        For now, fire-and-forget — the external service processes asynchronously.
-        """
-        if self._state != "connected" or not self._ws:
-            raise ChannelError(f"Channel '{self.channel_name}': WebSocket not connected (state={self._state})")
-        import uuid
-        msg_id = str(uuid.uuid4())[:8]
-        try:
-            await self._ws.send(json.dumps({
-                "action": action_name,
-                "params": params,
-                "id": msg_id,
-            }))
-            return {"ok": True, "status": "sent", "id": msg_id}
-        except Exception as e:
-            raise ChannelError(f"Channel '{self.channel_name}': WebSocket invoke failed: {e}")
-
-    async def close(self):
-        """Close the WebSocket connection."""
-        if self._reader_task:
-            self._reader_task.cancel()
-            try:
-                await self._reader_task
-            except asyncio.CancelledError:
-                pass
-        if self._ws:
-            try:
-                await self._ws.close()
-            except Exception:
-                pass
-        self._state = "disconnected"
 
 
 # ── Channel dispatcher ──
@@ -399,10 +67,7 @@ class ChannelDispatcher:
                 self._channel_configs[display] = ChannelConfig.from_dict(channel_configs[snake])
 
     def on_ws_message(self, handler: Callable[[str, dict], Coroutine]):
-        """Register a callback for inbound WebSocket messages.
-
-        Handler signature: async def handler(channel_name: str, data: dict)
-        """
+        """Register a callback for inbound WebSocket messages."""
         self._message_handlers.append(handler)
 
     async def _dispatch_ws_message(self, channel_name: str, data: dict):
@@ -419,20 +84,11 @@ class ChannelDispatcher:
                 logger.error(f"Channel '{channel_name}': message handler error: {e}")
 
     def validate(self) -> list[str]:
-        """Validate that all non-internal channels have deploy config.
-
-        Returns list of error messages. Empty means valid.
-        """
+        """Validate that all non-internal channels have deploy config."""
         return validate_channel_config(self._ir, self._deploy)
 
     async def startup(self, strict: bool = True):
-        """Initialize HTTP client and connect outbound WebSocket channels.
-
-        Args:
-            strict: If True (default), raise ChannelConfigError if any
-                    non-internal channel lacks deploy config.
-        """
-        # Validate channel config
+        """Initialize HTTP client and connect outbound WebSocket channels."""
         if strict:
             errors = self.validate()
             if errors:
@@ -451,7 +107,6 @@ class ChannelDispatcher:
                 continue
 
             direction = ch.get("direction", "")
-            # Outbound or bidirectional WebSocket channels get a persistent connection
             if direction in ("OUTBOUND", "BIDIRECTIONAL"):
                 ws_conn = WebSocketConnection(
                     display, config,
@@ -467,7 +122,6 @@ class ChannelDispatcher:
 
     async def shutdown(self):
         """Close HTTP client and all WebSocket connections."""
-        # Close WebSocket connections
         for name, ws_conn in self._ws_connections.items():
             await ws_conn.close()
             self._metrics.get(name, {})["state"] = "disconnected"
@@ -483,7 +137,6 @@ class ChannelDispatcher:
 
     def get_config(self, channel_name: str) -> Optional[ChannelConfig]:
         """Get deploy config for a channel."""
-        # Try display name first, then resolve from spec
         if channel_name in self._channel_configs:
             return self._channel_configs[channel_name]
         spec = self._channel_specs.get(channel_name)
@@ -501,9 +154,6 @@ class ChannelDispatcher:
         elif auth.auth_type == "api_key" and auth.token:
             headers[auth.header] = auth.token
         elif auth.auth_type == "none":
-            # For loopback/internal HTTP calls: include service identity cookie.
-            # Uses the first role in the roles list (typically the most privileged).
-            # Production runtimes would use service identity tokens instead.
             first_role = ""
             for r in self._ir.get("auth", {}).get("roles", []):
                 first_role = r.get("name", "")
@@ -517,7 +167,6 @@ class ChannelDispatcher:
         spec = self.get_spec(channel_name)
         if not spec:
             return False
-        # Check channel-level requirements
         for req in spec.get("requirements", []):
             if req["direction"] == direction:
                 if req["scope"] not in user_scopes:
@@ -550,37 +199,22 @@ class ChannelDispatcher:
     # ── Send (data channels) ──
 
     async def channel_send(self, channel_name: str, data: dict, user_scopes: set = None) -> dict:
-        """Send data through an outbound data channel.
-
-        Args:
-            channel_name: Channel display or snake name.
-            data: Record dict to send.
-            user_scopes: Caller's scopes for access control. None = skip check.
-
-        Returns:
-            {"ok": True, "status": <http_status>} on success.
-
-        Raises:
-            ChannelError on failure.
-        """
+        """Send data through an outbound data channel."""
         spec = self.get_spec(channel_name)
         if not spec:
             raise ChannelError(f"Unknown channel: {channel_name}")
 
         display = spec["name"]["display"]
 
-        # Scope check
         if user_scopes is not None and not self._check_scope(channel_name, "send", user_scopes):
             raise ChannelScopeError(f"Insufficient scope to send on channel '{display}'")
 
         config = self.get_config(channel_name)
         if not config or not config.url:
-            # No deploy config — log and return (channel is declared but not connected)
             print(f"[Termin] Channel '{display}': no deploy config, send skipped")
             self._metrics[display]["sent"] += 1
             return {"ok": True, "status": "not_configured", "channel": display}
 
-        # Route by protocol
         if config.protocol == "websocket" and display in self._ws_connections:
             return await self._ws_send(display, data)
         else:
@@ -610,9 +244,7 @@ class ChannelDispatcher:
         for attempt in range(config.max_retries + 1):
             try:
                 response = await self._http_client.post(
-                    url,
-                    json=data,
-                    headers=headers,
+                    url, json=data, headers=headers,
                     timeout=config.timeout_ms / 1000.0,
                 )
                 self._metrics[display]["sent"] += 1
@@ -623,12 +255,10 @@ class ChannelDispatcher:
                 else:
                     last_error = f"HTTP {response.status_code}: {response.text[:200]}"
                     if response.status_code < 500:
-                        # Client error — don't retry
                         break
             except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPError) as e:
                 last_error = str(e)
 
-            # Backoff before retry
             if attempt < config.max_retries:
                 backoff = config.backoff_ms * (2 ** attempt) / 1000.0
                 await asyncio.sleep(backoff)
@@ -641,20 +271,7 @@ class ChannelDispatcher:
     async def channel_invoke(
         self, channel_name: str, action_name: str, params: dict, user_scopes: set = None
     ) -> dict:
-        """Invoke a typed action on a channel.
-
-        Args:
-            channel_name: Channel display or snake name.
-            action_name: Action display or snake name.
-            params: Input parameters matching the action's Takes spec.
-            user_scopes: Caller's scopes for access control. None = skip check.
-
-        Returns:
-            Response dict from the external service.
-
-        Raises:
-            ChannelError on failure.
-        """
+        """Invoke a typed action on a channel."""
         spec = self.get_spec(channel_name)
         if not spec:
             raise ChannelError(f"Unknown channel: {channel_name}")
@@ -667,11 +284,9 @@ class ChannelDispatcher:
         action_display = action_spec["name"]["display"]
         action_snake = action_spec["name"]["snake"]
 
-        # Scope check
         if user_scopes is not None and not self._check_action_scope(channel_name, action_name, user_scopes):
             raise ChannelScopeError(f"Insufficient scope to invoke '{action_display}' on channel '{display}'")
 
-        # Validate input params against Takes spec
         for param_spec in action_spec.get("takes", []):
             if param_spec["name"] not in params:
                 raise ChannelValidationError(
@@ -684,7 +299,6 @@ class ChannelDispatcher:
             self._metrics[display]["sent"] += 1
             return {"ok": True, "status": "not_configured", "channel": display, "action": action_display}
 
-        # Route by protocol
         if config.protocol == "websocket" and display in self._ws_connections:
             ws_conn = self._ws_connections[display]
             if ws_conn.state != "connected":
@@ -704,7 +318,6 @@ class ChannelDispatcher:
     async def _http_invoke(self, display: str, config: ChannelConfig,
                            action_display: str, action_snake: str, params: dict) -> dict:
         """Invoke an action over HTTP with retry."""
-        # Convention: POST {base_url}/actions/{action-snake-name}
         headers = self._build_headers(config)
         url = f"{config.url.rstrip('/')}/actions/{action_snake}"
         last_error = None
@@ -712,9 +325,7 @@ class ChannelDispatcher:
         for attempt in range(config.max_retries + 1):
             try:
                 response = await self._http_client.post(
-                    url,
-                    json=params,
-                    headers=headers,
+                    url, json=params, headers=headers,
                     timeout=config.timeout_ms / 1000.0,
                 )
                 self._metrics[display]["sent"] += 1
@@ -751,15 +362,12 @@ class ChannelDispatcher:
         return {}
 
     def is_configured(self, channel_name: str) -> bool:
-        """Check if a channel has deploy config (i.e., is connected to something)."""
+        """Check if a channel has deploy config."""
         config = self.get_config(channel_name)
         return config is not None and bool(config.url)
 
     def get_connection_state(self, channel_name: str) -> str:
-        """Get live connection state for a channel.
-
-        Returns: 'connected', 'connecting', 'disconnected', 'error', or 'not_configured'.
-        """
+        """Get live connection state for a channel."""
         spec = self.get_spec(channel_name)
         if not spec:
             return "not_configured"
@@ -770,15 +378,11 @@ class ChannelDispatcher:
         if config.protocol == "websocket" and display in self._ws_connections:
             return self._ws_connections[display].state
         if config.protocol == "http":
-            return "connected"  # HTTP is stateless, always "connected" if configured
+            return "connected"
         return "disconnected"
 
     def get_full_status(self) -> list[dict]:
-        """Get full status of all channels for reflection.
-
-        Returns a list of dicts with name, direction, delivery, protocol,
-        connection state, and metrics.
-        """
+        """Get full status of all channels for reflection."""
         result = []
         for ch in self._ir.get("channels", []):
             display = ch["name"]["display"]
@@ -804,23 +408,8 @@ class ChannelDispatcher:
         return result
 
 
-# ── Error types ──
-
-class ChannelError(Exception):
-    """Base error for channel operations."""
-    pass
-
-class ChannelScopeError(ChannelError):
-    """Caller lacks required scope for channel operation."""
-    pass
-
-class ChannelValidationError(ChannelError):
-    """Invalid parameters for channel action."""
-    pass
-
 
 # ── Utilities ──
 
 def _now_iso() -> str:
-    from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat()
