@@ -394,7 +394,7 @@ def _render_chat(node: dict) -> str:
         f'    {{% endfor %}}',
         f'  </div>',
         f'  <div class="border-t p-3" data-termin-chat-input>',
-        f'    <form class="flex space-x-2" data-termin-chat-form data-action="/api/v1/{source}">',
+        f'    <form method="post" action="/api/v1/{source}" class="flex space-x-2" data-termin-chat-form>',
         f'      <input type="text" name="{content_field}" placeholder="Type a message..."'
         f' class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"'
         f' autocomplete="off">',
