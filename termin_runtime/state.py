@@ -64,7 +64,15 @@ async def do_state_transition(db, table: str, record_id: int, target_state: str,
     await db.execute(f"UPDATE {table} SET status = ? WHERE id = ?", (target_state, record_id))
     await db.commit()
 
-    if event_bus:
-        await event_bus.publish({"type": f"{table}_updated", "id": record_id, "status": target_state})
+    # Fetch the full updated record for WebSocket push
+    cursor = await db.execute(f"SELECT * FROM {table} WHERE id = ?", (record_id,))
+    updated_row = await cursor.fetchone()
+    updated_record = dict(updated_row) if updated_row else {"id": record_id, "status": target_state}
 
-    return {"id": record_id, "status": target_state}
+    if event_bus:
+        await event_bus.publish({
+            "channel_id": f"content.{table}.updated",
+            "data": updated_record,
+        })
+
+    return updated_record
