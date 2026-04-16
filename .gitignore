@@ -35,6 +35,9 @@ ir_dumps/*_app_seed.json
 # Note: ir_dumps/*_ir.json and examples/*_seed.json are intentionally tracked
 /*.termin.pkg
 /*.deploy.json
+
+# Compiled packages (build artifacts — regenerated from examples/)
+packages/
 # Coverage
 .coverage
 coverage.json
