@@ -456,7 +456,7 @@ function hydrateForms() {
           //
           // For transition forms, the WS push carries the updated status.
           // But if WS is not connected, fall back to a page reload.
-          if (!window._terminWs || window._terminWs.readyState !== WebSocket.OPEN) {
+          if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
             window.location.reload();
           }
         } else {
