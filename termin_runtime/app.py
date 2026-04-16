@@ -1661,19 +1661,55 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
 
             result = await do_state_transition(db, content, record_id, target, user,
                                                sm_lookup, terminator, event_bus)
-            # Redirect back to referring page with success feedback
-            referer = request.headers.get("referer", "/")
+            is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+            # Build feedback message
+            feedback_msg = None
+            feedback_spec = None
             if from_state:
                 success_fb = _get_feedback(content, from_state, target, "success")
-                referer = _append_flash_params(referer, success_fb, record, from_state, target, content)
-            return RedirectResponse(url=referer, status_code=303)
-        except HTTPException:
-            # On transition error, redirect with error feedback
-            referer = request.headers.get("referer", "/")
-            if from_state:
-                error_fb = _get_feedback(content, from_state, target, "error")
-                referer = _append_flash_params(referer, error_fb, record, from_state, target, content)
-            return RedirectResponse(url=referer, status_code=303)
+                if success_fb:
+                    feedback_spec = success_fb[0]
+                    feedback_msg = _eval_feedback_message(feedback_spec, record, from_state, target, content)
+
+            if is_ajax:
+                # AJAX: return JSON with result + feedback for termin.js to handle
+                response = {"id": record_id, "status": target}
+                if feedback_msg:
+                    response["_flash"] = feedback_msg
+                    response["_flash_style"] = feedback_spec["style"]
+                    response["_flash_level"] = "success"
+                    if feedback_spec.get("dismiss_seconds") is not None:
+                        response["_flash_dismiss"] = feedback_spec["dismiss_seconds"]
+                return response
+            else:
+                # Traditional form: redirect with flash params
+                referer = request.headers.get("referer", "/")
+                if from_state:
+                    referer = _append_flash_params(referer, success_fb or [], record, from_state, target, content)
+                return RedirectResponse(url=referer, status_code=303)
+        except HTTPException as exc:
+            is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            if is_ajax:
+                # AJAX: return error JSON with feedback
+                error_response = {"detail": exc.detail}
+                if from_state:
+                    error_fb = _get_feedback(content, from_state, target, "error")
+                    if error_fb:
+                        fb = error_fb[0]
+                        error_response["_flash"] = _eval_feedback_message(fb, record, from_state, target, content)
+                        error_response["_flash_style"] = fb["style"]
+                        error_response["_flash_level"] = "error"
+                        if fb.get("dismiss_seconds") is not None:
+                            error_response["_flash_dismiss"] = fb["dismiss_seconds"]
+                raise HTTPException(status_code=exc.status_code, detail=error_response)
+            else:
+                # Traditional form: redirect with error flash
+                referer = request.headers.get("referer", "/")
+                if from_state:
+                    error_fb = _get_feedback(content, from_state, target, "error")
+                    referer = _append_flash_params(referer, error_fb, record, from_state, target, content)
+                return RedirectResponse(url=referer, status_code=303)
         finally:
             await db.close()
 

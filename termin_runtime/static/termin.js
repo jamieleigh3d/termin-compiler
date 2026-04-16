@@ -8,6 +8,45 @@
  * No build step. No npm dependencies. CEL evaluator loaded from CDN (already in page).
  */
 
+// ── Flash Notification (toast/banner) ──
+
+function showFlashNotification(message, style, level, dismissSeconds) {
+  // Remove any existing flash
+  document.querySelectorAll("[data-termin-toast], [data-termin-banner]").forEach(el => el.remove());
+
+  const isError = level === "error";
+  const el = document.createElement("div");
+  el.setAttribute("role", style === "banner" ? "alert" : "status");
+
+  if (style === "banner") {
+    el.setAttribute("data-termin-banner", "");
+    el.setAttribute("data-level", level);
+    el.className = `mb-4 p-4 rounded-lg border ${isError ? "bg-red-50 border-red-200 text-red-800" : "bg-green-50 border-green-200 text-green-800"}`;
+    el.innerHTML = `<div class="flex items-center justify-between"><span>${message}</span><button onclick="this.parentElement.parentElement.remove()" class="ml-4 text-lg font-bold opacity-50 hover:opacity-100">&times;</button></div>`;
+
+    // Insert at top of <main>
+    const main = document.querySelector("main");
+    if (main) main.insertBefore(el, main.firstChild);
+  } else {
+    // Toast: fixed position bottom-right
+    el.setAttribute("data-termin-toast", "");
+    el.setAttribute("data-level", level);
+    el.className = `fixed bottom-4 right-4 z-50 p-4 rounded-lg shadow-lg ${isError ? "bg-red-600 text-white" : "bg-green-600 text-white"}`;
+    el.textContent = message;
+    document.body.appendChild(el);
+  }
+
+  // Auto-dismiss
+  const dismiss = dismissSeconds != null ? dismissSeconds : (style === "toast" ? 5 : 0);
+  if (dismiss > 0) {
+    setTimeout(() => {
+      el.style.transition = "opacity 0.3s";
+      el.style.opacity = "0";
+      setTimeout(() => el.remove(), 300);
+    }, dismiss * 1000);
+  }
+}
+
 const TERMIN_VERSION = "0.3.0";
 
 // ── State ──
@@ -393,6 +432,17 @@ function hydrateForms() {
         });
 
         if (resp.ok) {
+          // Check for flash notification in JSON response (transition feedback)
+          try {
+            const data = await resp.json();
+            if (data._flash) {
+              showFlashNotification(data._flash, data._flash_style || "toast",
+                                   data._flash_level || "success", data._flash_dismiss);
+            }
+          } catch {
+            // Not JSON — normal form response, ignore
+          }
+
           // Clear the form inputs
           form.querySelectorAll("input[type='text'], textarea").forEach(input => {
             input.value = "";
@@ -403,11 +453,22 @@ function hydrateForms() {
           // Don't add the row here — the WebSocket subscription will push
           // the new record to the table. Adding from both sources causes
           // duplicate rows. Let WebSocket be the single source of truth.
+          //
+          // For transition forms, the WS push carries the updated status.
+          // But if WS is not connected, fall back to a page reload.
+          if (!window._terminWs || window._terminWs.readyState !== WebSocket.OPEN) {
+            window.location.reload();
+          }
         } else {
-          // Show error
+          // Show error — check for flash notification in error response
           try {
             const err = await resp.json();
-            alert(err.detail || "Error saving record");
+            if (err.detail && err.detail._flash) {
+              showFlashNotification(err.detail._flash, err.detail._flash_style || "banner",
+                                   err.detail._flash_level || "error", err.detail._flash_dismiss);
+            } else {
+              alert(err.detail || "Error saving record");
+            }
           } catch {
             alert("Error saving record (HTTP " + resp.status + ")");
           }
