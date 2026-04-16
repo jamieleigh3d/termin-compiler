@@ -1599,14 +1599,39 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         specs = _transition_feedback.get((content, from_state, to_state), [])
         return [fb for fb in specs if fb["trigger"] == trigger]
 
-    def _append_flash_params(url: str, feedback_specs: list, record: dict = None) -> str:
+    def _eval_feedback_message(fb: dict, record: dict = None, from_state: str = "",
+                               to_state: str = "", content_name: str = "") -> str:
+        """Evaluate a feedback message — CEL expression or literal string."""
+        if not fb.get("is_expr"):
+            return fb["message"]
+        # CEL expression: evaluate with record fields + transition context
+        # Fields available as bare names (name) AND under singular prefix (product.name)
+        try:
+            cel_ctx = dict(record) if record else {}
+            cel_ctx["from_state"] = from_state
+            cel_ctx["to_state"] = to_state
+            # Find the singular form for this content from the IR
+            singular = content_name.rstrip("s") if content_name.endswith("s") else content_name
+            for ct in ir.get("content", []):
+                if ct["name"]["snake"] == content_name:
+                    singular = ct.get("singular", singular)
+                    break
+            # Expose record fields under the singular prefix: product.name, ticket.title, etc.
+            if record:
+                cel_ctx[singular] = dict(record)
+            return str(expr_eval.evaluate(fb["message"], cel_ctx))
+        except Exception:
+            # Fallback: return the expression unevaluated
+            return fb["message"]
+
+    def _append_flash_params(url: str, feedback_specs: list, record: dict = None,
+                             from_state: str = "", to_state: str = "",
+                             content_name: str = "") -> str:
         """Append _flash query params to a URL for feedback rendering."""
         if not feedback_specs:
             return url
         fb = feedback_specs[0]  # use first matching feedback
-        msg = fb["message"]
-        # CEL expression evaluation would go here in a full implementation;
-        # for now, literal messages pass through and expr messages show as-is
+        msg = _eval_feedback_message(fb, record, from_state, to_state, content_name)
         separator = "&" if "?" in url else "?"
         import urllib.parse
         params = urllib.parse.urlencode({
@@ -1628,10 +1653,11 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         user = get_current_user(request)
         db = await get_db(db_path)
         try:
-            # Get current state before transition for feedback lookup
-            cursor = await db.execute(f"SELECT status FROM {content} WHERE id = ?", (record_id,))
+            # Get full record before transition for feedback CEL evaluation
+            cursor = await db.execute(f"SELECT * FROM {content} WHERE id = ?", (record_id,))
             row = await cursor.fetchone()
-            from_state = row["status"] if row else None
+            record = dict(row) if row else {}
+            from_state = record.get("status")
 
             result = await do_state_transition(db, content, record_id, target, user,
                                                sm_lookup, terminator, event_bus)
@@ -1639,14 +1665,14 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
             referer = request.headers.get("referer", "/")
             if from_state:
                 success_fb = _get_feedback(content, from_state, target, "success")
-                referer = _append_flash_params(referer, success_fb)
+                referer = _append_flash_params(referer, success_fb, record, from_state, target, content)
             return RedirectResponse(url=referer, status_code=303)
         except HTTPException:
             # On transition error, redirect with error feedback
             referer = request.headers.get("referer", "/")
             if from_state:
                 error_fb = _get_feedback(content, from_state, target, "error")
-                referer = _append_flash_params(referer, error_fb)
+                referer = _append_flash_params(referer, error_fb, record, from_state, target, content)
             return RedirectResponse(url=referer, status_code=303)
         finally:
             await db.close()
