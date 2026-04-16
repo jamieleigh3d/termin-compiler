@@ -503,12 +503,20 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                 })
         # Content names for subscription
         content_names = [cs["name"]["snake"] for cs in ir.get("content", [])]
+        # State machine transitions for client-side button re-evaluation
+        transitions = {}
+        for content_ref, sm_data in sm_lookup.items():
+            transitions[content_ref] = {
+                f"{from_s}|{to_s}": scope
+                for (from_s, to_s), scope in sm_data["transitions"].items()
+            }
         return {
             "identity": {"role": role, "scopes": user["scopes"], "profile": user["profile"]},
             "pages": user_pages,
             "computes": client_computes,
             "schemas": ir.get("content", []),
             "content_names": content_names,
+            "transitions": transitions,
         }
 
     @app.get("/runtime/termin.js")

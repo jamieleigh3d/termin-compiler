@@ -311,6 +311,13 @@ function hydrateDataTables() {
         const row = table.querySelector(`tr[data-termin-row-id="${data.id}"]`);
         if (row) {
           updateRow(row, data);
+          // Re-hydrate form interceptors on any new buttons inserted by updateActionButtons
+          row.querySelectorAll("form[method='post']").forEach(form => {
+            if (!form._terminHydrated) {
+              form._terminHydrated = true;
+              hydrateOneForm(form);
+            }
+          });
           flashRow(row);
         }
       } else if (action === "created" && data && data.id != null) {
@@ -347,6 +354,49 @@ function updateRow(row, data) {
       cell.textContent = data[field] ?? "";
     }
   }
+  // Re-evaluate transition action buttons based on new status
+  if (data.status != null) {
+    updateActionButtons(row, data.status);
+  }
+}
+
+function updateActionButtons(row, newStatus) {
+  // Find the table's source content name
+  const table = row.closest("[data-termin-component='data_table']");
+  if (!table) return;
+  const source = table.dataset.terminSource;
+  if (!source) return;
+
+  // Get transition rules from bootstrap
+  const transitions = state.bootstrap && state.bootstrap.transitions
+    ? state.bootstrap.transitions[source] || {}
+    : {};
+  const userScopes = state.identity ? new Set(state.identity.scopes) : new Set();
+  const recordId = row.dataset.terminRowId;
+
+  // Update each transition button wrapper
+  row.querySelectorAll("[data-termin-transition]").forEach(span => {
+    const targetState = span.dataset.targetState;
+    const behavior = span.dataset.behavior || "disable";
+    const transKey = `${newStatus}|${targetState}`;
+    const requiredScope = transitions[transKey];
+    const isValid = requiredScope !== undefined;
+    const hasScope = isValid && (requiredScope === "" || userScopes.has(requiredScope));
+    const safeTarget = targetState.replace(/ /g, "_");
+
+    if (isValid && hasScope) {
+      // Show enabled button
+      span.innerHTML =
+        `<form method="post" action="/_transition/${source}/${recordId}/${safeTarget}" style="display:inline">` +
+        `<button type="submit" class="text-indigo-600 hover:text-indigo-800 text-xs">${span.dataset.label || targetState}</button></form>`;
+    } else if (behavior === "hide") {
+      span.innerHTML = "";
+    } else {
+      // Disabled button
+      span.innerHTML =
+        `<button disabled class="text-gray-400 text-xs cursor-not-allowed">${span.dataset.label || targetState}</button>`;
+    }
+  });
 }
 
 function createRow(table, data) {
@@ -408,15 +458,13 @@ function hydrateAggregations() {
   }
 }
 
-function hydrateForms() {
-  // Intercept form submits — use fetch() instead of full page redirect.
-  // This keeps the WebSocket connection alive so real-time updates
-  // (like LLM responses) are pushed to the client without needing a refresh.
-  document.querySelectorAll("form[method='post'], form:not([method])").forEach(form => {
-    // Skip the role-switcher form
-    if (form.action && form.action.includes("/set-role")) return;
+function hydrateOneForm(form) {
+  // Skip the role-switcher form
+  if (form.action && form.action.includes("/set-role")) return;
+  if (form._terminHydrated) return;
+  form._terminHydrated = true;
 
-    form.addEventListener("submit", async (e) => {
+  form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const formData = new FormData(form);
       const url = form.action || window.location.href;
@@ -479,6 +527,11 @@ function hydrateForms() {
         form.submit();
       }
     });
+}
+
+function hydrateForms() {
+  document.querySelectorAll("form[method='post'], form:not([method])").forEach(form => {
+    hydrateOneForm(form);
   });
 }
 

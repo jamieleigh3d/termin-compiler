@@ -175,16 +175,21 @@ def _render_data_table(node: dict) -> str:
             valid_check = f'(item.get("status",""), "{target}") in _sm_transitions'
             scope_check = f'_sm_transitions.get((item.get("status",""), "{target}"), "") in user_scopes or _sm_transitions.get((item.get("status",""), "{target}"), "") == ""'
 
+            # Wrap each button in a span with transition metadata for client-side re-evaluation
+            btn_attrs = f'data-termin-transition data-target-state="{target}" data-behavior="{behavior}" data-label="{label}"'
             if behavior == "hide":
                 # Hide: don't render the button at all when transition unavailable
+                parts.append(f'        <span {btn_attrs}>')
                 parts.append(f'        {{% if {valid_check} and ({scope_check}) %}}')
                 parts.append(
                     f'        <form method="post" action="/_transition/{source}/{{{{ item.id }}}}/{safe_target}" '
                     f'style="display:inline">'
                     f'<button type="submit" class="text-indigo-600 hover:text-indigo-800 text-xs">{label}</button></form>')
                 parts.append(f'        {{% endif %}}')
+                parts.append(f'        </span>')
             else:
                 # Disable (default): render grayed-out button when unavailable
+                parts.append(f'        <span {btn_attrs}>')
                 parts.append(f'        {{% if {valid_check} and ({scope_check}) %}}')
                 parts.append(
                     f'        <form method="post" action="/_transition/{source}/{{{{ item.id }}}}/{safe_target}" '
@@ -194,6 +199,7 @@ def _render_data_table(node: dict) -> str:
                 parts.append(
                     f'        <button disabled class="text-gray-400 text-xs cursor-not-allowed">{label}</button>')
                 parts.append(f'        {{% endif %}}')
+                parts.append(f'        </span>')
         parts.append('      </td>')
 
     parts.append('    </tr>{% endfor %}</tbody></table>')
