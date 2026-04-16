@@ -289,37 +289,46 @@ Theme: enforcement, quality, cleanup. Branch: `feature/v0.6`.
 
 Theme: polish, observability, developer experience.
 
-| Item | Source | Notes |
-|------|--------|-------|
-| G8: Agent observability (trace logging) | D-07, D-20 | AUDIT verb, auto-generated `compute_audit_log_{name}` Content per Compute, one trace record per invocation, redaction is runtime concern (conformance: exact-match 4+ chars, structural elements exempt). Design complete in D-20. |
-| Chat presentation component | D-09 | New `chat` IR component type. Not AI-specific — any Content with role+content fields. Integrated input with file attach, streaming via WebSocket. Design complete in D-09. |
-| Auto-generated REST API (convention over configuration) | D-11 | Every Content gets CRUD at `/api/v1/{content}` automatically. Headless services (no user stories) fully supported. `Expose a REST API` syntax removed. Design complete in D-11. |
-| Examples audit: remove boilerplate, use latest syntax | — | All examples updated to use v0.6 features |
-| **Code coverage: ai_provider.py** | — | Currently 37%. Needs mock LLM tests for agent loop, tool building |
-| **Code coverage: channels.py** | — | Currently 54%. WebSocket reconnect, metrics, error paths |
-| **Code coverage: transaction.py** | — | Currently 49%. Staging, commit/rollback semantics |
-| **Code coverage: expression.py** | — | Currently 68%. More CEL edge cases |
-| **Code coverage: reflection.py** | — | Currently 40%. Reflection engine query paths |
-| **Code coverage: errors.py (runtime)** | — | Currently 37%. Error router paths |
-| **Compiler fidelity tests** | Issue 007 post-mortem | For every example, compile and assert specific IR properties (verbs, transitions, field types) — not just `errors.ok`. The examples are the spec; tests must verify the spec compiled faithfully. |
-| **Fail-loud parser fallbacks** | Issue 007 post-mortem | 14 fallback paths in `peg_parser.py` silently return defaults (`name="unknown"`, `verbs=["view"]`, `channel=""`) instead of erroring. Replace silent defaults with explicit errors. |
-| **Close PEG grammar gaps (eliminate fallbacks)** | Issue 007 post-mortem | 39/466 lines (8.4%) fall through to regex fallback: multi-word states (14), "can execute this" misclassified as access_line (12), field modifiers (7), state_also commas (4). Fix the grammar for each case, then replace fallback with `raise ParseError`. Phased: fix grammar → add tests → remove fallback → verify. |
-| **Round-trip DSL→IR fidelity** | Issue 007 post-mortem | Parse DSL → compile to IR → verify every declared feature appears correctly in IR. Catches silent semantic data loss during compilation. |
-| **Replace hard-coded string offsets** | Issue 007 post-mortem | 25+ locations use brittle `text[19:]` magic numbers. Replace with `len("prefix")` constants. One was already a historical bug site. |
-| Flash/toast notification primitive | Thread 006 | Toast (auto-dismiss) and banner (persistent) feedback for state transitions and actions. CEL interpolation with `{singular}.*`, `from_state`, `to_state`, `User.*` context. |
-| Fix conformance button assertion coupling | Thread 008 | `test_active_product_disables_activate` tests rendering strategy (disabled attr) not behavioral contract (no transition URL). Decouple. |
-| **Refactor: app.py (2105 lines)** | Code audit | Split into routes.py, transitions.py, compute_runner.py, websocket.py, pages.py, boundaries.py, validation.py. See `docs/v070-refactoring-plan.md`. |
-| **Refactor: peg_parser.py (1345 lines)** | Code audit | Split into classify.py, parse_helpers.py, parse_builders.py, parse_handlers.py, parse_content.py. |
-| **Refactor: lower.py (1096 lines)** | Code audit | Split into lower_content.py, lower_routes.py, lower_pages.py, lower_compute.py. |
-| **Refactor: channels.py (826 lines)** | Code audit | Split into channel_ws.py, channel_http.py, channel_actions.py. |
-| **Refactor: analyzer.py (780 lines)** | Code audit | Split into checks_content.py, checks_compute.py, checks_state.py, checks_presentation.py. |
-| **Refactor: presentation.py (599 lines)** | Code audit | Split into renderers.py, templates.py. |
-| **Fix Level 1 LLM prompt mapping** | Thread 009 | Objective belongs in system message (not user turn) for both Level 1 and Level 3. Reference runtime currently puts objective in user turn for Level 1. Fix: `system = directive + objective`, `user = input field values only`. |
-| **Make directive optional** | Thread 009 | Don't inject "You are a helpful assistant" when author only writes an Objective. Analyzer should warn if compute has no prompts at all. |
-| **Compiler-controlled thinking field** | Thread 009 | `set_output` tool should only include `thinking` field when the compute's output schema declares it. Currently added unconditionally in reference runtime. |
-| **Conformance: runtime enforcement of one_of_values** | Thread 010 | POST with invalid enum value should return 422. Currently only IR presence is tested, not runtime enforcement. Add `test_runtime_v070.py` to conformance suite. |
-| **Conformance: runtime enforcement of dependent_values** | Thread 010 | `when` clause CEL evaluation on create/update. Invalid values when condition is true should return 422. Reference runtime has `validate_dependent_values()` but conformance doesn't test it. |
-| **Structured 422 error format** | Thread 010 | Standardize constraint violation responses: `{"detail": "...", "field": "...", "constraint": "...", "allowed": [...]}`. Conformance tests assert `detail` + 422 status. |
+### Completed
+
+| Item | Source | Status |
+|------|--------|--------|
+| G8: Agent observability (trace logging) | D-07, D-20 | DONE — AUDIT verb, auto-generated audit log Content, trace recording, redaction |
+| Chat presentation component | D-09 | DONE — `chat` IR type, integrated input, WebSocket subscription |
+| Auto-generated REST API | D-11 | DONE — Every Content gets CRUD at `/api/v1/{content}` automatically |
+| Flash/toast notification primitive | Thread 006 | DONE — Toast/banner feedback with CEL interpolation |
+| Compound verb fix | Thread 007 | DONE — PEG grammar for all verb combinations + TERMIN-S031 safety net |
+| Compiler fidelity tests | 007 post-mortem | DONE — 356 tests asserting specific IR properties per example |
+| Close PEG grammar gaps | 007 post-mortem | DONE — All 39 fallback paths closed to 0 |
+| Replace hard-coded string offsets | 007 post-mortem | DONE — 48 offsets replaced with `len("prefix")` |
+| Refactor: app.py (2105→385 lines) | Code audit | DONE — Split into 8 modules |
+| Refactor: peg_parser.py (1345→273 lines) | Code audit | DONE — Split into 4 modules |
+| Refactor: lower.py (1096→745 lines) | Code audit | DONE — Pages extracted (remaining tightly coupled) |
+| Refactor: channels.py (826→415 lines) | Code audit | DONE — Config + WS extracted into 2 modules |
+| Version bump to 0.7.0 | — | DONE — compiler, IR, runtime all at 0.7.0 |
+
+### Remaining — ship with v0.7.0
+
+| Item | Source | Effort | Notes |
+|------|--------|--------|-------|
+| **Fix Level 1 LLM prompt mapping** | Thread 009 | Small | `system = directive + objective`, `user = input field values only`. Currently objective in user turn. |
+| **Make directive optional** | Thread 009 | Small | Don't inject default directive when only Objective is declared. Analyzer warn if no prompts. |
+| **Compiler-controlled thinking field** | Thread 009 | Small | `set_output` tool only includes `thinking` when compute's output schema declares it. |
+| **UAT tests 4–12** | v0.7 UAT plan | Medium | Headless service, helpdesk, security agent, compute demo, hrportal, projectboard, smoke test |
+
+### Remaining — defer to v0.8 if needed
+
+| Item | Source | Effort | Notes |
+|------|--------|--------|-------|
+| Code coverage push (6 modules) | — | Medium | ai_provider 69%, channel_ws 32%, channels 64%, confidentiality 64%, transitions 67%, websocket_mgr 73%. Overall runtime: 82%. |
+| Conformance: one_of_values runtime enforcement | Thread 010 | Small | POST invalid enum → 422. Runtime has it; conformance suite doesn't test it. |
+| Conformance: dependent_values runtime enforcement | Thread 010 | Small | `when` clause CEL eval on create/update → 422. Runtime has it; conformance doesn't test. |
+| Structured 422 error format | Thread 010 | Small | Standardize `{"detail", "field", "constraint", "allowed"}`. |
+| Fix conformance button assertion coupling | Thread 008 | Small | Tests rendering strategy not behavioral contract. Decouple. |
+| Fail-loud parser fallbacks | 007 post-mortem | Medium | 14 fallback paths silently return defaults. Grammar gaps are closed but fallback code still exists. |
+| Round-trip DSL→IR fidelity | 007 post-mortem | Medium | Parse → compile → verify every declared feature appears in IR. |
+| Refactor: analyzer.py (780 lines) | Code audit | Low | Deferred — single class, flat methods, acceptable at current size. |
+| Refactor: presentation.py (599 lines) | Code audit | Low | Deferred — renderers + templates, acceptable at current size. |
 
 ---
 
@@ -424,3 +433,11 @@ Items deferred to v1.0 or later. Not prioritized, not scheduled.
 | 2026-04-11 | Fix stale xfail tests: compute endpoints + channel endpoints already implemented | — |
 | 2026-04-11 | Code coverage: pytest-cov config, 69% floor, 77% baseline | — |
 | 2026-04-11 | 542 tests, 0 failures, 0 skips, 0 xfails | — |
+| 2026-04-15 | v0.7: D-11 auto-CRUD, D-20 agent observability, D-09 chat component | various |
+| 2026-04-15 | v0.7: Compound verb fix (007), toast/banner (006), version bump to 0.7.0 | various |
+| 2026-04-15 | v0.7: 356 compiler fidelity tests, PEG grammar gaps closed, offset cleanup | various |
+| 2026-04-15 | v0.7: Runtime coverage push (77% → 82%), 1399 total tests | various |
+| 2026-04-16 | Refactor app.py: 2105 → 385 lines (8 modules) | f2e7faa |
+| 2026-04-16 | Refactor peg_parser.py: 1345 → 273 lines (4 modules) | 9420f0d |
+| 2026-04-16 | Refactor lower.py: 1096 → 745 lines (page extraction) | 2cb5a32 |
+| 2026-04-16 | Refactor channels.py: 826 → 415 lines (config + WS extraction) | 7ba6857 |
