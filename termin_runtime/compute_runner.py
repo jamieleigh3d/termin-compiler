@@ -25,6 +25,124 @@ from .transaction import Transaction, ContentSnapshot
 from .boundaries import check_boundary_access
 
 
+# ── Prompt building (testable, pure functions) ──
+
+def _build_llm_prompts(comp: dict, record: dict, content_name: str,
+                       singular_lookup: dict) -> tuple[str, str]:
+    """Build system and user messages for Level 1 LLM compute.
+
+    Fix 009.1: system = directive + objective (objective was wrongly in user turn).
+    Fix 009.2: No default directive injected when only objective is present.
+
+    Returns: (system_message, user_message)
+    """
+    directive = comp.get("directive", "")
+    objective = comp.get("objective", "")
+
+    # Read input fields from record
+    input_values = {}
+    for content_ref, field_name in comp.get("input_fields", []):
+        if field_name in record:
+            input_values[field_name] = record[field_name]
+
+    # Interpolate inline expressions in objective (field references)
+    if objective:
+        singular = singular_lookup.get(
+            content_name,
+            content_name.rstrip("s") if content_name.endswith("s") else content_name)
+        for fname, fval in input_values.items():
+            objective = objective.replace(f"{singular}.{fname}", str(fval))
+
+    # System message: directive + objective (both optional, no defaults)
+    system_parts = []
+    if directive:
+        system_parts.append(directive)
+    if objective:
+        system_parts.append(objective)
+    system_msg = "\n\n".join(system_parts) if system_parts else ""
+
+    # User message: input field values ONLY (no objective)
+    if input_values:
+        user_msg = "\n".join(f"{k}: {v}" for k, v in input_values.items())
+    else:
+        user_msg = ""
+
+    return system_msg, user_msg
+
+
+def _build_agent_prompts(comp: dict, record: dict) -> tuple[str, str]:
+    """Build system and user messages for Level 3 Agent compute.
+
+    Fix 009.2: No default directive injected when only objective is present.
+
+    Returns: (system_message, user_message)
+    """
+    directive = comp.get("directive", "")
+    objective = comp.get("objective", "")
+
+    # System message: directive + objective
+    system_parts = []
+    if directive:
+        system_parts.append(directive)
+    if objective:
+        system_parts.append(objective)
+    system_msg = "\n\n".join(system_parts) if system_parts else ""
+
+    # User message: triggering record context
+    user_msg = f"Triggering record:\n{json.dumps(record, indent=2, default=str)}"
+
+    return system_msg, user_msg
+
+
+def _build_agent_set_output(comp: dict, content_lookup: dict) -> dict:
+    """Build the set_output tool for agent computes.
+
+    Fix 009.3: Only includes 'thinking' if the compute's output schema declares it.
+    Always includes 'summary' for completion signal.
+    """
+    properties = {
+        "summary": {"type": "string", "description": "Result summary."},
+    }
+    required = ["summary"]
+
+    # Add output fields from the compute's declaration
+    for content_ref, field_name in comp.get("output_fields", []):
+        schema = None
+        for name, s in content_lookup.items():
+            singular = s.get("singular", "")
+            if name == content_ref or singular == content_ref:
+                schema = s
+                break
+        if schema:
+            field_def = None
+            for f in schema.get("fields", []):
+                if f.get("name", "") == field_name:
+                    field_def = f
+                    break
+            if field_def:
+                prop = {"description": f"Field: {content_ref}.{field_name}"}
+                if field_def.get("column_type") in ("INTEGER", "REAL"):
+                    prop["type"] = "number"
+                else:
+                    prop["type"] = "string"
+                properties[field_name] = prop
+                required.append(field_name)
+                continue
+        # Fallback
+        properties[field_name] = {"type": "string", "description": f"Field: {content_ref}.{field_name}"}
+        required.append(field_name)
+
+    return {
+        "name": "set_output",
+        "description": "Signal that you have completed the task. Call this when done.",
+        "input_schema": {
+            "type": "object",
+            "properties": properties,
+            "required": required,
+        }
+    }
+
+
 async def execute_compute(ctx: RuntimeContext, comp: dict, record: dict,
                           content_name: str, main_loop=None):
     """Execute a Compute triggered by an event."""
@@ -50,28 +168,8 @@ async def _execute_llm_compute(ctx: RuntimeContext, comp: dict, record: dict,
         print(f"[Termin] Compute '{comp_name}': AI provider not configured, skipped")
         return
 
-    # Read input fields from record
-    input_values = {}
-    for content_ref, field_name in comp.get("input_fields", []):
-        if field_name in record:
-            input_values[field_name] = record[field_name]
-
-    # Build prompts
-    directive = comp.get("directive", "You are a helpful assistant.")
-    objective = comp.get("objective", "")
-
-    # Interpolate inline expressions in objective
-    for fname, fval in input_values.items():
-        singular = ctx.singular_lookup.get(
-            content_name,
-            content_name.rstrip("s") if content_name.endswith("s") else content_name)
-        objective = objective.replace(f"{singular}.{fname}", str(fval))
-
-    # Build user message from input fields
-    if input_values:
-        user_msg = objective + "\n\n" + "\n".join(f"{k}: {v}" for k, v in input_values.items())
-    else:
-        user_msg = objective
+    # Build prompts (Fix 009.1 + 009.2)
+    system_msg, user_msg = _build_llm_prompts(comp, record, content_name, ctx.singular_lookup)
 
     # Build output tool
     output_fields = comp.get("output_fields", [])
@@ -80,7 +178,7 @@ async def _execute_llm_compute(ctx: RuntimeContext, comp: dict, record: dict,
     print(f"[Termin] Compute '{comp_name}': calling {ctx.ai_provider.service} (record {record.get('id', '?')})")
 
     try:
-        result = await ctx.ai_provider.complete(directive, user_msg, output_tool)
+        result = await ctx.ai_provider.complete(system_msg, user_msg, output_tool)
         thinking = result.pop("thinking", "")
         if thinking:
             print(f"[Termin] Compute '{comp_name}' thinking: {thinking[:100]}")
@@ -119,7 +217,7 @@ async def _execute_llm_compute(ctx: RuntimeContext, comp: dict, record: dict,
         audit_level = comp.get("audit_level", "actions")
         trace_data = {"compute_type": "agent", "calls": [{"response": thinking[:200] if thinking else ""}]}
         if audit_level == "debug":
-            trace_data["calls"][0]["system_prompt"] = directive
+            trace_data["calls"][0]["system_prompt"] = system_msg
             trace_data["calls"][0]["thinking"] = thinking
         await write_audit_trace(
             ctx, comp, invocation_id=_llm_invocation_id, trigger="event",
@@ -153,28 +251,15 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
         print(f"[Termin] Compute '{comp_name}': AI provider not configured, skipped")
         return
 
-    directive = comp.get("directive", "You are a helpful AI agent.")
-    objective = comp.get("objective", "")
     accesses = comp.get("accesses", [])
+
+    # Build prompts (Fix 009.1 + 009.2)
+    system_msg, user_msg = _build_agent_prompts(comp, record)
 
     # Build tools
     agent_tools = build_agent_tools(accesses, ctx.content_lookup)
-    set_output = {
-        "name": "set_output",
-        "description": "Signal that you have completed the task. Call this when done.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "thinking": {"type": "string", "description": "Brief summary of what you did."},
-                "summary": {"type": "string", "description": "Result summary."},
-            },
-            "required": ["thinking"],
-        }
-    }
+    set_output = _build_agent_set_output(comp, ctx.content_lookup)
     all_tools = agent_tools + [set_output]
-
-    # Build user message with context
-    user_msg = f"{objective}\n\nTriggering record:\n{json.dumps(record, indent=2, default=str)}"
 
     # Tool execution function
     comp_snake = comp["name"]["snake"]
@@ -258,7 +343,7 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
     print(f"[Termin] Compute '{comp_name}': starting agent loop ({ctx.ai_provider.service})")
 
     try:
-        result = await ctx.ai_provider.agent_loop(directive, user_msg, all_tools, _execute_tool)
+        result = await ctx.ai_provider.agent_loop(system_msg, user_msg, all_tools, _execute_tool)
         thinking = result.get("thinking", "")
         if thinking:
             print(f"[Termin] Compute '{comp_name}' completed: {thinking[:100]}")
@@ -268,7 +353,7 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
         audit_level = comp.get("audit_level", "actions")
         trace_data = {"compute_type": "agent", "calls": [{"response": thinking[:200] if thinking else ""}]}
         if audit_level == "debug":
-            trace_data["calls"][0]["system_prompt"] = directive
+            trace_data["calls"][0]["system_prompt"] = system_msg
             trace_data["calls"][0]["thinking"] = thinking
         await write_audit_trace(
             ctx, comp, invocation_id=_agent_invocation_id, trigger="event",

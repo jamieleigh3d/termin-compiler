@@ -327,13 +327,10 @@ def build_output_tool(output_fields: list[tuple[str, str]], content_lookup: dict
     Returns:
         Anthropic-format tool schema dict.
     """
-    properties = {
-        "thinking": {
-            "type": "string",
-            "description": "Brief explanation (one sentence) of your reasoning.",
-        }
-    }
-    required = ["thinking"]
+    # Fix 009.3: Don't include 'thinking' unconditionally.
+    # It will only appear if the compute's output schema declares a 'thinking' field.
+    properties = {}
+    required = []
 
     for content_ref, field_name in output_fields:
         # Resolve content schema to get field type and enum constraints

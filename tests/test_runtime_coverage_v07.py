@@ -105,7 +105,8 @@ class TestBuildOutputTool:
         tool = build_output_tool([("note", "body")], content_lookup)
         assert tool["name"] == "set_output"
         props = tool["input_schema"]["properties"]
-        assert "thinking" in props
+        # Fix 009.3: thinking not included unless declared
+        assert "thinking" not in props
         assert "body" in props
         assert props["body"]["type"] == "string"
 
@@ -153,7 +154,8 @@ class TestBuildOutputTool:
             {"name": "b", "column_type": "INTEGER"},
         ]}}
         tool = build_output_tool([("item", "a"), ("item", "b")], content_lookup)
-        assert set(tool["input_schema"]["required"]) == {"thinking", "a", "b"}
+        # Fix 009.3: thinking not included unless declared
+        assert set(tool["input_schema"]["required"]) == {"a", "b"}
 
 
 class TestBuildAgentTools:

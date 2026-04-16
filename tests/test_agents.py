@@ -116,10 +116,10 @@ class TestToolSchemaGeneration:
         tool = build_output_tool([("completion", "response")], content_lookup)
         assert tool["name"] == "set_output"
         props = tool["input_schema"]["properties"]
-        assert "thinking" in props
+        # Fix 009.3: thinking is NOT included unless the output schema declares it
+        assert "thinking" not in props
         assert "response" in props
         assert props["response"]["type"] == "string"
-        assert "thinking" in tool["input_schema"]["required"]
         assert "response" in tool["input_schema"]["required"]
 
     def test_build_output_tool_with_enum(self):
@@ -137,11 +137,20 @@ class TestToolSchemaGeneration:
         assert props["category"]["enum"] == ["hardware", "software"]
         assert props["priority"]["enum"] == ["low", "high"]
 
-    def test_build_output_tool_thinking_is_first(self):
+    def test_build_output_tool_thinking_only_when_declared(self):
+        """Fix 009.3: thinking only present when output schema declares it."""
+        # Without thinking in output fields — not present
         content_lookup = {"completions": {"singular": "completion", "fields": [{"name": "response", "column_type": "TEXT"}]}}
         tool = build_output_tool([("completion", "response")], content_lookup)
-        required = tool["input_schema"]["required"]
-        assert required[0] == "thinking"
+        assert "thinking" not in tool["input_schema"]["properties"]
+
+        # With thinking in output fields — present
+        content_lookup_with_thinking = {"completions": {"singular": "completion", "fields": [
+            {"name": "response", "column_type": "TEXT"},
+            {"name": "thinking", "column_type": "TEXT"},
+        ]}}
+        tool2 = build_output_tool([("completion", "response"), ("completion", "thinking")], content_lookup_with_thinking)
+        assert "thinking" in tool2["input_schema"]["properties"]
 
     def test_build_agent_tools(self):
         content_lookup = {"messages": {"singular": "message", "fields": []}}
