@@ -311,6 +311,21 @@ Theme: polish, observability, developer experience.
 
 ---
 
+## v0.8.0 Backlog
+
+Theme: presentation completeness, action primitives.
+
+| Item | Source | Notes |
+|------|--------|-------|
+| **Edit action button** | v0.7 UAT | DSL primitive for "Edit" action that links a row to a pre-filled edit form. Currently only transition actions exist. Need: `"Edit" links to "Edit Product"` syntax, row-to-form data binding, pre-populated fields. |
+| **Delete action button** | v0.7 UAT | DSL primitive for "Delete" action on table rows. Currently only available via API. Need: `"Delete" deletes if available, hide otherwise` syntax, confirmation dialog, scope-gated visibility. |
+| **Inline edit** | v0.7 UAT | Alternative to edit-page: click a cell to edit in place. Scope-gated per field. May be a presentation hint (`editable: true`) rather than a new component. |
+| **Pagination** | D-11 | Auto-CRUD list endpoint returns all records. Need `?limit=20&offset=0` for production use. |
+| **Filtering/sorting via API** | D-11 | Query params: `?status=active&sort=created_at:desc`. |
+| **Token-by-token LLM streaming** | D-09 | Chat component currently gets full message on completion. Need delta streaming via WebSocket for real-time typing effect. |
+
+---
+
 ## v1.0 Backlog
 
 Items deferred to v1.0 or later. Not prioritized, not scheduled.
