@@ -314,6 +314,12 @@ Theme: polish, observability, developer experience.
 | **Refactor: channels.py (826 lines)** | Code audit | Split into channel_ws.py, channel_http.py, channel_actions.py. |
 | **Refactor: analyzer.py (780 lines)** | Code audit | Split into checks_content.py, checks_compute.py, checks_state.py, checks_presentation.py. |
 | **Refactor: presentation.py (599 lines)** | Code audit | Split into renderers.py, templates.py. |
+| **Fix Level 1 LLM prompt mapping** | Thread 009 | Objective belongs in system message (not user turn) for both Level 1 and Level 3. Reference runtime currently puts objective in user turn for Level 1. Fix: `system = directive + objective`, `user = input field values only`. |
+| **Make directive optional** | Thread 009 | Don't inject "You are a helpful assistant" when author only writes an Objective. Analyzer should warn if compute has no prompts at all. |
+| **Compiler-controlled thinking field** | Thread 009 | `set_output` tool should only include `thinking` field when the compute's output schema declares it. Currently added unconditionally in reference runtime. |
+| **Conformance: runtime enforcement of one_of_values** | Thread 010 | POST with invalid enum value should return 422. Currently only IR presence is tested, not runtime enforcement. Add `test_runtime_v070.py` to conformance suite. |
+| **Conformance: runtime enforcement of dependent_values** | Thread 010 | `when` clause CEL evaluation on create/update. Invalid values when condition is true should return 422. Reference runtime has `validate_dependent_values()` but conformance doesn't test it. |
+| **Structured 422 error format** | Thread 010 | Standardize constraint violation responses: `{"detail": "...", "field": "...", "constraint": "...", "allowed": [...]}`. Conformance tests assert `detail` + 422 status. |
 
 ---
 
