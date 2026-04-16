@@ -1032,7 +1032,13 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                     if bnd_id_err:
                         raise HTTPException(status_code=403, detail=bnd_id_err)
 
-                    body = await request.json()
+                    # Accept both JSON and form-encoded data (chat forms send FormData)
+                    content_type = request.headers.get("content-type", "")
+                    if "application/json" in content_type:
+                        body = await request.json()
+                    else:
+                        form = await request.form()
+                        body = {k: v for k, v in form.items() if v}
                     # Set initial state from state machine (API creates)
                     # Always override — clients cannot set initial status directly
                     if _sm:
