@@ -194,6 +194,18 @@ Boundary called "{name}":
 - **IMPORTANT on Windows**: Never use `subprocess.Popen` with `stdout=PIPE` for uvicorn — deadlocks. Always use `TestClient`.
 - **IMPORTANT**: After parser/lowering changes, regenerate all IR dumps in ir_dumps/ — runtime tests depend on them.
 
+## Verification Before Declaring Readiness
+
+**"Tests pass" is not "it works."** Before telling JL that a milestone is ready, complete this checklist yourself. Not optional. Not delegatable.
+
+1. **Compile smoke test:** `termin compile examples/warehouse.termin` — must succeed with 0 errors. If this fails, nothing else matters.
+2. **All examples compile:** Loop through every `.termin` file in `examples/` and verify compilation.
+3. **Full test suite:** `python -m pytest tests/ -v` — 0 failures, 0 skips, 0 xfails.
+4. **Git status clean:** Both repos, nothing untracked or uncommitted.
+5. **Verify background agent work independently.** Agent says "1399 tests pass" — you still compile an example yourself. Agent output is a claim, not a fact, until you verify it.
+
+Do NOT report readiness based on background agent summaries alone. The fail-loud fallbacks incident (v0.7) proved that passing tests can coexist with a broken compiler when tests use pre-compiled artifacts instead of live compilation.
+
 ## Bug Investigation Workflow
 
 When a user reports a bug:
