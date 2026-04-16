@@ -50,7 +50,13 @@ class AIProvider:
             elif not self._api_key:
                 logger.warning(f"AI provider '{self._service}' has no API key — set the environment variable (e.g., ANTHROPIC_API_KEY)")
             elif "${" in self._api_key:
-                logger.warning(f"AI provider API key contains unresolved variable: {self._api_key}")
+                # Show the variable name but not the value
+                import re
+                var_match = re.search(r'\$\{([^}]+)\}', self._api_key)
+                var_name = var_match.group(1) if var_match else "unknown"
+                logger.warning(f"AI provider API key contains unresolved variable ${{{var_name}}} — export it in your shell: export {var_name}=\"your-key\"")
+            elif "\n" in self._api_key or "\r" in self._api_key:
+                logger.error(f"AI provider API key contains a newline character — check your .bashrc or environment for a line break in the key")
             else:
                 logger.warning("AI provider not configured — LLM Computes will be skipped")
             return
@@ -167,11 +173,16 @@ class AIProvider:
 
             # Check if the response has tool calls
             tool_calls = [b for b in response.content if b.type == "tool_use"]
+            text_blocks = [b.text for b in response.content if b.type == "text"]
+
+            if text_blocks:
+                logger.debug(f"  Turn {turn} thinking: {text_blocks[0][:100]}...")
 
             if not tool_calls:
                 # Agent finished without calling set_output — extract text
-                text_blocks = [b.text for b in response.content if b.type == "text"]
                 return {"thinking": " ".join(text_blocks), "summary": "Agent completed without set_output"}
+
+            logger.info(f"  Turn {turn}: {len(tool_calls)} tool call(s): {', '.join(tc.name for tc in tool_calls)}")
 
             # Process tool calls
             messages.append({"role": "assistant", "content": response.content})
@@ -180,17 +191,21 @@ class AIProvider:
             for tool_call in tool_calls:
                 if tool_call.name == "set_output":
                     # Agent signals completion
+                    logger.info(f"  Agent called set_output — completing")
                     return tool_call.input
 
                 # Execute the tool via ComputeContext
                 try:
                     result = await execute_tool(tool_call.name, tool_call.input)
+                    result_summary = json.dumps(result)[:200] if isinstance(result, (dict, list)) else str(result)[:200]
+                    logger.info(f"    {tool_call.name}() -> {result_summary}")
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": tool_call.id,
                         "content": json.dumps(result) if isinstance(result, (dict, list)) else str(result),
                     })
                 except Exception as e:
+                    logger.warning(f"    {tool_call.name}() ERROR: {e}")
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": tool_call.id,
