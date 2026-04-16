@@ -308,6 +308,12 @@ Theme: polish, observability, developer experience.
 | **Replace hard-coded string offsets** | Issue 007 post-mortem | 25+ locations use brittle `text[19:]` magic numbers. Replace with `len("prefix")` constants. One was already a historical bug site. |
 | Flash/toast notification primitive | Thread 006 | Toast (auto-dismiss) and banner (persistent) feedback for state transitions and actions. CEL interpolation with `{singular}.*`, `from_state`, `to_state`, `User.*` context. |
 | Fix conformance button assertion coupling | Thread 008 | `test_active_product_disables_activate` tests rendering strategy (disabled attr) not behavioral contract (no transition URL). Decouple. |
+| **Refactor: app.py (2105 lines)** | Code audit | Split into routes.py, transitions.py, compute_runner.py, websocket.py, pages.py, boundaries.py, validation.py. See `docs/v070-refactoring-plan.md`. |
+| **Refactor: peg_parser.py (1345 lines)** | Code audit | Split into classify.py, parse_helpers.py, parse_builders.py, parse_handlers.py, parse_content.py. |
+| **Refactor: lower.py (1096 lines)** | Code audit | Split into lower_content.py, lower_routes.py, lower_pages.py, lower_compute.py. |
+| **Refactor: channels.py (826 lines)** | Code audit | Split into channel_ws.py, channel_http.py, channel_actions.py. |
+| **Refactor: analyzer.py (780 lines)** | Code audit | Split into checks_content.py, checks_compute.py, checks_state.py, checks_presentation.py. |
+| **Refactor: presentation.py (599 lines)** | Code audit | Split into renderers.py, templates.py. |
 
 ---
 

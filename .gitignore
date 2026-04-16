@@ -42,3 +42,9 @@ packages/
 .coverage
 coverage.json
 htmlcov/
+
+# VM files
+*.vm
+
+# Termin packages (root level — build artifacts)
+*.termin.pkg
