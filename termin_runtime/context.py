@@ -1,0 +1,65 @@
+"""RuntimeContext — shared state container for all runtime subsystems.
+
+Passed to each module's registration functions so they can access
+shared state without globals or deep closure nesting.
+"""
+
+from dataclasses import dataclass, field
+from typing import Any, Callable, Coroutine
+
+
+@dataclass
+class RuntimeContext:
+    """All shared state needed by runtime subsystems."""
+
+    # Core IR data
+    ir: dict = field(default_factory=dict)
+    ir_json: str = ""
+
+    # Database
+    db_path: str | None = None
+
+    # Subsystems
+    expr_eval: Any = None          # ExpressionEvaluator
+    terminator: Any = None         # TerminAtor
+    event_bus: Any = None          # EventBus
+    reflection: Any = None         # ReflectionEngine
+    channel_dispatcher: Any = None # ChannelDispatcher
+    ai_provider: Any = None        # AIProvider
+    conn_manager: Any = None       # ConnectionManager (set after creation)
+
+    # Identity functions
+    get_current_user: Callable = None
+    get_user_from_ws: Callable = None
+    require_scope: Callable = None
+    roles: dict = field(default_factory=dict)  # role_name -> [scopes]
+
+    # Content lookups
+    content_lookup: dict = field(default_factory=dict)   # snake -> schema dict
+    singular_lookup: dict = field(default_factory=dict)   # snake -> singular string
+    sm_lookup: dict = field(default_factory=dict)         # content_ref -> {initial, transitions}
+
+    # Compute indexes
+    compute_specs: dict = field(default_factory=dict)     # snake -> compute IR dict
+    compute_lookup: dict = field(default_factory=dict)    # snake -> compute IR dict
+    trigger_computes: list = field(default_factory=list)  # computes with event triggers
+    schedule_computes: list = field(default_factory=list) # (comp, interval) pairs
+
+    # Boundary maps (Block C)
+    boundary_for_content: dict = field(default_factory=dict)   # content_snake -> boundary_snake
+    boundary_for_compute: dict = field(default_factory=dict)   # compute_snake -> boundary_snake
+    boundary_identity_scopes: dict = field(default_factory=dict)  # content_snake -> [scopes]
+
+    # Transition feedback (D-06)
+    transition_feedback: dict = field(default_factory=dict)  # (content, from, to) -> [specs]
+
+    # Callbacks set during init (avoid circular deps)
+    run_event_handlers: Callable = None   # async (db, content_name, trigger, record)
+    execute_compute: Callable = None      # async (comp, record, content_name, main_loop)
+
+    def scope_for_content_verb(self, content_snake: str, verb: str) -> str | None:
+        """Look up the scope required for a verb on a content type."""
+        for g in self.ir.get("access_grants", []):
+            if g["content"] == content_snake and verb in g["verbs"]:
+                return g["scope"]
+        return None
