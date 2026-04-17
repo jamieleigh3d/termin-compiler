@@ -1,6 +1,6 @@
 # Termin Release Process
 
-How to prepare and publish a new version of **termin-compiler** or **termin-conformance**.
+How to prepare and publish a new version of **termin-compiler** and **termin-conformance**.
 
 ---
 
@@ -20,7 +20,7 @@ The IR version is the most impactful. When it bumps, every IR dump, every `.term
 
 ## 2. When to Bump What
 
-### Patch (e.g., 0.4.0 &rarr; 0.4.1)
+### Patch (e.g., 0.7.0 &rarr; 0.7.1)
 
 Bug fix. No IR schema changes. No new fields. No breaking syntax.
 
@@ -28,133 +28,177 @@ Bug fix. No IR schema changes. No new fields. No breaking syntax.
 - No IR version change, no fixture regeneration
 - Run tests, commit, push
 
-### Minor (e.g., 0.4.0 &rarr; 0.5.0)
+### Minor (e.g., 0.7.0 &rarr; 0.8.0)
 
-New IR fields (additive, backward-compatible). New DSL syntax. New runtime features. Old IR still loads in new runtime.
+New IR fields (additive). New DSL syntax. New runtime features.
 
-- Bump IR version in `termin/ir.py` and `docs/termin-ir-schema.json`
-- Bump compiler version in `setup.py` and `termin/__init__.py`
-- Regenerate all IR dumps from examples
-- Rebuild all `.termin.pkg` fixtures
-- Update JSON Schema with new fields
-- Copy schema + fixtures to conformance repo
-- Update version assertions in tests
-- Update README references
-- Add changelog entry to conformance README
+- Use `release.py` (see step-by-step below)
 
 ### Major (e.g., 0.x &rarr; 1.0.0)
 
-Breaking IR change. Old IR may not load in new runtime. Field renames, removals, semantic changes.
+Breaking IR change. Field renames, removals, semantic changes.
 
 Same as minor, plus:
 - Migration guide for existing `.termin` files
-- Consider backward-compatibility shim in runtime
 - Update conformance suite version check to reject old IR
 
 ---
 
-## 3. Current Manual Process (What We've Been Doing)
+## 3. Release Process (Step by Step)
 
-This is the sequence of steps performed manually during recent releases (0.3.0 &rarr; 0.4.0):
+### Prerequisites
 
-### 3.1 Compiler repo (termin-compiler)
+- All feature work is done, committed, and tested on the feature branch
+- Both repos (`termin-compiler` and `termin-conformance`) are present as siblings:
+  ```
+  ClaudeWorkspace/
+    termin/                 # termin-compiler
+    termin-conformance/     # termin-conformance
+  ```
 
-1. **Make the code changes** (new IR fields, grammar, parser, runtime)
-2. **Bump `ir_version`** in `termin/ir.py` (e.g., `"0.3.0"` &rarr; `"0.4.0"`)
-3. **Run tests** to catch assertion failures on the old version string:
-   ```bash
-   python -m pytest tests/ -v
-   ```
-4. **Fix version assertions** in `tests/test_runtime.py` (reflection endpoint check)
-5. **Recompile all examples** to regenerate IR dumps and packages:
-   ```bash
-   # For each .termin in examples/:
-   termin compile examples/X.termin -o fixtures/X.termin.pkg --emit-ir ir_dumps/X_ir.json
-   ```
-6. **Run tests again** &mdash; should be all green now
-7. **Update `docs/termin-ir-schema.json`**:
-   - `$id` URL
-   - `const` value for `ir_version`
-   - Add new field definitions
-   - Validate JSON
-8. **Update doc version headers** (`termin-runtime-implementers-guide.md`, etc.)
-9. **Update `README.md`** if it references an IR version
-10. **Commit and push**
+### Step 1: Version bumps during development
 
-### 3.2 Conformance repo (termin-conformance)
+Bump version strings early in the release cycle (while on the feature branch), NOT at release time. The release script verifies they're correct but shouldn't be the first time versions change.
 
-1. **Copy all IR dumps** from `termin/ir_dumps/` to `conformance/fixtures/ir/`
-2. **Rebuild all `.termin.pkg`** files (already done by the compile step above &mdash;
-   `termin compile` writes packages directly to the conformance fixtures dir)
-3. **Copy `termin-ir-schema.json`** to `conformance/specs/`
-4. **Update `tests/test_reflection.py`** &mdash; version assertion
-5. **Update `README.md`**:
-   - Current IR version
-   - Changelog entry for the new version
-6. **Run conformance suite**:
-   ```bash
-   python -m pytest tests/ -v
-   ```
-7. **Commit and push**
+Files that need version strings:
+- `termin/ir.py` &mdash; `ir_version`
+- `termin/__init__.py` &mdash; `__version__`
+- `setup.py` &mdash; `version`
+- `termin_runtime/routes.py` &mdash; `runtime_version` in registry endpoint
+- `docs/termin-ir-schema.json` &mdash; `$id` URL and `const` value
+- `conformance/tests/test_reflection.py` &mdash; version assertion
+- `conformance/tests/test_ir_v050.py` &mdash; version assertion (if present)
+- `conformance/tests/test_ir_schema_validation.py` &mdash; version assertion
 
-### 3.3 Error-Prone Steps
+### Step 2: Manual updates (human judgment required)
 
-These are the steps where mistakes happen:
+These cannot be automated &mdash; they require writing:
 
-| Step | What goes wrong |
-|------|----------------|
-| IR dump regeneration | Forgetting an example, stale dumps from previous version |
-| `.termin.pkg` rebuild | Now handled by `termin compile` &mdash; no manual ZIP construction |
-| Version string grep | Missing one of 8+ files that contain version references |
-| Schema update | Adding new fields but forgetting to validate JSON |
-| Cross-repo copy | Wrong direction, stale files, forgotten files |
-| Conformance README | Forgetting the changelog entry |
+1. **`CHANGELOG.md`** in compiler repo &mdash; full release notes
+2. **`README.md`** in conformance repo &mdash; IR version, changelog entry
+3. **`README.md`** in compiler repo &mdash; update stale version references
+4. **`.gitignore`** in all repos &mdash; add any new patterns (`.venv`, `.coverage`, etc.)
+
+### Step 3: Run release.py
+
+From the compiler repo root:
+
+```bash
+python util/release.py --ir-version X.Y.Z --compiler-version X.Y.Z
+```
+
+This script:
+1. Verifies version strings are bumped in all files
+2. Compiles all 13 examples (produces `.termin.pkg` + IR dumps)
+3. Copies packages, IR dumps, JSON schema, and deploy configs to conformance repo
+4. Runs tests in both repos
+
+The script does NOT commit or push. Review the changes before committing.
+
+To preview without modifying files:
+```bash
+python util/release.py --ir-version X.Y.Z --dry-run
+```
+
+To skip tests (if you already ran them):
+```bash
+python util/release.py --ir-version X.Y.Z --compiler-version X.Y.Z --skip-tests
+```
+
+### Step 4: Commit both repos
+
+```bash
+# Compiler repo
+cd termin/
+git add -A
+git commit -m "v0.X.0 release: changelog, IR dumps, fixtures"
+
+# Conformance repo
+cd ../termin-conformance/
+git add -A
+git commit -m "Update conformance suite for v0.X.0"
+```
+
+### Step 5: Merge to main
+
+Both repos should be on feature branches during development. Merge with fast-forward only (linear history):
+
+```bash
+# Compiler
+cd termin/
+git checkout main
+git merge --ff-only feature/vX.Y
+
+# Conformance
+cd ../termin-conformance/
+git checkout main
+git merge --ff-only feature/vX.Y
+```
+
+### Step 6: Verify clean status
+
+```bash
+# Both repos: main branch, clean working directory
+git branch --show-current   # main
+git status --short           # empty
+```
+
+### Step 7: Tag and push
+
+```bash
+# Compiler
+cd termin/
+git tag -a vX.Y.Z -m "vX.Y.Z — <theme>"
+git push origin main --tags
+
+# Conformance
+cd ../termin-conformance/
+git tag -a vX.Y.Z -m "vX.Y.Z — Conformance suite for IR X.Y.Z"
+git push origin main --tags
+```
+
+### Step 8: Clean up
+
+```bash
+# Delete feature branches (local + remote)
+git branch -D feature/vX.Y
+git push origin --delete feature/vX.Y
+
+# Rebase messages branch onto new main
+git checkout messages
+git rebase main
+git push origin messages --force-with-lease
+git checkout main
+```
+
+### Step 9: Post-release
+
+- Verify the downstream runtime's hourly cron picks up the new tag
+- Update any open threads on the messages branch with release status
 
 ---
 
-## 4. Streamlined Process (Target)
+## 4. What release.py Automates vs. What It Doesn't
 
-The north star is a single script that does all error-prone steps:
+### Automated by release.py
 
-```bash
-python util/release.py --ir-version 0.5.0 --compiler-version 0.5.0
-```
+| Step | What it does |
+|------|-------------|
+| Version bump verification | Checks all files have the target version |
+| Example compilation | `termin compile` on all 13 examples |
+| IR dump regeneration | Extracted from compiled packages |
+| Conformance fixture sync | Copies .termin.pkg, IR dumps, schema, deploy configs |
+| Test execution | Runs pytest in both repos |
 
-This script would:
+### NOT automated (human required)
 
-1. **Validate preconditions**
-   - Working directory clean (no uncommitted changes)
-   - All tests pass
-   - Both repos present at expected paths
-   - Current branch is `main`
-
-2. **Bump version strings** across all files:
-   - `termin/ir.py` &mdash; `ir_version`
-   - `termin/__init__.py` &mdash; `__version__`
-   - `setup.py` &mdash; `version`
-   - `docs/termin-ir-schema.json` &mdash; `$id` and `const`
-   - `README.md` &mdash; IR version reference
-   - `docs/termin-runtime-implementers-guide.md` &mdash; version header
-
-3. **Recompile all examples** using `termin compile`
-   - Produces both `.termin.pkg` (to conformance fixtures) and IR JSON dumps
-   - Uses the same compiler path users run &mdash; no manual ZIP construction
-   - Handles seed data, checksums, manifests, revision tracking automatically
-
-5. **Run compiler tests** &mdash; fail fast if anything breaks
-
-6. **Sync to conformance repo**
-   - Copy IR dumps to `fixtures/ir/`
-   - Copy `.termin.pkg` to `fixtures/`
-   - Copy `termin-ir-schema.json` to `specs/`
-   - Update `tests/test_reflection.py` version assertion
-   - Update `README.md` version + changelog stub
-
-7. **Run conformance tests** &mdash; fail fast
-
-8. **Display summary** &mdash; what changed, what to commit
-
-The script does NOT commit or push. It makes all the file changes and tells you what to review. The human decides when to commit.
+| Step | Why |
+|------|-----|
+| CHANGELOG.md | Requires writing release notes |
+| Conformance README.md | Requires changelog prose |
+| Git operations (commit, merge, tag, push) | Intentional &mdash; human reviews before committing |
+| Messages branch rebase | Depends on release timing |
+| .gitignore updates | Ad hoc as new patterns emerge |
 
 ---
 
