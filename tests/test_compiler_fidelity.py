@@ -1108,7 +1108,7 @@ class TestAllExamplesCompile:
 
     def test_ir_version(self, example):
         spec = _compile(example)
-        assert spec.ir_version == "0.7.0"
+        assert spec.ir_version == "0.8.0"
 
 
 @pytest.mark.parametrize("example", ALL_EXAMPLES)

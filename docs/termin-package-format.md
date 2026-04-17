@@ -42,7 +42,7 @@ The manifest is the entry point. A runtime reads `manifest.json` first to unders
     "description": "Tracks products, stock levels, and reorder alerts"
   },
   "ir": {
-    "version": "0.5.0",
+    "version": "0.8.0",
     "entry": "warehouse.ir.json"
   },
   "source": {

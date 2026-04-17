@@ -124,7 +124,7 @@ class TestAPIRoutes:
             r = client.get("/api/reflect")
             assert r.status_code == 200
             data = r.json()
-            assert data["ir_version"] == "0.7.0"
+            assert data["ir_version"] == "0.8.0"
             assert "content" in data
 
     def test_errors_endpoint(self):
@@ -163,7 +163,7 @@ class TestRuntimeRegistry:
             r = client.get("/runtime/registry")
             assert r.status_code == 200
             data = r.json()
-            assert data["runtime_version"] == "0.7.1"
+            assert data["runtime_version"] == "0.8.0"
             assert "boundaries" in data
             assert "protocols" in data
             assert data["protocols"]["realtime"] == "websocket"

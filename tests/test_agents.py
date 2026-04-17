@@ -441,7 +441,7 @@ def _minimal_ir_with_compute(preconditions=None, postconditions=None, body_lines
     scopes = scopes or ["admin", "basic"]
     role_scopes = role_scopes or {"admin_user": ["admin", "basic"], "basic_user": ["basic"]}
     return json.dumps({
-        "ir_version": "0.4.0",
+        "ir_version": "0.8.0",
         "reflection_enabled": False,
         "app_id": "test-compute-ctx",
         "name": "Test Compute",
