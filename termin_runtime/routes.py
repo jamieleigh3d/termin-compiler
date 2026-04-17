@@ -11,7 +11,10 @@ from fastapi.responses import StreamingResponse
 from pathlib import Path
 
 from .context import RuntimeContext
-from .storage import get_db, create_record, get_record, update_record, delete_record, _q
+from .storage import (
+    get_db, create_record, get_record, update_record, delete_record,
+    list_records, find_by_field,
+)
 from .state import do_state_transition
 from .confidentiality import redact_record, redact_records, check_write_access
 from .boundaries import check_boundary_identity
@@ -65,9 +68,7 @@ def _make_list_route(app, ctx, path, cr, sc):
 
         db = await get_db(ctx.db_path)
         try:
-            cursor = await db.execute(f"SELECT * FROM {_q(_cr)}")
-            rows = await cursor.fetchall()
-            records = [dict(r) for r in rows]
+            records = await list_records(db, _cr)
             schema = ctx.content_lookup.get(_cr, {})
             records = redact_records(records, schema, set(user_scopes))
             if _cr.startswith("compute_audit_log_"):
@@ -204,9 +205,7 @@ def _make_transition_route(app, ctx, path, cr, sc, lc, ts):
         user = ctx.get_current_user(request)
         db = await get_db(ctx.db_path)
         try:
-            cursor = await db.execute(
-                f'SELECT id, "status" FROM {_q(_cr)} WHERE {_q(_lc)} = ?', (param_val,))
-            row = await cursor.fetchone()
+            row = await find_by_field(db, _cr, _lc, param_val)
             if not row:
                 raise HTTPException(status_code=404)
             return await do_state_transition(db, _cr, row["id"], _ts, user,

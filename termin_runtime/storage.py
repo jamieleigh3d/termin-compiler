@@ -4,16 +4,47 @@ Provides get_db(), init_db(), and generic CRUD helpers that work with
 any Content schema defined in the IR.
 """
 
+import re
+
 import aiosqlite
 from pathlib import Path
 
 
 _db_path: str = "app.db"
 
+# Safe identifier pattern: lowercase letters, digits, underscores. Must start with a letter.
+_SAFE_IDENTIFIER = re.compile(r'^[a-z][a-z0-9_]*$')
+
+
+def validate_identifier(name: str) -> bool:
+    """Check if a string is safe to use as a SQL identifier.
+
+    Only lowercase snake_case identifiers are allowed. This prevents SQL
+    injection through malicious IR payloads — the .termin.pkg is a user-
+    provided ZIP file and cannot be trusted implicitly.
+    """
+    return bool(name and _SAFE_IDENTIFIER.match(name))
+
+
+def _assert_safe(name: str, context: str = "identifier") -> str:
+    """Validate and return a SQL identifier. Raises ValueError if unsafe."""
+    if not validate_identifier(name):
+        raise ValueError(
+            f"Unsafe SQL {context}: {name!r}. "
+            f"Identifiers must match [a-z][a-z0-9_]* (lowercase snake_case)."
+        )
+    return name
+
 
 def _q(name: str) -> str:
-    """Quote a SQL identifier to handle reserved words (e.g., 'order', 'group')."""
-    return f'"{name}"'
+    """Quote a SQL identifier safely.
+
+    Layer 2 defense: even if validation is bypassed, embedded double quotes
+    are escaped by doubling (SQLite standard). This prevents quote breakout.
+    """
+    # Escape any embedded double quotes by doubling them
+    escaped = name.replace('"', '""')
+    return f'"{escaped}"'
 
 
 async def get_db(db_path: str = None) -> aiosqlite.Connection:
@@ -89,6 +120,8 @@ async def init_db(content_schemas: list[dict], db_path: str = None):
     try:
         for cs in content_schemas:
             table_name = cs["name"]["snake"]
+            _assert_safe(table_name, "table name")
+
             col_defs = ["id INTEGER PRIMARY KEY AUTOINCREMENT"]
 
             # Status column if has state machine
@@ -99,8 +132,10 @@ async def init_db(content_schemas: list[dict], db_path: str = None):
             # Fields
             fk_defs = []
             for field in cs.get("fields", []):
+                _assert_safe(field["name"], f"field name in {table_name}")
                 col_defs.append(_field_to_sql(field))
                 if field.get("foreign_key"):
+                    _assert_safe(field["foreign_key"], f"foreign key target in {table_name}")
                     fk_defs.append(f'FOREIGN KEY ({_q(field["name"])}) REFERENCES {_q(field["foreign_key"])}(id)')
 
             all_defs = col_defs + fk_defs
@@ -222,3 +257,76 @@ async def delete_record(db, content_name: str, id_value,
             "content_name": content_name,
             "record_id": id_value,
         })
+
+
+# ── Additional query functions (used by other runtime modules) ──
+
+async def count_records(db, content_name: str) -> int:
+    """Count all records in a content table."""
+    cursor = await db.execute(f"SELECT COUNT(*) as cnt FROM {_q(content_name)}")
+    row = await cursor.fetchone()
+    return row["cnt"] if row else 0
+
+
+async def filtered_query(db, content_name: str, filters: dict = None) -> list[dict]:
+    """Query records with optional column-value filters.
+
+    Args:
+        filters: Dict of {column_name: value}. All conditions are AND'd.
+    """
+    if filters:
+        where = " AND ".join(f"{_q(k)} = ?" for k in filters)
+        cursor = await db.execute(
+            f"SELECT * FROM {_q(content_name)} WHERE {where}",
+            tuple(filters.values()))
+    else:
+        cursor = await db.execute(f"SELECT * FROM {_q(content_name)}")
+    return [dict(r) for r in await cursor.fetchall()]
+
+
+async def find_by_field(db, content_name: str, field: str, value) -> dict | None:
+    """Find a single record by a specific field value. Returns None if not found."""
+    cursor = await db.execute(
+        f"SELECT * FROM {_q(content_name)} WHERE {_q(field)} = ?", (value,))
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def select_column(db, content_name: str, column: str) -> list:
+    """Select a single column from all records. Returns list of values."""
+    cursor = await db.execute(f"SELECT {_q(column)} FROM {_q(content_name)}")
+    rows = await cursor.fetchall()
+    return [dict(r).get(column) for r in rows]
+
+
+async def update_fields(db, content_name: str, record_id, fields: dict) -> None:
+    """Update specific fields on a record by id. No event publishing."""
+    if not fields:
+        return
+    sets = ", ".join(f"{_q(k)} = ?" for k in fields)
+    vals = list(fields.values()) + [record_id]
+    await db.execute(f"UPDATE {_q(content_name)} SET {sets} WHERE id = ?", tuple(vals))
+    await db.commit()
+
+
+async def insert_raw(db, content_name: str, data: dict) -> int | None:
+    """Insert a record without event publishing or validation. Returns lastrowid."""
+    columns = list(data.keys())
+    if not columns:
+        return None
+    col_str = ", ".join(_q(c) for c in columns)
+    placeholders = ", ".join("?" for _ in columns)
+    vals = [data[k] for k in columns]
+    cursor = await db.execute(
+        f"INSERT INTO {_q(content_name)} ({col_str}) VALUES ({placeholders})",
+        tuple(vals))
+    await db.commit()
+    return cursor.lastrowid
+
+
+async def get_record_by_id(db, content_name: str, record_id) -> dict | None:
+    """Get a record by id, returning None instead of raising 404."""
+    cursor = await db.execute(
+        f"SELECT * FROM {_q(content_name)} WHERE id = ?", (record_id,))
+    row = await cursor.fetchone()
+    return dict(row) if row else None

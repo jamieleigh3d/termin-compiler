@@ -6,7 +6,7 @@ Takes transition tables as config and provides do_state_transition().
 from fastapi import HTTPException
 
 from .errors import TerminError
-from .storage import _q
+from .storage import get_record_by_id, update_fields
 
 
 async def do_state_transition(db, table: str, record_id: int, target_state: str,
@@ -28,12 +28,11 @@ async def do_state_transition(db, table: str, record_id: int, target_state: str,
         raise HTTPException(status_code=400, detail=f"No state machine for {table}")
 
     sm = state_machines[table]
-    cursor = await db.execute(f'SELECT "status" FROM {_q(table)} WHERE id = ?', (record_id,))
-    row = await cursor.fetchone()
-    if not row:
+    record = await get_record_by_id(db, table, record_id)
+    if not record:
         raise HTTPException(status_code=404, detail="Record not found")
 
-    current = row["status"]
+    current = record.get("status", "")
     key = (current, target_state)
     if key not in sm["transitions"]:
         if terminator:
@@ -62,13 +61,12 @@ async def do_state_transition(db, table: str, record_id: int, target_state: str,
             detail=f"Transition requires scope: {required_scope}"
         )
 
-    await db.execute(f'UPDATE {_q(table)} SET "status" = ? WHERE id = ?', (target_state, record_id))
-    await db.commit()
+    await update_fields(db, table, record_id, {"status": target_state})
 
     # Fetch the full updated record for WebSocket push
-    cursor = await db.execute(f"SELECT * FROM {_q(table)} WHERE id = ?", (record_id,))
-    updated_row = await cursor.fetchone()
-    updated_record = dict(updated_row) if updated_row else {"id": record_id, "status": target_state}
+    updated_record = await get_record_by_id(db, table, record_id)
+    if not updated_record:
+        updated_record = {"id": record_id, "status": target_state}
 
     if event_bus:
         await event_bus.publish({

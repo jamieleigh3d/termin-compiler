@@ -10,7 +10,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from .context import RuntimeContext
-from .storage import get_db, _q
+from .storage import get_db, get_record_by_id
 from .state import do_state_transition
 
 
@@ -90,9 +90,7 @@ def register_transition_routes(app, ctx: RuntimeContext):
         db = await get_db(ctx.db_path)
         try:
             # Get full record before transition for feedback CEL evaluation
-            cursor = await db.execute(f"SELECT * FROM {_q(content)} WHERE id = ?", (record_id,))
-            row = await cursor.fetchone()
-            record = dict(row) if row else {}
+            record = await get_record_by_id(db, content, record_id) or {}
             from_state = record.get("status")
 
             result = await do_state_transition(db, content, record_id, target, user,

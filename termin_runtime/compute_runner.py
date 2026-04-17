@@ -13,7 +13,10 @@ import uuid
 from fastapi import HTTPException, Request
 
 from .context import RuntimeContext
-from .storage import get_db, create_record, get_record, update_record, _q
+from .storage import (
+    get_db, create_record, get_record, update_record,
+    list_records, filtered_query, update_fields, insert_raw, select_column,
+)
 from .state import do_state_transition
 from .ai_provider import AIProviderError, build_output_tool, build_agent_tools
 from .confidentiality import (
@@ -192,10 +195,7 @@ async def _execute_llm_compute(ctx: RuntimeContext, comp: dict, record: dict,
             if update_data:
                 db = await get_db(ctx.db_path)
                 try:
-                    sets = ", ".join(f"{k} = ?" for k in update_data)
-                    vals = list(update_data.values()) + [record["id"]]
-                    await db.execute(f"UPDATE {_q(content_name)} SET {sets} WHERE id = ?", tuple(vals))
-                    await db.commit()
+                    await update_fields(db, content_name, record["id"], update_data)
                     print(f"[Termin] Compute '{comp_name}': updated record {record['id']}")
                     updated_record = dict(record)
                     updated_record.update(update_data)
@@ -277,13 +277,7 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
                 if bnd_err:
                     return {"error": bnd_err}
                 filters = tool_input.get("filters", {})
-                if filters:
-                    where = " AND ".join(f"{k} = ?" for k in filters)
-                    cursor = await db.execute(
-                        f"SELECT * FROM {_q(cname)} WHERE {where}", tuple(filters.values()))
-                else:
-                    cursor = await db.execute(f"SELECT * FROM {_q(cname)}")
-                return [dict(r) for r in await cursor.fetchall()]
+                return await filtered_query(db, cname, filters or None)
 
             elif tool_name == "content_create":
                 cname = tool_input.get("content_name", "")
@@ -407,13 +401,7 @@ async def write_audit_trace(ctx: RuntimeContext, comp: dict, invocation_id: str,
     try:
         db = await get_db(ctx.db_path)
         try:
-            columns = list(record_data.keys())
-            placeholders = ", ".join("?" for _ in columns)
-            cols_sql = ", ".join(columns)
-            vals = tuple(record_data[c] for c in columns)
-            await db.execute(
-                f"INSERT INTO {_q(audit_ref)} ({cols_sql}) VALUES ({placeholders})", vals)
-            await db.commit()
+            await insert_raw(db, audit_ref, record_data)
         finally:
             await db.close()
     except Exception as e:
@@ -450,10 +438,9 @@ async def redact_audit_traces(ctx: RuntimeContext, records: list,
         try:
             for content_name, field_name in redact_fields:
                 try:
-                    cursor = await db.execute(f"SELECT {_q(field_name)} FROM {_q(content_name)}")
-                    rows = await cursor.fetchall()
-                    for row in rows:
-                        val = str(dict(row).get(field_name, ""))
+                    col_values = await select_column(db, content_name, field_name)
+                    for val_raw in col_values:
+                        val = str(val_raw) if val_raw is not None else ""
                         if len(val) >= 4:
                             redact_values.append((val, field_name))
                 except Exception:
@@ -618,9 +605,7 @@ def register_compute_endpoint(app, ctx: RuntimeContext):
                 comp.get("input_content", []) + comp.get("output_content", [])
                 + comp.get("accesses", []))
             for content_name in all_content_refs:
-                cursor = await db.execute(f"SELECT * FROM {_q(content_name)}")
-                rows = await cursor.fetchall()
-                records = [dict(r) for r in rows]
+                records = await list_records(db, content_name)
                 before_data[content_name] = records
                 after_data[content_name] = await tx.read_all(content_name, records)
             await db.close()

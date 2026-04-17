@@ -9,7 +9,7 @@ import uuid
 from fastapi import WebSocket, WebSocketDisconnect
 
 from .context import RuntimeContext
-from .storage import get_db, _q
+from .storage import get_db, list_records
 
 
 class ConnectionManager:
@@ -85,8 +85,7 @@ def register_websocket_routes(app, ctx: RuntimeContext):
                         try:
                             db = await get_db(ctx.db_path)
                             try:
-                                cursor = await db.execute(f"SELECT * FROM {_q(content_name)}")
-                                rows = [dict(r) for r in await cursor.fetchall()]
+                                rows = await list_records(db, content_name)
                             finally:
                                 await db.close()
                             await websocket.send_json({
@@ -118,8 +117,7 @@ def register_websocket_routes(app, ctx: RuntimeContext):
                         try:
                             db = await get_db(ctx.db_path)
                             try:
-                                cursor = await db.execute(f"SELECT * FROM {_q(content_name)}")
-                                rows = [dict(r) for r in await cursor.fetchall()]
+                                rows = await list_records(db, content_name)
                             finally:
                                 await db.close()
                             await websocket.send_json({
