@@ -344,6 +344,7 @@ Theme: presentation completeness, action primitives.
 | **Pagination** | D-11 | Auto-CRUD list endpoint returns all records. Need `?limit=20&offset=0` for production use. |
 | **Filtering/sorting via API** | D-11 | Query params: `?status=active&sort=created_at:desc`. |
 | **Token-by-token LLM streaming** | D-09 | Chat component currently gets full message on completion. Need delta streaming via WebSocket for real-time typing effect. |
+| **Manual compute trigger endpoint** | v0.7 UAT | `POST /api/v1/compute/{name}/trigger` to manually fire any compute regardless of declared trigger type (schedule/event). Currently agent computes can only be invoked by their trigger — no way to test audit logging without AI credentials + waiting for schedule. |
 
 ---
 
