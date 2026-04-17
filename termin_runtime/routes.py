@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from pathlib import Path
 
 from .context import RuntimeContext
-from .storage import get_db, create_record, get_record, update_record, delete_record
+from .storage import get_db, create_record, get_record, update_record, delete_record, _q
 from .state import do_state_transition
 from .confidentiality import redact_record, redact_records, check_write_access
 from .boundaries import check_boundary_identity
@@ -65,7 +65,7 @@ def _make_list_route(app, ctx, path, cr, sc):
 
         db = await get_db(ctx.db_path)
         try:
-            cursor = await db.execute(f"SELECT * FROM {_cr}")
+            cursor = await db.execute(f"SELECT * FROM {_q(_cr)}")
             rows = await cursor.fetchall()
             records = [dict(r) for r in rows]
             schema = ctx.content_lookup.get(_cr, {})
@@ -205,7 +205,7 @@ def _make_transition_route(app, ctx, path, cr, sc, lc, ts):
         db = await get_db(ctx.db_path)
         try:
             cursor = await db.execute(
-                f"SELECT id, status FROM {_cr} WHERE {_lc} = ?", (param_val,))
+                f'SELECT id, "status" FROM {_q(_cr)} WHERE {_q(_lc)} = ?', (param_val,))
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404)

@@ -28,7 +28,7 @@ from .expression import ExpressionEvaluator
 from .errors import TerminAtor
 from .events import EventBus
 from .identity import make_get_current_user, make_require_scope, make_get_user_from_websocket
-from .storage import get_db, init_db, create_record
+from .storage import get_db, init_db, create_record, _q
 from .reflection import ReflectionEngine, register_reflection_with_expr_eval
 from .channels import ChannelDispatcher, load_deploy_config, check_deploy_config_warnings
 from .ai_provider import AIProvider
@@ -168,7 +168,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                                 placeholders = ", ".join("?" for _ in cols)
                                 col_str = ", ".join(cols)
                                 await db.execute(
-                                    f'INSERT INTO {action["target_content"]} ({col_str}) VALUES ({placeholders})',
+                                    f'INSERT INTO {_q(action["target_content"])} ({col_str}) VALUES ({placeholders})',
                                     tuple(vals))
                                 await db.commit()
                             elif action and action.get("send_channel"):
@@ -256,7 +256,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
             db = await get_db(db_path)
             try:
                 for content_name, records in seed_data.items():
-                    cursor = await db.execute(f"SELECT COUNT(*) as cnt FROM {content_name}")
+                    cursor = await db.execute(f"SELECT COUNT(*) as cnt FROM {_q(content_name)}")
                     row = await cursor.fetchone()
                     if row["cnt"] == 0:
                         for record in records:
@@ -265,7 +265,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                             col_str = ", ".join(cols)
                             vals = [record[k] for k in cols]
                             await db.execute(
-                                f"INSERT INTO {content_name} ({col_str}) VALUES ({placeholders})",
+                                f"INSERT INTO {_q(content_name)} ({col_str}) VALUES ({placeholders})",
                                 tuple(vals))
                         await db.commit()
                         print(f"[Termin] Seeded {len(records)} records into {content_name}")

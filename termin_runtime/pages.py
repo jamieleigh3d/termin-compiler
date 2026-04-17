@@ -12,7 +12,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
 from .context import RuntimeContext
-from .storage import get_db, create_record, update_record
+from .storage import get_db, create_record, update_record, _q
 from .confidentiality import redact_records
 from .presentation import build_nav_html, build_base_template, build_page_template, build_merged_page_template
 from .validation import evaluate_field_defaults
@@ -171,7 +171,7 @@ def _register_page_get(app, ctx, page, slug, page_reqs, page_templates,
             # Load data sources
             user_scopes = set(user.get("scopes", []))
             for src in _reqs["sources"]:
-                cursor = await db.execute(f"SELECT * FROM {src}")
+                cursor = await db.execute(f"SELECT * FROM {_q(src)}")
                 rows = await cursor.fetchall()
                 records = [dict(r) for r in rows]
                 schema = ctx.content_lookup.get(src, {})
@@ -179,7 +179,7 @@ def _register_page_get(app, ctx, page, slug, page_reqs, page_templates,
 
             # Form reference lists
             for ref in _reqs["ref_lists"]:
-                ref_cursor = await db.execute(f"SELECT * FROM {ref}")
+                ref_cursor = await db.execute(f"SELECT * FROM {_q(ref)}")
                 template_ctx[f"{ref}_list"] = [dict(r) for r in await ref_cursor.fetchall()]
 
             content_html = page_templates[_sl].render(**template_ctx)
@@ -212,7 +212,7 @@ def _register_form_post(app, ctx, page, slug, reqs):
                     val = data.get(uf, "")
                     if val:
                         cursor = await db.execute(
-                            f"SELECT id FROM {_ft} WHERE {uf} = ?", (val,))
+                            f"SELECT id FROM {_q(_ft)} WHERE {_q(uf)} = ?", (val,))
                         existing = await cursor.fetchone()
                         if existing:
                             raise HTTPException(

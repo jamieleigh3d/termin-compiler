@@ -13,7 +13,7 @@ import uuid
 from fastapi import HTTPException, Request
 
 from .context import RuntimeContext
-from .storage import get_db, create_record, get_record, update_record
+from .storage import get_db, create_record, get_record, update_record, _q
 from .state import do_state_transition
 from .ai_provider import AIProviderError, build_output_tool, build_agent_tools
 from .confidentiality import (
@@ -194,7 +194,7 @@ async def _execute_llm_compute(ctx: RuntimeContext, comp: dict, record: dict,
                 try:
                     sets = ", ".join(f"{k} = ?" for k in update_data)
                     vals = list(update_data.values()) + [record["id"]]
-                    await db.execute(f"UPDATE {content_name} SET {sets} WHERE id = ?", tuple(vals))
+                    await db.execute(f"UPDATE {_q(content_name)} SET {sets} WHERE id = ?", tuple(vals))
                     await db.commit()
                     print(f"[Termin] Compute '{comp_name}': updated record {record['id']}")
                     updated_record = dict(record)
@@ -280,9 +280,9 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
                 if filters:
                     where = " AND ".join(f"{k} = ?" for k in filters)
                     cursor = await db.execute(
-                        f"SELECT * FROM {cname} WHERE {where}", tuple(filters.values()))
+                        f"SELECT * FROM {_q(cname)} WHERE {where}", tuple(filters.values()))
                 else:
-                    cursor = await db.execute(f"SELECT * FROM {cname}")
+                    cursor = await db.execute(f"SELECT * FROM {_q(cname)}")
                 return [dict(r) for r in await cursor.fetchall()]
 
             elif tool_name == "content_create":
@@ -412,7 +412,7 @@ async def write_audit_trace(ctx: RuntimeContext, comp: dict, invocation_id: str,
             cols_sql = ", ".join(columns)
             vals = tuple(record_data[c] for c in columns)
             await db.execute(
-                f"INSERT INTO {audit_ref} ({cols_sql}) VALUES ({placeholders})", vals)
+                f"INSERT INTO {_q(audit_ref)} ({cols_sql}) VALUES ({placeholders})", vals)
             await db.commit()
         finally:
             await db.close()
@@ -450,7 +450,7 @@ async def redact_audit_traces(ctx: RuntimeContext, records: list,
         try:
             for content_name, field_name in redact_fields:
                 try:
-                    cursor = await db.execute(f"SELECT {field_name} FROM {content_name}")
+                    cursor = await db.execute(f"SELECT {_q(field_name)} FROM {_q(content_name)}")
                     rows = await cursor.fetchall()
                     for row in rows:
                         val = str(dict(row).get(field_name, ""))
@@ -618,7 +618,7 @@ def register_compute_endpoint(app, ctx: RuntimeContext):
                 comp.get("input_content", []) + comp.get("output_content", [])
                 + comp.get("accesses", []))
             for content_name in all_content_refs:
-                cursor = await db.execute(f"SELECT * FROM {content_name}")
+                cursor = await db.execute(f"SELECT * FROM {_q(content_name)}")
                 rows = await cursor.fetchall()
                 records = [dict(r) for r in rows]
                 before_data[content_name] = records

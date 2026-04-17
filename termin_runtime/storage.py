@@ -11,6 +11,11 @@ from pathlib import Path
 _db_path: str = "app.db"
 
 
+def _q(name: str) -> str:
+    """Quote a SQL identifier to handle reserved words (e.g., 'order', 'group')."""
+    return f'"{name}"'
+
+
 async def get_db(db_path: str = None) -> aiosqlite.Connection:
     """Get an async SQLite connection."""
     path = db_path or _db_path
@@ -41,17 +46,18 @@ _SQL_TYPES = {
 def _field_to_sql(field: dict) -> str:
     """Convert an IR FieldSpec dict to a SQL column definition."""
     name = field["name"]
+    qname = _q(name)
     btype = field.get("business_type", "text")
 
     if field.get("is_auto"):
-        return f"{name} TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+        return f"{qname} TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
 
     sql_type = _SQL_TYPES.get(btype, "TEXT")
-    parts = [f"{name} {sql_type}"]
+    parts = [f"{qname} {sql_type}"]
 
     if field.get("enum_values"):
         vals = ", ".join(f"'{v}'" for v in field["enum_values"])
-        parts = [f"{name} TEXT CHECK({name} IN ({vals}))"]
+        parts = [f"{qname} TEXT CHECK({qname} IN ({vals}))"]
 
     if field.get("required"):
         parts.append("NOT NULL")
@@ -61,11 +67,11 @@ def _field_to_sql(field: dict) -> str:
     min_v = field.get("minimum")
     max_v = field.get("maximum")
     if min_v is not None and max_v is not None:
-        parts.append(f"CHECK({name} >= {min_v} AND {name} <= {max_v})")
+        parts.append(f"CHECK({qname} >= {min_v} AND {qname} <= {max_v})")
     elif min_v is not None:
-        parts.append(f"CHECK({name} >= {min_v})")
+        parts.append(f"CHECK({qname} >= {min_v})")
     elif max_v is not None:
-        parts.append(f"CHECK({name} <= {max_v})")
+        parts.append(f"CHECK({qname} <= {max_v})")
 
     return " ".join(parts)
 
@@ -88,19 +94,19 @@ async def init_db(content_schemas: list[dict], db_path: str = None):
             # Status column if has state machine
             if cs.get("has_state_machine"):
                 initial = cs.get("initial_state", "")
-                col_defs.append(f"status TEXT NOT NULL DEFAULT '{initial}'")
+                col_defs.append(f'"status" TEXT NOT NULL DEFAULT \'{initial}\'')
 
             # Fields
             fk_defs = []
             for field in cs.get("fields", []):
                 col_defs.append(_field_to_sql(field))
                 if field.get("foreign_key"):
-                    fk_defs.append(f"FOREIGN KEY ({field['name']}) REFERENCES {field['foreign_key']}(id)")
+                    fk_defs.append(f'FOREIGN KEY ({_q(field["name"])}) REFERENCES {_q(field["foreign_key"])}(id)')
 
             all_defs = col_defs + fk_defs
             cols_sql = ",\n                ".join(all_defs)
             await db.execute(f"""
-                CREATE TABLE IF NOT EXISTS {table_name} (
+                CREATE TABLE IF NOT EXISTS {_q(table_name)} (
                     {cols_sql}
                 )
             """)
@@ -121,12 +127,12 @@ async def create_record(db, content_name: str, data: dict, schema: dict = None,
         return {"id": None}
 
     placeholders = ", ".join(["?"] * len(columns))
-    col_str = ", ".join(columns)
+    col_str = ", ".join(_q(c) for c in columns)
     values = [d[k] for k in columns]
 
     try:
         cursor = await db.execute(
-            f'INSERT INTO {content_name} ({col_str}) VALUES ({placeholders})',
+            f'INSERT INTO {_q(content_name)} ({col_str}) VALUES ({placeholders})',
             tuple(values)
         )
         await db.commit()
@@ -150,7 +156,7 @@ async def create_record(db, content_name: str, data: dict, schema: dict = None,
 
 async def list_records(db, content_name: str):
     """List all records from a content table."""
-    cursor = await db.execute(f"SELECT * FROM {content_name}")
+    cursor = await db.execute(f"SELECT * FROM {_q(content_name)}")
     rows = await cursor.fetchall()
     return [dict(r) for r in rows]
 
@@ -158,7 +164,7 @@ async def list_records(db, content_name: str):
 async def get_record(db, content_name: str, id_value, lookup_col: str = "id"):
     """Get a single record by lookup column."""
     cursor = await db.execute(
-        f"SELECT * FROM {content_name} WHERE {lookup_col} = ?", (id_value,)
+        f"SELECT * FROM {_q(content_name)} WHERE {_q(lookup_col)} = ?", (id_value,)
     )
     row = await cursor.fetchone()
     if not row:
@@ -174,12 +180,12 @@ async def update_record(db, content_name: str, id_value, data: dict,
     if not d:
         return {"message": "No fields to update"}
 
-    set_clause = ", ".join(f"{k} = ?" for k in d.keys())
+    set_clause = ", ".join(f"{_q(k)} = ?" for k in d.keys())
     values = list(d.values()) + [id_value]
 
     try:
         await db.execute(
-            f'UPDATE {content_name} SET {set_clause} WHERE {lookup_col} = ?',
+            f'UPDATE {_q(content_name)} SET {set_clause} WHERE {_q(lookup_col)} = ?',
             tuple(values)
         )
         await db.commit()
@@ -203,7 +209,7 @@ async def delete_record(db, content_name: str, id_value,
                         lookup_col: str = "id", terminator=None, event_bus=None):
     """Delete a record. Returns True if a record was deleted, False if not found."""
     cursor = await db.execute(
-        f'DELETE FROM {content_name} WHERE {lookup_col} = ?', (id_value,)
+        f'DELETE FROM {_q(content_name)} WHERE {_q(lookup_col)} = ?', (id_value,)
     )
     await db.commit()
     if cursor.rowcount == 0:
