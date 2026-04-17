@@ -69,6 +69,12 @@ As a support agent, I want to see all open tickets
     Highlight rows where `priority == "critical" || priority == "high"`
     Allow filtering by status, priority, and category
     Allow searching by title or description
+    For each ticket, show actions:
+      "Start Work" transitions to "in progress" if available, hide otherwise
+      "Wait on Customer" transitions to "waiting on customer" if available, hide otherwise
+      "Resolve" transitions to "resolved" if available, hide otherwise
+      "Reopen" transitions to "in progress" if available, hide otherwise
+      "Close" transitions to "closed" if available, hide otherwise
     This table subscribes to tickets changes
 
 As a support manager, I want to see ticket metrics

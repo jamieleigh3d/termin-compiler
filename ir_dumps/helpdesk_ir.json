@@ -658,6 +658,88 @@
                 "field": "created_at",
                 "label": "created at"
               }
+            ],
+            "row_actions": [
+              {
+                "type": "action_button",
+                "props": {
+                  "label": "Start Work",
+                  "action": "transition",
+                  "target_state": "in progress",
+                  "visible_when": {
+                    "value": ".state.canTransition('in progress')",
+                    "is_expr": true
+                  },
+                  "unavailable_behavior": "disable"
+                },
+                "style": {},
+                "layout": {},
+                "children": []
+              },
+              {
+                "type": "action_button",
+                "props": {
+                  "label": "Wait on Customer",
+                  "action": "transition",
+                  "target_state": "waiting on customer",
+                  "visible_when": {
+                    "value": ".state.canTransition('waiting on customer')",
+                    "is_expr": true
+                  },
+                  "unavailable_behavior": "disable"
+                },
+                "style": {},
+                "layout": {},
+                "children": []
+              },
+              {
+                "type": "action_button",
+                "props": {
+                  "label": "Resolve",
+                  "action": "transition",
+                  "target_state": "resolved",
+                  "visible_when": {
+                    "value": ".state.canTransition('resolved')",
+                    "is_expr": true
+                  },
+                  "unavailable_behavior": "disable"
+                },
+                "style": {},
+                "layout": {},
+                "children": []
+              },
+              {
+                "type": "action_button",
+                "props": {
+                  "label": "Reopen",
+                  "action": "transition",
+                  "target_state": "in progress",
+                  "visible_when": {
+                    "value": ".state.canTransition('in progress')",
+                    "is_expr": true
+                  },
+                  "unavailable_behavior": "disable"
+                },
+                "style": {},
+                "layout": {},
+                "children": []
+              },
+              {
+                "type": "action_button",
+                "props": {
+                  "label": "Close",
+                  "action": "transition",
+                  "target_state": "closed",
+                  "visible_when": {
+                    "value": ".state.canTransition('closed')",
+                    "is_expr": true
+                  },
+                  "unavailable_behavior": "disable"
+                },
+                "style": {},
+                "layout": {},
+                "children": []
+              }
             ]
           },
           "style": {},
