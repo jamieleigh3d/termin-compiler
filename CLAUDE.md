@@ -219,6 +219,16 @@ When a user reports a bug:
 
 The `words` terminal is greedy — it consumes keywords like "or", "with", "as". Use `words_before_X` terminals with negative lookahead. Example: `words_before_or = /\w+(?:\s+(?!or\b)\w+)*/`. Never use magic numbers for string slicing in fallback paths — use `len("prefix")` instead.
 
+## Git Safety Practices
+
+Linear history always — use `git rebase` and `git merge --ff-only`. No merge commits.
+
+1. **Always verify the current branch before destructive operations.** `git branch --show-current` before `git commit --amend`, `git reset`, or `git rebase`. I once amended on main when I meant to amend on a feature branch. The branches had identical HEAD content (post-FF-merge), so the amend succeeded silently on main.
+2. **`--theirs` vs `--ours` during rebase is inverted.** During rebase, `--theirs` = the commit being replayed. `--ours` = the branch you're rebasing onto. When resolving version-string conflicts, you typically want the feature branch version = `--theirs`.
+3. **Never mention remote AI collaborators by name in commit messages, tag messages, or PR descriptions.** These ship to the public repo. IP boundary. The messages branch is the designated communication channel — attribution belongs there, not in public artifacts.
+4. **Delete feature branches locally AND remotely** after merge. `git branch -D feature/vX` then `git push origin --delete feature/vX`.
+5. **Rebase the messages branch onto main after every release push.** Otherwise it drifts from main and rebases get harder over time.
+
 ## Seed Data
 
 Examples can have companion `_seed.json` files (e.g., `examples/projectboard_seed.json`). The compiler copies them alongside output. The runtime auto-seeds empty tables on first run. Use `--seed custom.json` for explicit seed files.
