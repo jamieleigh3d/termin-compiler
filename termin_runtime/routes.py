@@ -450,7 +450,7 @@ def register_runtime_endpoints(app, ctx: RuntimeContext):
             },
         }
         return {
-            "runtime_version": "0.7.1",
+            "runtime_version": "0.8.0",
             "application": ctx.ir.get("name", "Termin App"),
             "boundaries": boundaries,
             "protocols": {"realtime": "websocket", "reliable": "rest"},
