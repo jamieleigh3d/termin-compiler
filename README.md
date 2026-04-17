@@ -84,7 +84,7 @@ examples/                Example .termin applications
   hrportal.termin            HR system with field-level confidentiality
 
 docs/                    Specifications and design documents
-  termin-ir-schema.json      JSON Schema (draft 2020-12) for IR v0.5.0
+  termin-ir-schema.json      JSON Schema (draft 2020-12) for IR v0.7.0
   termin-runtime-implementers-guide.md
   termin-confidentiality-brd.md
   termin-confidentiality-spec.md

@@ -1,25 +1,53 @@
 # Changelog
 
-## v0.7.0 (unreleased)
+## v0.7.0 (2026-04-16)
 
 ### Theme: Polish, Observability, Developer Experience
 
-### Compiler
-- **Compound verb fix (#007):** PEG grammar now handles all verb combinations (`view or create`, `create, update, or delete`, etc.). Previously only `create or update` worked; all others silently dropped verbs. Security bug affecting 6/12 examples.
-- **TERMIN-S031 safety net:** Lowering raises `SemanticError` if any access grant has zero recognized verbs after mapping.
-- **Transition feedback (#006):** New DSL syntax for toast/banner notifications on state transitions. CEL or literal messages, configurable dismiss timers.
-- **`--emit-ir` standalone:** When used without `-o`, dumps IR JSON and exits without building a package.
+### Features
+- **D-11: Auto-generated REST API** — Every Content gets CRUD at `/api/v1/{content}` automatically. Headless services (no user stories) fully supported. `Expose a REST API` syntax removed.
+- **D-20: Agent observability** — AUDIT verb (fifth verb), auto-generated `compute_audit_log_{name}` Content per Compute, trace recording with audit levels (none/actions/debug), redaction in flight.
+- **D-09: Chat presentation component** — New `chat` IR type. Not AI-specific — any Content with role+content fields. Integrated input, WebSocket subscription for live updates.
+- **Transition feedback (#006):** Toast/banner notifications on state transitions. CEL interpolation with record fields, `from_state`, `to_state` context. Configurable dismiss timers.
+- **Compound verb fix (#007):** PEG grammar now handles all verb combinations. Previously only `create or update` worked; all others silently dropped verbs.
+- **Thread 009 fixes:** LLM prompt mapping (objective in system, not user turn), optional directive (no default injection), compiler-controlled thinking field in set_output.
+
+### Security
+- **SQL injection defense in depth:** Three layers — identifier validation at IR load (rejects unsafe names), proper quote escaping in `_q()`, centralized SQL in `storage.py`. Structural test prevents raw SQL outside storage.py.
+- **TERMIN-S031 safety net:** Lowering raises `SemanticError` if any access grant has zero recognized verbs.
+- **TERMIN-S032:** "api" is reserved as a page slug.
+
+### Refactoring
+- `app.py`: 2105 → 385 lines (8 modules: context, websocket_manager, boundaries, validation, compute_runner, transitions, routes, pages)
+- `peg_parser.py`: 1345 → 273 lines (4 modules: classify, parse_helpers, parse_builders, parse_handlers)
+- `lower.py`: 1096 → 745 lines (1 module: lower_pages)
+- `channels.py`: 826 → 415 lines (2 modules: channel_config, channel_ws)
 
 ### IR (0.5.0 → 0.7.0)
-- **TransitionFeedbackSpec:** New IR type for transition feedback (trigger, style, message, is_expr, dismiss_seconds).
-- **TransitionSpec.feedback:** Array of feedback specs on each transition (empty when not declared).
+- `TransitionFeedbackSpec`: trigger, style, message, is_expr, dismiss_seconds
+- `TransitionSpec.feedback`: array of feedback specs per transition
+- `Verb.AUDIT`: fifth verb alongside VIEW/CREATE/UPDATE/DELETE
+- `ComputeSpec`: audit_level, audit_scope, audit_content_ref
+- Chat component type in presentation IR
 
-### Runtime (0.3.0 → 0.7.0)
-- **Toast/banner rendering:** `data-termin-toast` and `data-termin-banner` HTML elements with auto-dismiss JS. Flash data via `_flash` query params on redirect.
+### Runtime
+- Toast/banner rendering with auto-dismiss JS and AJAX-aware transition endpoint
+- Chat rendering with scrolling message area, role-based bubbles, WebSocket live updates
+- Auto-CRUD route generation from IR content schemas
+- Audit trace recording with redaction based on caller scopes
+- SQL identifier quoting for reserved words (e.g., "order")
+- All SQL centralized in storage.py with validation
 
-### Conformance
-- **Verb completeness tests:** `test_access_grants_have_nonempty_verbs`, `test_access_grants_reference_declared_scopes`.
-- **Transition feedback tests:** 14 tests for IR structure across all fixtures.
+### Quality
+- 356 compiler fidelity tests (IR property assertions per example)
+- PEG grammar gaps closed (39 fallback paths → 0)
+- 48 hard-coded string offsets replaced with `len("prefix")`
+- Runtime coverage: 82% (up from 77%)
+
+### Stats
+- 1420 tests, 0 failures, 0 skips
+- 13 examples, all compile cleanly
+- ~12,000 lines of source, ~14,000 lines of tests (1.19:1 ratio)
 
 ---
 

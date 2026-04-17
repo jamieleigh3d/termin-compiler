@@ -126,9 +126,9 @@
       "scope": "messages.all",
       "verbs": [
         "CREATE",
-        "VIEW",
         "DELETE",
-        "UPDATE"
+        "UPDATE",
+        "VIEW"
       ]
     },
     {
