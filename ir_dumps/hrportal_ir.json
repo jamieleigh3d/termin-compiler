@@ -632,7 +632,7 @@
           "confidentiality_scopes": []
         }
       ],
-      "singular": "",
+      "singular": "compute_audit_log_calculate_team_bonus_pool",
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,

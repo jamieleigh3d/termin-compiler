@@ -512,7 +512,7 @@
           "confidentiality_scopes": []
         }
       ],
-      "singular": "",
+      "singular": "compute_audit_log_scanner",
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,
@@ -720,7 +720,7 @@
           "confidentiality_scopes": []
         }
       ],
-      "singular": "",
+      "singular": "compute_audit_log_remediator",
       "storage_intent": "auto",
       "has_state_machine": false,
       "initial_state": null,

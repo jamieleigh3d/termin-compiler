@@ -1,5 +1,52 @@
 # Changelog
 
+## v0.7.1 (2026-04-17)
+
+### Theme: Conformance Debt Reduction
+
+Patch release fixing conformance suite drift and one runtime behavior bug.
+IR schema unchanged (still 0.7.0) — no fixture recompilation needed for
+runtimes that already pass v0.7.0.
+
+### Runtime Fixes
+- **Transition endpoint error codes**: Non-AJAX requests without a `Referer`
+  header (API clients, conformance tests) now receive the actual error status
+  code from `do_state_transition` (409 for invalid transition, 403 for scope
+  denial, 404 for missing record) instead of a 303 redirect. Browser form
+  submits with `Referer` + `Accept: text/html` continue to redirect with
+  `_flash` params for toast/banner rendering.
+- **Transition on unknown content**: Returns 404 instead of leaking a SQLite
+  `OperationalError: no such table` via 500.
+
+### Compiler Fixes
+- **Auto-generated audit content**: `compute_audit_log_{name}` content now has
+  a non-empty `singular` field (defaults to the snake table name), fixing
+  conformance validation that requires every ContentSchema to have a singular.
+
+### Conformance Suite Fixes (bug report 011)
+21 test drift issues fixed:
+- Added AUDIT verb to valid_verbs in schema validation (6 tests)
+- Warehouse access matrix updated for v0.7 access model (clerk cannot CREATE
+  products; requires inventory.admin) (3 tests)
+- Auto-CRUD paths use content snake names (underscores), not hyphens
+  (`/api/v1/salary_reviews`, `/api/v1/stock_levels`, `/api/v1/reorder_alerts`)
+  (11+ tests)
+- Test helpers return `id` from create response instead of `sku` (routes use
+  id lookup in v0.7) (5+ tests)
+- Transition paths use `/_transition/{target_state}` format (3 tests)
+
+### Version
+- Compiler: 0.7.0 → 0.7.1
+- Runtime: 0.7.0 → 0.7.1
+- IR: 0.7.0 (unchanged)
+
+### Stats
+- 1,412 compiler tests pass
+- 712 conformance tests pass (was 651 pre-fix, 66 failures → 0)
+- 13 examples compile clean
+
+---
+
 ## v0.7.0 (2026-04-16)
 
 ### Theme: Polish, Observability, Developer Experience

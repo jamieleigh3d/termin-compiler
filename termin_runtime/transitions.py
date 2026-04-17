@@ -85,6 +85,9 @@ def register_transition_routes(app, ctx: RuntimeContext):
                                  request: Request):
         """Presentation-layer transition by record ID. Converts underscores in
         target_state back to spaces for multi-word states."""
+        # Reject unknown content types immediately (don't leak SQL errors)
+        if content not in ctx.content_lookup:
+            raise HTTPException(status_code=404, detail=f"Unknown content: {content}")
         target = target_state.replace("_", " ")
         user = ctx.get_current_user(request)
         db = await get_db(ctx.db_path)
@@ -108,6 +111,10 @@ def register_transition_routes(app, ctx: RuntimeContext):
                     feedback_msg = eval_feedback_message(
                         ctx, feedback_spec, record, from_state, target, content)
 
+            accept = request.headers.get("accept", "")
+            has_referer = bool(request.headers.get("referer"))
+            is_browser_form = has_referer and "text/html" in accept and not is_ajax
+
             if is_ajax:
                 response = {"id": record_id, "status": target}
                 if feedback_msg:
@@ -117,15 +124,24 @@ def register_transition_routes(app, ctx: RuntimeContext):
                     if feedback_spec.get("dismiss_seconds") is not None:
                         response["_flash_dismiss"] = feedback_spec["dismiss_seconds"]
                 return response
-            else:
+            elif is_browser_form:
                 referer = request.headers.get("referer", "/")
                 if from_state:
                     referer = append_flash_params(
                         ctx, referer, success_fb or [], record, from_state, target, content)
                 return RedirectResponse(url=referer, status_code=303)
+            else:
+                # API client — return the record
+                return result
 
         except HTTPException as exc:
             is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            accept = request.headers.get("accept", "")
+            has_referer = bool(request.headers.get("referer"))
+            # API clients (curl, conformance tests) have no Referer and accept JSON.
+            # Browser form submits have a Referer and we redirect with flash params.
+            is_browser_form = has_referer and "text/html" in accept and not is_ajax
+
             if is_ajax:
                 error_response = {"detail": exc.detail}
                 if from_state:
@@ -140,7 +156,7 @@ def register_transition_routes(app, ctx: RuntimeContext):
                         if fb.get("dismiss_seconds") is not None:
                             error_response["_flash_dismiss"] = fb["dismiss_seconds"]
                 raise HTTPException(status_code=exc.status_code, detail=error_response)
-            else:
+            elif is_browser_form:
                 referer = request.headers.get("referer", "/")
                 if from_state:
                     error_fb = get_feedback(ctx.transition_feedback, content,
@@ -148,5 +164,8 @@ def register_transition_routes(app, ctx: RuntimeContext):
                     referer = append_flash_params(
                         ctx, referer, error_fb, record, from_state, target, content)
                 return RedirectResponse(url=referer, status_code=303)
+            else:
+                # API client — return the actual error status
+                raise
         finally:
             await db.close()

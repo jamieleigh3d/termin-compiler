@@ -672,7 +672,7 @@ def lower(program: Program) -> AppSpec:
         audit_log_schemas.append(ContentSchema(
             name=audit_qname,
             fields=audit_fields,
-            singular="",
+            singular=audit_table_name,  # e.g. "compute_audit_log_scanner" — plural form doubles as singular
             audit="none",  # audit logs don't recursively audit themselves
         ))
 
