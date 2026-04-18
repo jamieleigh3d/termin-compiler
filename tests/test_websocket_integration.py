@@ -18,6 +18,7 @@ from pathlib import Path
 import httpx
 import pytest
 import uvicorn
+import websockets
 import websockets.client
 
 from termin_runtime import create_termin_app
@@ -137,9 +138,9 @@ class TestRealWebSocketPush:
                 )
                 assert r.status_code == 201
 
-            # Should receive push within 2 seconds
-            push = json.loads(await asyncio.wait_for(ws.recv(), timeout=2))
-            assert push["op"] == "push"
+            # Should receive push — use _recv_until to tolerate interleaved
+            # identity/system pushes and slow broadcast on loaded machines
+            push = await self._recv_until(ws, "push", timeout=5)
             assert "completions" in push["ch"]
             assert push["payload"]["prompt"] == "real ws test"
             assert "id" in push["payload"]
@@ -167,8 +168,7 @@ class TestRealWebSocketPush:
                 )
                 assert r.status_code == 200
 
-            push = json.loads(await asyncio.wait_for(ws.recv(), timeout=2))
-            assert push["op"] == "push"
+            push = await self._recv_until(ws, "push", timeout=5)
             assert push["payload"]["prompt"] == "form ws test"
 
     @pytest.mark.asyncio
@@ -217,8 +217,7 @@ class TestRealWebSocketPush:
                 )
 
             # Should receive exactly ONE push
-            push1 = json.loads(await asyncio.wait_for(ws.recv(), timeout=2))
-            assert push1["op"] == "push"
+            push1 = await self._recv_until(ws, "push", timeout=5)
             assert push1["payload"]["prompt"] == "dedup test"
 
             # Should NOT receive another push within 1 second
@@ -251,7 +250,7 @@ class TestRealWebSocketPush:
                     cookies={"termin_role": "anonymous"},
                 )
 
-            push = json.loads(await asyncio.wait_for(ws.recv(), timeout=2))
+            push = await self._recv_until(ws, "push", timeout=5)
             payload = push["payload"]
 
             # Payload should be the record directly
@@ -289,8 +288,7 @@ class TestRealWebSocketPush:
                 assert r.status_code == 200
 
             # Should receive push with record fields directly
-            push = json.loads(await asyncio.wait_for(ws.recv(), timeout=2))
-            assert push["op"] == "push"
+            push = await self._recv_until(ws, "push", timeout=5)
             payload = push["payload"]
             assert "id" in payload, f"Webhook push missing 'id': {list(payload.keys())}"
             assert "title" in payload, f"Webhook push missing 'title': {list(payload.keys())}"
