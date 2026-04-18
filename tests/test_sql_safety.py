@@ -59,8 +59,7 @@ class TestIdentifierValidation:
         from termin_runtime.storage import init_db
         malicious_ir = [{"name": {"snake": 'orders"; DROP TABLE users; --'}, "fields": []}]
         with pytest.raises(ValueError, match="(?i)unsafe"):
-            asyncio.get_event_loop().run_until_complete(
-                init_db(malicious_ir, db_path=":memory:"))
+            asyncio.run(init_db(malicious_ir, db_path=":memory:"))
 
     def test_init_db_rejects_unsafe_field_name(self):
         """init_db should refuse to create columns with unsafe names."""
@@ -71,8 +70,7 @@ class TestIdentifierValidation:
             "fields": [{"name": 'quantity; DROP TABLE orders; --', "business_type": "number"}],
         }]
         with pytest.raises(ValueError, match="(?i)unsafe"):
-            asyncio.get_event_loop().run_until_complete(
-                init_db(malicious_ir, db_path=":memory:"))
+            asyncio.run(init_db(malicious_ir, db_path=":memory:"))
 
 
 # ── Layer 2: Proper escaping ──

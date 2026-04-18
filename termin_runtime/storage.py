@@ -112,6 +112,16 @@ async def init_db(content_schemas: list[dict], db_path: str = None):
 
     Each schema has: name.snake, fields[], has_state_machine, initial_state.
     """
+    # Validate all identifiers up front, before any side effects (global
+    # mutation or DB open). Malicious IR must fail without leaving state.
+    for cs in content_schemas:
+        table_name = cs["name"]["snake"]
+        _assert_safe(table_name, "table name")
+        for field in cs.get("fields", []):
+            _assert_safe(field["name"], f"field name in {table_name}")
+            if field.get("foreign_key"):
+                _assert_safe(field["foreign_key"], f"foreign key target in {table_name}")
+
     global _db_path
     if db_path:
         _db_path = db_path
