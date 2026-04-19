@@ -336,22 +336,33 @@ def _parse_line(text: str, rule: str, ln: int):
             singular = rest[:ci].strip() if ci >= 0 else ""
         return ("directive", ActionHeader(singular=singular, line=ln))
     if rule == "action_button_line":
+        # TatSu 5.15.1 does not populate parseinfo.rule for #Name-tagged
+        # alternatives under rule_name= dispatch, so we cannot use
+        # _rule(r) to discriminate ActionHide / ActionDisable /
+        # ActionDeleteHide / ActionDeleteDisable. Instead, we inspect
+        # the source text (which is reliable) and use TatSu only to
+        # extract the label/state content.
         r = P(text, rule)
+        lower_text = text.lower()
+        is_delete = " deletes" in lower_text and " transitions to " not in lower_text
+        kind = "delete" if is_delete else "transition"
+        behavior = "hide" if "hide otherwise" in lower_text else "disable"
         if r:
             label = _qs(r.get("label",""))
-            state = _qs(r.get("state",""))
-            rn = _rule(r)
-            behavior = "hide" if rn == "ActionHide" else "disable"
-            return ("directive", ActionButtonDef(label=label, target_state=state, unavailable_behavior=behavior, line=ln))
-        parts = text.strip()
-        label = _fq(parts) or ""
-        state = ""
-        si = parts.lower().find("transitions to ")
-        if si >= 0:
-            rest = parts[si+15:]
-            state = _fq(rest) or rest.split()[0] if rest else ""
-        behavior = "hide" if "hide otherwise" in parts.lower() else "disable"
-        return ("directive", ActionButtonDef(label=label, target_state=state, unavailable_behavior=behavior, line=ln))
+            state = "" if is_delete else _qs(r.get("state",""))
+        else:
+            # Full text fallback.
+            parts = text.strip()
+            label = _fq(parts) or ""
+            state = ""
+            if not is_delete:
+                si = lower_text.find("transitions to ")
+                if si >= 0:
+                    rest = parts[si+len("transitions to "):]
+                    state = _fq(rest) or (rest.split()[0] if rest else "")
+        return ("directive", ActionButtonDef(
+            label=label, target_state=state,
+            unavailable_behavior=behavior, kind=kind, line=ln))
     if rule == "display_agg_line":
         r = P(text, rule); return ("directive", DisplayAggregation(description=str(r.get("text","")).strip() if r else text[len("Display "):].strip(), line=ln))
     if rule == "nav_bar_line": return ("nav_bar",)

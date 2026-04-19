@@ -16,7 +16,7 @@ from .ast_nodes import (
     DisplayTable, AcceptInput, SubscribeTo, ShowRelated, AllowFilter,
     AllowSearch, ShowChart, DisplayAggregation,
     ComputeNode, ChannelDecl, BoundaryDecl, RoleAlias,
-    ErrorHandler,
+    ErrorHandler, ActionButtonDef,
 )
 from .errors import SemanticError, SecurityError, CompileResult
 
@@ -165,6 +165,41 @@ class Analyzer:
         self._check_boundaries()
         self._check_error_handlers()
         self._check_dependent_values()
+        self._check_delete_actions()
+
+    def _check_delete_actions(self) -> None:
+        """A Delete action button on a table requires the governing content
+        to declare a `can delete` access rule. Otherwise the button has no
+        resolvable required_scope and any click would be unreachable."""
+        for story in self.program.stories:
+            current_table_content_name: str | None = None
+            for d in story.directives:
+                if isinstance(d, DisplayTable):
+                    current_table_content_name = d.content_name
+                elif isinstance(d, ActionButtonDef) and d.kind == "delete":
+                    if not current_table_content_name:
+                        # Delete button with no preceding table is a
+                        # structural error — the For-each block was
+                        # ungrounded. Fall through silently; _check_stories
+                        # and lowering will handle the absent context.
+                        continue
+                    content = self._find_content_by_name(
+                        current_table_content_name)
+                    if content is None:
+                        continue  # undefined content is caught elsewhere
+                    has_delete_rule = any(
+                        "delete" in rule.verbs for rule in content.access_rules)
+                    if not has_delete_rule:
+                        self.errors.add(SemanticError(
+                            message=(
+                                f'Delete action "{d.label}" on "{content.name}" '
+                                f'has no matching access rule — add '
+                                f'\'Anyone with "<scope>" can delete {content.name}\' '
+                                f'to the Content block.'
+                            ),
+                            line=d.line,
+                            code="TERMIN-S020",
+                        ))
 
     def _check_role_aliases(self) -> None:
         role_names_lower = {r.lower() for r in self.role_names}

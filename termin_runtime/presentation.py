@@ -169,11 +169,69 @@ def _render_data_table(node: dict) -> str:
         for action in row_actions:
             ap = action.get("props", {})
             label = ap.get("label", "Action")
-            target = ap.get("target_state", "")
             source = props.get("source", "")
-            safe_target = target.replace(" ", "_")
             behavior = ap.get("unavailable_behavior", "disable")
+            action_kind = ap.get("action", "transition")
 
+            if action_kind == "delete":
+                # Delete action: scope-gated, confirm + fetch(DELETE) to
+                # /api/v1/{source}/{id}. No state-machine involvement.
+                required_scope = ap.get("required_scope") or ""
+                scope_check = (
+                    f'"{required_scope}" in user_scopes'
+                    if required_scope else "false"
+                )
+                # Safe attribute-quoted label (avoid breaking markup on
+                # labels containing quotes). The label comes from the IR,
+                # which is author-controlled, but Jinja autoescape handles
+                # runtime values; we escape statically here.
+                js_label = label.replace("'", "\\'").replace('"', '\\"')
+                confirm_msg = f"Delete this {source.rstrip('s')}?"
+                # On failure, read the server's detail message (e.g.
+                # "other records reference it") rather than showing
+                # just the status code.
+                delete_js = (
+                    f"if (confirm('{confirm_msg}')) "
+                    f"fetch('/api/v1/{source}/' + {{{{ item.id|tojson }}}}, "
+                    f"{{method: 'DELETE'}})"
+                    f".then(async r => {{ if (r.ok) location.reload(); "
+                    f"else {{ const b = await r.json().catch(() => null); "
+                    f"alert((b && b.detail) || ('Delete failed: ' + r.status)); }} }});"
+                )
+                btn_attrs = (
+                    f'data-termin-delete data-content="{source}" '
+                    f'data-behavior="{behavior}" data-label="{js_label}"'
+                )
+                if behavior == "hide":
+                    parts.append(f'        <span {btn_attrs}>')
+                    parts.append(f'        {{% if {scope_check} %}}')
+                    parts.append(
+                        f'        <button type="button" '
+                        f'onclick="{delete_js}" '
+                        f'class="text-red-600 hover:text-red-800 text-xs">'
+                        f'{label}</button>')
+                    parts.append(f'        {{% endif %}}')
+                    parts.append(f'        </span>')
+                else:
+                    parts.append(f'        <span {btn_attrs}>')
+                    parts.append(f'        {{% if {scope_check} %}}')
+                    parts.append(
+                        f'        <button type="button" '
+                        f'onclick="{delete_js}" '
+                        f'class="text-red-600 hover:text-red-800 text-xs">'
+                        f'{label}</button>')
+                    parts.append(f'        {{% else %}}')
+                    parts.append(
+                        f'        <button disabled '
+                        f'class="text-gray-400 text-xs cursor-not-allowed">'
+                        f'{label}</button>')
+                    parts.append(f'        {{% endif %}}')
+                    parts.append(f'        </span>')
+                continue
+
+            # Transition action (existing behavior).
+            target = ap.get("target_state", "")
+            safe_target = target.replace(" ", "_")
             # Build Jinja conditions:
             # 1. Is (current_status, target_state) a valid transition?
             # 2. Does the user hold the required scope for this transition?

@@ -337,13 +337,34 @@ async def update_record(db, content_name: str, id_value, data: dict,
 
 async def delete_record(db, content_name: str, id_value,
                         lookup_col: str = "id", terminator=None, event_bus=None):
-    """Delete a record. Returns True if a record was deleted, False if not found."""
-    cursor = await db.execute(
-        f'DELETE FROM {_q(content_name)} WHERE {_q(lookup_col)} = ?', (id_value,)
-    )
-    await db.commit()
+    """Delete a record. Raises 404 if not found, 409 if a referential
+    integrity constraint blocks the delete (SQL RESTRICT semantics — the
+    default and safest behavior when other records reference this one).
+    """
+    import sqlite3
+    from fastapi import HTTPException
+    try:
+        cursor = await db.execute(
+            f'DELETE FROM {_q(content_name)} WHERE {_q(lookup_col)} = ?',
+            (id_value,),
+        )
+        await db.commit()
+    except sqlite3.IntegrityError as e:
+        msg = str(e)
+        if "FOREIGN KEY" in msg.upper():
+            # Referential integrity — another content type references this row.
+            # Surface a clean 409 rather than an opaque 500.
+            detail = (
+                f"Cannot delete this {content_name[:-1] if content_name.endswith('s') else content_name}: "
+                f"other records reference it. Remove or reassign those first."
+            )
+            if terminator:
+                from .errors import TerminError
+                terminator.route(TerminError(
+                    source=content_name, kind="validation", message=detail))
+            raise HTTPException(status_code=409, detail=detail)
+        raise
     if cursor.rowcount == 0:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Record not found")
     if event_bus:
         await event_bus.publish({

@@ -287,10 +287,24 @@ class ActionHeader(Directive):
 
 @dataclass
 class ActionButtonDef(Directive):
-    """'Label' transitions to 'state' if available [, hide/disable otherwise]"""
+    """Row-level action button inside a 'For each X, show actions:' block.
+
+    Two kinds:
+      - kind="transition": 'Label' transitions to 'state' if available [...]
+        target_state is the destination state.
+      - kind="delete":     'Label' deletes if available [...]
+        target_state is unused (empty string). Required scope comes from
+        the content's `can delete` access rule; enforced by the lowering
+        pass and at the route layer.
+
+    unavailable_behavior controls what happens when the action is not
+    permitted for the current row/user: "hide" removes the button, "disable"
+    renders it in a disabled state.
+    """
     label: str = ""
     target_state: str = ""
     unavailable_behavior: str = "disable"  # "disable" or "hide"
+    kind: str = "transition"  # "transition" or "delete"
 
 
 @dataclass

@@ -670,7 +670,7 @@
                     "value": ".state.canTransition('in progress')",
                     "is_expr": true
                   },
-                  "unavailable_behavior": "disable"
+                  "unavailable_behavior": "hide"
                 },
                 "style": {},
                 "layout": {},
@@ -686,7 +686,7 @@
                     "value": ".state.canTransition('waiting on customer')",
                     "is_expr": true
                   },
-                  "unavailable_behavior": "disable"
+                  "unavailable_behavior": "hide"
                 },
                 "style": {},
                 "layout": {},
@@ -702,7 +702,7 @@
                     "value": ".state.canTransition('resolved')",
                     "is_expr": true
                   },
-                  "unavailable_behavior": "disable"
+                  "unavailable_behavior": "hide"
                 },
                 "style": {},
                 "layout": {},
@@ -718,7 +718,7 @@
                     "value": ".state.canTransition('in progress')",
                     "is_expr": true
                   },
-                  "unavailable_behavior": "disable"
+                  "unavailable_behavior": "hide"
                 },
                 "style": {},
                 "layout": {},
@@ -734,7 +734,7 @@
                     "value": ".state.canTransition('closed')",
                     "is_expr": true
                   },
-                  "unavailable_behavior": "disable"
+                  "unavailable_behavior": "hide"
                 },
                 "style": {},
                 "layout": {},

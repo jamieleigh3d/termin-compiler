@@ -319,19 +319,45 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
             elif isinstance(d, ActionButtonDef):
                 if cur_data_table:
                     row_actions = cur_data_table.props.get("row_actions", [])
-                    row_actions.append(ComponentNode(
-                        type="action_button",
-                        props={
+                    if d.kind == "delete":
+                        # Resolve the content's delete scope from its access
+                        # rules. The analyzer guarantees the rule exists.
+                        source_snake = cur_data_table.props.get("source", "")
+                        dt_content = next(
+                            (c for c in program.contents
+                             if _snake(c.name) == source_snake), None)
+                        delete_scope = _scope_for_verb(
+                            dt_content.access_rules, "delete") if dt_content else None
+                        props = {
                             "label": d.label,
-                            "action": "transition",
-                            "target_state": d.target_state,
-                            "visible_when": PropValue(
-                                value=f".state.canTransition('{d.target_state}')",
-                                is_expr=True,
-                            ),
+                            "action": "delete",
+                            "required_scope": delete_scope,
                             "unavailable_behavior": d.unavailable_behavior,
-                        },
-                    ))
+                        }
+                        # visible_when: the row is deletable iff the user
+                        # holds the delete scope. The renderer evaluates
+                        # identity.scopes at render time.
+                        if delete_scope:
+                            props["visible_when"] = PropValue(
+                                value=f"'{delete_scope}' in identity.scopes",
+                                is_expr=True,
+                            )
+                        row_actions.append(ComponentNode(
+                            type="action_button", props=props))
+                    else:
+                        row_actions.append(ComponentNode(
+                            type="action_button",
+                            props={
+                                "label": d.label,
+                                "action": "transition",
+                                "target_state": d.target_state,
+                                "visible_when": PropValue(
+                                    value=f".state.canTransition('{d.target_state}')",
+                                    is_expr=True,
+                                ),
+                                "unavailable_behavior": d.unavailable_behavior,
+                            },
+                        ))
                     cur_data_table.props["row_actions"] = row_actions
 
         # Finalize accumulated data_table and form

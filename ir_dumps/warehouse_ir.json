@@ -694,7 +694,23 @@
                     "value": ".state.canTransition('discontinued')",
                     "is_expr": true
                   },
-                  "unavailable_behavior": "disable"
+                  "unavailable_behavior": "hide"
+                },
+                "style": {},
+                "layout": {},
+                "children": []
+              },
+              {
+                "type": "action_button",
+                "props": {
+                  "label": "Delete",
+                  "action": "delete",
+                  "required_scope": "inventory.admin",
+                  "unavailable_behavior": "hide",
+                  "visible_when": {
+                    "value": "'inventory.admin' in identity.scopes",
+                    "is_expr": true
+                  }
                 },
                 "style": {},
                 "layout": {},
