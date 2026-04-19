@@ -66,6 +66,104 @@ def _resolve_ref_display(ref_content):
     return display_col, unique_col
 
 
+def _build_field_input_props(field_obj, display_label, content_by_name) -> dict:
+    """Build props for a field_input ComponentNode from a Content Field.
+
+    Shared by AcceptInput (create form) and edit modal lowering so the
+    two input renderings stay consistent.
+    """
+    col = _snake(field_obj.name)
+    props = {"field": col, "label": display_label}
+    props["input_type"] = field_obj.type_expr.base_type
+    if field_obj.type_expr.required:
+        props["required"] = True
+    if field_obj.type_expr.base_type == "currency":
+        props["input_type"] = "currency"
+        props["step"] = "0.01"
+    elif field_obj.type_expr.base_type == "whole_number":
+        props["input_type"] = "number"
+        if field_obj.type_expr.minimum is not None:
+            props["minimum"] = field_obj.type_expr.minimum
+    elif field_obj.type_expr.base_type == "enum":
+        props["input_type"] = "enum"
+        props["enum_values"] = list(field_obj.type_expr.enum_values)
+    elif field_obj.type_expr.references:
+        props["input_type"] = "reference"
+        props["reference_content"] = _snake(field_obj.type_expr.references)
+        ref_content = content_by_name.get(field_obj.type_expr.references)
+        if ref_content:
+            ref_display, ref_unique = _resolve_ref_display(ref_content)
+            props["reference_display_col"] = ref_display
+            if ref_unique:
+                props["reference_unique_col"] = ref_unique
+    else:
+        props["input_type"] = "text"
+    return props
+
+
+# System fields excluded from the edit modal. Automatic-type fields
+# are also excluded (created_at, updated_at, etc.).
+_SYSTEM_FIELD_NAMES = frozenset({"id", "created_at", "updated_at"})
+
+
+def _build_edit_modal(content, sm_by_content, content_by_name):
+    """Build an edit_modal ComponentNode for a given Content.
+
+    Contains a field_input per editable non-system field. If the content
+    has a state machine, also appends a field_input with input_type="state"
+    for the status column. The renderer populates state-select options
+    from transition rules filtered by user scopes at render time.
+
+    Multi-state-machine per content is not yet supported by the runtime
+    (see v0.9 backlog). For now, at most one state field is emitted per
+    modal, matching the sm_by_content[content.name] singleton assumption.
+    """
+    field_inputs = []
+    for f in content.fields:
+        if _snake(f.name) in _SYSTEM_FIELD_NAMES:
+            continue
+        if f.type_expr.base_type == "automatic":
+            continue
+        props = _build_field_input_props(f, f.name, content_by_name)
+        field_inputs.append(ComponentNode(type="field_input", props=props))
+
+    # If the content has a state machine, include the status field as a
+    # state-select. The full list of all states is embedded in props so
+    # the renderer can pre-render options without per-content Jinja
+    # context plumbing. The JS opener filters those options at modal-open
+    # time based on current row state + user scopes + transition rules.
+    sm = sm_by_content.get(content.name)
+    if sm:
+        # Collect all states: initial state + reachable states + any
+        # state named as `to_state` in a transition. Order matters for
+        # stable rendering (initial first, then alphabetical).
+        all_states = {sm.initial_state}
+        for tr in sm.transitions:
+            all_states.add(tr.from_state)
+            all_states.add(tr.to_state)
+        # Preserve initial first, then alphabetical for the rest.
+        ordered_states = [sm.initial_state] + sorted(
+            s for s in all_states if s != sm.initial_state)
+        state_field_props = {
+            "field": "status",
+            "label": "Status",
+            "input_type": "state",
+            "state_machine": sm.machine_name,
+            "all_states": ordered_states,
+        }
+        field_inputs.append(
+            ComponentNode(type="field_input", props=state_field_props))
+
+    return ComponentNode(
+        type="edit_modal",
+        props={
+            "content": _snake(content.name),
+            "singular": content.singular,
+        },
+        children=tuple(field_inputs),
+    )
+
+
 def lower_pages(program, content_by_name, sm_by_content) -> list:
     """Lower UserStory AST nodes into PageEntry IR nodes."""
     pages = []
@@ -319,13 +417,13 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
             elif isinstance(d, ActionButtonDef):
                 if cur_data_table:
                     row_actions = cur_data_table.props.get("row_actions", [])
+                    source_snake = cur_data_table.props.get("source", "")
+                    dt_content = next(
+                        (c for c in program.contents
+                         if _snake(c.name) == source_snake), None)
                     if d.kind == "delete":
                         # Resolve the content's delete scope from its access
                         # rules. The analyzer guarantees the rule exists.
-                        source_snake = cur_data_table.props.get("source", "")
-                        dt_content = next(
-                            (c for c in program.contents
-                             if _snake(c.name) == source_snake), None)
                         delete_scope = _scope_for_verb(
                             dt_content.access_rules, "delete") if dt_content else None
                         props = {
@@ -334,9 +432,6 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
                             "required_scope": delete_scope,
                             "unavailable_behavior": d.unavailable_behavior,
                         }
-                        # visible_when: the row is deletable iff the user
-                        # holds the delete scope. The renderer evaluates
-                        # identity.scopes at render time.
                         if delete_scope:
                             props["visible_when"] = PropValue(
                                 value=f"'{delete_scope}' in identity.scopes",
@@ -344,6 +439,36 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
                             )
                         row_actions.append(ComponentNode(
                             type="action_button", props=props))
+                    elif d.kind == "edit":
+                        # Resolve the content's update scope. The analyzer
+                        # guarantees `can update` exists on the content.
+                        update_scope = _scope_for_verb(
+                            dt_content.access_rules, "update") if dt_content else None
+                        props = {
+                            "label": d.label,
+                            "action": "edit",
+                            "required_scope": update_scope,
+                            "unavailable_behavior": d.unavailable_behavior,
+                        }
+                        if update_scope:
+                            props["visible_when"] = PropValue(
+                                value=f"'{update_scope}' in identity.scopes",
+                                is_expr=True,
+                            )
+                        row_actions.append(ComponentNode(
+                            type="action_button", props=props))
+                        # Also append an edit_modal to the page if one
+                        # for this content is not already there. This is
+                        # the pre-populated form the button opens.
+                        already_has_modal = any(
+                            c.type == "edit_modal"
+                            and c.props.get("content") == source_snake
+                            for c in children
+                        )
+                        if not already_has_modal and dt_content:
+                            modal = _build_edit_modal(
+                                dt_content, sm_by_content, content_by_name)
+                            children.append(modal)
                     else:
                         row_actions.append(ComponentNode(
                             type="action_button",

@@ -109,6 +109,7 @@ def classify_line(text: str) -> str:
             return rule
     if text.startswith('"') and " transitions to " in text: return "action_button_line"
     if text.startswith('"') and " deletes" in text and " if available" in text: return "action_button_line"
+    if text.startswith('"') and " edits" in text and " if available" in text: return "action_button_line"
     if text.startswith('"') and " links to " in text: return "nav_item_line"
     if any(text.startswith(kw) for kw in _SHAPE_KW): return "compute_shape_line"
     if text.startswith("```") and text.endswith("```") and len(text) > 6: return "compute_body_multiline"

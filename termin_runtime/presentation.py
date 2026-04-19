@@ -173,6 +173,59 @@ def _render_data_table(node: dict) -> str:
             behavior = ap.get("unavailable_behavior", "disable")
             action_kind = ap.get("action", "transition")
 
+            if action_kind == "edit":
+                # Edit action: scope-gated, opens a modal dialog
+                # pre-populated from the row via fetch(GET /api/v1/…/{id}).
+                # Save orchestrates a state-transition request (if status
+                # changed) followed by PUT for other fields, so state
+                # changes stay on the transition path and do not depend
+                # on the v0.8 PUT-backdoor fix landing first.
+                required_scope = ap.get("required_scope") or ""
+                scope_check = (
+                    f'"{required_scope}" in user_scopes'
+                    if required_scope else "false"
+                )
+                js_label = label.replace("'", "\\'").replace('"', '\\"')
+                # The onclick calls the page-level opener for this content,
+                # which is emitted by _render_edit_modal. It reads this
+                # button's data-row-id, fetches current values, populates
+                # the form, and shows the modal.
+                edit_js = (
+                    f"window.terminOpenEditModal_{source}("
+                    f"{{{{ item.id|tojson }}}})"
+                )
+                btn_attrs = (
+                    f'data-termin-edit data-content="{source}" '
+                    f'data-row-id="{{{{ item.id }}}}" '
+                    f'data-behavior="{behavior}" data-label="{js_label}"'
+                )
+                if behavior == "hide":
+                    parts.append(f'        <span {btn_attrs}>')
+                    parts.append(f'        {{% if {scope_check} %}}')
+                    parts.append(
+                        f'        <button type="button" '
+                        f'onclick="{edit_js}" '
+                        f'class="text-indigo-600 hover:text-indigo-800 text-xs">'
+                        f'{label}</button>')
+                    parts.append(f'        {{% endif %}}')
+                    parts.append(f'        </span>')
+                else:
+                    parts.append(f'        <span {btn_attrs}>')
+                    parts.append(f'        {{% if {scope_check} %}}')
+                    parts.append(
+                        f'        <button type="button" '
+                        f'onclick="{edit_js}" '
+                        f'class="text-indigo-600 hover:text-indigo-800 text-xs">'
+                        f'{label}</button>')
+                    parts.append(f'        {{% else %}}')
+                    parts.append(
+                        f'        <button disabled '
+                        f'class="text-gray-400 text-xs cursor-not-allowed">'
+                        f'{label}</button>')
+                    parts.append(f'        {{% endif %}}')
+                    parts.append(f'        </span>')
+                continue
+
             if action_kind == "delete":
                 # Delete action: scope-gated, confirm + fetch(DELETE) to
                 # /api/v1/{source}/{id}. No state-machine involvement.
@@ -348,20 +401,36 @@ def _render_field_input(node: dict, content_schemas: dict = None) -> str:
     input_type = props.get("input_type", "text")
     required = ' required' if props.get("required") else ''
     unique_attr = ' data-validate-unique="true"' if props.get("validate_unique") else ''
+    # data-termin-field attribute on every input so behavioral tests can
+    # select form inputs via DOM without relying on English labels.
+    termin_attr = f' data-termin-field="{key}"'
 
     parts = [f'  <div class="mb-4">']
     parts.append(f'    <label class="block text-sm font-medium text-gray-700 mb-1">{label}</label>')
 
     if input_type == "enum":
-        parts.append(f'    <select name="{key}" class="w-full border rounded px-3 py-2"{required}>')
+        parts.append(f'    <select name="{key}"{termin_attr} class="w-full border rounded px-3 py-2"{required}>')
         parts.append(f'      <option value="">Select...</option>')
         for val in props.get("enum_values", []):
             parts.append(f'      <option value="{val}">{val}</option>')
         parts.append(f'    </select>')
+    elif input_type == "state":
+        # State-machine field. Render a select with ALL states from the
+        # state machine (embedded in props at lowering time). JS filters
+        # the visible options at modal-open time based on the row's
+        # current state (valid transition targets) and the user's scopes.
+        # The current state is always included so the user can save
+        # without changing state.
+        parts.append(
+            f'    <select name="{key}"{termin_attr} '
+            f'class="w-full border rounded px-3 py-2"{required}>')
+        for state_name in props.get("all_states", []):
+            parts.append(f'      <option value="{state_name}">{state_name}</option>')
+        parts.append(f'    </select>')
     elif input_type == "reference":
         ref = props.get("reference_content", "")
         ref_display = props.get("reference_display_col", "id")
-        parts.append(f'    <select name="{key}" class="w-full border rounded px-3 py-2"{required}>')
+        parts.append(f'    <select name="{key}"{termin_attr} class="w-full border rounded px-3 py-2"{required}>')
         parts.append(f'      <option value="">Select...</option>')
         parts.append(f'      {{% for item in {ref}_list %}}')
         parts.append(f'      <option value="{{{{ item.id }}}}">{{{{ item.{ref_display} }}}}</option>')
@@ -370,9 +439,9 @@ def _render_field_input(node: dict, content_schemas: dict = None) -> str:
     elif input_type in ("number", "currency", "whole_number"):
         step = f' step="{props["step"]}"' if props.get("step") else ""
         min_attr = f' min="{props["minimum"]}"' if props.get("minimum") is not None else ""
-        parts.append(f'    <input type="number" name="{key}" class="w-full border rounded px-3 py-2"{step}{min_attr}{required}>')
+        parts.append(f'    <input type="number" name="{key}"{termin_attr} class="w-full border rounded px-3 py-2"{step}{min_attr}{required}>')
     else:
-        parts.append(f'    <input type="text" name="{key}" class="w-full border rounded px-3 py-2"{required}{unique_attr}>')
+        parts.append(f'    <input type="text" name="{key}"{termin_attr} class="w-full border rounded px-3 py-2"{required}{unique_attr}>')
 
     parts.append(f'  </div>')
     return '\n'.join(parts)
@@ -477,6 +546,179 @@ def _render_action_button(node: dict) -> str:
     return f'<button class="bg-indigo-600 text-white px-4 py-2 rounded text-sm hover:bg-indigo-700">{label}</button>'
 
 
+def _render_edit_modal(node: dict, content_schemas: dict = None) -> str:
+    """Render the edit_modal ComponentNode as an HTML5 <dialog> with a
+    form containing the content's editable fields, plus the JS opener
+    and submit orchestrator.
+
+    The opener is attached to window as terminOpenEditModal_{content}
+    so each row's Edit button onclick can call it with the row id.
+    On Save, the form fires a state-transition POST for status changes
+    (if status changed), then a PUT for the other fields. This keeps
+    state changes on the already-scoped transition path and is
+    independent of the v0.8 PUT-backdoor fix.
+    """
+    props = node.get("props", {})
+    content = props.get("content", "")
+    singular = props.get("singular", content[:-1] if content.endswith("s") else content)
+    modal_id = f"termin-edit-modal-{content}"
+
+    # Check if the form includes the state field — controls how the
+    # submit handler splits the body between transition and PUT.
+    has_state_field = any(
+        (child.get("props", {}) or {}).get("input_type") == "state"
+        for child in node.get("children", [])
+    )
+
+    # user_scopes + per-content transitions are embedded as data
+    # attributes so the JS is self-contained and doesn't need window
+    # globals. They're filled in by Jinja at render time.
+    user_scopes_attr = "{{ (user_scopes|list)|tojson }}"
+    transitions_attr = (
+        "{{ (_sm_transitions_by_content.get('" + content +
+        "', []))|tojson }}"
+    )
+    parts = [
+        f'<dialog id="{modal_id}" data-termin-edit-modal data-content="{content}" '
+        f"data-user-scopes='{user_scopes_attr}' "
+        f"data-sm-transitions='{transitions_attr}' "
+        f'class="rounded-lg shadow-xl p-0 bg-white" style="min-width:28rem;max-width:36rem;">',
+        f'  <form data-content="{content}" class="p-6">',
+        f'    <h2 class="text-lg font-semibold mb-4">Edit {singular}</h2>',
+    ]
+    # Render each field_input child using the existing renderer.
+    for child in node.get("children", []):
+        if child.get("type") == "field_input":
+            parts.append(_render_field_input(child, content_schemas))
+    parts.extend([
+        f'    <div class="flex justify-end gap-2 mt-4">',
+        f'      <button type="button" data-termin-action="cancel" '
+        f'onclick="this.closest(\'dialog\').close()" '
+        f'class="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</button>',
+        f'      <button type="submit" data-termin-action="save" '
+        f'class="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">Save</button>',
+        f'    </div>',
+        f'  </form>',
+        f'</dialog>',
+    ])
+
+    # Page-level script: opener function, submit handler, state filtering.
+    # Wrapped in an IIFE so we don't leak locals. Exposes
+    # terminOpenEditModal_{content} as the entry point the per-row
+    # Edit button onclick calls.
+    state_js = "true" if has_state_field else "false"
+    script = f'''
+<script>
+(function() {{
+  const MODAL_ID = "{modal_id}";
+  const CONTENT = "{content}";
+  const HAS_STATE_FIELD = {state_js};
+
+  function getModal() {{ return document.getElementById(MODAL_ID); }}
+
+  async function openEdit(rowId) {{
+    const modal = getModal();
+    if (!modal) return;
+    const form = modal.querySelector("form");
+    // Fetch the row's current values.
+    let row;
+    try {{
+      const res = await fetch(`/api/v1/${{CONTENT}}/${{rowId}}`);
+      if (!res.ok) throw new Error("Failed to load record: " + res.status);
+      row = await res.json();
+    }} catch (err) {{ alert(err.message); return; }}
+    form.dataset.rowId = rowId;
+    form.dataset.origStatus = row.status || "";
+    // Populate inputs by matching data-termin-field.
+    form.querySelectorAll("[data-termin-field]").forEach(input => {{
+      const k = input.dataset.terminField;
+      if (k in row) input.value = row[k] == null ? "" : row[k];
+    }});
+    // Filter state dropdown options if present — only valid transitions
+    // from the current state that the user has scope for (plus the
+    // current state itself, always, so the user can save without
+    // changing state).
+    if (HAS_STATE_FIELD) {{
+      const sel = form.querySelector('[data-termin-field="status"]');
+      if (sel) {{
+        const cur = row.status;
+        // Read user scopes + transitions from data attributes on this
+        // dialog (Jinja-rendered). Self-contained; no window globals.
+        let userScopes = [];
+        let transitions = [];
+        try {{ userScopes = JSON.parse(modal.dataset.userScopes || "[]"); }} catch (e) {{}}
+        try {{ transitions = JSON.parse(modal.dataset.smTransitions || "[]"); }} catch (e) {{}}
+        const validTargets = new Set([cur]);
+        for (const t of transitions) {{
+          if (t.from === cur && (!t.scope || userScopes.indexOf(t.scope) !== -1)) {{
+            validTargets.add(t.to);
+          }}
+        }}
+        Array.from(sel.options).forEach(opt => {{
+          const ok = validTargets.has(opt.value);
+          opt.disabled = !ok;
+          opt.hidden = !ok;
+        }});
+        sel.value = cur;
+      }}
+    }}
+    if (typeof modal.showModal === "function") modal.showModal();
+    else modal.setAttribute("open", "");
+  }}
+
+  // Expose the opener under a stable name the per-row Edit button onclick calls.
+  window["terminOpenEditModal_" + CONTENT] = openEdit;
+
+  // Submit handler: orchestrate state transition (if status changed)
+  // followed by PUT for other fields.
+  document.addEventListener("DOMContentLoaded", function init() {{
+    const modal = getModal();
+    if (!modal) return;
+    const form = modal.querySelector("form");
+    form.addEventListener("submit", async (e) => {{
+      e.preventDefault();
+      const rowId = form.dataset.rowId;
+      if (!rowId) return;
+      const fd = new FormData(form);
+      const body = {{}};
+      fd.forEach((v, k) => {{ body[k] = v; }});
+      const origStatus = form.dataset.origStatus || "";
+      const newStatus = body.status || "";
+      // Always strip status from the PUT body — state changes route
+      // through /_transition/ to respect transition rules + scopes.
+      delete body.status;
+      try {{
+        if (HAS_STATE_FIELD && newStatus && newStatus !== origStatus) {{
+          const stateRes = await fetch(
+            `/_transition/${{CONTENT}}/${{rowId}}/${{encodeURIComponent(newStatus)}}`,
+            {{method: "POST"}});
+          if (!stateRes.ok) {{
+            const err = await stateRes.json().catch(() => null);
+            throw new Error((err && err.detail) || ("State change failed: " + stateRes.status));
+          }}
+        }}
+        if (Object.keys(body).length > 0) {{
+          const putRes = await fetch(`/api/v1/${{CONTENT}}/${{rowId}}`, {{
+            method: "PUT",
+            headers: {{"Content-Type": "application/json"}},
+            body: JSON.stringify(body),
+          }});
+          if (!putRes.ok) {{
+            const err = await putRes.json().catch(() => null);
+            throw new Error((err && err.detail) || ("Save failed: " + putRes.status));
+          }}
+        }}
+        modal.close();
+        location.reload();
+      }} catch (err) {{ alert(err.message); }}
+    }});
+  }});
+}})();
+</script>
+'''
+    return '\n'.join(parts) + script
+
+
 def _render_unknown(node: dict) -> str:
     comp_type = node.get("type", "unknown")
     return f'<div class="text-gray-400 text-sm">[{comp_type} component]</div>'
@@ -495,6 +737,7 @@ RENDERERS = {
     "chart": _render_chart,
     "section": _render_section,
     "action_button": _render_action_button,
+    "edit_modal": _render_edit_modal,
     # Sub-components rendered inline by their parent:
     # "filter", "search", "highlight", "subscribe", "related"
 }

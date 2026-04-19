@@ -703,6 +703,22 @@
               {
                 "type": "action_button",
                 "props": {
+                  "label": "Edit",
+                  "action": "edit",
+                  "required_scope": "inventory.write",
+                  "unavailable_behavior": "hide",
+                  "visible_when": {
+                    "value": "'inventory.write' in identity.scopes",
+                    "is_expr": true
+                  }
+                },
+                "style": {},
+                "layout": {},
+                "children": []
+              },
+              {
+                "type": "action_button",
+                "props": {
                   "label": "Delete",
                   "action": "delete",
                   "required_scope": "inventory.admin",
@@ -788,6 +804,97 @@
               "type": "subscribe",
               "props": {
                 "content": "stock_level"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "edit_modal",
+          "props": {
+            "content": "products",
+            "singular": "product"
+          },
+          "style": {},
+          "layout": {},
+          "children": [
+            {
+              "type": "field_input",
+              "props": {
+                "field": "sku",
+                "label": "SKU",
+                "input_type": "text",
+                "required": true
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "name",
+                "label": "name",
+                "input_type": "text",
+                "required": true
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "description",
+                "label": "description",
+                "input_type": "text"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "unit_cost",
+                "label": "unit cost",
+                "input_type": "currency",
+                "step": "0.01"
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "category",
+                "label": "category",
+                "input_type": "enum",
+                "enum_values": [
+                  "raw material",
+                  "finished good",
+                  "packaging"
+                ]
+              },
+              "style": {},
+              "layout": {},
+              "children": []
+            },
+            {
+              "type": "field_input",
+              "props": {
+                "field": "status",
+                "label": "Status",
+                "input_type": "state",
+                "state_machine": "product lifecycle",
+                "all_states": [
+                  "draft",
+                  "active",
+                  "discontinued"
+                ]
               },
               "style": {},
               "layout": {},

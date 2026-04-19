@@ -165,40 +165,49 @@ class Analyzer:
         self._check_boundaries()
         self._check_error_handlers()
         self._check_dependent_values()
-        self._check_delete_actions()
+        self._check_row_action_access_rules()
 
-    def _check_delete_actions(self) -> None:
-        """A Delete action button on a table requires the governing content
-        to declare a `can delete` access rule. Otherwise the button has no
-        resolvable required_scope and any click would be unreachable."""
+    def _check_row_action_access_rules(self) -> None:
+        """Row action buttons of kind=delete/edit require the governing
+        content to declare the matching access rule (can delete / can
+        update). Otherwise the button has no resolvable required_scope
+        and any click would be unreachable.
+
+        TERMIN-S020: Delete action without `can delete` rule.
+        TERMIN-S021: Edit action without `can update` rule.
+        """
+        # Maps action kind -> (required access verb, error code).
+        rules = {
+            "delete": ("delete", "TERMIN-S020"),
+            "edit":   ("update", "TERMIN-S021"),
+        }
         for story in self.program.stories:
             current_table_content_name: str | None = None
             for d in story.directives:
                 if isinstance(d, DisplayTable):
                     current_table_content_name = d.content_name
-                elif isinstance(d, ActionButtonDef) and d.kind == "delete":
+                elif isinstance(d, ActionButtonDef) and d.kind in rules:
                     if not current_table_content_name:
-                        # Delete button with no preceding table is a
-                        # structural error — the For-each block was
-                        # ungrounded. Fall through silently; _check_stories
-                        # and lowering will handle the absent context.
+                        # Row action with no preceding table — ungrounded.
+                        # Fall through silently; lowering handles it.
                         continue
                     content = self._find_content_by_name(
                         current_table_content_name)
                     if content is None:
-                        continue  # undefined content is caught elsewhere
-                    has_delete_rule = any(
-                        "delete" in rule.verbs for rule in content.access_rules)
-                    if not has_delete_rule:
+                        continue  # undefined content caught elsewhere
+                    verb, code = rules[d.kind]
+                    has_rule = any(
+                        verb in rule.verbs for rule in content.access_rules)
+                    if not has_rule:
                         self.errors.add(SemanticError(
                             message=(
-                                f'Delete action "{d.label}" on "{content.name}" '
-                                f'has no matching access rule — add '
-                                f'\'Anyone with "<scope>" can delete {content.name}\' '
-                                f'to the Content block.'
+                                f'{d.kind.capitalize()} action "{d.label}" on '
+                                f'"{content.name}" has no matching access rule '
+                                f'— add \'Anyone with "<scope>" can {verb} '
+                                f'{content.name}\' to the Content block.'
                             ),
                             line=d.line,
-                            code="TERMIN-S020",
+                            code=code,
                         ))
 
     def _check_role_aliases(self) -> None:

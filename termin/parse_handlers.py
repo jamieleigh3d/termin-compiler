@@ -338,24 +338,30 @@ def _parse_line(text: str, rule: str, ln: int):
     if rule == "action_button_line":
         # TatSu 5.15.1 does not populate parseinfo.rule for #Name-tagged
         # alternatives under rule_name= dispatch, so we cannot use
-        # _rule(r) to discriminate ActionHide / ActionDisable /
-        # ActionDeleteHide / ActionDeleteDisable. Instead, we inspect
-        # the source text (which is reliable) and use TatSu only to
-        # extract the label/state content.
+        # _rule(r) to discriminate the six alternatives. Instead, we
+        # inspect the source text (which is reliable) and use TatSu only
+        # to extract the label/state content.
         r = P(text, rule)
         lower_text = text.lower()
-        is_delete = " deletes" in lower_text and " transitions to " not in lower_text
-        kind = "delete" if is_delete else "transition"
+        has_transitions = " transitions to " in lower_text
+        is_delete = " deletes" in lower_text and not has_transitions
+        is_edit = " edits" in lower_text and not has_transitions
+        if is_delete:
+            kind = "delete"
+        elif is_edit:
+            kind = "edit"
+        else:
+            kind = "transition"
         behavior = "hide" if "hide otherwise" in lower_text else "disable"
         if r:
             label = _qs(r.get("label",""))
-            state = "" if is_delete else _qs(r.get("state",""))
+            state = "" if (is_delete or is_edit) else _qs(r.get("state",""))
         else:
             # Full text fallback.
             parts = text.strip()
             label = _fq(parts) or ""
             state = ""
-            if not is_delete:
+            if kind == "transition":
                 si = lower_text.find("transitions to ")
                 if si >= 0:
                     rest = parts[si+len("transitions to "):]

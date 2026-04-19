@@ -135,8 +135,18 @@ def _register_page_get(app, ctx, page, slug, page_reqs, page_templates,
         db = await get_db(ctx.db_path)
         try:
             all_transitions = {}
+            # Per-content transition lists, used by the edit modal JS to
+            # filter the state dropdown to valid targets reachable from
+            # the current row state and allowed by the user's scopes.
+            # Shape: {content_ref: [{from, to, scope}, ...]}.
+            sm_transitions_by_content = {}
             for sm_content, sm_data in ctx.sm_lookup.items():
-                all_transitions.update(sm_data.get("transitions", {}))
+                trans = sm_data.get("transitions", {})
+                all_transitions.update(trans)
+                sm_transitions_by_content[sm_content] = [
+                    {"from": f, "to": t, "scope": s}
+                    for (f, t), s in trans.items()
+                ]
 
             import datetime
             cel_ctx = {
@@ -166,6 +176,7 @@ def _register_page_get(app, ctx, page, slug, page_reqs, page_templates,
                 "q": q,
                 "termin_compute_js": compute_js,
                 "_sm_transitions": all_transitions,
+                "_sm_transitions_by_content": sm_transitions_by_content,
                 "user_scopes": set(user["scopes"]),
                 "termin_eval": _termin_eval,
                 "flash_msg": flash_msg,

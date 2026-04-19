@@ -453,6 +453,10 @@ action_button_line
       'if' 'available' ',' 'hide' 'otherwise' $           #ActionDeleteHide
     | label:quoted_string 'deletes'
       'if' 'available' [',' 'disable' 'otherwise'] $      #ActionDeleteDisable
+    | label:quoted_string 'edits'
+      'if' 'available' ',' 'hide' 'otherwise' $           #ActionEditHide
+    | label:quoted_string 'edits'
+      'if' 'available' [',' 'disable' 'otherwise'] $      #ActionEditDisable
     ;
 
 display_agg_line

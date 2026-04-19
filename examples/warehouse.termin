@@ -74,6 +74,7 @@ As a warehouse clerk, I want to see all products and their current stock levels
     For each product, show actions:
       "Activate" transitions to "active" if available
       "Discontinue" transitions to "discontinued" if available, hide otherwise
+      "Edit" edits if available, hide otherwise
       "Delete" deletes if available, hide otherwise
 
 As a warehouse clerk, I want to receive stock into the warehouse
