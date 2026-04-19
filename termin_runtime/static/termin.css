@@ -40,7 +40,11 @@
   --t-warn-fg:    #7a5a10;
   --t-redacted:   #999;
 
-  /* Typography */
+  /* Typography. Single sans family for body and headings keeps the
+     default enterprise look clean. --t-font-serif is reserved for a
+     future serif-theme presentation provider; nothing references it
+     in this stylesheet. --t-font-mono is used for the app wordmark
+     and numeric cells. */
   --t-font-sans:  ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --t-font-serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
   --t-font-mono:  ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -53,27 +57,29 @@
   --t-focus-ring: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--t-accent);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --t-bg:         #0f0f10;
-    --t-surface:    #161617;
-    --t-surface-2:  #1e1e1f;
-    --t-text:       #e8e8e6;
-    --t-text-muted: #a0a0a0;
-    --t-border:     #2a2a2b;
-    --t-border-strong: #3a3a3b;
-    --t-accent:     #8fbcb8;
-    --t-accent-hover: #b6d6d2;
-    --t-success-bg: #173022;
-    --t-success-fg: #93d3a8;
-    --t-success-border: #244831;
-    --t-error-bg:   #3a1717;
-    --t-error-fg:   #eda5a5;
-    --t-error-border: #5a2828;
-    --t-warn-bg:    #3a2c14;
-    --t-warn-fg:    #e6c380;
-    --t-redacted:   #777;
-  }
+/* Dark mode is opt-in via `html[data-theme="dark"]`, not automatic from
+   prefers-color-scheme. Enterprise applications typically want a
+   predictable light default; a future presentation provider or theme
+   toggle can set data-theme="dark" on <html> to activate. */
+html[data-theme="dark"] {
+  --t-bg:         #0f0f10;
+  --t-surface:    #161617;
+  --t-surface-2:  #1e1e1f;
+  --t-text:       #e8e8e6;
+  --t-text-muted: #a0a0a0;
+  --t-border:     #2a2a2b;
+  --t-border-strong: #3a3a3b;
+  --t-accent:     #8fbcb8;
+  --t-accent-hover: #b6d6d2;
+  --t-success-bg: #173022;
+  --t-success-fg: #93d3a8;
+  --t-success-border: #244831;
+  --t-error-bg:   #3a1717;
+  --t-error-fg:   #eda5a5;
+  --t-error-border: #5a2828;
+  --t-warn-bg:    #3a2c14;
+  --t-warn-fg:    #e6c380;
+  --t-redacted:   #777;
 }
 
 /* ── Body / chrome ──────────────────────────────────────────────── */
@@ -95,10 +101,11 @@ body {
   color: var(--t-text);
 }
 
-/* Headings — serif for content hierarchy */
+/* Headings — sans, just heavier and larger than body. No serif mixing. */
 h1, h2, h3, h4, h5, h6 {
-  font-family: var(--t-font-serif);
+  font-family: var(--t-font-sans);
   color: var(--t-text);
+  font-weight: 600;
   letter-spacing: -0.01em;
 }
 
@@ -345,7 +352,7 @@ div.text-gray-600 {
 }
 
 .text-2xl.font-bold {
-  font-family: var(--t-font-serif);
+  font-family: var(--t-font-sans);
   font-weight: 600 !important;
   font-size: 1.75rem !important;
   letter-spacing: -0.015em;
@@ -428,9 +435,9 @@ div.bg-gray-50.rounded {
 
 div.text-lg.text-gray-800 {
   color: var(--t-text) !important;
-  font-family: var(--t-font-serif);
+  font-family: var(--t-font-sans);
   font-size: 1.25rem !important;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.01em;
 }
 
