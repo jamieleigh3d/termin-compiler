@@ -1,3 +1,9 @@
+# Copyright 2026 Jamie-Leigh Blake
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+
 """Tests for thread 009 fixes: LLM prompt mapping, optional directive, thinking field.
 
 Fix 1: Level 1 LLM prompt mapping — objective belongs in system message, not user turn.

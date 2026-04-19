@@ -52,6 +52,14 @@ Any conforming runtime reads the IR and produces a running application with:
 - **Real-time updates** (WebSocket + SSE)
 - **Reflection API** for operational visibility
 
+## What Termin is not
+
+- **Not a general-purpose programming language.** The expressive surface is deliberately narrow. Anything outside that surface is either not expressible or has to cross a Channel to an external system.
+- **Not a code generator you then extend by hand.** The runtime consumes the compiled IR directly; there is no per-application scaffolding to edit.
+- **Not a database.** The reference runtime uses SQLite; alternative runtimes can use whatever storage is appropriate for the deployment.
+- **Not a UI toolkit.** The presentation layer is declarative and rendered server-side. Rich client-side interactivity is outside its scope.
+- **Not a commercial product.** Apache 2.0, no paid tier, no hosted offering. See [termin.dev](https://termin.dev) for the project's guarantees and non-monetization posture.
+
 ## Project Structure
 
 ```
@@ -151,11 +159,23 @@ python -m termin.cli compile examples/warehouse.termin
 python -m termin.cli serve warehouse.termin.pkg
 ```
 
+## Learn more
+
+- **[termin.dev](https://termin.dev)** --- project overview, guarantees, roadmap, changelog
+- **[Conformance suite](https://github.com/jamieleigh3d/termin-conformance)** --- tests any conforming runtime must pass
+- **[Issues](https://github.com/jamieleigh3d/termin-compiler/issues)** --- bug reports, feature requests, design discussion
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Contributions require a Developer Certificate of Origin (DCO) sign-off on each commit.
+
 ## Authors
 
 **Jamie-Leigh Blake**
 **Claude Anthropic** --- coauthor
 
+See [CONTRIBUTORS.md](CONTRIBUTORS.md) for the list of everyone who has contributed to the project.
+
 ## License
 
-Apache 2.0
+Apache License 2.0. See [LICENSE](LICENSE) for the full text and [NOTICE](NOTICE) for attribution.

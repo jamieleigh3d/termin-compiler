@@ -1,0 +1,22 @@
+Termin
+Copyright 2026 Jamie-Leigh Blake
+
+This product includes software developed by Jamie-Leigh Blake
+and licensed under the Apache License, Version 2.0.
+
+This product depends on third-party software, each distributed under
+its own open-source license. A non-exhaustive list of runtime
+dependencies and their licenses:
+
+  - TatSu (BSD-2-Clause)
+  - cel-python (Apache-2.0)
+  - FastAPI (MIT)
+  - uvicorn (BSD-3-Clause)
+  - websockets (BSD-3-Clause)
+  - aiosqlite (MIT)
+  - Jinja2 (BSD-3-Clause)
+  - python-multipart (Apache-2.0)
+  - httpx (BSD-3-Clause)
+  - Click (BSD-3-Clause)
+
+See each dependency's distribution for the full text of its license.

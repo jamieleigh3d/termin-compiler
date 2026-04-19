@@ -1,3 +1,9 @@
+# Copyright 2026 Jamie-Leigh Blake
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+
 """Block C: Boundary containment map and identity enforcement.
 
 The app itself is always a boundary. Content not in any explicit sub-boundary

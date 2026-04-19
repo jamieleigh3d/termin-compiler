@@ -1,3 +1,9 @@
+# Copyright 2026 Jamie-Leigh Blake
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+
 """Page route generation — presentation layer routing and form handling.
 
 Registers page GET routes (with data loading, CEL evaluation, and template

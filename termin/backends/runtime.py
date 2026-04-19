@@ -1,3 +1,9 @@
+# Copyright 2026 Jamie-Leigh Blake
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+
 """Runtime backend: AppSpec (IR) -> slim Python file that uses termin_runtime.
 
 The generated app.py is ~17 lines: it embeds the IR JSON and calls
