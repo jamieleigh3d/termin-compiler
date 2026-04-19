@@ -501,3 +501,13 @@ def register_runtime_endpoints(app, ctx: RuntimeContext):
                             headers={"Cache-Control": "no-cache"})
         return Response(content="// termin.js not found",
                         media_type="application/javascript", status_code=404)
+
+    @app.get("/runtime/termin.css")
+    async def serve_termin_css():
+        css_path = Path(__file__).parent / "static" / "termin.css"
+        if css_path.exists():
+            return Response(content=css_path.read_text(encoding="utf-8"),
+                            media_type="text/css",
+                            headers={"Cache-Control": "no-cache"})
+        return Response(content="/* termin.css not found */",
+                        media_type="text/css", status_code=404)

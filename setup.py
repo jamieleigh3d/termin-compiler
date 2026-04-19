@@ -23,7 +23,7 @@ setup(
     ],
     package_data={
         "termin": ["termin.peg"],
-        "termin_runtime": ["static/*.js"],
+        "termin_runtime": ["static/*.js", "static/*.css"],
     },
     entry_points={
         "console_scripts": [

@@ -1,0 +1,450 @@
+/*
+ * Termin reference-runtime stylesheet.
+ *
+ * Loads after the Tailwind Play CDN in the base template. Overrides the
+ * generic utility defaults with a cohesive design system that matches the
+ * project's termin.dev aesthetic: warm neutrals, serif for content,
+ * monospace for data, restrained accent color, dark-mode support via
+ * prefers-color-scheme.
+ *
+ * Scope is intentionally small (v0.8 polish pass, not a redesign):
+ *   - Design tokens as CSS variables
+ *   - Body, nav, headings, tables, forms, buttons, banner/toast
+ *   - Dark mode
+ *
+ * Does NOT rewrite the Python HTML generation. Does NOT introduce new
+ * IR fields. Explicitly not the presentation-provider architecture —
+ * that is v0.9 per docs/termin-roadmap.md.
+ */
+
+/* ── Design tokens ──────────────────────────────────────────────── */
+
+:root {
+  /* Colors (light) */
+  --t-bg:         #fafaf8;
+  --t-surface:    #ffffff;
+  --t-surface-2:  #f3f2ee;
+  --t-text:       #1a1a1a;
+  --t-text-muted: #6b6b6b;
+  --t-border:     #e5e4df;
+  --t-border-strong: #c9c8c0;
+  --t-accent:     #2f4f4f;        /* dark slate-teal, matches termin.dev */
+  --t-accent-hover: #1e3a3a;
+  --t-success-bg: #e8f3ec;
+  --t-success-fg: #2d5a3f;
+  --t-success-border: #b9d9c2;
+  --t-error-bg:   #f6e4e4;
+  --t-error-fg:   #8b2c2c;
+  --t-error-border: #e0b8b8;
+  --t-warn-bg:    #fbf1dc;
+  --t-warn-fg:    #7a5a10;
+  --t-redacted:   #999;
+
+  /* Typography */
+  --t-font-sans:  ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --t-font-serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+  --t-font-mono:  ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Spacing / radii */
+  --t-radius:     4px;
+  --t-radius-lg:  8px;
+
+  /* Focus ring */
+  --t-focus-ring: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--t-accent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --t-bg:         #0f0f10;
+    --t-surface:    #161617;
+    --t-surface-2:  #1e1e1f;
+    --t-text:       #e8e8e6;
+    --t-text-muted: #a0a0a0;
+    --t-border:     #2a2a2b;
+    --t-border-strong: #3a3a3b;
+    --t-accent:     #8fbcb8;
+    --t-accent-hover: #b6d6d2;
+    --t-success-bg: #173022;
+    --t-success-fg: #93d3a8;
+    --t-success-border: #244831;
+    --t-error-bg:   #3a1717;
+    --t-error-fg:   #eda5a5;
+    --t-error-border: #5a2828;
+    --t-warn-bg:    #3a2c14;
+    --t-warn-fg:    #e6c380;
+    --t-redacted:   #777;
+  }
+}
+
+/* ── Body / chrome ──────────────────────────────────────────────── */
+
+html {
+  font-family: var(--t-font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--t-text);
+  background: var(--t-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Override Tailwind's body bg set by class="bg-gray-50 min-h-screen" */
+body.bg-gray-50,
+body {
+  background: var(--t-bg) !important;
+  color: var(--t-text);
+}
+
+/* Headings — serif for content hierarchy */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--t-font-serif);
+  color: var(--t-text);
+  letter-spacing: -0.01em;
+}
+
+/* Monospace for inline code and values */
+code, kbd, samp, pre, .font-mono {
+  font-family: var(--t-font-mono);
+}
+
+/* ── Nav bar ────────────────────────────────────────────────────── */
+
+nav.bg-white {
+  background: var(--t-surface) !important;
+  box-shadow: none !important;
+  border-bottom: 1px solid var(--t-border);
+}
+
+nav .text-indigo-600 {
+  color: var(--t-text) !important;
+  font-family: var(--t-font-mono);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+nav a {
+  color: var(--t-text-muted);
+  text-decoration: none;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--t-radius);
+  font-size: 0.9rem;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+nav a:hover {
+  color: var(--t-text);
+  background: var(--t-surface-2);
+}
+
+nav a[aria-current="page"],
+nav a.active {
+  color: var(--t-text);
+  background: var(--t-surface-2);
+}
+
+/* Role selector + input */
+nav select,
+nav input[type="text"] {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border) !important;
+  color: var(--t-text);
+  border-radius: var(--t-radius) !important;
+  padding: 0.3rem 0.5rem !important;
+  font-size: 0.85rem;
+  font-family: var(--t-font-sans);
+}
+
+nav select:focus,
+nav input[type="text"]:focus {
+  outline: none;
+  box-shadow: var(--t-focus-ring);
+  border-color: var(--t-accent) !important;
+}
+
+nav label.text-gray-600 {
+  color: var(--t-text-muted) !important;
+  font-size: 0.85rem;
+}
+
+/* ── Tables ─────────────────────────────────────────────────────── */
+
+table.w-full {
+  background: var(--t-surface) !important;
+  box-shadow: none !important;
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-lg) !important;
+  overflow: hidden;
+  border-collapse: collapse;
+  width: 100%;
+}
+
+table.w-full thead.bg-gray-100 {
+  background: var(--t-surface-2) !important;
+  border-bottom: 1px solid var(--t-border);
+}
+
+table.w-full th.text-gray-600 {
+  color: var(--t-text-muted) !important;
+  font-family: var(--t-font-sans);
+  font-weight: 600;
+  font-size: 0.78rem !important;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.6rem 0.9rem !important;
+  text-align: left;
+  border-bottom: 1px solid var(--t-border);
+}
+
+table.w-full tbody tr {
+  border-top: 1px solid var(--t-border) !important;
+  transition: background 120ms ease;
+}
+
+table.w-full tbody tr:hover {
+  background: var(--t-surface-2);
+}
+
+table.w-full td {
+  padding: 0.55rem 0.9rem !important;
+  color: var(--t-text);
+  font-size: 0.9rem !important;
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Cells that contain data-termin-field use mono for numeric/id values
+   is a nice touch but selective — apply only where clearly numeric
+   (handled by Tailwind on the data-* attribute's value class in .font-mono).
+   Keep default unless IDed. */
+
+/* Redacted cell */
+table.w-full span.text-gray-400.italic {
+  color: var(--t-redacted) !important;
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+/* Row links */
+table.w-full a.text-indigo-600 {
+  color: var(--t-accent) !important;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+table.w-full a.text-indigo-600:hover {
+  color: var(--t-accent-hover) !important;
+}
+
+/* Row-level action buttons (transition triggers, etc.) */
+table.w-full button.text-indigo-600 {
+  background: transparent;
+  border: 1px solid var(--t-border);
+  color: var(--t-text) !important;
+  padding: 0.25rem 0.55rem !important;
+  border-radius: var(--t-radius);
+  font-size: 0.78rem !important;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+table.w-full button.text-indigo-600:hover {
+  background: var(--t-surface-2);
+  border-color: var(--t-border-strong);
+}
+
+table.w-full button.text-gray-400.cursor-not-allowed,
+table.w-full button[disabled] {
+  background: transparent;
+  border: 1px solid var(--t-border);
+  color: var(--t-text-muted) !important;
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* ── Forms ──────────────────────────────────────────────────────── */
+
+form.bg-white {
+  background: var(--t-surface) !important;
+  box-shadow: none !important;
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-lg) !important;
+  padding: 1.25rem !important;
+}
+
+form label.text-gray-700 {
+  color: var(--t-text) !important;
+  font-size: 0.85rem !important;
+  font-weight: 500;
+  margin-bottom: 0.3rem !important;
+  letter-spacing: 0.01em;
+}
+
+form input[type="text"],
+form input[type="number"],
+form input[type="email"],
+form input[type="password"],
+form select,
+form textarea {
+  background: var(--t-bg);
+  border: 1px solid var(--t-border-strong) !important;
+  color: var(--t-text);
+  border-radius: var(--t-radius) !important;
+  padding: 0.45rem 0.65rem !important;
+  font-family: var(--t-font-sans);
+  font-size: 0.9rem;
+  width: 100%;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+form input[type="text"]:focus,
+form input[type="number"]:focus,
+form input[type="email"]:focus,
+form input[type="password"]:focus,
+form select:focus,
+form textarea:focus {
+  outline: none;
+  border-color: var(--t-accent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--t-accent) 20%, transparent);
+}
+
+/* Primary submit button */
+form button[type="submit"].bg-indigo-600 {
+  background: var(--t-accent) !important;
+  color: #ffffff !important;
+  border: 1px solid var(--t-accent);
+  border-radius: var(--t-radius) !important;
+  padding: 0.5rem 1.1rem !important;
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 40ms ease;
+}
+
+form button[type="submit"].bg-indigo-600:hover {
+  background: var(--t-accent-hover) !important;
+  border-color: var(--t-accent-hover);
+}
+
+form button[type="submit"].bg-indigo-600:active {
+  transform: translateY(1px);
+}
+
+/* ── Aggregation / stat cards ───────────────────────────────────── */
+
+div.bg-white.shadow.rounded {
+  background: var(--t-surface) !important;
+  box-shadow: none !important;
+  border: 1px solid var(--t-border);
+  border-radius: var(--t-radius-lg) !important;
+}
+
+div.text-gray-600 {
+  color: var(--t-text-muted) !important;
+}
+
+.text-2xl.font-bold {
+  font-family: var(--t-font-serif);
+  font-weight: 600 !important;
+  font-size: 1.75rem !important;
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Banners / toasts ───────────────────────────────────────────── */
+
+[data-termin-banner] {
+  border-radius: var(--t-radius-lg) !important;
+  padding: 0.85rem 1.1rem !important;
+  font-size: 0.9rem;
+}
+
+[data-termin-banner][data-level="success"],
+[data-termin-banner].bg-green-50 {
+  background: var(--t-success-bg) !important;
+  border: 1px solid var(--t-success-border) !important;
+  color: var(--t-success-fg) !important;
+}
+
+[data-termin-banner][data-level="error"],
+[data-termin-banner].bg-red-50 {
+  background: var(--t-error-bg) !important;
+  border: 1px solid var(--t-error-border) !important;
+  color: var(--t-error-fg) !important;
+}
+
+[data-termin-toast] {
+  border-radius: var(--t-radius-lg) !important;
+  padding: 0.75rem 1rem !important;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+[data-termin-toast][data-level="success"],
+[data-termin-toast].bg-green-600 {
+  background: var(--t-success-fg) !important;
+  color: #ffffff !important;
+}
+
+[data-termin-toast][data-level="error"],
+[data-termin-toast].bg-red-600 {
+  background: var(--t-error-fg) !important;
+  color: #ffffff !important;
+}
+
+/* ── Filter / search chrome ─────────────────────────────────────── */
+
+label.text-gray-600 {
+  color: var(--t-text-muted) !important;
+}
+
+input[data-search="true"],
+select[data-filter] {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border-strong) !important;
+  color: var(--t-text);
+  border-radius: var(--t-radius) !important;
+  padding: 0.4rem 0.65rem !important;
+  font-size: 0.88rem !important;
+}
+
+input[data-search="true"]:focus,
+select[data-filter]:focus {
+  outline: none;
+  border-color: var(--t-accent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--t-accent) 20%, transparent);
+}
+
+/* ── Related-records block ──────────────────────────────────────── */
+
+div.bg-gray-50.rounded {
+  background: var(--t-surface-2) !important;
+  border: 1px solid var(--t-border) !important;
+  border-radius: var(--t-radius) !important;
+}
+
+/* ── Section headings (Display text in user stories) ────────────── */
+
+div.text-lg.text-gray-800 {
+  color: var(--t-text) !important;
+  font-family: var(--t-font-serif);
+  font-size: 1.25rem !important;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* ── Accessibility: always-visible focus outline ────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--t-accent);
+  outline-offset: 2px;
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+  }
+}

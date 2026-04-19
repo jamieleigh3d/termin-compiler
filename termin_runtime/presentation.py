@@ -508,6 +508,15 @@ def _js_version_hash():
         return hashlib.md5(js_path.read_bytes()).hexdigest()[:8]
     return "0"
 
+def _css_version_hash():
+    """Hash the termin.css file for cache busting."""
+    import hashlib
+    from pathlib import Path
+    css_path = Path(__file__).parent / "static" / "termin.css"
+    if css_path.exists():
+        return hashlib.md5(css_path.read_bytes()).hexdigest()[:8]
+    return "0"
+
 def build_base_template(app_name: str, nav_html: str) -> object:
     """Build the base HTML template with nav bar and termin.js runtime."""
     template = f'''<!DOCTYPE html>
@@ -519,6 +528,9 @@ def build_base_template(app_name: str, nav_html: str) -> object:
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Termin runtime stylesheet: loads after Tailwind Play CDN so its
+         tokens and overrides win on the cascade. -->
+    <link rel="stylesheet" href="/runtime/termin.css?v={_css_version_hash()}">
 </head>
 <body class="bg-gray-50 min-h-screen">
     <nav class="bg-white shadow mb-6">

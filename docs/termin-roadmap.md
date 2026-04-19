@@ -334,7 +334,7 @@ Theme: polish, observability, developer experience.
 
 ## v0.8.0 Backlog
 
-Theme: presentation completeness, action primitives.
+Theme: presentation completeness, action primitives, launch-ready polish.
 
 | Item | Source | Notes |
 |------|--------|-------|
@@ -345,6 +345,20 @@ Theme: presentation completeness, action primitives.
 | **Filtering/sorting via API** | D-11 | Query params: `?status=active&sort=created_at:desc`. |
 | **Token-by-token LLM streaming** | D-09 | Chat component currently gets full message on completion. Need delta streaming via WebSocket for real-time typing effect. |
 | **Manual compute trigger endpoint** | v0.7 UAT | `POST /api/v1/compute/{name}/trigger` to manually fire any compute regardless of declared trigger type (schedule/event). Currently agent computes can only be invoked by their trigger — no way to test audit logging without AI credentials + waiting for schedule. |
+| **Presentation polish pass** | Launch readiness | Make the reference runtime's default HTML output not-crappy so first-time-user first impressions match the rest of the project's care. Scope: restrained color/typography system matching termin.dev, readable table density, proper form-input styling, clear focus/hover/disabled states on buttons, page chrome (header/nav spacing), responsive at least to tablet. Bounded: CSS + template edits only, no new components or IR fields. Explicitly NOT the presentation-provider architecture — that is v0.9. |
+
+---
+
+## v0.9.0 Backlog
+
+Theme: provider architecture — pluggable presentation, storage, identity, compute.
+
+| Item | Source | Notes |
+|------|--------|-------|
+| **Presentation provider architecture** | Vision Layer 2 | Plugin interface letting the same `.termin` application target different design systems without code changes. Scope: provider registry, presentation-provider interface in the IR contract, at least one real alternative provider implementation (e.g., a Carbon-style provider) alongside the default, documentation for authoring a new provider. Separated from v0.8 polish because this is architectural new surface area that should not be rushed as part of the pre-launch crunch. |
+| **Storage provider architecture** | Vision Layer 2 | Pluggable storage backend. SQLite today, PostgreSQL as the first real alternative provider. Runtime storage interface, migration path for existing `.termin.pkg` archives across providers. |
+| **Identity provider architecture** | Vision Layer 2, roadmap §Deployment | Pluggable identity subsystem. Replaces the stub cookie-based auth with a proper provider interface supporting enterprise single-sign-on standards (SSO, SAML, OIDC). |
+| **Provider Tier 2 review framework** | guarantees Tier 2 | The review standard that gates which providers inherit structural guarantees. Currently undesigned; likely a volunteer-reviewer pool with no commercial funding path. |
 
 ---
 
