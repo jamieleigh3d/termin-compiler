@@ -205,9 +205,88 @@ async def create_record(db, content_name: str, data: dict, schema: dict = None,
         raise
 
 
-async def list_records(db, content_name: str):
-    """List all records from a content table."""
-    cursor = await db.execute(f"SELECT * FROM {_q(content_name)}")
+async def list_records(db, content_name: str, *,
+                       limit: int = None, offset: int = None,
+                       filters: dict = None,
+                       sort_by: str = None, sort_dir: str = None,
+                       schema: dict = None):
+    """List records from a content table.
+
+    Optional keyword arguments support pagination, filtering, and sorting:
+
+        limit, offset        — non-negative integers. If limit is None, all
+                               records are returned (backward-compatible).
+        filters              — dict of {field: value}. Every field is
+                               validated against the provided schema before
+                               being composed into the WHERE clause. Values
+                               are always parameterized (never concatenated).
+        sort_by, sort_dir    — field name (validated against schema) and
+                               either "asc" or "desc".
+        schema               — the ContentSchema for this content, used to
+                               validate filter/sort field names. Required
+                               if filters or sort_by are provided.
+
+    Raises ValueError on any unsafe identifier (filter key or sort column
+    not in schema; sort_dir outside {asc, desc}; limit/offset negative).
+    """
+    # Base query.
+    sql = f"SELECT * FROM {_q(content_name)}"
+    params = []
+
+    # Validate & compose filters.
+    if filters:
+        if schema is None:
+            raise ValueError("schema is required when filters are provided")
+        schema_fields = {f["name"] for f in schema.get("fields", [])}
+        schema_fields.update({"id", "status"})  # implicit columns
+        where_clauses = []
+        for field, value in filters.items():
+            if field not in schema_fields:
+                raise ValueError(
+                    f"unknown filter field '{field}' for {content_name}")
+            _assert_safe(field, "filter field")
+            where_clauses.append(f"{_q(field)} = ?")
+            params.append(value)
+        if where_clauses:
+            sql += " WHERE " + " AND ".join(where_clauses)
+
+    # Validate & compose sort.
+    if sort_by:
+        if schema is None:
+            raise ValueError("schema is required when sort_by is provided")
+        schema_fields = {f["name"] for f in schema.get("fields", [])}
+        schema_fields.update({"id", "status"})
+        if sort_by not in schema_fields:
+            raise ValueError(
+                f"unknown sort field '{sort_by}' for {content_name}")
+        _assert_safe(sort_by, "sort field")
+        direction = (sort_dir or "asc").lower()
+        if direction not in ("asc", "desc"):
+            raise ValueError(
+                f"sort direction must be 'asc' or 'desc', got {sort_dir!r}")
+        sql += f" ORDER BY {_q(sort_by)} {direction.upper()}"
+
+    # Validate & apply pagination.
+    if limit is not None:
+        if not isinstance(limit, int) or limit < 0:
+            raise ValueError(f"limit must be non-negative integer, got {limit!r}")
+        sql += " LIMIT ?"
+        params.append(limit)
+        if offset is not None:
+            if not isinstance(offset, int) or offset < 0:
+                raise ValueError(
+                    f"offset must be non-negative integer, got {offset!r}")
+            sql += " OFFSET ?"
+            params.append(offset)
+    elif offset is not None:
+        # LIMIT -1 in SQLite means no limit, required to use OFFSET without LIMIT.
+        if not isinstance(offset, int) or offset < 0:
+            raise ValueError(
+                f"offset must be non-negative integer, got {offset!r}")
+        sql += " LIMIT -1 OFFSET ?"
+        params.append(offset)
+
+    cursor = await db.execute(sql, params)
     rows = await cursor.fetchall()
     return [dict(r) for r in rows]
 

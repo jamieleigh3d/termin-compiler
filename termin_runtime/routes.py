@@ -62,6 +62,9 @@ def register_crud_routes(app, ctx: RuntimeContext):
 def _make_list_route(app, ctx, path, cr, sc):
     deps = [Depends(ctx.require_scope(sc))] if sc else []
 
+    # Reserved query-param names — not treated as field filters.
+    _reserved_params = {"limit", "offset", "sort"}
+
     @app.get(path, dependencies=deps)
     async def list_route(request: Request, _cr=cr):
         user = ctx.get_current_user(request)
@@ -72,10 +75,64 @@ def _make_list_route(app, ctx, path, cr, sc):
         if bnd_id_err:
             raise HTTPException(status_code=403, detail=bnd_id_err)
 
+        schema = ctx.content_lookup.get(_cr, {})
+
+        # Parse pagination: ?limit=N&offset=N.
+        qp = request.query_params
+        limit = None
+        offset = None
+        if "limit" in qp:
+            try:
+                limit = int(qp["limit"])
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"limit must be an integer, got {qp['limit']!r}")
+            if limit < 0:
+                raise HTTPException(
+                    status_code=400, detail="limit must be non-negative")
+            if limit > 1000:
+                # Protect the runtime from pathological queries.
+                raise HTTPException(
+                    status_code=400, detail="limit must not exceed 1000")
+        if "offset" in qp:
+            try:
+                offset = int(qp["offset"])
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"offset must be an integer, got {qp['offset']!r}")
+            if offset < 0:
+                raise HTTPException(
+                    status_code=400, detail="offset must be non-negative")
+
+        # Parse sort: ?sort=field or ?sort=field:asc or ?sort=field:desc.
+        sort_by = None
+        sort_dir = None
+        if "sort" in qp:
+            raw = qp["sort"]
+            if ":" in raw:
+                sort_by, sort_dir = raw.split(":", 1)
+            else:
+                sort_by, sort_dir = raw, "asc"
+
+        # Parse filters: every non-reserved query param becomes a
+        # {field: value} equality filter. Schema validation in list_records
+        # rejects unknown fields.
+        filters = {k: v for k, v in qp.items() if k not in _reserved_params}
+
         db = await get_db(ctx.db_path)
         try:
-            records = await list_records(db, _cr)
-            schema = ctx.content_lookup.get(_cr, {})
+            try:
+                records = await list_records(
+                    db, _cr,
+                    limit=limit, offset=offset,
+                    filters=filters if filters else None,
+                    sort_by=sort_by, sort_dir=sort_dir,
+                    schema=schema if (filters or sort_by) else None,
+                )
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
             records = redact_records(records, schema, set(user_scopes))
             if _cr.startswith("compute_audit_log_"):
                 records = await redact_audit_traces(
