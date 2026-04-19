@@ -1,7 +1,7 @@
 # Termin DSL Grammar Specification
 
-**Version:** 0.2.0-draft
-**Status:** Formative — major revision incorporating design feedback
+**Version:** 0.2.1
+**Status:** Authoritative grammar is `termin.peg` in the compiler source; this document is a human-readable companion. Updated 2026-04-18 to reflect the v0.4.0 bracket-to-backtick migration, v0.7.0 verb/API changes, and current Channel and Compute syntax.
 
 ---
 
@@ -15,7 +15,7 @@ The grammar prioritizes:
 - **Determinism over flexibility.** Each construct has one way to express it. The compiler never guesses intent.
 - **Declarative over imperative.** You describe what the application does, not how it does it.
 - **Accessibility over grammatical purity.** The DSL is not English. It uses English-like structure but does not require perfect English grammar. Non-native speakers should not be disadvantaged. Articles (`a`/`an`) are interchangeable and never cause a parse error.
-- **Expressions are code, not prose.** All executable expressions, conditions, and Compute bodies use CEL syntax inside square brackets `[]`. Natural language is for declarations and structure. CEL is for logic.
+- **Expressions are code, not prose.** All executable expressions, conditions, and Compute bodies use CEL syntax inside backticks: single backticks for inline expressions, triple backticks for multi-line directive and objective blocks. Natural language is for declarations and structure. CEL is for logic.
 
 ---
 
@@ -54,20 +54,32 @@ Comments are enclosed in parentheses `()`. They may appear on their own line or 
 Users authenticate with stub (Inline comment here.)
 ```
 
-Comments cannot appear inside square brackets. Inside square brackets, use CEL comment syntax: `//` for line comments.
+Comments cannot appear inside backtick-delimited expressions. Inside backticks, use CEL comment syntax: `//` for line comments.
 
 ### Expressions (CEL Blocks)
 
-All executable expressions, conditions, and Compute bodies are enclosed in square brackets `[]`. Content inside square brackets is parsed as CEL, not as Termin DSL.
+All executable expressions, conditions, and Compute bodies are enclosed in backticks. Content inside backticks is parsed as CEL, not as Termin DSL.
+
+Single backticks are used for inline expressions:
 
 ```
-Display text [SayHelloTo(LoggedInUser.CurrentUser)]
-greeting = [u.FirstName + " " + u.LastName]
+Display text `SayHelloTo(User.Name)`
+When `stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold`:
 ```
 
-This cleanly separates comments `()` from function calls `[]`. Parentheses are always comments. Square brackets are always CEL expressions.
+Triple backticks are used for multi-line blocks, such as a Compute's `Directive is` or `Objective is`:
 
-Inside square brackets, CEL syntax applies: `//` for line comments, `/* */` for block comments, standard JS-like operators and property access.
+````
+Directive is ```
+  You are a helpful assistant. Be concise.
+```
+````
+
+This cleanly separates comments `()` from CEL expressions (backticks). Parentheses are always comments. Backticks are always CEL.
+
+Inside backticks, CEL syntax applies: `//` for line comments, `/* */` for block comments, standard JS-like operators and property access.
+
+**Migration note.** Earlier drafts of the DSL used square brackets `[]` for CEL expressions. The v0.4.0 release migrated to backticks so that array index syntax (`items[0]`) is unambiguous inside expressions. All examples and tests in the current compiler use backticks.
 
 ### String Literals
 
@@ -242,9 +254,10 @@ Each order has a line items which is list of "order lines"
 ```
 Anyone with "<scope>" can <verb> <content-name>
 Anyone with "<scope>" can <verb> or <verb> <content-name>
+Anyone with "<scope>" can <verb>, <verb>, or <verb> <content-name>
 ```
 
-Verbs: `view`, `create`, `update`, `delete`.
+Verbs: `view`, `create`, `update`, `delete`, `audit`. The `audit` verb (added in v0.7.0) grants access to the generated audit-log content type for a Compute. Verbs can be combined in compound form — two-verb (`create or delete`) and three-verb (`create, update, or delete`) compounds are both valid.
 
 ---
 
@@ -265,10 +278,10 @@ State for <primitive-name> called "<state-machine-name>":
 
 ```
 <article> "<state>" <entity> can become "<state>" if the user has "<scope>"
-<article> "<state>" <entity> can become "<state>" if [<cel-condition>]
+<article> "<state>" <entity> can become "<state>" if `<cel-condition>`
 ```
 
-The pattern `if the user has "<scope>"` is syntactic sugar that the compiler expands to a scope check. For complex conditions, use CEL in square brackets.
+The pattern `if the user has "<scope>"` is syntactic sugar that the compiler expands to a scope check. For complex conditions, use CEL in backticks.
 
 The word `again` may optionally appear for re-entry transitions.
 
@@ -287,18 +300,27 @@ State for channel "order webhook" called "webhook lifecycle":
 ## Events
 
 ```
-When [<cel-trigger-condition>]:
+When `<cel-trigger-condition>`:
   <action>
 ```
 
-The trigger condition is a CEL expression in square brackets. This ensures deterministic parsing regardless of how the condition is phrased.
+The trigger condition is a CEL expression in backticks. This ensures deterministic parsing regardless of how the condition is phrased.
 
 ```
-When [stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold]:
+When `stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold`:
   Create a "reorder alert" with the product, warehouse, current quantity, threshold
 ```
 
 The action line remains in Termin DSL syntax.
+
+Named-event triggers are also valid when the condition is a standard runtime event:
+
+```
+Trigger on event "completion.created"
+Trigger on event "message.created" where `message.role == "user"`
+```
+
+The named-event form is typically used inside a Compute's trigger declaration rather than as a stand-alone `When` block.
 
 ---
 
@@ -308,12 +330,24 @@ The action line remains in Termin DSL syntax.
 
 ```
 Compute called "<name>":
-  <shape declaration>
-  [<cel body>]
+  [Provider is "<provider>"]       (optional; defaults to "cel")
+  <shape declaration>              (required for "cel" provider)
+  Accesses <content-list>          (required)
+  <provider-specific wiring>
+  `<cel body>`                     (for "cel" provider)
   <access rule>
+  Audit level: <none|actions|debug>
 ```
 
-### Shape Declaration
+### Providers
+
+Three built-in Compute providers:
+
+- **`"cel"`** (default) — pure CEL expression evaluation. Used when no `Provider is` line is present.
+- **`"llm"`** — a large language model with explicit field wiring (`Input from field`, `Output into field`) and a directive plus objective. Field-to-field completion, no tool use.
+- **`"ai-agent"`** — an autonomous agent that operates on declared content through a runtime-provided API surface. Uses a directive and objective; does not use field wiring.
+
+### Shape Declaration (CEL provider)
 
 ```
 Transform: takes <input-spec>, produces <output-spec>
@@ -321,33 +355,43 @@ Reduce: takes <content-name>, produces <output-spec>
 Expand: takes <input-spec>, produces <content-name>
 Correlate: takes <content-name> and <content-name>, produces <content-name>
 Route: takes <input-spec>, produces one of <content-name> or <content-name>
-Chain: <compute-name> then <compute-name>
 ```
 
-Type annotations use the colon syntax (`name : Type`) and are available everywhere:
-
-```
-Transform: takes u : UserProfile, produces greeting : Text
-Transform: takes order : "orders", produces total : currency
-```
+Shape declarations are required for the `"cel"` provider. LLM and agent providers do not use shape declarations; they use field wiring (for LLM) or trigger + directive + objective (for agents).
 
 ### Compute Body — CEL Only
 
-All Compute bodies are CEL expressions inside square brackets. Natural language Compute bodies are **not supported** — they are non-deterministic and fragile in practice.
+CEL-provider Compute bodies are CEL expressions inside backticks. Natural language Compute bodies are **not supported** — they are non-deterministic and fragile in practice.
 
 ```
-Compute called "SayHelloTo":
-  Transform: takes u : UserProfile, produces greeting : Text
-  [greeting = "Hello, " + u.FirstName + "!"]
-  "LoggedInUser" can execute this
-
 Compute called "calculate order total":
-  Transform: takes order : "orders", produces order : "orders"
-  [order.total = order.lines.map(l => l.quantity * l.unitPrice).reduce((a, b) => a + b, 0)]
-  Anyone with "write orders" can execute this
+  Transform: takes an order, produces an order
+  `order.total = order.lines.reduce((acc, line) => acc + line.quantity * line.unit_price, 0)`
+  Anyone with "orders.write" can execute this
+  Audit level: actions
+  Anyone with "orders.admin" can audit
 ```
 
-For complex Compute that exceeds inline CEL, register a custom Compute function in the runtime and reference it by name.
+For an `"llm"` provider Compute, the shape is replaced by field wiring and prompt blocks:
+
+````
+Compute called "complete":
+  Provider is "llm"
+  Accesses completions
+  Input from field completion.prompt
+  Output into field completion.response
+  Trigger on event "completion.created"
+  Directive is ```
+    You are a helpful assistant. Be concise and clear.
+  ```
+  Objective is ```
+    Answer the following prompt from the user.
+  ```
+  Anyone with "agent.use" can execute this
+  Audit level: actions
+````
+
+An `"ai-agent"` Compute uses the same directive and objective pattern without field wiring; the agent reads and writes declared content through the runtime content API.
 
 ### Compute Access Rule
 
@@ -362,20 +406,27 @@ Anyone with "<scope>" can execute this
 
 ```
 Channel called "<name>":
-  Carries "<content-name>"
-  Protocol: <protocol>
-  From <source> to <destination>
-  Endpoint: <path>
-  Requires "<scope>" to <verb>
+  Carries <content-name>
+  Direction: <outbound|inbound|bidirectional|internal>
+  Delivery: <reliable|realtime|batch|auto>
+  Requires "<scope>" to send
 ```
 
-**Protocol** values: `webhook`, `SSE`, `websocket`, `pub/sub`, `internal`, `REST`.
+**Direction** values: `outbound` (app sends to external), `inbound` (external sends to app), `bidirectional` (both), `internal` (within-app only).
 
-**Source/destination**: `external`, `application`, or a declared Boundary name.
+**Delivery** values: `reliable` (guaranteed, ordered, acknowledged), `realtime` (best-effort, low-latency), `batch` (buffered and flushed periodically), `auto` (runtime chooses).
 
-**Access rule**: scope required and verb (`send`, `receive`).
+**Endpoints.** The concrete network endpoint for a Channel — URL, webhook path, authentication credentials — is supplied at deploy time in an application-specific deploy-config file (`{app}.deploy.json`), not in the `.termin` source. The DSL declares *that* a Channel exists and *what* it carries; deployment wires it to a specific external service.
 
-All fields except `Carries` and `Protocol` are optional.
+**Sending content to a Channel** is done from an Event block, not the Channel declaration:
+
+```
+When `note.created`:
+  Send note to "note-sync"
+  Log level: INFO
+```
+
+**Actions.** A Channel may optionally declare named actions for RPC-style verbs (added in v0.5.0). See the `security_agent.termin` example for the full pattern.
 
 ---
 
@@ -407,17 +458,17 @@ As <role>, I want to <action>
 | Page | `Show a page called "<name>"` |
 | Table | `Display a table of <content> with columns: <field>, <field>` |
 | Text (literal) | `Display text "<literal>"` |
-| Text (expression) | `Display text [<cel-expression>]` |
+| Text (expression) | `` Display text `<cel-expression>` `` |
 | Aggregation | `Display total <field> with <state> vs <state> breakdown` |
 | Chart | `Show a chart of <content> over the past <n> days` |
 | Input | `Accept input for <field>, <field>, <field>` |
 | Filter | `Allow filtering by <field>, <field>, <field>` |
 | Search | `Allow searching by <field> or <field>` |
-| Highlight | `Highlight rows where [<cel-condition>]` |
+| Highlight | `` Highlight rows where `<cel-condition>` `` |
 | Subscription | `This table subscribes to <content> changes` |
 | Create | `Create the <entity> as "<state>"` |
 | Navigate | `After saving, return to the "<page>"` |
-| Validate | `Validate that [<cel-condition>] before saving` |
+| Validate | `` Validate that `<cel-condition>` before saving `` |
 | Grouped | `For each <entity>, show <content> grouped by <field>` |
 
 ---
@@ -429,7 +480,7 @@ Navigation bar:
   "<label>" links to "<page-name>" visible to <visibility>
 ```
 
-**Visibility**: `all`, a role name (full or alias), or comma-separated role names. Badge: `visible to all, badge: [<cel-expression>]`
+**Visibility**: `all`, a role name (full or alias), or comma-separated role names. Badge: `` visible to all, badge: `<cel-expression>` ``
 
 ---
 
@@ -437,23 +488,24 @@ Navigation bar:
 
 ### REST
 
-```
-Expose a REST API at <base-path>:
-  <method> <path> <description>
-```
+As of v0.7.0, every Content automatically gets a CRUD REST API at `/api/v1/{content-snake-name}`. The `Expose a REST API at ...:` syntax that existed in earlier drafts was removed because it duplicated what the compiler could derive from Content declarations. Headless services (applications with no user stories) are fully supported by the auto-generated API.
 
-Method: `GET`, `POST`, `PUT`, `DELETE`. Path uses `{param}` syntax.
+Access to each endpoint is gated by the normal access-control rules on the Content type. If a role has `view` on a Content, its REST GET endpoints are reachable; if it does not, they return 403.
 
 ### Streaming
 
-```
-Stream <event-type-list> at <path>
-```
+Content changes are available as WebSocket subscriptions at `/runtime/ws`, filtered by Content name. The subscription protocol is specified in the runtime implementer's guide in the conformance suite repository.
 
-Event type list references Content names or Event types:
+Example subscription message (sent by the client to `/runtime/ws` after connection):
 
 ```
-Stream "stock levels", "reorder alerts" at /api/v1/stream
+{ "v": 1, "ch": "content.products", "op": "subscribe", "ref": "sub1", "payload": {} }
+```
+
+Presentation-layer tables subscribe to changes with a DSL clause:
+
+```
+This table subscribes to stock level changes
 ```
 
 ---
