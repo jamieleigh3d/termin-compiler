@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/jamieleigh3d/termin-compiler/blob/main/SECURITY.md
+    about: Do not file here. Use the private disclosure channel described in SECURITY.md.
+  - name: Question or design discussion
+    url: https://github.com/jamieleigh3d/termin-compiler/discussions
+    about: Open-ended questions and design conversation live in Discussions rather than Issues.
+  - name: Project overview and roadmap
+    url: https://termin.dev/
+    about: Read the project's scope and roadmap before filing an issue.

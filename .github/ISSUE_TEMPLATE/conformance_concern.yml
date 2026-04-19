@@ -1,0 +1,63 @@
+name: Conformance concern
+description: A conformance test appears wrong, ambiguous, over-coupled to implementation, or missing for a behavior that should be specified.
+title: "[conformance] "
+labels: ["conformance", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This template is for concerns with the Termin **conformance suite** — the spec of what any conforming runtime must do.
+
+        If you think a specific runtime behavior is wrong, that is a bug report instead. If you think the conformance suite itself is specifying the wrong thing, or failing to specify something, use this template.
+
+        Conformance concerns typically come from people building an alternative runtime. Tests that pass on one implementation and fail on another often surface in this form.
+
+  - type: textarea
+    id: test-identifier
+    attributes:
+      label: Which conformance test (or missing behavior)?
+      description: |
+        Path and test name, or a description of the behavior that is not currently specified.
+        Example: `tests/test_access_control.py::TestAccessControlWarehouse::test_warehouse_access_matrix`
+    validations:
+      required: true
+
+  - type: dropdown
+    id: concern-type
+    attributes:
+      label: Type of concern
+      options:
+        - The test prescribes a specific implementation where it should test behavior
+        - The test is ambiguous or underspecified
+        - The test asserts the wrong behavior
+        - A behavior is not tested but should be
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What is the concern?
+      description: Describe the problem. Paste the relevant assertion, test setup, or behavior you think should be specified differently.
+      render: python
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed resolution
+      description: What should the test do instead? What behavior should be specified?
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: runtime
+    attributes:
+      label: Context
+      options:
+        - label: I am building a runtime and hit this during conformance testing.
+          required: false
+        - label: I am reading the suite to understand the spec and found an inconsistency.
+          required: false

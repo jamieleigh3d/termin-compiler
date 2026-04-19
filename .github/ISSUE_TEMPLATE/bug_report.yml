@@ -1,0 +1,68 @@
+name: Bug report
+description: Something that should work but does not — a compiler error on valid input, a runtime crash, incorrect behavior.
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. A reproducible test case matters more than anything else you can include.
+
+        If you think the issue might be a security vulnerability, **do not file here**. Email `security@termin.dev` instead. See [SECURITY.md](../../blob/main/SECURITY.md).
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, what did you actually get?
+      placeholder: "I ran `termin compile foo.termin` and got X. I expected Y."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproducible example
+      description: |
+        Minimal `.termin` input (or CLI command, or runtime interaction) that shows the problem.
+        Paste code in a fenced code block.
+      render: termin
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Termin version
+      description: Output of `termin --version`. If you built from source, also the commit SHA.
+      placeholder: "0.8.0 (or commit abc1234)"
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: OS, Python version, and any other relevant context.
+      placeholder: "Windows 11, Python 3.12"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error output or logs
+      description: Full traceback, server logs, or other diagnostic output. Paste in a code block.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for a similar report.
+          required: true
+        - label: I verified the bug reproduces against the current `main` branch (or the version I reported).
+          required: true
