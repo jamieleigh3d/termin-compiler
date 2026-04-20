@@ -231,15 +231,54 @@ def _make_update_route(app, ctx, path, cr, sc, lc):
         db = await get_db(ctx.db_path)
         try:
             existing = await get_record(db, _cr, param_val, _lc)
+            # ── State-machine gate on PUT (v0.8 PUT-backdoor closure) ──
+            #
+            # If the body carries a state-machine-backed column and the
+            # value differs from the current record, route that change
+            # through do_state_transition which enforces the declared
+            # transition rules + required_scope. This gives PUT the same
+            # security posture as POST /_transition for state changes.
+            #
+            # Multi-state-machine per content is a v0.9 item; the current
+            # runtime supports at most one state machine per content,
+            # always named on the implicit `status` column.
+            if existing and "status" in body and _cr in ctx.sm_lookup:
+                new_status = body.get("status", "")
+                cur_status = existing.get("status", "")
+                if new_status != cur_status:
+                    # Transition raises HTTPException(409/403/404) on
+                    # failure — the field updates below are skipped, so
+                    # a rejected transition also rejects any companion
+                    # field changes in the same PUT body.
+                    await do_state_transition(
+                        db, _cr, existing["id"], new_status, user,
+                        ctx.sm_lookup, ctx.terminator, ctx.event_bus,
+                    )
+                    # Strip status from the body — the transition already
+                    # wrote it. Leaving it in would cause update_record
+                    # to redundantly rewrite it (harmless) but we keep
+                    # the code paths distinct.
+                    body = {k: v for k, v in body.items() if k != "status"}
+                else:
+                    # Same-state "change" is a no-op on the state machine;
+                    # drop it so we don't accidentally trigger a
+                    # from==to transition check (which would 409).
+                    body = {k: v for k, v in body.items() if k != "status"}
+
             if existing:
                 merged = dict(existing)
                 merged.update(body)
                 validate_dependent_values(_cr, merged, ctx.content_lookup, ctx.expr_eval)
             else:
                 validate_dependent_values(_cr, body, ctx.content_lookup, ctx.expr_eval)
-            record = await update_record(db, _cr, param_val, body, _lc,
-                                         ctx.terminator, ctx.event_bus)
-            await ctx.run_event_handlers(db, _cr, "updated", record)
+            if body:
+                record = await update_record(db, _cr, param_val, body, _lc,
+                                             ctx.terminator, ctx.event_bus)
+                await ctx.run_event_handlers(db, _cr, "updated", record)
+            else:
+                # Body was status-only and already applied via transition.
+                # Return the post-transition record.
+                record = await get_record(db, _cr, param_val, _lc)
             return redact_record(record, schema, user_scopes)
         finally:
             await db.close()
