@@ -595,7 +595,8 @@ def _render_chat(node: dict) -> str:
 
     parts = [
         f'<div class="flex flex-col h-[600px] bg-white shadow rounded overflow-hidden"'
-        f' data-termin-chat data-termin-source="{source}"{subscribe_attr}>',
+        f' data-termin-chat data-termin-source="{source}"'
+        f' data-termin-content-field="{content_field}"{subscribe_attr}>',
         f'  <div class="flex-1 overflow-y-auto p-4 space-y-3" data-termin-chat-messages>',
         f'    {{% for item in items %}}',
         f'    <div class="flex {{% if item.{role_field} == "user" %}}justify-end{{% else %}}justify-start{{% endif %}}"'

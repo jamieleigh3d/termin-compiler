@@ -333,10 +333,22 @@ function hydrateChatComponents() {
     });
 
     // v0.8 #7: subscribe to compute.stream.* for token-by-token deltas.
-    // The client assembles deltas into a pending assistant-style bubble
-    // until the terminal event arrives. The final persisted message
-    // comes through the content.* subscription above, at which point
-    // the pending bubble is removed.
+    // Handles both streaming modes per docs/termin-streaming-protocol.md:
+    //   mode="text": {invocation_id, delta, done, final_text}
+    //   mode="tool_use": {invocation_id, field, delta|value, done}
+    //
+    // For tool-use mode, the chat component displays only the field
+    // whose name matches the chat's content_field (the column shown in
+    // rendered messages). Other fields — e.g., a confidence score —
+    // may still land on the same stream and are ignored here; a
+    // dashboard subscriber could consume them.
+    //
+    // The chat component's content_field is derived from the rendered
+    // markup: the last <div> inside each chat-message is the body. We
+    // read it from the data-termin-content-field attribute on the chat
+    // element; fallback to common field names.
+    const contentField = chat.dataset.terminContentField ||
+      inferContentFieldFromMarkup(chat) || "body";
     subscribe("compute.stream.", (ch, data) => {
       if (!data) return;
       if (data.error) {
@@ -345,29 +357,53 @@ function hydrateChatComponents() {
       }
       const invId = data.invocation_id;
       if (!invId) return;
-      let pending = chat.querySelector(
-        `[data-termin-chat-pending][data-invocation-id="${invId}"]`);
-      if (!pending) {
-        pending = createPendingChatBubble(messagesContainer, invId);
-      }
-      const bodyDiv = pending.querySelector("[data-termin-chat-pending-body]");
-      if (data.delta && bodyDiv) {
-        bodyDiv.textContent = (bodyDiv.textContent || "") + data.delta;
-      }
-      if (data.done) {
-        // Keep the bubble around until the persisted message arrives via
-        // content.*.created. If final_text is present and the body hasn't
-        // captured it, set it now as a safety net for clients that
-        // joined mid-stream.
-        if (data.final_text && bodyDiv &&
+      const mode = data.mode || "text";
+
+      if (mode === "tool_use") {
+        // Only the chat's content field is rendered into the bubble.
+        if (data.field !== contentField) return;
+        let pending = chat.querySelector(
+          `[data-termin-chat-pending][data-invocation-id="${invId}"]`);
+        if (!pending) {
+          pending = createPendingChatBubble(messagesContainer, invId);
+        }
+        const bodyDiv = pending.querySelector(
+          "[data-termin-chat-pending-body]");
+        if (data.delta && bodyDiv) {
+          bodyDiv.textContent = (bodyDiv.textContent || "") + data.delta;
+        }
+        if (data.done && data.value !== undefined && bodyDiv) {
+          // field_done — safety-net overwrite with the final parsed value.
+          bodyDiv.textContent = data.value;
+        }
+      } else {
+        // Text mode.
+        let pending = chat.querySelector(
+          `[data-termin-chat-pending][data-invocation-id="${invId}"]`);
+        if (!pending) {
+          pending = createPendingChatBubble(messagesContainer, invId);
+        }
+        const bodyDiv = pending.querySelector(
+          "[data-termin-chat-pending-body]");
+        if (data.delta && bodyDiv) {
+          bodyDiv.textContent = (bodyDiv.textContent || "") + data.delta;
+        }
+        if (data.done && data.final_text && bodyDiv &&
             bodyDiv.textContent !== data.final_text) {
           bodyDiv.textContent = data.final_text;
         }
       }
-      // Auto-scroll.
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
     });
   }
+}
+
+function inferContentFieldFromMarkup(chatEl) {
+  // Heuristic: the chat component renders each message's body inside
+  // <div>{{ item.<field> }}</div>. We can't introspect the Jinja source
+  // at runtime. Fall back to inspecting rendered messages for a known
+  // field name. Returns null if we can't infer.
+  return null;
 }
 
 function createPendingChatBubble(container, invId) {

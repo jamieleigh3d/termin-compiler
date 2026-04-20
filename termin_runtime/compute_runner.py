@@ -769,18 +769,106 @@ def register_compute_endpoint(app, ctx: RuntimeContext):
 
 # ── LLM streaming support (v0.8 #7) ──
 #
-# Publishes an async generator of (delta, done) pairs from a streaming
-# AIProvider to the event bus as a series of delta events on the
-# compute.stream.<invocation_id> channel. Returns the concatenated
-# final_text so the caller can persist the completed message.
+# Two publishers, one for each streaming mode:
+#   publish_stream_deltas        — text streaming (stream_complete)
+#   publish_agent_stream_events  — tool-use streaming (stream_agent_response)
 #
 # See docs/termin-streaming-protocol.md for the full protocol.
+
+
+async def publish_agent_stream_events(event_bus, invocation_id: str,
+                                       compute_name: str, stream,
+                                       tool_name: str = "set_output"):
+    """Pump tool-use stream events from stream_agent_response onto the
+    event bus on the tool-use channels described in the protocol:
+
+      compute.stream.<invocation_id>                   (done event)
+      compute.stream.<invocation_id>.field.<name>      (field_delta/done)
+
+    Returns the final output dict from the agent's set_output call so
+    the caller can persist the result.
+
+    Args:
+        event_bus: runtime EventBus.
+        invocation_id: UUID assigned at invocation start.
+        compute_name: Compute's snake_name.
+        stream: async generator yielding event dicts from
+            AIProvider.stream_agent_response — shapes:
+              {"type":"field_delta","field":<name>,"delta":<text>}
+              {"type":"field_done","field":<name>,"value":<final>}
+              {"type":"done","output":<dict>}
+        tool_name: the tool whose input is being streamed (default
+            "set_output").
+    """
+    base_channel = f"compute.stream.{invocation_id}"
+    output = {}
+    async for ev in stream:
+        etype = ev.get("type")
+        if etype == "field_delta":
+            field = ev.get("field", "")
+            await event_bus.publish({
+                "channel_id": f"{base_channel}.field.{field}",
+                "data": {
+                    "invocation_id": invocation_id,
+                    "compute": compute_name,
+                    "mode": "tool_use",
+                    "tool": tool_name,
+                    "field": field,
+                    "delta": ev.get("delta", ""),
+                    "done": False,
+                },
+            })
+        elif etype == "field_done":
+            field = ev.get("field", "")
+            value = ev.get("value")
+            output[field] = value
+            await event_bus.publish({
+                "channel_id": f"{base_channel}.field.{field}",
+                "data": {
+                    "invocation_id": invocation_id,
+                    "compute": compute_name,
+                    "mode": "tool_use",
+                    "tool": tool_name,
+                    "field": field,
+                    "done": True,
+                    "value": value,
+                },
+            })
+        elif etype == "done":
+            provider_output = ev.get("output") or {}
+            final_output = {**output, **provider_output}
+            await event_bus.publish({
+                "channel_id": base_channel,
+                "data": {
+                    "invocation_id": invocation_id,
+                    "compute": compute_name,
+                    "mode": "tool_use",
+                    "tool": tool_name,
+                    "done": True,
+                    "output": final_output,
+                },
+            })
+            return final_output
+    # Stream exited without a top-level done event — emit one.
+    await event_bus.publish({
+        "channel_id": base_channel,
+        "data": {
+            "invocation_id": invocation_id,
+            "compute": compute_name,
+            "mode": "tool_use",
+            "tool": tool_name,
+            "done": True,
+            "output": output,
+        },
+    })
+    return output
 
 
 async def publish_stream_deltas(event_bus, invocation_id: str,
                                 compute_name: str, stream):
     """Iterate the stream generator, publishing each delta to the event
-    bus, and return the concatenated final text.
+    bus, and return the concatenated final text. Used for text-mode
+    streaming (stream_complete).
 
     Args:
         event_bus: runtime EventBus.

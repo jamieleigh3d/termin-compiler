@@ -26,6 +26,215 @@ class AIProviderError(Exception):
     pass
 
 
+class StreamingJsonFieldExtractor:
+    """Parses growing JSON text from a tool-use stream and emits per-field
+    events: field_delta (string-value chunk) and field_done (complete
+    value with its typed value).
+
+    Design constraints (v0.8 scope):
+      - Flat, single-level JSON object (tool inputs for set_output are flat).
+      - String-valued fields stream character-by-character as each chunk
+        of partial_json arrives. Per-character streaming matches what
+        users see in a chat UI.
+      - Non-string fields (numbers, booleans, null) are parsed and
+        emitted as a single field_done event at finish(). They cannot
+        meaningfully stream chars.
+      - Escaped quotes (\\") inside strings do not terminate the field.
+
+    The extractor is stateful: feed() appends a chunk, advances a
+    scanner, and returns a list of events. finish() flushes any
+    remaining completed value and returns any final events (e.g. non-
+    string fields that were unparseable until the full object arrived).
+
+    Events are dicts with shape:
+      {"type": "field_delta", "field": <name>, "delta": <text chunk>}
+      {"type": "field_done",  "field": <name>, "value": <final value>}
+    """
+
+    # Scanner states
+    _S_SEEK_KEY = 0           # outside a string, looking for next "<key>":
+    _S_IN_KEY = 1             # inside the key string
+    _S_SEEK_COLON = 2         # after key's closing quote, waiting for :
+    _S_SEEK_VALUE = 3         # after colon, waiting for first char of value
+    _S_IN_STRING_VALUE = 4    # inside a string value (emit each char as delta)
+    _S_IN_OTHER_VALUE = 5     # inside a non-string value (number/bool/null)
+    _S_DONE = 99              # after closing brace
+
+    def __init__(self):
+        self._buffer = ""
+        self._pos = 0
+        self._state = self._S_SEEK_KEY
+        self._current_key = ""
+        self._current_value_chars = []  # for strings: chars emitted so far
+        self._value_start_pos = 0       # buffer index where current value began
+        self._escape = False            # last char was an unescaped backslash
+
+    def feed(self, chunk: str) -> list:
+        """Append chunk and emit any events this advance uncovered."""
+        if not chunk:
+            return []
+        self._buffer += chunk
+        return self._scan()
+
+    def finish(self) -> list:
+        """Flush any remaining non-string fields by parsing the
+        accumulated buffer as JSON. String fields that were already
+        closed have emitted their field_done events; numeric/boolean
+        fields emit theirs here.
+
+        Returns events that weren't already emitted via feed()."""
+        events = []
+        # Try to parse the buffer as JSON and emit field_done for any
+        # non-string field that isn't already emitted.
+        try:
+            # Strip anything after the closing brace (e.g., trailing
+            # whitespace from a slow event loop). Simple bracketing.
+            text = self._buffer.strip()
+            # Permissive close: append } if unbalanced (we already saw
+            # all string value closures, but an abrupt stream end might
+            # leave us at S_IN_OTHER_VALUE).
+            open_braces = text.count("{") - text.count("}")
+            if open_braces > 0:
+                text = text + ("}" * open_braces)
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                # For each field NOT of string type and NOT already
+                # emitted, emit a field_done.
+                for k, v in parsed.items():
+                    if isinstance(v, str):
+                        continue  # string fields already emitted via scan
+                    events.append({"type": "field_done",
+                                    "field": k, "value": v})
+        except json.JSONDecodeError:
+            pass  # nothing more to emit
+        return events
+
+    def parsed_object(self) -> dict:
+        """Return the fully parsed object if buffer is complete JSON;
+        {} otherwise. Used for the invocation-done event's output dict."""
+        try:
+            text = self._buffer.strip()
+            open_braces = text.count("{") - text.count("}")
+            if open_braces > 0:
+                text = text + ("}" * open_braces)
+            parsed = json.loads(text)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+
+    def _scan(self) -> list:
+        """Advance the scanner through newly-appended text. Returns
+        events emitted during this scan."""
+        events = []
+        while self._pos < len(self._buffer):
+            c = self._buffer[self._pos]
+
+            if self._state == self._S_SEEK_KEY:
+                if c == '"':
+                    self._current_key = ""
+                    self._state = self._S_IN_KEY
+                elif c == "}":
+                    self._state = self._S_DONE
+                # skip whitespace, commas, open brace
+                self._pos += 1
+
+            elif self._state == self._S_IN_KEY:
+                if self._escape:
+                    self._current_key += c
+                    self._escape = False
+                    self._pos += 1
+                elif c == "\\":
+                    self._escape = True
+                    self._pos += 1
+                elif c == '"':
+                    self._state = self._S_SEEK_COLON
+                    self._pos += 1
+                else:
+                    self._current_key += c
+                    self._pos += 1
+
+            elif self._state == self._S_SEEK_COLON:
+                if c == ":":
+                    self._state = self._S_SEEK_VALUE
+                self._pos += 1  # skip whitespace until colon, then past colon
+
+            elif self._state == self._S_SEEK_VALUE:
+                if c.isspace():
+                    self._pos += 1
+                elif c == '"':
+                    # String value starts. Next chars stream as delta.
+                    self._current_value_chars = []
+                    self._state = self._S_IN_STRING_VALUE
+                    self._pos += 1
+                else:
+                    # Non-string value (number/bool/null). Don't
+                    # stream chars; the field lands in finish() after
+                    # full parse.
+                    self._state = self._S_IN_OTHER_VALUE
+                    self._value_start_pos = self._pos
+                    self._pos += 1
+
+            elif self._state == self._S_IN_STRING_VALUE:
+                if self._escape:
+                    # Previous char was backslash. Interpret the escape.
+                    decoded = self._decode_escape(c)
+                    self._current_value_chars.append(decoded)
+                    events.append({"type": "field_delta",
+                                    "field": self._current_key,
+                                    "delta": decoded})
+                    self._escape = False
+                    self._pos += 1
+                elif c == "\\":
+                    self._escape = True
+                    self._pos += 1
+                elif c == '"':
+                    # End of string value — emit field_done.
+                    final_value = "".join(self._current_value_chars)
+                    events.append({"type": "field_done",
+                                    "field": self._current_key,
+                                    "value": final_value})
+                    self._current_key = ""
+                    self._current_value_chars = []
+                    self._state = self._S_SEEK_KEY
+                    self._pos += 1
+                else:
+                    self._current_value_chars.append(c)
+                    events.append({"type": "field_delta",
+                                    "field": self._current_key,
+                                    "delta": c})
+                    self._pos += 1
+
+            elif self._state == self._S_IN_OTHER_VALUE:
+                # Advance until we hit a separator (',', '}') or
+                # whitespace — then return to SEEK_KEY. No delta
+                # events emitted here; finish() handles these fields.
+                if c == "," or c == "}":
+                    if c == "}":
+                        self._state = self._S_DONE
+                    else:
+                        self._state = self._S_SEEK_KEY
+                    # Don't advance past the "}" — we need SEEK_KEY
+                    # iteration to see it; but since we've already
+                    # transitioned to DONE, we can.
+                    self._pos += 1
+                else:
+                    self._pos += 1
+
+            elif self._state == self._S_DONE:
+                # Buffer past the object — skip whitespace etc.
+                self._pos += 1
+            else:
+                self._pos += 1
+
+        return events
+
+    @staticmethod
+    def _decode_escape(c: str) -> str:
+        """Minimal JSON escape decoding for common cases."""
+        return {"n": "\n", "t": "\t", "r": "\r", "\"": "\"",
+                "\\": "\\", "/": "/", "b": "\b", "f": "\f"}.get(c, c)
+
+
 class AIProvider:
     """Manages LLM API calls for Compute execution."""
 
@@ -83,6 +292,294 @@ class AIProvider:
                 logger.error("openai package not installed. Run: pip install openai")
         else:
             logger.error(f"Unknown AI provider service: {self._service}")
+
+    async def stream_complete(self, system_prompt: str, user_message: str):
+        """Yield (delta, done) tuples as the LLM generates text.
+
+        Text-only streaming (no tool_use). Intended for chat-style
+        Computes where the LLM produces free-form text that a client
+        renders token-by-token via the compute.stream.<invocation_id>
+        event channel (see docs/termin-streaming-protocol.md).
+
+        Contract matches simulate_stream:
+          - Every delta except the last yields done=False.
+          - The last delta yields done=True with its content.
+          - Empty response yields ("", True) as a single terminal event.
+
+        Raises AIProviderError on API failure (init issue or mid-stream
+        error from the provider). The caller's invocation record should
+        be updated appropriately.
+        """
+        if not self._client:
+            raise AIProviderError("AI provider not initialized")
+        if self._service == "anthropic":
+            async for item in self._anthropic_stream(system_prompt, user_message):
+                yield item
+        elif self._service == "openai":
+            async for item in self._openai_stream(system_prompt, user_message):
+                yield item
+        else:
+            raise AIProviderError(
+                f"Unknown service for stream_complete: {self._service}")
+
+    async def _bridge_sync_stream_to_queue(self, producer_fn):
+        """Shared pattern: run a sync producer in a thread that pushes
+        text chunks onto an asyncio.Queue, then consume with
+        lookahead-by-one so we can mark the last chunk with done=True.
+
+        producer_fn is a callable taking (queue, sentinel, exception_putter)
+        where exception_putter(exc) thread-safely forwards an exception
+        to the consuming coroutine.
+
+        Yields (delta, done) tuples conforming to the stream_complete
+        contract.
+        """
+        import asyncio
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+        SENTINEL = object()
+
+        def _thread_safe_put(item):
+            # Schedule queue.put on the consumer's loop.
+            asyncio.run_coroutine_threadsafe(queue.put(item), loop).result()
+
+        def _runner():
+            try:
+                producer_fn(_thread_safe_put)
+            except Exception as exc:
+                _thread_safe_put(exc)
+            finally:
+                _thread_safe_put(SENTINEL)
+
+        # Run the producer in a thread so the event loop stays responsive
+        # while we wait for each chunk from the provider's sync iterator.
+        producer_task = asyncio.create_task(asyncio.to_thread(_runner))
+
+        prev_chunk = None
+        try:
+            while True:
+                item = await queue.get()
+                if item is SENTINEL:
+                    break
+                if isinstance(item, Exception):
+                    raise AIProviderError(f"stream error: {item}") from item
+                if prev_chunk is not None:
+                    yield (prev_chunk, False)
+                prev_chunk = item
+        finally:
+            # Ensure the producer task doesn't leak.
+            if not producer_task.done():
+                await producer_task
+
+        if prev_chunk is not None:
+            yield (prev_chunk, True)
+        else:
+            # No text chunks received — emit a single terminal event.
+            yield ("", True)
+
+    async def _anthropic_stream(self, system_prompt: str, user_message: str):
+        """Bridge Anthropic's sync messages.stream context manager into
+        our async (delta, done) contract."""
+        def producer(put):
+            with self._client.messages.stream(
+                model=self._model or "claude-sonnet-4-6",
+                max_tokens=4096,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_message}],
+            ) as stream:
+                for text in stream.text_stream:
+                    if text:
+                        put(text)
+
+        async for item in self._bridge_sync_stream_to_queue(producer):
+            yield item
+
+    async def stream_agent_response(self, system_prompt: str,
+                                    user_message: str, output_tool: dict):
+        """Yield tool-use field events as an agent generates its
+        set_output tool call.
+
+        This is the primary streaming path for agent Computes —
+        agents respond exclusively via set_output and cannot emit
+        free-form text as their "response."
+
+        Event shapes (see docs/termin-streaming-protocol.md):
+          {"type": "field_delta", "field": <name>, "delta": <text>}
+          {"type": "field_done",  "field": <name>, "value": <final>}
+          {"type": "done",        "output": <full tool-call input dict>}
+
+        String-valued fields stream character-by-character. Non-string
+        fields (number, bool, null) land as a single field_done event
+        when the tool-use content block completes.
+
+        Raises AIProviderError on init issues or mid-stream failure.
+        """
+        if not self._client:
+            raise AIProviderError("AI provider not initialized")
+        if self._service == "anthropic":
+            async for item in self._anthropic_agent_stream(
+                    system_prompt, user_message, output_tool):
+                yield item
+        elif self._service == "openai":
+            async for item in self._openai_agent_stream(
+                    system_prompt, user_message, output_tool):
+                yield item
+        else:
+            raise AIProviderError(
+                f"Unknown service for stream_agent_response: {self._service}")
+
+    async def _anthropic_agent_stream(self, system_prompt: str,
+                                       user_message: str,
+                                       output_tool: dict):
+        """Bridge Anthropic's streaming events into field-level
+        (delta, done) events. Listens for input_json_delta events on
+        the set_output tool's content block and pipes partial_json
+        through a StreamingJsonFieldExtractor."""
+        extractor = StreamingJsonFieldExtractor()
+
+        def producer(put):
+            with self._client.messages.stream(
+                model=self._model or "claude-sonnet-4-6",
+                max_tokens=4096,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_message}],
+                tools=[output_tool],
+                tool_choice={"type": "tool", "name": "set_output"},
+            ) as stream:
+                for event in stream:
+                    etype = getattr(event, "type", None)
+                    if etype == "content_block_delta":
+                        delta_obj = getattr(event, "delta", None)
+                        if delta_obj is None:
+                            continue
+                        dtype = getattr(delta_obj, "type", None)
+                        if dtype == "input_json_delta":
+                            partial = getattr(delta_obj, "partial_json", "") or ""
+                            for emitted in extractor.feed(partial):
+                                put(emitted)
+
+        async for item in self._bridge_events_to_queue(producer):
+            yield item
+
+        # After the stream closes, flush any non-string fields.
+        for e in extractor.finish():
+            yield e
+        # Emit the final invocation-done event with the full output dict.
+        yield {"type": "done", "output": extractor.parsed_object()}
+
+    async def _openai_agent_stream(self, system_prompt: str,
+                                    user_message: str,
+                                    output_tool: dict):
+        """Bridge OpenAI streaming function_call.arguments deltas into
+        the same field-level event contract as Anthropic."""
+        extractor = StreamingJsonFieldExtractor()
+        oai_tool = {
+            "type": "function",
+            "function": {
+                "name": output_tool["name"],
+                "description": output_tool.get("description", ""),
+                "parameters": output_tool["input_schema"],
+            },
+        }
+
+        def producer(put):
+            stream = self._client.chat.completions.create(
+                model=self._model or "gpt-4o",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                tools=[oai_tool],
+                tool_choice={"type": "function",
+                             "function": {"name": "set_output"}},
+                stream=True,
+            )
+            for chunk in stream:
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
+                delta = getattr(choices[0], "delta", None)
+                if not delta:
+                    continue
+                tool_calls = getattr(delta, "tool_calls", None) or []
+                for tc in tool_calls:
+                    fn = getattr(tc, "function", None)
+                    if not fn:
+                        continue
+                    args_chunk = getattr(fn, "arguments", None)
+                    if args_chunk:
+                        for emitted in extractor.feed(args_chunk):
+                            put(emitted)
+
+        async for item in self._bridge_events_to_queue(producer):
+            yield item
+
+        for e in extractor.finish():
+            yield e
+        yield {"type": "done", "output": extractor.parsed_object()}
+
+    async def _bridge_events_to_queue(self, producer_fn):
+        """Pump arbitrary event dicts from a sync producer thread into
+        an async generator. Similar to _bridge_sync_stream_to_queue but
+        yields whatever objects the producer puts on the queue (not
+        lookahead-paired tuples). Used by the agent-streaming path
+        where the contract is {"type": ..., ...} dicts, not (delta, done).
+        """
+        import asyncio
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+        SENTINEL = object()
+
+        def _thread_safe_put(item):
+            asyncio.run_coroutine_threadsafe(queue.put(item), loop).result()
+
+        def _runner():
+            try:
+                producer_fn(_thread_safe_put)
+            except Exception as exc:
+                _thread_safe_put(exc)
+            finally:
+                _thread_safe_put(SENTINEL)
+
+        producer_task = asyncio.create_task(asyncio.to_thread(_runner))
+        try:
+            while True:
+                item = await queue.get()
+                if item is SENTINEL:
+                    break
+                if isinstance(item, Exception):
+                    raise AIProviderError(f"stream error: {item}") from item
+                yield item
+        finally:
+            if not producer_task.done():
+                await producer_task
+
+    async def _openai_stream(self, system_prompt: str, user_message: str):
+        """Bridge OpenAI's stream=True chat completions into our async
+        (delta, done) contract. Role-only chunks (delta.content is None)
+        are filtered."""
+        def producer(put):
+            stream = self._client.chat.completions.create(
+                model=self._model or "gpt-4o",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                stream=True,
+            )
+            for chunk in stream:
+                # Each chunk has choices[0].delta.content which may be
+                # None (the opening role-only chunk) or a text string.
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
+                delta = getattr(choices[0], "delta", None)
+                content = getattr(delta, "content", None) if delta else None
+                if content:
+                    put(content)
+
+        async for item in self._bridge_sync_stream_to_queue(producer):
+            yield item
 
     async def simulate_stream(self, deltas: list):
         """Test helper: yield (delta, done) from a scripted list.
