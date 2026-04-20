@@ -76,6 +76,7 @@ As a warehouse clerk, I want to see all products and their current stock levels
       "Discontinue" transitions to "discontinued" if available, hide otherwise
       "Edit" edits if available, hide otherwise
       "Delete" deletes if available, hide otherwise
+    Allow inline editing of name, description
 
 As a warehouse clerk, I want to receive stock into the warehouse
   so that inventory levels stay accurate:

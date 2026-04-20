@@ -383,6 +383,10 @@ allow_searching_line
     = 'Allow' 'searching' 'by' fields:or_list $
     ;
 
+allow_inline_editing_line
+    = 'Allow' 'inline' 'editing' 'of' fields:comma_list $
+    ;
+
 link_column_line
     = 'Link' col:quoted_string 'to' template:quoted_string $
     ;

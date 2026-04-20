@@ -128,9 +128,16 @@ async def init_db(content_schemas: list[dict], db_path: str = None):
             if field.get("foreign_key"):
                 _assert_safe(field["foreign_key"], f"foreign key target in {table_name}")
 
+    # Always reset _db_path — if db_path is None, fall back to the
+    # "app.db" default rather than inheriting a value set by a
+    # previous init_db call. Without this reset, a prior test that
+    # passed db_path=<tempfile> would leak that path into a later
+    # caller who passes db_path=None, so subsequent get_db() calls
+    # would route to the stale tempfile DB (and accumulate state
+    # across tests). Bug surfaced in the v0.8 sprint — pagination
+    # tests saw leftover products from test_compute_demo's tempfile.
     global _db_path
-    if db_path:
-        _db_path = db_path
+    _db_path = db_path if db_path else "app.db"
 
     db = await get_db()
     try:

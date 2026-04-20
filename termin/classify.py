@@ -29,6 +29,7 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Mark ", "mark_rows_line"),
     ("Highlight rows where", "highlight_rows_line"),
     ("Allow filtering by", "allow_filtering_line"), ("Allow searching by", "allow_searching_line"),
+    ("Allow inline editing of", "allow_inline_editing_line"),
     ("Link ", "link_column_line"),
     ("This table subscribes to", "subscribes_to_line"), ("Accept input for", "accept_input_line"),
     ("Validate that", "validate_unique_line"), ("Create the ", "create_as_line"),

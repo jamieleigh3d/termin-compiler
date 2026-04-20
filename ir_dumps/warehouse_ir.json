@@ -732,7 +732,12 @@
                 "layout": {},
                 "children": []
               }
-            ]
+            ],
+            "inline_editable_fields": [
+              "name",
+              "description"
+            ],
+            "inline_edit_scope": "inventory.write"
           },
           "style": {},
           "layout": {},

@@ -14,7 +14,7 @@ Two-pass analysis:
 from .ast_nodes import (
     Program, Content, StateMachine, EventRule, UserStory, ShowPage,
     DisplayTable, AcceptInput, SubscribeTo, ShowRelated, AllowFilter,
-    AllowSearch, ShowChart, DisplayAggregation,
+    AllowSearch, AllowInlineEdit, ShowChart, DisplayAggregation,
     ComputeNode, ChannelDecl, BoundaryDecl, RoleAlias,
     ErrorHandler, ActionButtonDef,
 )
@@ -166,6 +166,7 @@ class Analyzer:
         self._check_error_handlers()
         self._check_dependent_values()
         self._check_row_action_access_rules()
+        self._check_inline_editing()
 
     def _check_row_action_access_rules(self) -> None:
         """Row action buttons of kind=delete/edit require the governing
@@ -352,6 +353,84 @@ class Analyzer:
                         code="TERMIN-S011",
                         suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
                     ))
+
+    def _check_inline_editing(self) -> None:
+        """`Allow inline editing of <fields>` requires:
+          - a preceding DisplayTable on the page (so we know the content)
+          - the content to declare `can update`
+          - every listed field to exist on the content's schema
+          - no state-machine-backed field (use transition buttons instead)
+
+        Error codes:
+          TERMIN-S022: Inline editing on content without `can update` rule.
+          TERMIN-S023: Inline editing references an unknown field.
+          TERMIN-S024: Inline editing attempted on a state-machine column.
+        """
+        # Pre-compute the set of content names that have a state machine
+        # (used for the TERMIN-S024 check).
+        contents_with_sm = {sm.content_name for sm in self.program.state_machines}
+
+        for story in self.program.stories:
+            current_table_content_name: str | None = None
+            for d in story.directives:
+                if isinstance(d, DisplayTable):
+                    current_table_content_name = d.content_name
+                elif isinstance(d, AllowInlineEdit):
+                    if not current_table_content_name:
+                        continue  # ungrounded; lowering handles
+                    content = self._find_content_by_name(
+                        current_table_content_name)
+                    if content is None:
+                        continue
+                    # Require `can update` on the content.
+                    has_update = any(
+                        "update" in rule.verbs
+                        for rule in content.access_rules)
+                    if not has_update:
+                        self.errors.add(SemanticError(
+                            message=(
+                                f'Inline editing on "{content.name}" has no '
+                                f'matching access rule — add \'Anyone with '
+                                f'"<scope>" can update {content.name}\' to the '
+                                f'Content block.'
+                            ),
+                            line=d.line,
+                            code="TERMIN-S022",
+                        ))
+                    # Known-field + not-a-state-field check per listed field.
+                    schema_fields = {f.name for f in content.fields}
+                    schema_fields_snake = {
+                        f.name.lower().replace(" ", "_")
+                        for f in content.fields
+                    }
+                    for fname in d.fields:
+                        fname_snake = fname.lower().replace(" ", "_")
+                        if fname == "status" or fname_snake == "status":
+                            # Only flag if the content actually has a state
+                            # machine; otherwise there is no `status` column
+                            # special-cased.
+                            if content.name in contents_with_sm:
+                                self.errors.add(SemanticError(
+                                    message=(
+                                        f'Cannot inline-edit the state-machine '
+                                        f'column "status" on "{content.name}" '
+                                        f'— use transition buttons or the '
+                                        f'Edit modal\'s state dropdown instead.'
+                                    ),
+                                    line=d.line,
+                                    code="TERMIN-S024",
+                                ))
+                                continue
+                        if (fname not in schema_fields
+                                and fname_snake not in schema_fields_snake):
+                            self.errors.add(SemanticError(
+                                message=(
+                                    f'Inline editing references unknown field '
+                                    f'"{fname}" on "{content.name}".'
+                                ),
+                                line=d.line,
+                                code="TERMIN-S023",
+                            ))
 
     def _check_navigation(self) -> None:
         nav = self.program.navigation

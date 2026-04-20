@@ -36,6 +36,9 @@ def _render_data_table(node: dict) -> str:
     children = node.get("children", [])
 
     source = props.get("source", "")
+    # v0.8 #6: inline-editable fields (click-to-edit cells).
+    inline_editable_fields = set(props.get("inline_editable_fields", []))
+    inline_edit_scope = props.get("inline_edit_scope") or ""
     parts = [f'<table class="w-full bg-white shadow rounded overflow-hidden" data-termin-component="data_table" data-termin-source="{source}">']
     parts.append('  <thead class="bg-gray-100"><tr>')
     for col in cols:
@@ -136,6 +139,18 @@ def _render_data_table(node: dict) -> str:
     for col in cols:
         key = col.get("field", "")
         link_tpl = col.get("link_template")
+        # v0.8 #6: if this field is marked inline-editable and the caller
+        # holds the content's update scope, emit data-termin-inline-editable
+        # so the page-level JS click handler wires up editing on this cell.
+        # Redacted values skip the marker (Jinja guards the inner content).
+        if key in inline_editable_fields and inline_edit_scope:
+            inline_attr = (
+                f'{{% if "{inline_edit_scope}" in user_scopes %}}'
+                f' data-termin-inline-editable'
+                f'{{% endif %}}'
+            )
+        else:
+            inline_attr = ""
         # Handle redacted values: show [REDACTED] in gray italic
         if link_tpl:
             # Linked column: wrap value in <a> with interpolated href
@@ -143,7 +158,7 @@ def _render_data_table(node: dict) -> str:
             import re as _re
             jinja_href = _re.sub(r'\{(\w+)\}', r'{{ item.\1 }}', link_tpl)
             parts.append(
-                f'      <td class="px-4 py-2 text-sm" data-termin-field="{key}">'
+                f'      <td class="px-4 py-2 text-sm" data-termin-field="{key}"{inline_attr}>'
                 f'{{% if item.{key} is mapping and item.{key}.__redacted %}}'
                 f'<span class="text-gray-400 italic">[REDACTED]</span>'
                 f'{{% else %}}'
@@ -154,7 +169,7 @@ def _render_data_table(node: dict) -> str:
             )
         else:
             parts.append(
-                f'      <td class="px-4 py-2 text-sm" data-termin-field="{key}">'
+                f'      <td class="px-4 py-2 text-sm" data-termin-field="{key}"{inline_attr}>'
                 f'{{% if item.{key} is mapping and item.{key}.__redacted %}}'
                 f'<span class="text-gray-400 italic">[REDACTED]</span>'
                 f'{{% else %}}'
@@ -348,6 +363,73 @@ def _render_data_table(node: dict) -> str:
     result = '\n'.join(sub_parts) + '\n' + '\n'.join(parts) if sub_parts else '\n'.join(parts)
     if related_parts:
         result += '\n' + '\n'.join(related_parts)
+    # v0.8 #6: inline-edit click handler — attached once per table when
+    # there is at least one inline-editable field. Clicks on a cell that
+    # carries data-termin-inline-editable replace its text content with
+    # an <input>, blur/Enter saves via PUT, Escape or blur-without-change
+    # reverts. On failure the server's detail is surfaced via alert and
+    # the cell reverts to its prior value.
+    if inline_editable_fields:
+        result += f'''
+<script>
+(function() {{
+  const TABLE = document.querySelector(
+    'table[data-termin-component="data_table"][data-termin-source="{source}"]');
+  if (!TABLE) return;
+  TABLE.addEventListener("click", function(e) {{
+    const cell = e.target.closest("[data-termin-inline-editable]");
+    if (!cell) return;
+    if (cell.querySelector("input")) return; // already editing
+    const row = cell.closest("tr[data-termin-row-id]");
+    if (!row) return;
+    const rowId = row.dataset.terminRowId;
+    const field = cell.dataset.terminField;
+    const original = cell.textContent;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = original;
+    input.setAttribute("data-termin-inline-input", "");
+    input.setAttribute("data-termin-field", field);
+    input.className = "w-full border rounded px-2 py-1 text-sm";
+    cell.textContent = "";
+    cell.appendChild(input);
+    input.focus();
+    input.select();
+    let committed = false;
+    async function commit() {{
+      if (committed) return;
+      committed = true;
+      const newVal = input.value;
+      if (newVal === original) {{ cell.textContent = original; return; }}
+      try {{
+        const res = await fetch('/api/v1/{source}/' + rowId, {{
+          method: "PUT",
+          headers: {{"Content-Type": "application/json"}},
+          body: JSON.stringify({{[field]: newVal}}),
+        }});
+        if (!res.ok) {{
+          const err = await res.json().catch(() => null);
+          throw new Error((err && err.detail) || ("Update failed: " + res.status));
+        }}
+        cell.textContent = newVal;
+      }} catch (err) {{
+        cell.textContent = original;
+        alert(err.message);
+      }}
+    }}
+    function revert() {{
+      if (committed) return;
+      committed = true;
+      cell.textContent = original;
+    }}
+    input.addEventListener("blur", commit);
+    input.addEventListener("keydown", function(ev) {{
+      if (ev.key === "Enter") {{ ev.preventDefault(); commit(); }}
+      else if (ev.key === "Escape") {{ ev.preventDefault(); revert(); input.blur(); }}
+    }});
+  }});
+}})();
+</script>'''
     return result
 
 

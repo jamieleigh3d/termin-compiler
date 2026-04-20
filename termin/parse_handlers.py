@@ -16,7 +16,7 @@ from .ast_nodes import (
     Application, Identity, Role, RoleAlias, Content, Field, TypeExpr,
     AccessRule, StateMachine, EventRule, EventAction, EventCondition,
     ErrorHandler, ErrorAction, UserStory, ShowPage, DisplayTable, ShowRelated,
-    HighlightRows, MarkAs, AllowFilter, AllowSearch, SubscribeTo, AcceptInput,
+    HighlightRows, MarkAs, AllowFilter, AllowSearch, AllowInlineEdit, SubscribeTo, AcceptInput,
     ValidateUnique, CreateAs, AfterSave, ShowChart, DisplayAggregation,
     StructuredAggregation, SectionStart, ActionHeader, ActionButtonDef,
     Stream, ChatDirective, DisplayText, LinkColumn,
@@ -257,6 +257,11 @@ def _parse_line(text: str, rule: str, ln: int):
             rest = text[len("Allow searching by "):].strip()
             fs = [f.strip() for f in rest.split(" or ") if f.strip()]
         return ("directive", AllowSearch(fields=fs, line=ln))
+    if rule == "allow_inline_editing_line":
+        r = P(text, rule)
+        fs = _cl(r.get("fields")) if r else _scal(
+            text[len("Allow inline editing of "):])
+        return ("directive", AllowInlineEdit(fields=fs, line=ln))
     if rule == "link_column_line":
         r = P(text, rule)
         if r:

@@ -15,7 +15,7 @@ import re
 from .ast_nodes import (
     Content, AccessRule, StateMachine, UserStory,
     ShowPage, DisplayTable, ShowRelated, HighlightRows, MarkAs,
-    AllowFilter, AllowSearch, SubscribeTo, AcceptInput, ValidateUnique,
+    AllowFilter, AllowSearch, AllowInlineEdit, SubscribeTo, AcceptInput, ValidateUnique,
     CreateAs, AfterSave, ShowChart, DisplayAggregation, DisplayText,
     StructuredAggregation, SectionStart, ActionHeader, ActionButtonDef,
     LinkColumn, ChatDirective,
@@ -239,6 +239,31 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
                     cur_data_table.children = cur_data_table.children + (
                         ComponentNode(type="search", props={"fields": [_snake(f) for f in d.fields]}),
                     )
+
+            elif isinstance(d, AllowInlineEdit):
+                # Opt in to click-to-edit cells for the listed fields on
+                # the current data_table. Analyzer guaranteed the content
+                # has `can update`, each field exists, and none are
+                # state-machine-backed.
+                if cur_data_table:
+                    source_snake = cur_data_table.props.get("source", "")
+                    dt_content = next(
+                        (c for c in program.contents
+                         if _snake(c.name) == source_snake), None)
+                    update_scope = _scope_for_verb(
+                        dt_content.access_rules, "update") if dt_content else None
+                    editable_snake = [_snake(f) for f in d.fields]
+                    # Preserve any previously-declared editable fields
+                    # (author could split across multiple directives).
+                    existing_fields = cur_data_table.props.get(
+                        "inline_editable_fields", [])
+                    merged = list(existing_fields)
+                    for f in editable_snake:
+                        if f not in merged:
+                            merged.append(f)
+                    cur_data_table.props["inline_editable_fields"] = merged
+                    if update_scope:
+                        cur_data_table.props["inline_edit_scope"] = update_scope
 
             elif isinstance(d, MarkAs):
                 if cur_data_table:

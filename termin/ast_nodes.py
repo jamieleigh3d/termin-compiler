@@ -216,6 +216,16 @@ class AllowSearch(Directive):
 
 
 @dataclass
+class AllowInlineEdit(Directive):
+    """'Allow inline editing of <field>, <field>, ...' — opt-in to
+    click-to-edit cells for the listed fields on the data_table of the
+    current page. Requires the content's `can update` rule; state-machine
+    columns are not permitted (use transition buttons or the Edit modal).
+    """
+    fields: list[str] = field(default_factory=list)
+
+
+@dataclass
 class LinkColumn(Directive):
     column: str = ""
     link_template: str = ""
