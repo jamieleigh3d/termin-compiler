@@ -322,10 +322,83 @@ function hydrateChatComponents() {
       const action = ch.split(".")[2]; // created, updated
       if (action === "created" && data) {
         console.log("[Termin] Chat new message:", data);
+        // If there is a pending stream bubble for this arrival, remove
+        // it — the persisted message now takes over. Match is a
+        // best-effort one-pending-bubble-at-a-time heuristic; complex
+        // interleaving can be handled in a future iteration.
+        const pending = chat.querySelector("[data-termin-chat-pending]");
+        if (pending) pending.remove();
         appendChatMessage(messagesContainer, data, chat);
       }
     });
+
+    // v0.8 #7: subscribe to compute.stream.* for token-by-token deltas.
+    // The client assembles deltas into a pending assistant-style bubble
+    // until the terminal event arrives. The final persisted message
+    // comes through the content.* subscription above, at which point
+    // the pending bubble is removed.
+    subscribe("compute.stream.", (ch, data) => {
+      if (!data) return;
+      if (data.error) {
+        renderChatStreamError(messagesContainer, data.error, chat);
+        return;
+      }
+      const invId = data.invocation_id;
+      if (!invId) return;
+      let pending = chat.querySelector(
+        `[data-termin-chat-pending][data-invocation-id="${invId}"]`);
+      if (!pending) {
+        pending = createPendingChatBubble(messagesContainer, invId);
+      }
+      const bodyDiv = pending.querySelector("[data-termin-chat-pending-body]");
+      if (data.delta && bodyDiv) {
+        bodyDiv.textContent = (bodyDiv.textContent || "") + data.delta;
+      }
+      if (data.done) {
+        // Keep the bubble around until the persisted message arrives via
+        // content.*.created. If final_text is present and the body hasn't
+        // captured it, set it now as a safety net for clients that
+        // joined mid-stream.
+        if (data.final_text && bodyDiv &&
+            bodyDiv.textContent !== data.final_text) {
+          bodyDiv.textContent = data.final_text;
+        }
+      }
+      // Auto-scroll.
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    });
   }
+}
+
+function createPendingChatBubble(container, invId) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "flex justify-start";
+  wrapper.setAttribute("data-termin-chat-pending", "");
+  wrapper.setAttribute("data-invocation-id", invId);
+  const bubble = document.createElement("div");
+  bubble.className = "bg-gray-200 text-gray-800 rounded-lg px-4 py-2 max-w-[70%] opacity-80";
+  const roleLabel = document.createElement("div");
+  roleLabel.className = "text-xs opacity-70 mb-1";
+  roleLabel.textContent = "assistant";
+  const bodyDiv = document.createElement("div");
+  bodyDiv.setAttribute("data-termin-chat-pending-body", "");
+  bubble.appendChild(roleLabel);
+  bubble.appendChild(bodyDiv);
+  wrapper.appendChild(bubble);
+  container.appendChild(wrapper);
+  container.scrollTop = container.scrollHeight;
+  return wrapper;
+}
+
+function renderChatStreamError(container, errorMsg, chatEl) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "flex justify-start";
+  wrapper.setAttribute("data-termin-chat-stream-error", "");
+  const bubble = document.createElement("div");
+  bubble.className = "bg-red-100 text-red-800 border border-red-300 rounded-lg px-4 py-2 max-w-[70%]";
+  bubble.textContent = "Stream error: " + errorMsg;
+  wrapper.appendChild(bubble);
+  container.appendChild(wrapper);
 }
 
 function appendChatMessage(container, data, chatEl) {

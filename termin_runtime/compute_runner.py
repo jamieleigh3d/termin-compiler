@@ -765,3 +765,70 @@ def register_compute_endpoint(app, ctx: RuntimeContext):
             "trigger": "manual",
             "status": "completed",
         }
+
+
+# ── LLM streaming support (v0.8 #7) ──
+#
+# Publishes an async generator of (delta, done) pairs from a streaming
+# AIProvider to the event bus as a series of delta events on the
+# compute.stream.<invocation_id> channel. Returns the concatenated
+# final_text so the caller can persist the completed message.
+#
+# See docs/termin-streaming-protocol.md for the full protocol.
+
+
+async def publish_stream_deltas(event_bus, invocation_id: str,
+                                compute_name: str, stream):
+    """Iterate the stream generator, publishing each delta to the event
+    bus, and return the concatenated final text.
+
+    Args:
+        event_bus: runtime EventBus.
+        invocation_id: UUID assigned at invocation start.
+        compute_name: the Compute's snake_name (used in event payloads).
+        stream: async generator yielding (delta: str, done: bool).
+
+    Returns:
+        The concatenated final_text.
+    """
+    channel = f"compute.stream.{invocation_id}"
+    parts = []
+    async for delta, done in stream:
+        if done:
+            # Terminal event: include final_text for latecomers.
+            parts.append(delta)
+            final_text = "".join(parts)
+            await event_bus.publish({
+                "channel_id": channel,
+                "data": {
+                    "invocation_id": invocation_id,
+                    "compute": compute_name,
+                    "delta": delta,
+                    "done": True,
+                    "final_text": final_text,
+                },
+            })
+            return final_text
+        parts.append(delta)
+        await event_bus.publish({
+            "channel_id": channel,
+            "data": {
+                "invocation_id": invocation_id,
+                "compute": compute_name,
+                "delta": delta,
+                "done": False,
+            },
+        })
+    # Stream exited without a done=True signal — treat as terminal.
+    final_text = "".join(parts)
+    await event_bus.publish({
+        "channel_id": channel,
+        "data": {
+            "invocation_id": invocation_id,
+            "compute": compute_name,
+            "delta": "",
+            "done": True,
+            "final_text": final_text,
+        },
+    })
+    return final_text

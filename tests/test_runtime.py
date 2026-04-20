@@ -336,7 +336,7 @@ class TestEventBusChannels:
             await bus.publish({"type": "test2"})  # No channel_id
             assert q.qsize() == 2
 
-        asyncio.get_event_loop().run_until_complete(_test())
+        asyncio.run(_test())
 
     def test_filtered_receives_matching(self):
         import asyncio
@@ -349,7 +349,7 @@ class TestEventBusChannels:
             await bus.publish({"type": "test2", "channel_id": "content.orders.created"})
             assert q.qsize() == 1
 
-        asyncio.get_event_loop().run_until_complete(_test())
+        asyncio.run(_test())
 
     def test_filtered_ignores_non_matching(self):
         import asyncio
@@ -361,7 +361,7 @@ class TestEventBusChannels:
             await bus.publish({"type": "test", "channel_id": "content.products.created"})
             assert q.qsize() == 0
 
-        asyncio.get_event_loop().run_until_complete(_test())
+        asyncio.run(_test())
 
 
 class TestSystemCELFunctions:

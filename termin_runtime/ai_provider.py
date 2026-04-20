@@ -84,6 +84,25 @@ class AIProvider:
         else:
             logger.error(f"Unknown AI provider service: {self._service}")
 
+    async def simulate_stream(self, deltas: list):
+        """Test helper: yield (delta, done) from a scripted list.
+
+        Shape matches what a real streaming provider (e.g., Anthropic
+        messages.stream) produces. Empty input yields a single terminal
+        event with empty text, so callers never need to special-case
+        zero-delta completions.
+
+        Used by tests and by dev-mode to exercise the streaming protocol
+        without a live LLM API. The real stream_complete() implementation
+        (v0.8.1) will conform to the same yield shape.
+        """
+        if not deltas:
+            yield ("", True)
+            return
+        last_idx = len(deltas) - 1
+        for i, delta in enumerate(deltas):
+            yield (delta, i == last_idx)
+
     async def complete(self, system_prompt: str, user_message: str,
                        output_tool: dict) -> dict:
         """Level 1: Single completion with forced tool_use output.
