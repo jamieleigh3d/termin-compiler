@@ -1,0 +1,64 @@
+Application: Agent Chatbot 2
+  Description: Conversational AI chatbot with message history
+Id: 0d0e2358-ffc7-4f3f-bc89-1af5ca363b1f
+
+Users authenticate with stub
+Scopes are "chat.use"
+
+An "anonymous" has "chat.use"
+
+Content called "messages":
+  Each message has a role which is one of: "user", "assistant", defaults to "user"
+  Each message has a body which is text, required
+  Anyone with "chat.use" can view or create messages
+
+Content called "products":
+  Each product has a SKU which is unique text, required
+  Each product has a name which is text, required
+  Each product has a description which is text
+  Each product has a unit cost which is currency
+  Each product has a category which is one of: "raw material", "finished good", "packaging"
+  Anyone with "chat.use" can view products
+  Anyone with "chat.use" can update products
+  Anyone with "chat.use" can create or delete products
+
+Compute called "reply":
+  Provider is "ai-agent"
+  Accesses messages, products
+  Trigger on event "message.created" where `message.role == "user"`
+  Directive is ```
+    You are a helpful conversational assistant. Be natural and
+    helpful. Never fabricate information. If asked to do something
+    outside your capabilities, explain what you can do instead.
+  ```
+  Objective is ```
+    Reply to the user's latest message. Load the conversation
+    history with content.query("messages"). Create your reply
+    with content.create("messages", {"role": "assistant",
+    "body": your_reply}).
+  ```
+  Anyone with "chat.use" can execute this
+  Audit level: actions
+  Anyone with "chat.use" can audit
+
+As an anonymous, I want to chat with the AI
+  so that I can have a conversation:
+    Show a page called "Chat 2"
+    Show a chat for messages with role "role", content "body"
+
+As a anonymous, I want to see all products and their current stock levels
+  so that I know what we have on hand:
+    Show a page called "Inventory Dashboard"
+    Display a table of products with columns: SKU, name, category, status
+    For each product, show stock levels grouped by warehouse
+    Allow filtering by category, warehouse, and status
+    Allow searching by SKU or name
+    This table subscribes to stock level changes
+    For each product, show actions:
+      "Activate" transitions to "active" if available
+      "Discontinue" transitions to "discontinued" if available, hide otherwise
+      "Edit" edits if available, hide otherwise
+      "Delete" deletes if available, hide otherwise
+    Allow inline editing of name, description
+    
+

@@ -1,0 +1,10 @@
+{
+  "products": [
+    {"sku": "RM-001", "name": "Steel Sheet", "category": "raw material", "status": "active"},
+    {"sku": "RM-002", "name": "Copper Wire", "category": "raw material", "status": "active"},
+    {"sku": "FG-001", "name": "Widget A", "category": "finished good", "status": "active"},
+    {"sku": "FG-002", "name": "Widget B", "category": "finished good", "status": "draft"},
+    {"sku": "PK-001", "name": "Box Small", "category": "packaging", "status": "active"},
+    {"sku": "PK-002", "name": "Box Large", "category": "packaging", "status": "discontinued"}
+  ]
+}
