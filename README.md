@@ -101,7 +101,7 @@ docs/                    Specifications and design documents
   termin-roadmap.md
   ...and more
 
-tests/                   386 tests (pytest)
+tests/                   1525 tests (pytest)
 ir_dumps/                Pre-compiled IR JSON for each example
 ```
 
@@ -124,7 +124,7 @@ Content-level scoping (`Scoped to "access_salary"`) gates entire content types. 
 
 ## Conformance Suite
 
-The [termin-conformance](https://github.com/jamieleigh3d/termin-conformance) repository contains 249 behavioral tests that validate any conforming runtime. Tests use an adapter pattern --- swap the adapter to test your runtime without changing a single test.
+The [termin-conformance](https://github.com/jamieleigh3d/termin-conformance) repository contains 788 behavioral tests (778 HTTP + 10 Playwright browser) that validate any conforming runtime. Tests use an adapter pattern --- swap the adapter to test your runtime without changing a single test. The `served-reference` adapter launches the runtime on a real localhost port for browser-automation tests; the default in-process `reference` adapter runs the HTTP suite in under 30 seconds.
 
 ## IR and Package Format
 

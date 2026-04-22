@@ -1,5 +1,150 @@
 # Changelog
 
+## v0.8.1 (2026-04-21)
+
+### Theme: Maintenance release
+
+Non-breaking patch release. Fixes release-artifact drift from the v0.8.0
+tag, addresses three post-release GitHub issues, and documents the
+process lesson that drove a v0.8.0 → v0.8.1 tag sequence. No new DSL,
+IR, or runtime features. IR schema unchanged at 0.8.0.
+
+### Release-artifact fixes
+- **`docs/termin-ir-schema.json`**: added `edit_modal` to the
+  ComponentNode type enum. The v0.8 #5 edit-action-button commit added
+  the new component type to the conformance-side schema but missed the
+  compiler's authoritative copy, so strict-validator adapters rejected
+  every v0.8 warehouse app IR. Fixed in `bfb7633`.
+- **`examples-dev/`**: new directory with README explaining what
+  belongs there. `agent_chatbot2.termin` parked here — blocks promotion
+  back to `examples/` on the PEG gap for the `Accesses <content>,
+  <content>` line shape (logged under v0.8.2).
+
+### GitHub issue responses
+- **compiler#1** (857 TatSu fallbacks): unable to reproduce on Python
+  3.11 / current main (0 fallbacks on both `main` and the cited commit
+  `e64a537`). Commented on the issue requesting environment details
+  (Python version, TatSu version, OS). If confirmed a real
+  environment-dependent bug, fix ships in v0.8.1 once reproducer is
+  available.
+
+### Version
+- Compiler: 0.8.0 → 0.8.1
+- Runtime: 0.8.0 → 0.8.1
+- IR: 0.8.0 (unchanged)
+
+### Known issues (deferred to v0.8.2)
+- PEG gap: `Accesses messages, products` line shape (fallback handles
+  it correctly; fidelity-only)
+- Stale `app_seed.json` between recompiles
+- uvicorn `ws="websockets-legacy"` deprecation warnings
+- Release script test-run step hangs under `capture_output=True` (tests
+  actually complete; main process doesn't see subprocess exit promptly)
+
+---
+
+## v0.8.0 (2026-04-21)
+
+### Theme: Action primitives + LLM streaming
+
+First public-ready release. Ships a complete row-action DSL surface
+(Delete / Edit / Inline edit), LLM streaming for both text completions
+and tool-use agents, general-purpose streaming hydrator on the client,
+and security-hardening fixes surfaced during the sprint.
+
+### DSL (grammar + analyzer)
+- **Delete action button**: `"Delete" deletes if available, hide/disable otherwise`
+  — row-level delete primitive, scope-gated via the content's `can delete`
+  rule. Analyzer error `TERMIN-S020` when declared without a matching rule.
+- **Edit action button**: `"Edit" edits if available, hide/disable otherwise`
+  — opens a modal dialog pre-populated from the row; saves via
+  `PUT /api/v1/{content}/{id}`. State-machine fields render as a dropdown
+  filtered to valid transitions by current state + user scopes. Analyzer
+  error `TERMIN-S021`.
+- **Inline edit**: `Allow inline editing of <fields>` — click-to-edit
+  cells committing via single-field PUT. Analyzer errors `TERMIN-S022`
+  (missing update rule), `TERMIN-S023` (unknown field), `TERMIN-S024`
+  (state-machine column).
+
+### Runtime
+- **Auto-CRUD list-endpoint query params** on `GET /api/v1/<content>`:
+  `?limit`, `?offset`, `?sort=<field>[:asc|:desc]`, `?<field>=<value>`
+  equality filters. Validation rejects negative/non-integer values,
+  unknown fields, and caps limit at 1000. SQL injection defense in
+  depth via schema-lookup gate plus parameterization.
+- **Manual compute trigger endpoint**: `POST /api/v1/compute/<name>/trigger`
+  to fire any compute on demand regardless of declared trigger type.
+- **PUT state-machine backdoor closed**: the auto-CRUD update route now
+  detects state-machine-backed fields in the request body and routes
+  them through `do_state_transition`, enforcing both the declared
+  transition rules and the transition's `required_scope`. Atomic on
+  failure — rejected state changes also reject companion field updates.
+- **Delete FK-violation handling**: returns 409 with human-readable
+  detail instead of 500 with a raw `sqlite3.IntegrityError`.
+- **LLM streaming**: text mode (`AIProvider.stream_complete`) and tool-use
+  mode (`AIProvider.stream_agent_response`) for both Anthropic and OpenAI.
+  Agent-loop streaming (`agent_loop_streaming`) wires into the agent
+  compute path so Level-3 agents (agent_chatbot) stream responses
+  token-by-token. LLM-path streaming (agent_simple) reuses
+  `stream_agent_response` so `set_output`-shaped Level-1 computes stream
+  as well.
+- **General streaming hydrator** (client-side `termin.js`): a single
+  page-level subscription to `compute.stream.*` dispatches each field
+  delta to every DOM element matching `[data-termin-row-id=<id>]
+  [data-termin-field=<name>]`. Works for data_table cells, detail
+  views, and any rendering that tags its elements with the standard
+  attributes — no chat component required.
+- **Event payload adds `content_name` + `record_id`** so any component
+  can target the right DOM element without presentation-type coupling.
+- **Deploy-config resolution**: CLI `serve` resolves the default
+  `<stem>.deploy.json` from the `.pkg` filename (matching what the
+  compiler writes); `load_deploy_config` also tries a digit-collapsed
+  variant for names that snake-case differently from the source filename.
+
+### Presentation / IR
+- **New component type**: `edit_modal` with `field_input` children and
+  embedded state machine info.
+- **New `field_input` input type**: `state` — renders as a `<select>`
+  pre-populated with all declared states, filtered client-side by
+  valid transitions + user scopes.
+- **`data-termin-*` attributes on every input and button** for
+  behavioral testing via DOM selectors (no English-text matching).
+
+### Streaming protocol
+- New doc: `docs/termin-streaming-protocol.md` — two modes (text,
+  tool-use), channel namespace
+  `compute.stream.<invocation_id>[.field.<name>]`, event payload with
+  invocation/content/record/field/delta/done fields, scope-gating
+  requirements.
+
+### Tests
+- **Compiler**: 1399 → 1525 passing (1 skipped). +126 tests across the
+  v0.8 backlog (pagination, filter/sort, manual trigger, delete, edit,
+  inline edit, PUT backdoor, streaming).
+- **Conformance**: 729 → 778 non-browser + 10 browser Playwright tests.
+  New served-reference adapter for browser tests; remains opt-in
+  (default `reference` adapter stays in-process for speed).
+
+### Security posture
+- Closed PUT-route state-machine bypass.
+- FK-violation on DELETE returns 409 instead of 500.
+- Analyzer errors for action buttons without matching access rules.
+
+### Version
+- Compiler: 0.7.1 → 0.8.0
+- Runtime: 0.7.1 → 0.8.0
+- IR: 0.7.0 → 0.8.0
+
+### Release-process note
+v0.8.0 was tagged before the release script's full artifact + test
+pipeline was verified, which shipped stale `fixtures/ir/*.json` and a
+compiler-side schema missing `edit_modal`. v0.8.1 ships the correction.
+Lesson recorded in the v0.8.1 release checklist in
+`docs/termin-roadmap.md`: run `util/release.py` + both test suites +
+browser tests BEFORE tagging.
+
+---
+
 ## v0.7.1 (2026-04-17)
 
 ### Theme: Conformance Debt Reduction
