@@ -68,6 +68,12 @@ class StreamingJsonFieldExtractor:
         self._current_value_chars = []  # for strings: chars emitted so far
         self._value_start_pos = 0       # buffer index where current value began
         self._escape = False            # last char was an unescaped backslash
+        # Object-nesting depth so nested objects (e.g. content_create's
+        # `data: { body: "..." }`) still stream leaf string fields.
+        # Entering "{" in a value context increments; matching "}" at
+        # depth>0 returns us to SEEK_KEY for the enclosing level. At
+        # depth 0, a closing "}" terminates the object (S_DONE).
+        self._depth = 0
 
     def feed(self, chunk: str) -> list:
         """Append chunk and emit any events this advance uncovered."""
@@ -133,9 +139,14 @@ class StreamingJsonFieldExtractor:
                 if c == '"':
                     self._current_key = ""
                     self._state = self._S_IN_KEY
+                elif c == "{":
+                    # Outer-level open brace or a nested object's open.
+                    self._depth += 1
                 elif c == "}":
-                    self._state = self._S_DONE
-                # skip whitespace, commas, open brace
+                    self._depth -= 1
+                    if self._depth <= 0:
+                        self._state = self._S_DONE
+                # skip whitespace, commas
                 self._pos += 1
 
             elif self._state == self._S_IN_KEY:
@@ -166,10 +177,20 @@ class StreamingJsonFieldExtractor:
                     self._current_value_chars = []
                     self._state = self._S_IN_STRING_VALUE
                     self._pos += 1
+                elif c == "{":
+                    # Nested-object value. Descend — subsequent keys
+                    # will be processed as if at the current level,
+                    # and leaf-key string fields still stream. We
+                    # lose the outer key context (no path prefix),
+                    # which keeps the client-side "match by leaf
+                    # field name" semantics simple.
+                    self._depth += 1
+                    self._state = self._S_SEEK_KEY
+                    self._pos += 1
                 else:
-                    # Non-string value (number/bool/null). Don't
-                    # stream chars; the field lands in finish() after
-                    # full parse.
+                    # Non-string primitive (number/bool/null) or array.
+                    # Don't stream chars; the field lands in finish()
+                    # after full parse.
                     self._state = self._S_IN_OTHER_VALUE
                     self._value_start_pos = self._pos
                     self._pos += 1
@@ -205,17 +226,20 @@ class StreamingJsonFieldExtractor:
                     self._pos += 1
 
             elif self._state == self._S_IN_OTHER_VALUE:
-                # Advance until we hit a separator (',', '}') or
-                # whitespace — then return to SEEK_KEY. No delta
-                # events emitted here; finish() handles these fields.
-                if c == "," or c == "}":
-                    if c == "}":
+                # Advance until we hit a separator (',' or '}') at the
+                # current depth. No delta events emitted here; finish()
+                # parses these fields from the buffer.
+                if c == ",":
+                    self._state = self._S_SEEK_KEY
+                    self._pos += 1
+                elif c == "}":
+                    self._depth -= 1
+                    if self._depth <= 0:
                         self._state = self._S_DONE
                     else:
+                        # Closed a nested primitive value; back to
+                        # SEEK_KEY at the enclosing level.
                         self._state = self._S_SEEK_KEY
-                    # Don't advance past the "}" — we need SEEK_KEY
-                    # iteration to see it; but since we've already
-                    # transitioned to DONE, we can.
                     self._pos += 1
                 else:
                     self._pos += 1
@@ -502,11 +526,19 @@ class AIProvider:
         messages = [{"role": "user", "content": user_message}]
 
         for turn in range(max_turns):
-            # Set up per-turn state for the producer closure.
+            # Per-turn state: one extractor per tool_use content block
+            # (keyed by block index) so concurrent tool calls in a
+            # single response each stream their fields independently.
+            # Previously we only streamed set_output blocks, but agent
+            # chat (agent_chatbot) uses content_create to persist each
+            # reply — the user-visible "message" is the `body` inside
+            # content_create's `data` input. Streaming every tool_use
+            # block covers that case and generalizes for other tools
+            # whose input has a field the chat UI wants to render.
             state = {
                 "final_message": None,
-                "current_block_is_set_output": False,
-                "set_output_extractor": None,
+                "extractors": {},        # block_index -> extractor
+                "block_tool_name": {},   # block_index -> tool name
                 "error": None,
             }
 
@@ -522,31 +554,41 @@ class AIProvider:
                         for event in stream:
                             etype = getattr(event, "type", None)
                             if etype == "content_block_start":
+                                idx = getattr(event, "index", 0)
                                 cb = getattr(event, "content_block", None)
                                 if cb and getattr(cb, "type", None) == "tool_use":
-                                    if getattr(cb, "name", "") == "set_output":
-                                        state["current_block_is_set_output"] = True
-                                        state["set_output_extractor"] = \
-                                            StreamingJsonFieldExtractor()
-                                    else:
-                                        state["current_block_is_set_output"] = False
-                                else:
-                                    state["current_block_is_set_output"] = False
+                                    tool_name = getattr(cb, "name", "") or ""
+                                    state["extractors"][idx] = \
+                                        StreamingJsonFieldExtractor()
+                                    state["block_tool_name"][idx] = tool_name
                             elif etype == "content_block_delta":
-                                if not state["current_block_is_set_output"]:
-                                    continue
+                                idx = getattr(event, "index", 0)
+                                ex = state["extractors"].get(idx)
+                                if ex is None:
+                                    continue  # not a tool_use block
                                 delta = getattr(event, "delta", None)
                                 if delta is None:
                                     continue
                                 if getattr(delta, "type", None) != "input_json_delta":
                                     continue
                                 partial = getattr(delta, "partial_json", "") or ""
-                                ex = state["set_output_extractor"]
-                                if ex is not None:
-                                    for emitted in ex.feed(partial):
-                                        put(emitted)
+                                tool_name = state["block_tool_name"].get(idx, "")
+                                for emitted in ex.feed(partial):
+                                    # Tag the event with the source tool
+                                    # so the compute_runner knows which
+                                    # channel/tool label to publish on.
+                                    emitted = dict(emitted)
+                                    emitted["tool"] = tool_name
+                                    put(emitted)
                             elif etype == "content_block_stop":
-                                state["current_block_is_set_output"] = False
+                                idx = getattr(event, "index", 0)
+                                ex = state["extractors"].get(idx)
+                                if ex is not None:
+                                    tool_name = state["block_tool_name"].get(idx, "")
+                                    for emitted in ex.finish():
+                                        emitted = dict(emitted)
+                                        emitted["tool"] = tool_name
+                                        put(emitted)
                         # Stream closed — capture the final assembled message.
                         state["final_message"] = stream.get_final_message()
                 except Exception as exc:
@@ -589,15 +631,11 @@ class AIProvider:
                 None,
             )
             if set_output_call is not None:
-                # Flush any non-string fields from the extractor and
-                # emit terminal events on_event.
-                ex = state["set_output_extractor"]
-                if ex is not None and on_event:
-                    for e in ex.finish():
-                        await on_event(e)
-                    await on_event(
-                        {"type": "done", "output": set_output_call.input})
-                elif on_event:
+                # Emit terminal done event. The per-block extractor
+                # already flushed its non-string fields at content_block_stop;
+                # the `done` event here carries the full set_output input
+                # as a canonical snapshot for clients that joined mid-stream.
+                if on_event:
                     await on_event(
                         {"type": "done", "output": set_output_call.input})
                 return set_output_call.input

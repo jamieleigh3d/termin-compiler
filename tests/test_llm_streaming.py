@@ -230,6 +230,29 @@ class TestStreamingFieldExtractor:
         assert len(conf_done) == 1
         assert conf_done[0]["value"] == 0.92
 
+    def test_nested_object_leaf_string_streams(self):
+        """A string value nested one level deep (e.g., content_create's
+        `data.body`) must stream as field_delta events keyed by the
+        leaf field name. This covers agent_chatbot's actual output
+        shape — content_create({content_name, data: {body: "..."}})."""
+        events = self._feed([
+            '{"content_name": "messages", "data": {"body": "Hi there"}}',
+        ])
+        body_deltas = [e for e in events
+                       if e["type"] == "field_delta" and e["field"] == "body"]
+        assert body_deltas, events
+        assembled = "".join(d["delta"] for d in body_deltas)
+        assert assembled == "Hi there"
+        body_done = [e for e in events
+                     if e["type"] == "field_done" and e["field"] == "body"]
+        assert len(body_done) == 1
+        assert body_done[0]["value"] == "Hi there"
+        # content_name (the outer flat field) also streams.
+        cn_done = [e for e in events
+                   if e["type"] == "field_done" and e["field"] == "content_name"]
+        assert len(cn_done) == 1
+        assert cn_done[0]["value"] == "messages"
+
     def test_escaped_quote_in_string_does_not_close_field(self):
         """A backslash-escaped quote inside a string value must not be
         mistaken for the end-of-string terminator."""
@@ -567,7 +590,8 @@ class TestAnthropicAgentLoopStreaming:
     """
 
     def _make_provider_with_mock_events(self, events_to_emit, final_message):
-        """Mock Anthropic client that yields events then get_final_message."""
+        """Mock Anthropic client that yields events then get_final_message.
+        Same turn every call — used for single-turn direct-set_output tests."""
         provider = AIProvider({"ai_provider": {
             "service": "anthropic", "model": "claude-test", "api_key": "sk-fake",
         }})
@@ -594,9 +618,139 @@ class TestAnthropicAgentLoopStreaming:
         provider._client = _MockClient()
         return provider
 
+    def _make_provider_with_multi_turn_mock(self, turns):
+        """Mock that serves a different (events, final_message) tuple
+        per successive stream() call. For multi-turn agent-loop tests."""
+        provider = AIProvider({"ai_provider": {
+            "service": "anthropic", "model": "claude-test", "api_key": "sk-fake",
+        }})
+        provider._service = "anthropic"
+
+        class _MockStream:
+            def __init__(self, events, final_msg):
+                self._events = events
+                self._final = final_msg
+            def __enter__(self): return self
+            def __exit__(self, *exc): return False
+            def __iter__(self):
+                for e in self._events: yield e
+            def get_final_message(self):
+                return self._final
+
+        turn_iter = iter(turns)
+
+        class _MockMessages:
+            def stream(self_, **kwargs):
+                events, final = next(turn_iter)
+                return _MockStream(events, final)
+
+        class _MockClient:
+            messages = _MockMessages()
+
+        provider._client = _MockClient()
+        return provider
+
     def _evt(self, t, **kw):
         from types import SimpleNamespace
         return SimpleNamespace(type=t, **kw)
+
+    def test_content_create_tool_call_streams_nested_body_field(self):
+        """agent_chatbot's `reply` compute doesn't use set_output — it
+        uses content_create to persist each assistant message. Streaming
+        must accumulate deltas for content_create's tool input so the
+        chat UI can render the body field as tokens arrive. The input
+        is nested: {content_name, data: {body: "...", role: "..."}}.
+        """
+        from types import SimpleNamespace
+        # Simulate Anthropic streaming a single content_create tool call.
+        events = [
+            self._evt("content_block_start",
+                      index=0,
+                      content_block=SimpleNamespace(
+                          type="tool_use", id="tu_1", name="content_create")),
+            self._evt("content_block_delta",
+                      index=0,
+                      delta=SimpleNamespace(
+                          type="input_json_delta",
+                          partial_json='{"content_name": "messages", "data": {"body": "')),
+            self._evt("content_block_delta",
+                      index=0,
+                      delta=SimpleNamespace(
+                          type="input_json_delta",
+                          partial_json='Hello')),
+            self._evt("content_block_delta",
+                      index=0,
+                      delta=SimpleNamespace(
+                          type="input_json_delta",
+                          partial_json=', world')),
+            self._evt("content_block_delta",
+                      index=0,
+                      delta=SimpleNamespace(
+                          type="input_json_delta",
+                          partial_json='!", "role": "assistant"}}')),
+            self._evt("content_block_stop", index=0),
+            self._evt("message_stop"),
+        ]
+        final_tool_block = SimpleNamespace(
+            type="tool_use", id="tu_1", name="content_create",
+            input={"content_name": "messages",
+                   "data": {"body": "Hello, world!", "role": "assistant"}})
+        final_msg = SimpleNamespace(
+            content=[final_tool_block], stop_reason="end_turn")
+
+        # Turn 2: agent replies with a text-only block (no tool calls)
+        # so the loop exits cleanly.
+        turn2_events = [
+            self._evt("content_block_start",
+                      index=0,
+                      content_block=SimpleNamespace(type="text")),
+            self._evt("content_block_delta",
+                      index=0,
+                      delta=SimpleNamespace(type="text_delta", text="done")),
+            self._evt("content_block_stop", index=0),
+            self._evt("message_stop"),
+        ]
+        turn2_text_block = SimpleNamespace(type="text", text="done")
+        turn2_final = SimpleNamespace(
+            content=[turn2_text_block], stop_reason="end_turn")
+
+        async def run():
+            provider = self._make_provider_with_multi_turn_mock([
+                (events, final_msg),  # turn 1: content_create
+                (turn2_events, turn2_final),  # turn 2: text only → exit
+            ])
+            tool_schema = {"name": "content_create",
+                           "input_schema": {"type": "object",
+                                            "properties": {}}}
+            captured = []
+            async def on_event(e):
+                captured.append(e)
+
+            content_create_called = []
+            async def execute_tool(name, inp):
+                content_create_called.append((name, inp))
+                return {"ok": True, "id": 42}
+
+            result = await provider.agent_loop_streaming(
+                "be brief", "say hi",
+                tools=[tool_schema], execute_tool=execute_tool,
+                on_event=on_event)
+            return result, captured, content_create_called
+
+        result, captured, create_calls = asyncio.run(run())
+
+        # The agent called content_create (not set_output) — execute_tool
+        # should have been invoked.
+        assert len(create_calls) == 1
+        assert create_calls[0][0] == "content_create"
+
+        # Critical: the nested `body` field streamed as field_delta events.
+        body_deltas = [e for e in captured
+                       if e["type"] == "field_delta" and e["field"] == "body"]
+        assert body_deltas, f"Expected body deltas; got {captured}"
+        assembled = "".join(d["delta"] for d in body_deltas)
+        assert assembled == "Hello, world!"
+
 
     def test_single_turn_direct_set_output_emits_deltas_and_returns_input(self):
         """Most common agent flow: first (and only) assistant turn
