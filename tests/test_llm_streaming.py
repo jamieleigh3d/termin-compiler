@@ -358,6 +358,91 @@ class TestAnthropicStreamComplete:
             asyncio.run(run())
 
 
+class TestAnthropicStreamAgentResponseReusedForLLMPath:
+    """The LLM-compute path (agent_simple, etc.) reuses
+    stream_agent_response so set_output-style structured outputs also
+    stream to the event bus. Validates that a single-field set_output
+    tool-use response streams its field deltas and produces a final
+    done event with the parsed output dict."""
+
+    def _evt(self, t, **kw):
+        from types import SimpleNamespace
+        return SimpleNamespace(type=t, **kw)
+
+    def test_llm_set_output_streams_field_deltas_and_returns_output(self):
+        """Simulates agent_simple's typical set_output({reply: "..."}):
+        stream emits input_json_delta events, extractor streams the
+        reply field, terminal done event carries the full output dict."""
+        from types import SimpleNamespace
+        events = [
+            self._evt("content_block_start",
+                      index=0,
+                      content_block=SimpleNamespace(type="tool_use",
+                                                     id="tu_1",
+                                                     name="set_output")),
+            self._evt("content_block_delta",
+                      index=0,
+                      delta=SimpleNamespace(
+                          type="input_json_delta",
+                          partial_json='{"reply": "')),
+            self._evt("content_block_delta",
+                      index=0,
+                      delta=SimpleNamespace(
+                          type="input_json_delta",
+                          partial_json='Hi')),
+            self._evt("content_block_delta",
+                      index=0,
+                      delta=SimpleNamespace(
+                          type="input_json_delta",
+                          partial_json='!"}')),
+            self._evt("content_block_stop", index=0),
+            self._evt("message_stop"),
+        ]
+
+        provider = AIProvider({"ai_provider": {
+            "service": "anthropic", "model": "m", "api_key": "k",
+        }})
+        provider._service = "anthropic"
+
+        class _MockStream:
+            def __enter__(self_): return self_
+            def __exit__(self_, *exc): return False
+            def __iter__(self_):
+                for e in events: yield e
+
+        class _MockMessages:
+            def stream(self_, **kwargs):
+                return _MockStream()
+
+        class _MockClient:
+            messages = _MockMessages()
+
+        provider._client = _MockClient()
+
+        output_tool = {"name": "set_output",
+                       "input_schema": {"type": "object",
+                                        "properties": {"reply": {"type": "string"}}}}
+
+        async def run():
+            captured = []
+            async for e in provider.stream_agent_response(
+                    "be brief", "say hi", output_tool):
+                captured.append(e)
+            return captured
+
+        captured = asyncio.run(run())
+
+        # Field deltas for "reply" flowed.
+        reply_deltas = [e for e in captured
+                        if e["type"] == "field_delta" and e["field"] == "reply"]
+        assert reply_deltas
+        assert "".join(d["delta"] for d in reply_deltas) == "Hi!"
+        # Terminal done event with output dict.
+        dones = [e for e in captured if e["type"] == "done"]
+        assert len(dones) == 1
+        assert dones[0]["output"] == {"reply": "Hi!"}
+
+
 class TestOpenAIStreamComplete:
     """AIProvider.stream_complete() wired to an OpenAI client.
 

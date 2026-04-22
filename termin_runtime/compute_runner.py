@@ -186,8 +186,79 @@ async def _execute_llm_compute(ctx: RuntimeContext, comp: dict, record: dict,
 
     print(f"[Termin] Compute '{comp_name}': calling {ctx.ai_provider.service} (record {record.get('id', '?')})")
 
+    # v0.8.1: LLM-path streaming. When the provider supports
+    # stream_agent_response, route the call through it and publish
+    # each field_delta / field_done / done event onto the event bus
+    # so chat components and other stream subscribers can render
+    # tokens as they arrive. Falls back to non-streaming complete()
+    # for providers that don't implement the streaming path.
+    comp_snake = comp["name"]["snake"]
+    _llm_stream_base = f"compute.stream.{_llm_invocation_id}"
+
+    async def _on_llm_stream_event(event):
+        if ctx.event_bus is None:
+            return
+        etype = event.get("type")
+        if etype == "field_delta":
+            field = event.get("field", "")
+            await ctx.event_bus.publish({
+                "channel_id": f"{_llm_stream_base}.field.{field}",
+                "data": {
+                    "invocation_id": _llm_invocation_id,
+                    "compute": comp_snake,
+                    "mode": "tool_use",
+                    "tool": event.get("tool", "set_output"),
+                    "field": field,
+                    "delta": event.get("delta", ""),
+                    "done": False,
+                },
+            })
+        elif etype == "field_done":
+            field = event.get("field", "")
+            await ctx.event_bus.publish({
+                "channel_id": f"{_llm_stream_base}.field.{field}",
+                "data": {
+                    "invocation_id": _llm_invocation_id,
+                    "compute": comp_snake,
+                    "mode": "tool_use",
+                    "tool": event.get("tool", "set_output"),
+                    "field": field,
+                    "done": True,
+                    "value": event.get("value"),
+                },
+            })
+        elif etype == "done":
+            await ctx.event_bus.publish({
+                "channel_id": _llm_stream_base,
+                "data": {
+                    "invocation_id": _llm_invocation_id,
+                    "compute": comp_snake,
+                    "mode": "tool_use",
+                    "tool": "set_output",
+                    "done": True,
+                    "output": event.get("output") or {},
+                },
+            })
+
     try:
-        result = await ctx.ai_provider.complete(system_msg, user_msg, output_tool)
+        use_streaming = (
+            ctx.event_bus is not None
+            and hasattr(ctx.ai_provider, "stream_agent_response")
+            and ctx.ai_provider.service == "anthropic"
+        )
+        if use_streaming:
+            # Consume the stream generator, collect the final output dict,
+            # and route events through the event bus publisher. Matches
+            # the contract of complete() — returns a dict of output
+            # field values (plus optional "thinking").
+            result = {}
+            async for event in ctx.ai_provider.stream_agent_response(
+                    system_msg, user_msg, output_tool):
+                if event.get("type") == "done":
+                    result = event.get("output") or {}
+                await _on_llm_stream_event(event)
+        else:
+            result = await ctx.ai_provider.complete(system_msg, user_msg, output_tool)
         thinking = result.pop("thinking", "")
         if thinking:
             print(f"[Termin] Compute '{comp_name}' thinking: {thinking[:100]}")

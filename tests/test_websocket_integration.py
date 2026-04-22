@@ -341,14 +341,28 @@ class TestRealWebSocketPush:
             self._client = True  # truthy but not a real client
 
         original_complete = AIProvider.complete
+        original_stream_agent_response = getattr(
+            AIProvider, "stream_agent_response", None)
 
         async def mock_complete(self, system_prompt, user_message, output_tool):
             """Mock complete that returns a fake response after a tiny delay."""
             await asyncio.sleep(0.1)  # simulate LLM latency
             return {"thinking": "mock thinking", "response": "mock LLM response"}
 
+        async def mock_stream_agent_response(
+                self, system_prompt, user_message, output_tool):
+            """Mock streaming variant — yields a single `done` event with
+            the same output as mock_complete. The compute_runner's LLM
+            path now prefers stream_agent_response over complete() when
+            the provider advertises it, so the mock must cover both."""
+            await asyncio.sleep(0.1)
+            yield {"type": "done",
+                   "output": {"thinking": "mock thinking",
+                              "response": "mock LLM response"}}
+
         AIProvider.startup = mock_startup
         AIProvider.complete = mock_complete
+        AIProvider.stream_agent_response = mock_stream_agent_response
 
         try:
             server = UvicornTestServer(app)
@@ -388,6 +402,13 @@ class TestRealWebSocketPush:
         finally:
             AIProvider.startup = original_startup
             AIProvider.complete = original_complete
+            if original_stream_agent_response is not None:
+                AIProvider.stream_agent_response = original_stream_agent_response
+            else:
+                try:
+                    delattr(AIProvider, "stream_agent_response")
+                except AttributeError:
+                    pass
 
     @pytest.mark.asyncio
     async def test_ws_no_push_for_unsubscribed_content(self, channel_simple_server):

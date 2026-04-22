@@ -350,6 +350,21 @@ Theme: presentation completeness, action primitives, launch-ready polish.
 
 ---
 
+## v0.8.1 Backlog
+
+Bugs and papercut fixes discovered during v0.8 development and testing.
+Scope: non-breaking patches that don't change the v0.8 API surface.
+
+| Item | Source | Notes |
+|------|--------|-------|
+| **PEG gap: `Accesses` line with multiple content names** | v0.8 UAT (JL) | `Accesses messages, products` inside a Compute block doesn't parse via TatSu — the `compute_accesses_line` grammar rule doesn't match the comma-separated list shape. The Python fallback in `parse_handlers.py` handles it correctly (access enforcement works), so this is a fidelity issue not a security issue. `tests/test_compiler_fidelity.py::TestZeroPEGFallbacks::test_no_tatsu_fallbacks` catches it. Fix: update the PEG rule so TatSu parses the full shape. |
+| **LLM-path streaming (agent_simple)** | v0.8 UAT (JL) | Level-1 LLM computes (`provider: "llm"`) still call the non-streaming `AIProvider.complete()` in `compute_runner.py`. agent_chatbot's Level-3 agent path now streams correctly via `agent_loop_streaming`, but agent_simple and other LLM computes don't. Fix: add `AIProvider.complete_streaming()` (or reuse `stream_agent_response`) and wire it into the LLM branch of `compute_runner.execute_compute`. The on_event plumbing already exists — only the LLM-branch dispatch needs to change. |
+| **Stale `app_seed.json` between test runs** | v0.8 sprint finding (stale-seed bug) | The runtime backend writes `app_seed.json` beside each compiled `app.py` but does not delete a stale `app_seed.json` when recompiling an example with no companion `_seed.json`. Test fixtures work around it by explicitly `SEED_PATH.unlink()`. Fix: have the runtime backend also clean up stale sidecar seed files on compile. Test-fixture workarounds can then drop the manual unlink. |
+| **uvicorn `ws="websockets-legacy"` deprecation warnings** | v0.8 sprint | Our tests emit ~3 deprecation warnings per WS test from uvicorn's websockets-legacy path. Evaluated `ws="websockets-sansio"` during v0.8 but it caused full-suite WS hangs (cumulative event-loop state intolerance). Revisit once uvicorn upgrades sansio reliability. Not blocking — just noise. |
+| **`input_type="state"` dropdown on create forms** | v0.8 review | The edit-modal state-field dropdown correctly filters to valid transitions + user scopes. The same renderer path for create forms (if a content with a state machine exposes one) could receive the same treatment. Currently out of scope because `Accept input for …` forms don't usually include the state field (initial state is implied). Log for when a customer asks. |
+
+---
+
 ## v0.9.0 Backlog
 
 Theme: provider architecture — pluggable presentation, storage, identity, compute.
