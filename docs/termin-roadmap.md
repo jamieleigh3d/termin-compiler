@@ -350,16 +350,42 @@ Theme: presentation completeness, action primitives, launch-ready polish.
 
 ---
 
-## v0.8.1 Backlog
+## v0.8.1 Backlog — Maintenance release
 
-Bugs and papercut fixes discovered during v0.8 development and testing.
-Scope: non-breaking patches that don't change the v0.8 API surface.
+**Theme:** maintenance — release-process fixes and issues raised against
+v0.8.0. Non-breaking. No new DSL, IR, or runtime features. Release-
+script fidelity, test-robustness, and release-artifact drift corrections.
+
+Tracking: target tag `v0.8.1` on both compiler and conformance repos
+after the work below is committed and verified in one pass through the
+full release pipeline (run `util/release.py`, run both test suites,
+tag, push).
 
 | Item | Source | Notes |
 |------|--------|-------|
-| **PEG gap: `Accesses` line with multiple content names** | v0.8 UAT (JL) | `Accesses messages, products` inside a Compute block doesn't parse via TatSu — the `compute_accesses_line` grammar rule doesn't match the comma-separated list shape. The Python fallback in `parse_handlers.py` handles it correctly (access enforcement works), so this is a fidelity issue not a security issue. `tests/test_compiler_fidelity.py::TestZeroPEGFallbacks::test_no_tatsu_fallbacks` catches it. Fix: update the PEG rule so TatSu parses the full shape. |
-| **LLM-path streaming (agent_simple)** | v0.8 UAT (JL) | Level-1 LLM computes (`provider: "llm"`) still call the non-streaming `AIProvider.complete()` in `compute_runner.py`. agent_chatbot's Level-3 agent path now streams correctly via `agent_loop_streaming`, but agent_simple and other LLM computes don't. Fix: add `AIProvider.complete_streaming()` (or reuse `stream_agent_response`) and wire it into the LLM branch of `compute_runner.execute_compute`. The on_event plumbing already exists — only the LLM-branch dispatch needs to change. |
-| **Stale `app_seed.json` between test runs** | v0.8 sprint finding (stale-seed bug) | The runtime backend writes `app_seed.json` beside each compiled `app.py` but does not delete a stale `app_seed.json` when recompiling an example with no companion `_seed.json`. Test fixtures work around it by explicitly `SEED_PATH.unlink()`. Fix: have the runtime backend also clean up stale sidecar seed files on compile. Test-fixture workarounds can then drop the manual unlink. |
+| **Release-artifact drift in v0.8.0 tag** | Post-release review (JL) | The `fixtures/ir/*.json` files in the conformance repo's v0.8.0 tag were stale — `warehouse_ir.json` was missing 132 lines (Edit + Delete action buttons + `edit_modal` component). Also, the compiler's authoritative `docs/termin-ir-schema.json` was missing `edit_modal` in the ComponentNode type enum, causing strict-validator adapters to reject every v0.8 warehouse app's IR. Both already fixed in working commits; will ship under v0.8.1. Root cause: `v0.8.0` was tagged and pushed before running `util/release.py` + verifying fixtures. Process lesson recorded — never tag before releasing through the script. |
+| **conformance #2: `test_action_buttons_labeled` assumes literal text** | GitHub conformance#2 | The test asserted the literal button label (e.g., `"Delete"`) appears in rendered HTML, which rejects runtimes that render buttons with icons + `aria-label` or rely solely on `data-termin-delete` markers. Fix: accept any of the canonical marker attribute (`data-termin-<action>`), literal label text, or `aria-label="<label>"`. The data-termin-* markers are the spec's canonical affordance — literal text is reference-runtime convention, not contract. Already fixed in working tree. |
+| **conformance #1: session-fixture FK robustness in DELETE access matrix** | GitHub conformance#1 | `test_warehouse_access_matrix[warehouse manager-DELETE-products-200]` may false-fail when the session-scoped `warehouse` fixture has accumulated inbound FK references from earlier tests. FK enforcement correctly returns 409; the test wants to test scope gating, not referential integrity. Fix: before the DELETE, clear any `stock_levels` rows referencing the product under test. Cannot reproduce on current `main` but the defensive fix lands regardless. Already fixed in working tree. |
+| **compiler #1: PEG grammar coverage gap (environment-dependent)** | GitHub compiler#1 | Reporter observed 857 TatSu fallbacks on `feature/v0.8` / Python 3.10. Cannot reproduce on Python 3.11 (0 fallbacks on both `main` and the cited commit). Commented on the issue asking for exact TatSu version + OS. If the environment-dependent bug is confirmed, fix may land in v0.8.1; otherwise close as un-reproducible. |
+
+### v0.8.1 release checklist (when ready to tag)
+
+1. `python util/release.py --compiler-version 0.8.1 --ir-version 0.8.0` (IR schema unchanged — only patch bump)
+2. Both compiler + conformance test suites green (1525+ / 778+ / 10 browser)
+3. `git tag -a v0.8.1 -m "…"` on both repos
+4. `git push origin main && git push origin v0.8.1` on both
+
+---
+
+## v0.8.2 Backlog — Feature + bug fixes
+
+**Theme:** the features and DSL/runtime fixes originally slated for
+v0.8.1 before it became a maintenance-only release.
+
+| Item | Source | Notes |
+|------|--------|-------|
+| **PEG gap: `Accesses` line with multiple content names** | v0.8 UAT (JL) | `Accesses messages, products` inside a Compute block doesn't parse via TatSu — the `compute_accesses_line` grammar rule doesn't match the comma-separated list shape. The Python fallback in `parse_handlers.py` handles it correctly (access enforcement works), so this is a fidelity issue not a security issue. `tests/test_compiler_fidelity.py::TestZeroPEGFallbacks::test_no_tatsu_fallbacks` catches it. Fix: update the PEG rule so TatSu parses the full shape. Blocking promotion of `examples-dev/agent_chatbot2.termin` back to `examples/`. |
+| **Stale `app_seed.json` between test runs** | v0.8 sprint finding | The runtime backend writes `app_seed.json` beside each compiled `app.py` but does not delete a stale `app_seed.json` when recompiling an example with no companion `_seed.json`. Test fixtures work around it by explicitly `SEED_PATH.unlink()`. Fix: have the runtime backend also clean up stale sidecar seed files on compile. Test-fixture workarounds can then drop the manual unlink. |
 | **uvicorn `ws="websockets-legacy"` deprecation warnings** | v0.8 sprint | Our tests emit ~3 deprecation warnings per WS test from uvicorn's websockets-legacy path. Evaluated `ws="websockets-sansio"` during v0.8 but it caused full-suite WS hangs (cumulative event-loop state intolerance). Revisit once uvicorn upgrades sansio reliability. Not blocking — just noise. |
 | **`input_type="state"` dropdown on create forms** | v0.8 review | The edit-modal state-field dropdown correctly filters to valid transitions + user scopes. The same renderer path for create forms (if a content with a state machine exposes one) could receive the same treatment. Currently out of scope because `Accept input for …` forms don't usually include the state field (initial state is implied). Log for when a customer asks. |
 
