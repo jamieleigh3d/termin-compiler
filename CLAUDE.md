@@ -1,4 +1,12 @@
-# Termin Project - Claude Memory
+# Termin Compiler — Developer Context
+
+This file is for Claude Code sessions (and human contributors) working in this
+repository. It captures architectural context, release process, and the
+hard-won lessons about what "ready to ship" actually requires for the Termin
+compiler and reference runtime.
+
+See `CONTRIBUTING.md` for the DCO sign-off requirement and general
+contribution workflow.
 
 ## What This Is
 
@@ -84,7 +92,7 @@ termin compile examples/warehouse.termin -o app.py
 # Dump IR
 termin compile examples/warehouse.termin -o app.py --emit-ir warehouse_ir.json
 
-# Run all tests (~11s, 373 tests)
+# Run all tests (v0.8.1: 1525 tests)
 python -m pytest tests/ -v
 
 # Run just compiler tests (no e2e)
@@ -92,6 +100,9 @@ python -m pytest tests/test_parser.py tests/test_analyzer.py tests/test_ir.py -v
 
 # Run runtime tests
 python -m pytest tests/test_runtime.py -v
+
+# Coverage (target 95% on new code)
+python -m pytest tests/ --cov --cov-report=term-missing
 ```
 
 ## Parser: Two-Level PEG Approach
@@ -133,6 +144,8 @@ The `termin_runtime` package reads IR JSON directly and:
 - Routes errors through TerminAtor
 
 ## DSL Grammar Quick Reference
+
+> **Note:** The snippet below is a v0.5-era cheat sheet. For the authoritative grammar including v0.6+ additions (compound verbs, AUDIT, trigger-where, streaming, deletes/edits/inline-editing, agent primitives with Directive/Objective, confidentiality), read `docs/termin-dsl-grammar-v2.md` and `termin/termin.peg`. When in doubt, open an actual file in `examples/` and copy the pattern — do not invent syntax from memory.
 
 ```
 Application: {name}
@@ -196,15 +209,33 @@ Boundary called "{name}":
 
 ## Verification Before Declaring Readiness
 
-**"Tests pass" is not "it works."** Before telling JL that a milestone is ready, complete this checklist yourself. Not optional. Not delegatable.
+**"Tests pass" is not "it works."** Before declaring a milestone ready, complete this checklist yourself. Not optional. Not delegatable.
 
 1. **Compile smoke test:** `termin compile examples/warehouse.termin` — must succeed with 0 errors. If this fails, nothing else matters.
-2. **All examples compile:** Loop through every `.termin` file in `examples/` and verify compilation.
+2. **All examples compile:** Loop through every `.termin` file in `examples/` and verify compilation. (The release script does this; see below.)
 3. **Full test suite:** `python -m pytest tests/ -v` — 0 failures, 0 skips, 0 xfails.
 4. **Git status clean:** Both repos, nothing untracked or uncommitted.
-5. **Verify background agent work independently.** Agent says "1399 tests pass" — you still compile an example yourself. Agent output is a claim, not a fact, until you verify it.
+5. **Verify background agent work independently.** Agent says "1525 tests pass" — you still compile an example yourself. Agent output is a claim, not a fact, until you verify it.
 
 Do NOT report readiness based on background agent summaries alone. The fail-loud fallbacks incident (v0.7) proved that passing tests can coexist with a broken compiler when tests use pre-compiled artifacts instead of live compilation.
+
+## Release Process (CRITICAL — the v0.8.0 lesson)
+
+**Never create a tag before `util/release.py` has run end-to-end and every test suite is green.** v0.8.0 shipped with stale conformance `fixtures/ir/*.json` (warehouse was missing 132 lines) and a missing `edit_modal` entry in `docs/termin-ir-schema.json` because the release script wasn't run before tagging. v0.8.1 is the correction. The CHANGELOG v0.8.0 "Release-process note" documents this publicly so the history carries the lesson.
+
+Correct order:
+1. Manual updates first: `CHANGELOG.md` (both repos), `README.md` test counts, `docs/termin-roadmap.md`.
+2. Run `python util/release.py --compiler-version X.Y.Z --ir-version X.Y.Z` — this compiles all examples, extracts IR, regenerates `ir_dumps/`, repackages `.termin.pkg` files, syncs fixtures and the IR schema to the conformance repo.
+3. Run all three suites **directly** (not through the release script):
+   - Compiler: `python -m pytest tests/ -v`
+   - Conformance (HTTP): `cd ../termin-conformance && TERMIN_ADAPTER=reference pytest tests/ -v`
+   - Conformance (browser): `cd ../termin-conformance && TERMIN_ADAPTER=served-reference pytest tests/test_v08_browser.py -v` (requires Playwright)
+4. Review diffs, commit both repos on feature branch.
+5. Merge to main with `git merge --ff-only` (linear history).
+6. Tag only after all of the above is green and both working trees are clean.
+7. Push main + tags to both remotes.
+
+**Windows contributors:** pass `--skip-tests` to the release script. Its internal pytest run hangs when wrapped in `subprocess.run(..., capture_output=True)` on Windows — the subprocess completes (CPU time matches a clean run) but the parent never sees exit. Kill the subprocess to flush the output. Run the test suites directly as in step 3 instead. Tracked as a v0.8.2 backlog item.
 
 ## Bug Investigation Workflow
 
@@ -219,21 +250,43 @@ When a user reports a bug:
 
 The `words` terminal is greedy — it consumes keywords like "or", "with", "as". Use `words_before_X` terminals with negative lookahead. Example: `words_before_or = /\w+(?:\s+(?!or\b)\w+)*/`. Never use magic numbers for string slicing in fallback paths — use `len("prefix")` instead.
 
-## Git Safety Practices
+## Git Discipline
 
-Linear history always — use `git rebase` and `git merge --ff-only`. No merge commits.
-
-1. **Always verify the current branch before destructive operations.** `git branch --show-current` before `git commit --amend`, `git reset`, or `git rebase`. I once amended on main when I meant to amend on a feature branch. The branches had identical HEAD content (post-FF-merge), so the amend succeeded silently on main.
-2. **`--theirs` vs `--ours` during rebase is inverted.** During rebase, `--theirs` = the commit being replayed. `--ours` = the branch you're rebasing onto. When resolving version-string conflicts, you typically want the feature branch version = `--theirs`.
-3. **Never mention remote AI collaborators by name in commit messages, tag messages, or PR descriptions.** These ship to the public repo. IP boundary. The messages branch is the designated communication channel — attribution belongs there, not in public artifacts.
-4. **Delete feature branches locally AND remotely** after merge. `git branch -D feature/vX` then `git push origin --delete feature/vX`.
-5. **Rebase the messages branch onto main after every release push.** Otherwise it drifts from main and rebases get harder over time.
+- **Linear history.** Use `git rebase` to integrate and `git merge --ff-only`
+  for feature → main. No merge commits.
+- **DCO sign-off** required on every commit (`git commit -s`). See
+  `CONTRIBUTING.md`.
+- **Verify the current branch before destructive operations.**
+  `git branch --show-current` before `git commit --amend`, `git reset`,
+  `git rebase`. Amending on the wrong branch is easy to do when multiple
+  branches share a HEAD content after a fast-forward merge.
+- **`--theirs` during a feature-branch → main rebase** is almost always what
+  you want for version-string conflicts (the feature branch's higher
+  version wins over main's lower one). This is counter-intuitive: `--theirs`
+  means "the commit being replayed" during rebase, not "the other side of a
+  merge."
+- **Delete feature branches locally AND remotely after merge**:
+  `git branch -D feature/vX && git push origin --delete feature/vX`.
+- **Never skip hooks** (`--no-verify`) without a concrete reason. If a
+  pre-commit hook fails, fix the underlying issue rather than bypassing.
 
 ## Seed Data
 
 Examples can have companion `_seed.json` files (e.g., `examples/projectboard_seed.json`). The compiler copies them alongside output. The runtime auto-seeds empty tables on first run. Use `--seed custom.json` for explicit seed files.
 
-## Related Projects
+## Related Repositories
 
-- **Termin Studio** (sibling directory termin-studio/): React + Vite visual editor with React Flow
-- **Seedling** (Clarity Intelligence): Autonomous AI daemon that uses Termin as its application substrate
+- **`github.com/jamieleigh3d/termin-conformance`** — conformance test suite,
+  IR JSON schema, Runtime Implementer's Guide, and `.termin.pkg` fixtures.
+  Any Termin runtime must pass this suite. The compiler's `util/release.py`
+  regenerates fixtures in that repo as part of each release.
+- **`termin.dev`** — project website with overview, guarantees, and roadmap.
+
+## See Also
+
+- `CONTRIBUTING.md` — DCO sign-off, local dev setup, PR workflow.
+- `CODE_OF_CONDUCT.md` — contributor expectations.
+- `SECURITY.md` — security disclosure policy.
+- `docs/termin-runtime-implementers-guide.md` — how to build a conforming
+  runtime.
+- `docs/termin-roadmap.md` — active backlog and version history.
