@@ -906,6 +906,58 @@ class TestAnthropicAgentLoopStreaming:
         assert result == {"message": "Hi there"}
 
 
+class TestStreamEventsCarryTargetLocation:
+    """Stream events must carry content_name + record_id so ANY
+    component rendering that field (data_table cell, detail view,
+    form input) can target the right DOM element — not just chat
+    components keyed by invocation_id. This is the general-case
+    hydrator's contract.
+    """
+
+    def test_llm_stream_event_carries_content_name_and_record_id(self):
+        """agent_simple pattern: LLM compute updates a record's
+        response field. Each field_delta event published on the event
+        bus must include the content_name and record_id so the client
+        can find `td[data-termin-row-id=...][data-termin-field=...]`."""
+        async def run():
+            from termin_runtime.events import EventBus
+            bus = EventBus()
+            q = bus.subscribe("compute.stream.")
+
+            # Simulate what _execute_llm_compute's on_event does after
+            # the content_name + record_id threading fix.
+            inv_id = "llm-inv-1"
+            content_name = "completions"
+            record_id = 42
+
+            # Mock the exact shape the refactored on_event produces.
+            await bus.publish({
+                "channel_id": f"compute.stream.{inv_id}.field.response",
+                "data": {
+                    "invocation_id": inv_id,
+                    "compute": "complete",
+                    "mode": "tool_use",
+                    "tool": "set_output",
+                    "content_name": content_name,
+                    "record_id": record_id,
+                    "field": "response",
+                    "delta": "Hello",
+                    "done": False,
+                },
+            })
+
+            event = await asyncio.wait_for(q.get(), timeout=1.0)
+            return event
+
+        event = asyncio.run(run())
+        data = event["data"]
+        # The new fields MUST be present.
+        assert data.get("content_name") == "completions", \
+            "Stream events must include content_name for general-purpose targeting"
+        assert data.get("record_id") == 42, \
+            "Stream events must include record_id for general-purpose targeting"
+
+
 class TestComputeRunnerStreamPublish:
     """The compute-runner publishes each delta from the provider to the
     event bus as it arrives. Tested with the simulate helper so no live

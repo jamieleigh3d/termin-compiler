@@ -290,6 +290,14 @@ function notifySubscribers(channelId, data) {
   }
 }
 
+// Test/dev hook: exposes notifySubscribers so browser-driven tests
+// can inject synthetic push events without a live WebSocket round-trip.
+// Safe in production — it's just a pointer to the internal dispatcher
+// and only activates when test code explicitly calls it.
+if (typeof window !== "undefined") {
+  window.__TERMIN_NOTIFY__ = notifySubscribers;
+}
+
 // ── DOM Hydration ──
 
 function hydrateAll() {
@@ -297,6 +305,76 @@ function hydrateAll() {
   hydrateChatComponents();
   hydrateAggregations();
   hydrateForms();
+  hydrateComputeStream();
+}
+
+// General-purpose streaming hydrator.
+//
+// Subscribes once to compute.stream.* for the page and dispatches
+// each field_delta / field_done / invocation-done event to the DOM
+// element that should render it. The targeting model mirrors the
+// distributed-runtime-model doc: a streamed field is a logical
+// Channel on a Content field, and any component rendering that field
+// is a subscriber. No component type is special — data_table cells,
+// text components, form inputs can all receive streaming updates.
+//
+// Payload shape (post v0.8.1):
+//   data.content_name, data.record_id  — targeting keys
+//   data.field                         — which schema field
+//   data.delta / data.value            — content to render
+//   data.done                          — terminal flag
+//
+// Chat components retain a separate pending-bubble handler for the
+// pre-commit case (agent calls content_create — the record doesn't
+// yet have an id; invocation_id is the only key). That handler is
+// still registered inside hydrateChatComponents() and operates in
+// parallel with this one.
+function hydrateComputeStream() {
+  // Only activate if the page has at least one targetable element
+  // (otherwise the subscription is wasted).
+  const hasTargets = document.querySelector(
+    "[data-termin-row-id] [data-termin-field]");
+  if (!hasTargets) return;
+
+  subscribe("compute.stream", (ch, data) => {
+    if (!data) return;
+    const field = data.field;
+    const recordId = data.record_id;
+    if (field == null || recordId == null) return;
+    // Find every cell/input for this (row, field). Ordinarily one,
+    // but a detail view and a table row could both be on the page.
+    const selector =
+      `[data-termin-row-id="${cssEscape(String(recordId))}"] ` +
+      `[data-termin-field="${cssEscape(field)}"]`;
+    const targets = document.querySelectorAll(selector);
+    if (targets.length === 0) return;
+    targets.forEach((el) => {
+      if (data.done) {
+        // Terminal field event — set the final value if provided,
+        // else leave the last delta-accumulated text in place.
+        if (data.value != null) el.textContent = String(data.value);
+      } else if (typeof data.delta === "string" && data.delta.length > 0) {
+        // Intermediate delta — append. The cell's pre-stream
+        // textContent (empty for a just-created row) is the starting
+        // point. If the cell was already populated by a prior
+        // non-stream render, we overwrite on the first delta.
+        if (!el.dataset.terminStreaming) {
+          el.textContent = "";
+          el.dataset.terminStreaming = "1";
+        }
+        el.textContent = (el.textContent || "") + data.delta;
+      }
+    });
+  });
+}
+
+function cssEscape(s) {
+  // Quote chars that would break the attribute selector. Modern
+  // browsers have CSS.escape(); fall back for older runtimes.
+  if (window.CSS && typeof window.CSS.escape === "function") {
+    return window.CSS.escape(s);
+  }
+  return String(s).replace(/["\\]/g, "\\$&");
 }
 
 function hydrateChatComponents() {

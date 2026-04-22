@@ -127,12 +127,23 @@ Emitted for each new chunk of a string-valued field.
     "compute": "<compute_snake_name>",
     "mode": "tool_use",
     "tool": "set_output",
+    "content_name": "completions",
+    "record_id": 42,
     "field": "message",
     "delta": "Hello",
     "done": false
   }
 }
 ```
+
+`content_name` and `record_id` identify the Content row being updated
+(when the stream targets an existing record — the common case for
+computes triggered on create/update events). Any component rendering
+that `(record_id, field)` pair can use these to locate the DOM element
+to update, without depending on the component type. For streams where
+no record yet exists (agent calling `content_create` before the insert
+completes), `record_id` may be `null` and clients should fall back to
+the `invocation_id` keyed pending-bubble pattern.
 
 ### Tool-use — field done event
 

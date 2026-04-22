@@ -189,11 +189,17 @@ async def _execute_llm_compute(ctx: RuntimeContext, comp: dict, record: dict,
     # v0.8.1: LLM-path streaming. When the provider supports
     # stream_agent_response, route the call through it and publish
     # each field_delta / field_done / done event onto the event bus
-    # so chat components and other stream subscribers can render
-    # tokens as they arrive. Falls back to non-streaming complete()
-    # for providers that don't implement the streaming path.
+    # so any component rendering the target field (data_table cells,
+    # chat bubbles, detail views) can render tokens as they arrive.
+    # Falls back to non-streaming complete() for providers that don't
+    # implement the streaming path.
+    #
+    # Events carry content_name + record_id so the general client
+    # hydrator can target `[data-termin-row-id=<id>]
+    # [data-termin-field=<field>]` without knowing the component type.
     comp_snake = comp["name"]["snake"]
     _llm_stream_base = f"compute.stream.{_llm_invocation_id}"
+    _llm_record_id = record.get("id")
 
     async def _on_llm_stream_event(event):
         if ctx.event_bus is None:
@@ -208,6 +214,8 @@ async def _execute_llm_compute(ctx: RuntimeContext, comp: dict, record: dict,
                     "compute": comp_snake,
                     "mode": "tool_use",
                     "tool": event.get("tool", "set_output"),
+                    "content_name": content_name,
+                    "record_id": _llm_record_id,
                     "field": field,
                     "delta": event.get("delta", ""),
                     "done": False,
@@ -222,6 +230,8 @@ async def _execute_llm_compute(ctx: RuntimeContext, comp: dict, record: dict,
                     "compute": comp_snake,
                     "mode": "tool_use",
                     "tool": event.get("tool", "set_output"),
+                    "content_name": content_name,
+                    "record_id": _llm_record_id,
                     "field": field,
                     "done": True,
                     "value": event.get("value"),
@@ -235,6 +245,8 @@ async def _execute_llm_compute(ctx: RuntimeContext, comp: dict, record: dict,
                     "compute": comp_snake,
                     "mode": "tool_use",
                     "tool": "set_output",
+                    "content_name": content_name,
+                    "record_id": _llm_record_id,
                     "done": True,
                     "output": event.get("output") or {},
                 },
@@ -420,13 +432,22 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
     # when an event bus is available. Fallback to the non-streaming
     # agent_loop only if the bus is unavailable (defensive).
     _stream_base_channel = f"compute.stream.{_agent_invocation_id}"
+    _agent_record_id = record.get("id") if record else None
 
     async def _on_stream_event(event):
         """Push each agent-stream event onto the event bus on the
-        appropriate channel per the v0.8 streaming protocol."""
+        appropriate channel per the v0.8 streaming protocol.
+
+        content_name + record_id (when known) are included so the
+        general client-side hydrator can target DOM elements keyed by
+        (row_id, field_name) — the same shape as `content.*.updated`
+        events but streamed. This keeps streaming orthogonal to the
+        presentation component type (data_table, chat, detail view).
+        """
         if ctx.event_bus is None:
             return
         etype = event.get("type")
+        tool_name = event.get("tool", "set_output")
         if etype == "field_delta":
             field = event.get("field", "")
             await ctx.event_bus.publish({
@@ -435,7 +456,9 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
                     "invocation_id": _agent_invocation_id,
                     "compute": comp_snake,
                     "mode": "tool_use",
-                    "tool": "set_output",
+                    "tool": tool_name,
+                    "content_name": content_name,
+                    "record_id": _agent_record_id,
                     "field": field,
                     "delta": event.get("delta", ""),
                     "done": False,
@@ -449,7 +472,9 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
                     "invocation_id": _agent_invocation_id,
                     "compute": comp_snake,
                     "mode": "tool_use",
-                    "tool": "set_output",
+                    "tool": tool_name,
+                    "content_name": content_name,
+                    "record_id": _agent_record_id,
                     "field": field,
                     "done": True,
                     "value": event.get("value"),
@@ -463,6 +488,8 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
                     "compute": comp_snake,
                     "mode": "tool_use",
                     "tool": "set_output",
+                    "content_name": content_name,
+                    "record_id": _agent_record_id,
                     "done": True,
                     "output": event.get("output") or {},
                 },
