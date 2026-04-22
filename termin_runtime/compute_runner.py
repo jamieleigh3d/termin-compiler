@@ -342,8 +342,70 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
 
     print(f"[Termin] Compute '{comp_name}': starting agent loop ({ctx.ai_provider.service})")
 
+    # v0.8 #7: stream set_output field deltas to the compute.stream.*
+    # channel family so connected clients (chat UI) can render
+    # token-by-token. Event-bus publication is cheap and no-op when
+    # nobody is subscribed, so we always go through the streaming path
+    # when an event bus is available. Fallback to the non-streaming
+    # agent_loop only if the bus is unavailable (defensive).
+    _stream_base_channel = f"compute.stream.{_agent_invocation_id}"
+
+    async def _on_stream_event(event):
+        """Push each agent-stream event onto the event bus on the
+        appropriate channel per the v0.8 streaming protocol."""
+        if ctx.event_bus is None:
+            return
+        etype = event.get("type")
+        if etype == "field_delta":
+            field = event.get("field", "")
+            await ctx.event_bus.publish({
+                "channel_id": f"{_stream_base_channel}.field.{field}",
+                "data": {
+                    "invocation_id": _agent_invocation_id,
+                    "compute": comp_snake,
+                    "mode": "tool_use",
+                    "tool": "set_output",
+                    "field": field,
+                    "delta": event.get("delta", ""),
+                    "done": False,
+                },
+            })
+        elif etype == "field_done":
+            field = event.get("field", "")
+            await ctx.event_bus.publish({
+                "channel_id": f"{_stream_base_channel}.field.{field}",
+                "data": {
+                    "invocation_id": _agent_invocation_id,
+                    "compute": comp_snake,
+                    "mode": "tool_use",
+                    "tool": "set_output",
+                    "field": field,
+                    "done": True,
+                    "value": event.get("value"),
+                },
+            })
+        elif etype == "done":
+            await ctx.event_bus.publish({
+                "channel_id": _stream_base_channel,
+                "data": {
+                    "invocation_id": _agent_invocation_id,
+                    "compute": comp_snake,
+                    "mode": "tool_use",
+                    "tool": "set_output",
+                    "done": True,
+                    "output": event.get("output") or {},
+                },
+            })
+
     try:
-        result = await ctx.ai_provider.agent_loop(system_msg, user_msg, all_tools, _execute_tool)
+        if ctx.event_bus is not None and hasattr(
+                ctx.ai_provider, "agent_loop_streaming"):
+            result = await ctx.ai_provider.agent_loop_streaming(
+                system_msg, user_msg, all_tools, _execute_tool,
+                on_event=_on_stream_event)
+        else:
+            result = await ctx.ai_provider.agent_loop(
+                system_msg, user_msg, all_tools, _execute_tool)
         thinking = result.get("thinking", "")
         if thinking:
             print(f"[Termin] Compute '{comp_name}' completed: {thinking[:100]}")

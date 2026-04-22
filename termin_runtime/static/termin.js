@@ -349,7 +349,12 @@ function hydrateChatComponents() {
     // element; fallback to common field names.
     const contentField = chat.dataset.terminContentField ||
       inferContentFieldFromMarkup(chat) || "body";
-    subscribe("compute.stream.", (ch, data) => {
+    // Subscribe to the compute.stream prefix. The client-side prefix
+    // matcher in notifySubscribers() splits the incoming channel on "."
+    // and checks subscription keys without a trailing dot, so we pass
+    // the dotted-namespace prefix without trailing dot here. The server
+    // uses startswith() which matches either form.
+    subscribe("compute.stream", (ch, data) => {
       if (!data) return;
       if (data.error) {
         renderChatStreamError(messagesContainer, data.error, chat);

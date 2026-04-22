@@ -557,6 +557,116 @@ class TestAgentStreamPublisher:
         assert output == {"message": "Hi there"}
 
 
+class TestAnthropicAgentLoopStreaming:
+    """agent_loop_streaming is the wire-up for live agent chat streaming.
+    It invokes the Anthropic streaming API, accumulates set_output
+    deltas through StreamingJsonFieldExtractor, and fires an on_event
+    callback for each event. Non-set_output tool calls are executed
+    via execute_tool (same as agent_loop). Final return is the same
+    shape as agent_loop — the set_output tool input dict.
+    """
+
+    def _make_provider_with_mock_events(self, events_to_emit, final_message):
+        """Mock Anthropic client that yields events then get_final_message."""
+        provider = AIProvider({"ai_provider": {
+            "service": "anthropic", "model": "claude-test", "api_key": "sk-fake",
+        }})
+        provider._service = "anthropic"
+
+        class _MockStream:
+            def __init__(self, events, final_msg):
+                self._events = events
+                self._final = final_msg
+            def __enter__(self): return self
+            def __exit__(self, *exc): return False
+            def __iter__(self):
+                for e in self._events: yield e
+            def get_final_message(self):
+                return self._final
+
+        class _MockMessages:
+            def stream(self_, **kwargs):
+                return _MockStream(events_to_emit, final_message)
+
+        class _MockClient:
+            messages = _MockMessages()
+
+        provider._client = _MockClient()
+        return provider
+
+    def _evt(self, t, **kw):
+        from types import SimpleNamespace
+        return SimpleNamespace(type=t, **kw)
+
+    def test_single_turn_direct_set_output_emits_deltas_and_returns_input(self):
+        """Most common agent flow: first (and only) assistant turn
+        calls set_output directly. Stream events flow, final return
+        is the parsed tool input."""
+        from types import SimpleNamespace
+        events = [
+            self._evt("content_block_start",
+                      index=0,
+                      content_block=SimpleNamespace(type="tool_use",
+                                                     id="tu_1",
+                                                     name="set_output")),
+            self._evt("content_block_delta",
+                      index=0,
+                      delta=SimpleNamespace(type="input_json_delta",
+                                             partial_json='{"message": "')),
+            self._evt("content_block_delta",
+                      index=0,
+                      delta=SimpleNamespace(type="input_json_delta",
+                                             partial_json='Hi there')),
+            self._evt("content_block_delta",
+                      index=0,
+                      delta=SimpleNamespace(type="input_json_delta",
+                                             partial_json='"}')),
+            self._evt("content_block_stop", index=0),
+            self._evt("message_stop"),
+        ]
+        # The final message's content contains the completed tool_use.
+        final_tool_block = SimpleNamespace(
+            type="tool_use", id="tu_1", name="set_output",
+            input={"message": "Hi there"})
+        final_msg = SimpleNamespace(
+            content=[final_tool_block],
+            stop_reason="end_turn",
+        )
+
+        async def run():
+            provider = self._make_provider_with_mock_events(events, final_msg)
+            output_tool = {"name": "set_output",
+                           "input_schema": {"type": "object",
+                                            "properties": {"message": {"type": "string"}}}}
+            captured_events = []
+            async def on_event(e):
+                captured_events.append(e)
+            async def execute_tool(name, inp):
+                pytest.fail(f"Unexpected tool call: {name}")
+
+            result = await provider.agent_loop_streaming(
+                "be brief", "say hi",
+                tools=[output_tool], execute_tool=execute_tool,
+                on_event=on_event)
+            return result, captured_events
+
+        result, captured = asyncio.run(run())
+
+        # Stream events captured during generation.
+        msg_deltas = [e for e in captured
+                      if e["type"] == "field_delta" and e["field"] == "message"]
+        assert msg_deltas
+        assert "".join(d["delta"] for d in msg_deltas) == "Hi there"
+        # Terminal done event.
+        dones = [e for e in captured if e["type"] == "done"]
+        assert len(dones) == 1
+        assert dones[0]["output"] == {"message": "Hi there"}
+
+        # Final returned dict matches set_output's input (same contract
+        # as the non-streaming agent_loop).
+        assert result == {"message": "Hi there"}
+
+
 class TestComputeRunnerStreamPublish:
     """The compute-runner publishes each delta from the provider to the
     event bus as it arrives. Tested with the simulate helper so no live

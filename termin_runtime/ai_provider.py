@@ -428,6 +428,206 @@ class AIProvider:
             raise AIProviderError(
                 f"Unknown service for stream_agent_response: {self._service}")
 
+    async def agent_loop_streaming(self, system_prompt: str,
+                                    user_message: str, tools: list,
+                                    execute_tool,
+                                    on_event=None,
+                                    max_turns: int = 20):
+        """Streaming-capable agent loop.
+
+        Like agent_loop(): iterates LLM calls + tool execution until
+        the agent invokes set_output, then returns the set_output
+        input dict.
+
+        Unlike agent_loop(): each turn uses the provider's streaming
+        API. For set_output tool calls specifically, accumulates
+        input_json_delta events through StreamingJsonFieldExtractor
+        and fires on_event for each field_delta / field_done / done
+        event. Other tool calls (content_query, content_create, etc.)
+        execute as before — non-user-visible.
+
+        on_event is an async callable. It is the bridge to the event
+        bus, letting the compute_runner publish stream events to WS
+        subscribers without tangling the provider with runtime
+        concerns.
+
+        Only Anthropic is supported in v0.8; OpenAI agent-loop
+        streaming follows the same contract and can be added without
+        changing callers.
+
+        Raises AIProviderError on failure.
+        """
+        if not self._client:
+            raise AIProviderError("AI provider not initialized")
+        if self._service == "anthropic":
+            return await self._anthropic_agent_loop_streaming(
+                system_prompt, user_message, tools, execute_tool,
+                on_event, max_turns)
+        elif self._service == "openai":
+            # Fall back to non-streaming agent_loop; emit a synthetic
+            # terminal event with the final output so the client path
+            # still works.
+            result = await self.agent_loop(system_prompt, user_message,
+                                            tools, execute_tool)
+            if on_event:
+                await on_event({"type": "done", "output": result})
+            return result
+        else:
+            raise AIProviderError(
+                f"Unknown service for agent_loop_streaming: {self._service}")
+
+    async def _anthropic_agent_loop_streaming(self, system_prompt: str,
+                                               user_message: str,
+                                               tools: list,
+                                               execute_tool,
+                                               on_event,
+                                               max_turns: int):
+        """Anthropic streaming agent-loop implementation.
+
+        Pattern per turn:
+          1. Open messages.stream with tools.
+          2. Iterate events in a producer thread:
+             - content_block_start for tool_use: if set_output, create
+               a per-block extractor; otherwise mark the block as
+               non-streaming.
+             - content_block_delta with input_json_delta on a
+               set_output block: feed the extractor and push events
+               to on_event.
+          3. After the stream closes, get_final_message and process
+             tool_use content blocks: set_output returns; other tools
+             execute + feed back.
+          4. Repeat until set_output is called or max_turns reached.
+        """
+        import json as _json
+        messages = [{"role": "user", "content": user_message}]
+
+        for turn in range(max_turns):
+            # Set up per-turn state for the producer closure.
+            state = {
+                "final_message": None,
+                "current_block_is_set_output": False,
+                "set_output_extractor": None,
+                "error": None,
+            }
+
+            def producer(put):
+                try:
+                    with self._client.messages.stream(
+                        model=self._model or "claude-sonnet-4-6",
+                        max_tokens=4096,
+                        system=system_prompt,
+                        messages=messages,
+                        tools=tools,
+                    ) as stream:
+                        for event in stream:
+                            etype = getattr(event, "type", None)
+                            if etype == "content_block_start":
+                                cb = getattr(event, "content_block", None)
+                                if cb and getattr(cb, "type", None) == "tool_use":
+                                    if getattr(cb, "name", "") == "set_output":
+                                        state["current_block_is_set_output"] = True
+                                        state["set_output_extractor"] = \
+                                            StreamingJsonFieldExtractor()
+                                    else:
+                                        state["current_block_is_set_output"] = False
+                                else:
+                                    state["current_block_is_set_output"] = False
+                            elif etype == "content_block_delta":
+                                if not state["current_block_is_set_output"]:
+                                    continue
+                                delta = getattr(event, "delta", None)
+                                if delta is None:
+                                    continue
+                                if getattr(delta, "type", None) != "input_json_delta":
+                                    continue
+                                partial = getattr(delta, "partial_json", "") or ""
+                                ex = state["set_output_extractor"]
+                                if ex is not None:
+                                    for emitted in ex.feed(partial):
+                                        put(emitted)
+                            elif etype == "content_block_stop":
+                                state["current_block_is_set_output"] = False
+                        # Stream closed — capture the final assembled message.
+                        state["final_message"] = stream.get_final_message()
+                except Exception as exc:
+                    state["error"] = exc
+
+            # Consume events produced during this turn.
+            async for item in self._bridge_events_to_queue(producer):
+                if on_event:
+                    await on_event(item)
+
+            if state["error"] is not None:
+                raise AIProviderError(
+                    f"Anthropic stream error on turn {turn}: {state['error']}"
+                ) from state["error"]
+
+            final_msg = state["final_message"]
+            if final_msg is None:
+                raise AIProviderError(
+                    f"Anthropic stream produced no final message on turn {turn}")
+
+            # Inspect the final message for tool_use blocks.
+            tool_calls = [b for b in getattr(final_msg, "content", [])
+                          if getattr(b, "type", None) == "tool_use"]
+
+            if not tool_calls:
+                # Agent finished without calling set_output — fall back.
+                text_blocks = [b.text for b in final_msg.content
+                               if getattr(b, "type", None) == "text"]
+                result = {
+                    "thinking": " ".join(text_blocks),
+                    "summary": "Agent completed without set_output",
+                }
+                if on_event:
+                    await on_event({"type": "done", "output": result})
+                return result
+
+            # Check for set_output among tool calls.
+            set_output_call = next(
+                (tc for tc in tool_calls if getattr(tc, "name", "") == "set_output"),
+                None,
+            )
+            if set_output_call is not None:
+                # Flush any non-string fields from the extractor and
+                # emit terminal events on_event.
+                ex = state["set_output_extractor"]
+                if ex is not None and on_event:
+                    for e in ex.finish():
+                        await on_event(e)
+                    await on_event(
+                        {"type": "done", "output": set_output_call.input})
+                elif on_event:
+                    await on_event(
+                        {"type": "done", "output": set_output_call.input})
+                return set_output_call.input
+
+            # Non-set_output tools — execute, feed results back, iterate.
+            messages.append({"role": "assistant",
+                              "content": final_msg.content})
+            tool_results = []
+            for tc in tool_calls:
+                try:
+                    result = await execute_tool(tc.name, tc.input)
+                    content_str = (_json.dumps(result)
+                                   if isinstance(result, (dict, list))
+                                   else str(result))
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": content_str,
+                    })
+                except Exception as exc:
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": f"Error: {exc}",
+                        "is_error": True,
+                    })
+            messages.append({"role": "user", "content": tool_results})
+
+        raise AIProviderError(f"Agent exceeded maximum turns ({max_turns})")
+
     async def _anthropic_agent_stream(self, system_prompt: str,
                                        user_message: str,
                                        output_tool: dict):
