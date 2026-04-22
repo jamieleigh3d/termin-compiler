@@ -59,6 +59,18 @@ def load_deploy_config(path: str = None, app_name: str = None) -> dict:
         candidates.append(Path(path))
     if app_name:
         candidates.append(Path(f"{app_name}.deploy.json"))
+        # Also try variants that handle the name-vs-filename-stem
+        # mismatch. `app_name` comes from the IR's `name` field
+        # snake-cased (spaces/hyphens → underscores). The compiler
+        # writes the deploy config file using the source-file stem,
+        # which may not include the underscore-before-digit the
+        # snake-case rule introduces. Example: "Agent Chatbot 2" ->
+        # snake "agent_chatbot_2" but source stem "agent_chatbot2".
+        # Try the collapsed variant as a fallback.
+        import re
+        collapsed = re.sub(r"_(\d)", r"\1", app_name)
+        if collapsed != app_name:
+            candidates.append(Path(f"{collapsed}.deploy.json"))
     candidates.append(Path("deploy.json"))
 
     for candidate in candidates:

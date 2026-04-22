@@ -396,6 +396,26 @@ def serve(package: str, port: int, host: str, deploy: str, no_strict_channels: b
         click.echo("Expected .termin.pkg or .json", err=True)
         sys.exit(1)
 
+    # Resolve default deploy config from the .pkg filename if the
+    # caller didn't pass --deploy. The compiler writes
+    # {source_stem}.deploy.json (filename-based), but the runtime's
+    # fallback uses the IR app name snake-cased — these can diverge
+    # when the app name contains spaces/digits differently from the
+    # source file stem (e.g. "Agent Chatbot 2" -> agent_chatbot_2 vs.
+    # agent_chatbot2.termin.pkg). Prefer the filename variant here so
+    # `termin serve` always finds the sibling deploy config the
+    # compiler just wrote.
+    if deploy is None and pkg_path.suffix == ".pkg":
+        # strip .termin.pkg (or .pkg) to get the source stem
+        stem = pkg_path.name
+        for suffix in (".termin.pkg", ".pkg"):
+            if stem.endswith(suffix):
+                stem = stem[: -len(suffix)]
+                break
+        candidate = pkg_path.parent / f"{stem}.deploy.json"
+        if candidate.exists():
+            deploy = str(candidate)
+
     # Create and serve
     try:
         app = create_termin_app(
