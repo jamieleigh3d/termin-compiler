@@ -12,23 +12,16 @@ dict. Tests that need IR JSON call extract_ir_from_pkg(pkg_path) to open the
 package and extract the IR — no pre-compiled JSON files required.
 """
 
-import json
 import subprocess
 import sys
-import zipfile
 from pathlib import Path
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).parent))
+from helpers import extract_ir_from_pkg
+
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
-
-
-def extract_ir_from_pkg(pkg_path: Path) -> dict:
-    """Extract and parse IR JSON from a .termin.pkg ZIP package."""
-    with zipfile.ZipFile(pkg_path, "r") as zf:
-        manifest = json.loads(zf.read("manifest.json"))
-        ir_bytes = zf.read(manifest["ir"]["entry"])
-        return json.loads(ir_bytes)
 
 
 @pytest.fixture(scope="session")

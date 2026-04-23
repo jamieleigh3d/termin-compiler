@@ -22,7 +22,7 @@ from termin_runtime.channels import (
     ChannelDispatcher, ChannelConfig, ChannelError, ChannelScopeError, ChannelValidationError,
     load_deploy_config, _resolve_env_vars,
 )
-from conftest import extract_ir_from_pkg
+from helpers import extract_ir_from_pkg
 
 
 SEED_DIR = Path(__file__).parent.parent / "examples"

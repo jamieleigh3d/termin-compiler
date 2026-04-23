@@ -31,7 +31,7 @@ from fastapi.testclient import TestClient
 
 
 import json as _json_mod
-from conftest import extract_ir_from_pkg
+from helpers import extract_ir_from_pkg
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 

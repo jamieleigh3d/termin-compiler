@@ -449,7 +449,7 @@ class TestAuditLogRoutes:
 # ===== Runtime Tests =====
 
 import json as _json_mod
-from conftest import extract_ir_from_pkg
+from helpers import extract_ir_from_pkg
 
 
 def _ir_json(pkg_path):

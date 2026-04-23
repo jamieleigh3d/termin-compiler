@@ -28,7 +28,7 @@ import websockets
 import websockets.client
 
 from termin_runtime import create_termin_app
-from conftest import extract_ir_from_pkg
+from helpers import extract_ir_from_pkg
 
 
 def _ir_json(pkg_path):
