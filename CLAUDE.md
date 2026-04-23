@@ -61,7 +61,6 @@ examples/
   helpdesk.termin           # Support ticket tracker (multi-word states)
   projectboard.termin       # Project management board (5 content types, deep FK chains)
   compute_demo.termin       # Compute functions + error handling demo
-ir_dumps/                   # Pre-compiled IR JSON for each example (used by runtime tests)
 tests/
   test_parser.py            # PEG parser tests
   test_analyzer.py          # Semantic + security invariant tests
@@ -89,10 +88,7 @@ pip install -e .
 # Compile
 termin compile examples/warehouse.termin -o app.py
 
-# Dump IR
-termin compile examples/warehouse.termin -o app.py --emit-ir warehouse_ir.json
-
-# Run all tests (v0.8.1: 1525 tests)
+# Run all tests
 python -m pytest tests/ -v
 
 # Run just compiler tests (no e2e)
@@ -200,12 +196,11 @@ Boundary called "{name}":
 
 - **Unit tests** (parser, analyzer): Test each compiler stage in isolation
 - **IR tests** (test_ir.py): 91 tests verifying component tree structure from all examples
-- **Runtime tests** (test_runtime.py): 39 tests for the termin_runtime package (uses pre-compiled IR dumps)
+- **Runtime tests** (test_runtime.py): Use the session-scoped `compiled_packages` fixture (see `tests/conftest.py`) — compiles each example fresh per test session, extracts IR from the `.termin.pkg` directly. No pre-compiled JSON files.
 - **Dependency tests** (test_dependencies.py): Scans imports via AST, verifies all third-party packages are in setup.py
 - **String iteration guards** (TestNoStringIterationBugs in test_ir.py): Parametrized across all examples — catches single-char field names from string-as-list bugs
 - **E2E tests** (test_e2e.py, test_helpdesk.py, test_projectboard.py): Compile + run via FastAPI TestClient
 - **IMPORTANT on Windows**: Never use `subprocess.Popen` with `stdout=PIPE` for uvicorn — deadlocks. Always use `TestClient`.
-- **IMPORTANT**: After parser/lowering changes, regenerate all IR dumps in ir_dumps/ — runtime tests depend on them.
 
 ## Verification Before Declaring Readiness
 
@@ -225,7 +220,7 @@ Do NOT report readiness based on background agent summaries alone. The fail-loud
 
 Correct order:
 1. Manual updates first: `CHANGELOG.md` (both repos), `README.md` test counts, `docs/termin-roadmap.md`.
-2. Run `python util/release.py --compiler-version X.Y.Z --ir-version X.Y.Z` — this compiles all examples, extracts IR, regenerates `ir_dumps/`, repackages `.termin.pkg` files, syncs fixtures and the IR schema to the conformance repo.
+2. Run `python util/release.py --compiler-version X.Y.Z --ir-version X.Y.Z` — this compiles all examples to `.termin.pkg`, copies packages, the IR schema, and deploy configs to the conformance repo.
 3. Run all three suites **directly** (not through the release script):
    - Compiler: `python -m pytest tests/ -v`
    - Conformance (HTTP): `cd ../termin-conformance && TERMIN_ADAPTER=reference pytest tests/ -v`

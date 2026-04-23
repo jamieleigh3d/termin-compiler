@@ -23,11 +23,8 @@ pip install -r requirements.txt
 # Compile a .termin file to a deployable package
 python -m termin.cli compile examples/helpdesk.termin
 
-# Serve a compiled package
+# Serve the compiled package
 python -m termin.cli serve helpdesk.termin.pkg
-
-# Or serve from raw IR JSON
-python -m termin.cli serve ir_dumps/helpdesk_ir.json
 ```
 
 The app runs at `http://localhost:8100` with stub authentication (role selector in the UI).
@@ -101,8 +98,7 @@ docs/                    Specifications and design documents
   termin-roadmap.md
   ...and more
 
-tests/                   1525 tests (pytest)
-ir_dumps/                Pre-compiled IR JSON for each example
+tests/                   pytest suite
 ```
 
 ## The Confidentiality System

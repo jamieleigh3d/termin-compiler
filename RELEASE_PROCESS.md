@@ -14,7 +14,7 @@ Termin has three independent version numbers:
 | **IR version** | `termin/ir.py`, `docs/termin-ir-schema.json` | The schema version of compiled output. A runtime checks this to know what it can consume. |
 | **Manifest version** | `docs/termin-package-format.md` | The `.termin.pkg` envelope format. Rarely changes. |
 
-The IR version is the most impactful. When it bumps, every IR dump, every `.termin.pkg`, every conformance fixture, and every test that asserts a version string must update.
+The IR version is the most impactful. When it bumps, every `.termin.pkg`, every conformance fixture, and every test that asserts a version string must update.
 
 ---
 
@@ -89,8 +89,8 @@ python util/release.py --ir-version X.Y.Z --compiler-version X.Y.Z
 
 This script:
 1. Verifies version strings are bumped in all files
-2. Compiles all 13 examples (produces `.termin.pkg` + IR dumps)
-3. Copies packages, IR dumps, JSON schema, and deploy configs to conformance repo
+2. Compiles all 13 examples (produces `.termin.pkg`)
+3. Copies packages, JSON schema, and deploy configs to conformance repo
 4. Runs tests in both repos
 
 The script does NOT commit or push. Review the changes before committing.
@@ -111,7 +111,7 @@ python util/release.py --ir-version X.Y.Z --compiler-version X.Y.Z --skip-tests
 # Compiler repo
 cd termin/
 git add -A
-git commit -m "v0.X.0 release: changelog, IR dumps, fixtures"
+git commit -m "v0.X.0 release: changelog, fixtures"
 
 # Conformance repo
 cd ../termin-conformance/
@@ -185,9 +185,8 @@ git checkout main
 | Step | What it does |
 |------|-------------|
 | Version bump verification | Checks all files have the target version |
-| Example compilation | `termin compile` on all 13 examples |
-| IR dump regeneration | Extracted from compiled packages |
-| Conformance fixture sync | Copies .termin.pkg, IR dumps, schema, deploy configs |
+| Example compilation | `termin compile` on all 13 examples → `.termin.pkg` |
+| Conformance fixture sync | Copies `.termin.pkg`, schema, and deploy configs to conformance repo |
 | Test execution | Runs pytest in both repos |
 
 ### NOT automated (human required)

@@ -10,20 +10,25 @@ Validates Compute endpoints, Channel endpoints, Boundary definitions,
 and Page rendering in the compute_demo application using the runtime.
 """
 
+import json
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-IR_PATH = Path(__file__).parent.parent / "ir_dumps" / "compute_demo_ir.json"
+from conftest import extract_ir_from_pkg
+
+
+def _ir_json(pkg_path):
+    return json.dumps(extract_ir_from_pkg(pkg_path))
 
 
 @pytest.fixture(scope="module")
-def client():
+def client(compiled_packages):
     """Load compute_demo IR and return a TestClient."""
     from termin_runtime import create_termin_app
 
-    ir_json = IR_PATH.read_text(encoding="utf-8")
+    ir_json = _ir_json(compiled_packages["compute_demo"])
     import tempfile, os
     db_file = os.path.join(tempfile.mkdtemp(), "compute_demo.db")
     app = create_termin_app(ir_json, db_path=db_file, strict_channels=False)

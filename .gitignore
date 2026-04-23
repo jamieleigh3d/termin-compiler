@@ -28,12 +28,9 @@ venv/
 .vscode/
 .idea/
 
-# Generated app files in ir_dumps/ (only *_ir.json is tracked)
-ir_dumps/*_app.py
-ir_dumps/*_app.json
-ir_dumps/*_app_seed.json
-
-# Note: ir_dumps/*_ir.json and examples/*_seed.json are intentionally tracked
+# ir_dumps/ is a local scratch directory used by release.py as a staging
+# area — nothing in it is committed. Tests compile examples fresh via conftest.
+ir_dumps/
 /*.termin.pkg
 /*.deploy.json
 

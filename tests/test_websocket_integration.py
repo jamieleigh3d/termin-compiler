@@ -28,12 +28,11 @@ import websockets
 import websockets.client
 
 from termin_runtime import create_termin_app
+from conftest import extract_ir_from_pkg
 
-IR_DIR = Path(__file__).parent.parent / "ir_dumps"
 
-
-def _load_ir(name: str) -> str:
-    return (IR_DIR / f"{name}_ir.json").read_text(encoding="utf-8")
+def _ir_json(pkg_path):
+    return json.dumps(extract_ir_from_pkg(pkg_path))
 
 
 class UvicornTestServer:
@@ -83,9 +82,9 @@ class UvicornTestServer:
 
 
 @pytest.fixture(scope="module")
-def agent_simple_server():
+def agent_simple_server(compiled_packages):
     """Start a real server with agent_simple app (shared across module)."""
-    ir_json = _load_ir("agent_simple")
+    ir_json = _ir_json(compiled_packages["agent_simple"])
     app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
     server = UvicornTestServer(app)
     server.start()
@@ -94,9 +93,9 @@ def agent_simple_server():
 
 
 @pytest.fixture(scope="module")
-def channel_simple_server():
+def channel_simple_server(compiled_packages):
     """Start a real server with channel_simple app (shared across module)."""
-    ir_json = _load_ir("channel_simple")
+    ir_json = _ir_json(compiled_packages["channel_simple"])
     app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
     server = UvicornTestServer(app)
     server.start()
@@ -304,7 +303,7 @@ class TestRealWebSocketPush:
             assert "data" not in payload or isinstance(payload.get("data"), str)
 
     @pytest.mark.asyncio
-    async def test_ws_push_from_background_compute(self):
+    async def test_ws_push_from_background_compute(self, compiled_packages):
         """Records updated by a background Compute thread should push to WS.
 
         Uses a mock AI provider that returns immediately. This exercises
@@ -313,7 +312,7 @@ class TestRealWebSocketPush:
         """
         from termin_runtime.ai_provider import AIProvider
 
-        ir_json = _load_ir("agent_simple")
+        ir_json = _ir_json(compiled_packages["agent_simple"])
 
         # Mock deploy config with a fake AI provider
         mock_deploy = {

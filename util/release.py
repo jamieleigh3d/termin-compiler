@@ -3,9 +3,8 @@
 
 Automates the error-prone steps of preparing a new release:
   - Bumps version strings across all files in both repos
-  - Regenerates all IR dumps from example .termin files
   - Rebuilds all .termin.pkg fixtures for the conformance suite
-  - Copies artifacts to the conformance repo
+  - Copies the IR JSON Schema to the conformance specs/ directory
   - Runs tests in both repos
   - Displays a summary of changes
 
@@ -37,8 +36,6 @@ COMPILER_ROOT = Path(__file__).parent.parent
 CONFORMANCE_ROOT = COMPILER_ROOT.parent / "termin-conformance"
 
 EXAMPLES_DIR = COMPILER_ROOT / "examples"
-IR_DUMPS_DIR = COMPILER_ROOT / "ir_dumps"
-CONFORMANCE_IR_DIR = CONFORMANCE_ROOT / "fixtures" / "ir"
 CONFORMANCE_PKG_DIR = CONFORMANCE_ROOT / "fixtures"
 CONFORMANCE_SPECS_DIR = CONFORMANCE_ROOT / "specs"
 
@@ -134,7 +131,7 @@ def compile_examples(dry_run: bool):
     """Compile all examples using `termin compile`, producing .termin.pkg and IR dumps.
 
     Uses the actual compiler CLI to build .termin.pkg files (the same tool
-    users run). IR dumps are extracted from the packages via --emit-ir.
+    users run). IR is embedded in each package — no separate ir_dumps step.
     This ensures the release artifacts are identical to what users produce.
     """
     # Note: TatSu grammar objects cause a cosmetic RecursionError during Python
@@ -147,14 +144,13 @@ def compile_examples(dry_run: bool):
         name = fn.replace(".termin", "")
         src = EXAMPLES_DIR / fn
         pkg_out = CONFORMANCE_PKG_DIR / f"{name}.termin.pkg"
-        ir_out = IR_DUMPS_DIR / f"{name}_ir.json"
 
         # Build seed arg if companion seed file exists
         seed_path = EXAMPLES_DIR / f"{name}_seed.json"
         seed_args = ["--seed", str(seed_path)] if seed_path.exists() else []
 
         if dry_run:
-            print(f"  COMPILE: {name}.termin -> {name}.termin.pkg + {name}_ir.json")
+            print(f"  COMPILE: {name}.termin -> {name}.termin.pkg")
             count += 1
             continue
 
@@ -163,14 +159,13 @@ def compile_examples(dry_run: bool):
                 sys.executable, "-m", "termin.cli", "compile",
                 str(src),
                 "-o", str(pkg_out),
-                "--emit-ir", str(ir_out),
             ] + seed_args
 
             result = subprocess.run(cmd, cwd=COMPILER_ROOT, capture_output=True, text=True)
             if result.returncode != 0:
                 print(f"  FAIL: {name} — {result.stderr.strip()}")
                 continue
-            print(f"  COMPILE: {name}.termin -> .termin.pkg + _ir.json")
+            print(f"  COMPILE: {name}.termin -> {name}.termin.pkg")
             count += 1
         except Exception as e:
             print(f"  FAIL ({type(e).__name__}): {name} — {e}")
@@ -179,23 +174,14 @@ def compile_examples(dry_run: bool):
 
 
 def copy_to_conformance(dry_run: bool):
-    """Copy IR dumps and schema to conformance repo.
+    """Copy schema to conformance repo.
 
     The .termin.pkg files are already written directly to the conformance
-    fixtures dir by compile_examples(). This function copies the remaining
-    artifacts: IR JSON dumps (for runtimes without .pkg support) and the
-    IR JSON Schema spec.
+    fixtures dir by compile_examples(). This function copies the IR JSON
+    Schema spec to specs/.
     """
     import shutil
     count = 0
-
-    # IR dumps -> fixtures/ir/
-    for f in IR_DUMPS_DIR.glob("*_ir.json"):
-        dest = CONFORMANCE_IR_DIR / f.name
-        if not dry_run:
-            shutil.copy2(f, dest)
-        print(f"  COPY: fixtures/ir/{f.name}")
-        count += 1
 
     # Schema -> specs/
     schema_src = COMPILER_ROOT / "docs" / "termin-ir-schema.json"

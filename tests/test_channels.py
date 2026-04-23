@@ -22,14 +22,14 @@ from termin_runtime.channels import (
     ChannelDispatcher, ChannelConfig, ChannelError, ChannelScopeError, ChannelValidationError,
     load_deploy_config, _resolve_env_vars,
 )
+from conftest import extract_ir_from_pkg
 
 
-IR_DIR = Path(__file__).parent.parent / "ir_dumps"
 SEED_DIR = Path(__file__).parent.parent / "examples"
 
 
-def _load_ir(name: str) -> str:
-    return (IR_DIR / f"{name}_ir.json").read_text(encoding="utf-8")
+def _ir_json(pkg_path):
+    return json.dumps(extract_ir_from_pkg(pkg_path))
 
 
 def _load_seed(name: str) -> dict:
@@ -71,9 +71,9 @@ MOCK_DEPLOY_CONFIG = {
 }
 
 
-def _make_channel_client(deploy_config=None, strict=None):
+def _make_channel_client(pkg_path, deploy_config=None, strict=None):
     """Create a TestClient for channel_demo with deploy config."""
-    ir_json = _load_ir("channel_demo")
+    ir_json = _ir_json(pkg_path)
     seed = _load_seed("channel_demo")
     config = deploy_config or MOCK_DEPLOY_CONFIG
     # If deploy_config is explicitly empty, also disable strict mode
@@ -85,9 +85,13 @@ def _make_channel_client(deploy_config=None, strict=None):
 # ── Deploy config loading ──
 
 class TestStrictChannelValidation:
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_strict_rejects_missing_config(self):
         """App with external channels must have deploy config in strict mode."""
-        ir_json = _load_ir("channel_demo")
+        ir_json = _ir_json(self.pkgs["channel_demo"])
         with pytest.raises(Exception, match="deploy config"):
             app = create_termin_app(ir_json, deploy_config={}, strict_channels=True)
             # The error happens during lifespan startup, so we need to trigger it
@@ -96,7 +100,7 @@ class TestStrictChannelValidation:
 
     def test_non_strict_allows_missing_config(self):
         """In non-strict mode, missing config is allowed (for dev/testing)."""
-        ir_json = _load_ir("channel_demo")
+        ir_json = _ir_json(self.pkgs["channel_demo"])
         app = create_termin_app(ir_json, deploy_config={}, strict_channels=False)
         with TestClient(app) as client:
             r = client.get("/api/reflect/channels")
@@ -108,7 +112,7 @@ class TestStrictChannelValidation:
     def test_internal_channels_never_need_config(self):
         """Internal channels don't require deploy config even in strict mode."""
         from termin_runtime.channels import validate_channel_config
-        ir = json.loads(_load_ir("channel_demo"))
+        ir = extract_ir_from_pkg(self.pkgs["channel_demo"])
         # Provide config for all external channels
         errors = validate_channel_config(ir, MOCK_DEPLOY_CONFIG)
         # incident-bus is internal — should not appear in errors
@@ -116,7 +120,7 @@ class TestStrictChannelValidation:
 
     def test_validation_catches_missing_url(self):
         from termin_runtime.channels import validate_channel_config
-        ir = json.loads(_load_ir("channel_demo"))
+        ir = extract_ir_from_pkg(self.pkgs["channel_demo"])
         bad_config = {"channels": {"pagerduty": {"protocol": "http"}}}  # no url
         errors = validate_channel_config(ir, bad_config)
         assert any("pagerduty" in e and "url" in e.lower() for e in errors)
@@ -143,8 +147,9 @@ class TestDeployConfigLoading:
 # ── Channel dispatcher unit tests ──
 
 class TestChannelDispatcher:
-    def setup_method(self):
-        self.ir = json.loads(_load_ir("channel_demo"))
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.ir = extract_ir_from_pkg(compiled_packages["channel_demo"])
         self.dispatcher = ChannelDispatcher(self.ir, MOCK_DEPLOY_CONFIG)
 
     def test_get_spec_by_display_name(self):
@@ -200,9 +205,13 @@ class TestChannelDispatcher:
 # ── Channel action invocation endpoint ──
 
 class TestChannelActionEndpoint:
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_action_invoke_returns_not_configured_without_mock(self):
         """Without a real external service, configured channels return mock response."""
-        with _make_channel_client(deploy_config={"channels": {}}) as client:
+        with _make_channel_client(self.pkgs["channel_demo"], deploy_config={"channels": {}}) as client:
             client.cookies.set("termin_role", "operator")
             r = client.post(
                 "/api/v1/channels/cloud_provider/actions/restart_service",
@@ -212,7 +221,7 @@ class TestChannelActionEndpoint:
             assert r.json()["status"] == "not_configured"
 
     def test_action_invoke_scope_denied(self):
-        with _make_channel_client() as client:
+        with _make_channel_client(self.pkgs["channel_demo"]) as client:
             client.cookies.set("termin_role", "viewer")  # only has incidents.view
             r = client.post(
                 "/api/v1/channels/cloud_provider/actions/restart_service",
@@ -221,7 +230,7 @@ class TestChannelActionEndpoint:
             assert r.status_code == 403
 
     def test_action_invoke_unknown_channel(self):
-        with _make_channel_client() as client:
+        with _make_channel_client(self.pkgs["channel_demo"]) as client:
             client.cookies.set("termin_role", "operator")
             r = client.post(
                 "/api/v1/channels/nonexistent/actions/something",
@@ -230,7 +239,7 @@ class TestChannelActionEndpoint:
             assert r.status_code == 404
 
     def test_action_invoke_unknown_action(self):
-        with _make_channel_client() as client:
+        with _make_channel_client(self.pkgs["channel_demo"]) as client:
             client.cookies.set("termin_role", "operator")
             r = client.post(
                 "/api/v1/channels/cloud_provider/actions/nonexistent",
@@ -242,8 +251,12 @@ class TestChannelActionEndpoint:
 # ── Channel send endpoint ──
 
 class TestChannelSendEndpoint:
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_send_not_configured(self):
-        with _make_channel_client(deploy_config={"channels": {}}) as client:
+        with _make_channel_client(self.pkgs["channel_demo"], deploy_config={"channels": {}}) as client:
             client.cookies.set("termin_role", "responder")
             r = client.post(
                 "/api/v1/channels/pagerduty/send",
@@ -253,7 +266,7 @@ class TestChannelSendEndpoint:
             assert r.json()["status"] == "not_configured"
 
     def test_send_scope_denied(self):
-        with _make_channel_client() as client:
+        with _make_channel_client(self.pkgs["channel_demo"]) as client:
             client.cookies.set("termin_role", "viewer")
             r = client.post(
                 "/api/v1/channels/pagerduty/send",
@@ -262,7 +275,7 @@ class TestChannelSendEndpoint:
             assert r.status_code == 403
 
     def test_send_unknown_channel(self):
-        with _make_channel_client() as client:
+        with _make_channel_client(self.pkgs["channel_demo"]) as client:
             client.cookies.set("termin_role", "operator")
             r = client.post(
                 "/api/v1/channels/nonexistent/send",
@@ -274,9 +287,13 @@ class TestChannelSendEndpoint:
 # ── Inbound webhook handler ──
 
 class TestInboundWebhooks:
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_webhook_creates_record(self):
         """POST to /webhooks/{channel} creates a content record."""
-        with _make_channel_client() as client:
+        with _make_channel_client(self.pkgs["channel_demo"]) as client:
             client.cookies.set("termin_role", "operator")
 
             # Count existing deployments first
@@ -309,7 +326,7 @@ class TestInboundWebhooks:
             assert new["version"] == "v99.0.0"
 
     def test_webhook_scope_denied(self):
-        with _make_channel_client() as client:
+        with _make_channel_client(self.pkgs["channel_demo"]) as client:
             client.cookies.set("termin_role", "viewer")  # only has incidents.view, not deploy.read
             r = client.post(
                 "/webhooks/github_webhooks",
@@ -318,7 +335,7 @@ class TestInboundWebhooks:
             assert r.status_code == 403
 
     def test_webhook_invalid_json(self):
-        with _make_channel_client() as client:
+        with _make_channel_client(self.pkgs["channel_demo"]) as client:
             client.cookies.set("termin_role", "operator")
             r = client.post(
                 "/webhooks/github_webhooks",
@@ -328,7 +345,7 @@ class TestInboundWebhooks:
             assert r.status_code == 400
 
     def test_webhook_no_valid_fields(self):
-        with _make_channel_client() as client:
+        with _make_channel_client(self.pkgs["channel_demo"]) as client:
             client.cookies.set("termin_role", "operator")
             r = client.post(
                 "/webhooks/github_webhooks",
@@ -338,7 +355,7 @@ class TestInboundWebhooks:
 
     def test_monitoring_feed_webhook(self):
         """The monitoring-feed inbound realtime channel also gets a webhook."""
-        with _make_channel_client() as client:
+        with _make_channel_client(self.pkgs["channel_demo"]) as client:
             client.cookies.set("termin_role", "responder")
             r = client.post(
                 "/webhooks/monitoring_feed",
@@ -356,9 +373,13 @@ class TestInboundWebhooks:
 # ── Event-driven channel sends ──
 
 class TestEventChannelSends:
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_critical_incident_triggers_pagerduty_send(self):
         """Creating a critical incident should trigger send to pagerduty channel."""
-        with _make_channel_client(deploy_config={"channels": {}}) as client:
+        with _make_channel_client(self.pkgs["channel_demo"], deploy_config={"channels": {}}) as client:
             client.cookies.set("termin_role", "responder")
             # Create a critical incident — should trigger event: Send incident to "pagerduty"
             r = client.post(
@@ -378,8 +399,12 @@ class TestEventChannelSends:
 # ── Channel reflection ──
 
 class TestChannelReflection:
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_reflect_shows_channels(self):
-        with _make_channel_client() as client:
+        with _make_channel_client(self.pkgs["channel_demo"]) as client:
             r = client.get("/api/reflect")
             assert r.status_code == 200
             ir = r.json()
@@ -392,7 +417,7 @@ class TestChannelReflection:
 
     def test_reflect_channels_endpoint(self):
         """GET /api/reflect/channels returns live status for all channels."""
-        with _make_channel_client() as client:
+        with _make_channel_client(self.pkgs["channel_demo"]) as client:
             r = client.get("/api/reflect/channels")
             assert r.status_code == 200
             channels = r.json()
@@ -424,7 +449,7 @@ class TestChannelReflection:
 
     def test_reflect_single_channel(self):
         """GET /api/reflect/channels/{name} returns detailed status."""
-        with _make_channel_client() as client:
+        with _make_channel_client(self.pkgs["channel_demo"]) as client:
             r = client.get("/api/reflect/channels/cloud-provider")
             assert r.status_code == 200
             ch = r.json()
@@ -434,7 +459,7 @@ class TestChannelReflection:
             assert "restart-service" in ch["actions"]
 
     def test_reflect_channel_not_found(self):
-        with _make_channel_client() as client:
+        with _make_channel_client(self.pkgs["channel_demo"]) as client:
             r = client.get("/api/reflect/channels/nonexistent")
             assert r.status_code == 404
 
@@ -442,6 +467,10 @@ class TestChannelReflection:
 # ── WebSocket dispatcher unit tests ──
 
 class TestWebSocketDispatcher:
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_ws_connection_state_initial(self):
         from termin_runtime.channels import WebSocketConnection
         config = ChannelConfig(url="ws://localhost:9999", protocol="websocket")
@@ -450,7 +479,7 @@ class TestWebSocketDispatcher:
 
     def test_dispatcher_routes_ws_protocol(self):
         """Channels with protocol=websocket should use WS connections, not HTTP."""
-        ir = json.loads(_load_ir("channel_demo"))
+        ir = extract_ir_from_pkg(self.pkgs["channel_demo"])
         ws_config = {
             "channels": {
                 "slack": {
@@ -465,7 +494,7 @@ class TestWebSocketDispatcher:
         assert config.protocol == "websocket"
 
     def test_get_full_status_includes_protocol(self):
-        ir = json.loads(_load_ir("channel_demo"))
+        ir = extract_ir_from_pkg(self.pkgs["channel_demo"])
         dispatcher = ChannelDispatcher(ir, MOCK_DEPLOY_CONFIG)
         status = dispatcher.get_full_status()
         pagerduty = next(s for s in status if s["name"] == "pagerduty")
@@ -473,11 +502,11 @@ class TestWebSocketDispatcher:
         assert pagerduty["configured"] is True
 
     def test_get_connection_state_http_always_connected(self):
-        ir = json.loads(_load_ir("channel_demo"))
+        ir = extract_ir_from_pkg(self.pkgs["channel_demo"])
         dispatcher = ChannelDispatcher(ir, MOCK_DEPLOY_CONFIG)
         assert dispatcher.get_connection_state("pagerduty") == "connected"
 
     def test_get_connection_state_unconfigured(self):
-        ir = json.loads(_load_ir("channel_demo"))
+        ir = extract_ir_from_pkg(self.pkgs["channel_demo"])
         dispatcher = ChannelDispatcher(ir, {"channels": {}})
         assert dispatcher.get_connection_state("pagerduty") == "not_configured"

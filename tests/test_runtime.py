@@ -16,18 +16,16 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from termin_runtime import create_termin_app
+from conftest import extract_ir_from_pkg
 
 
-IR_DIR = Path(__file__).parent.parent / "ir_dumps"
+def _ir_json(pkg_path):
+    return json.dumps(extract_ir_from_pkg(pkg_path))
 
 
-def _load_ir(name: str) -> str:
-    return (IR_DIR / f"{name}_ir.json").read_text()
-
-
-def _make_client(name: str):
-    """Create a TestClient for an IR dump."""
-    app = create_termin_app(_load_ir(name), strict_channels=False)
+def _make_client(pkg_path, **kwargs):
+    """Create a TestClient for a compiled package."""
+    app = create_termin_app(_ir_json(pkg_path), strict_channels=False)
     return TestClient(app)
 
 
@@ -36,9 +34,13 @@ def _make_client(name: str):
 class TestComputeRegistration:
     """Compute functions defined in IR must be registered on the client-side context."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_compute_js_registered_in_page(self):
         """hello_user has SayHelloTo compute — it must appear as ctx function in page HTML."""
-        with _make_client("hello_user") as client:
+        with _make_client(self.pkgs["hello_user"]) as client:
             client.cookies.set("termin_role", "user")
             client.cookies.set("termin_user_name", "Test")
             r = client.get("/hello")
@@ -48,7 +50,7 @@ class TestComputeRegistration:
 
     def test_compute_js_has_correct_body(self):
         """The registered function body should contain the expression."""
-        with _make_client("hello_user") as client:
+        with _make_client(self.pkgs["hello_user"]) as client:
             client.cookies.set("termin_role", "user")
             r = client.get("/hello")
             assert 'name' in r.text, \
@@ -56,17 +58,17 @@ class TestComputeRegistration:
 
     def test_compute_js_empty_when_no_computes(self):
         """hello.termin has no computes — page should render without errors."""
-        with _make_client("hello") as client:
+        with _make_client(self.pkgs["hello"]) as client:
             r = client.get("/hello")
             assert r.status_code == 200
 
     def test_all_computes_registered(self):
         """compute_demo has 5 computes — all should produce addFunction calls."""
-        with _make_client("compute_demo") as client:
+        with _make_client(self.pkgs["compute_demo"]) as client:
             r = client.get("/order_dashboard")
             assert r.status_code == 200
             # The compute_demo IR has 5 computes with body_lines
-            ir = json.loads(_load_ir("compute_demo"))
+            ir = extract_ir_from_pkg(self.pkgs["compute_demo"])
             computes_with_bodies = [c for c in ir["computes"]
                                     if c.get("body_lines") and c.get("input_params")]
             for comp in computes_with_bodies:
@@ -80,26 +82,30 @@ class TestComputeRegistration:
 class TestPageRendering:
     """Pages must render with correct structure."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_hello_page_renders(self):
-        with _make_client("hello") as client:
+        with _make_client(self.pkgs["hello"]) as client:
             r = client.get("/hello")
             assert r.status_code == 200
             assert "Hello, World" in r.text
 
     def test_warehouse_dashboard_renders(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             r = client.get("/inventory_dashboard")
             assert r.status_code == 200
             assert "Inventory Dashboard" in r.text
 
     def test_role_displayed_in_nav(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             r = client.get("/inventory_dashboard")
             assert "warehouse clerk" in r.text.lower() or "Warehouse Clerk" in r.text
 
     def test_anonymous_role_available(self):
         """Anonymous should always be in the role list."""
-        with _make_client("hello") as client:
+        with _make_client(self.pkgs["hello"]) as client:
             r = client.get("/hello")
             assert "anonymous" in r.text.lower()
 
@@ -109,15 +115,19 @@ class TestPageRendering:
 class TestAPIRoutes:
     """API routes from IR must be registered and functional."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_list_route(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             r = client.get("/api/v1/products")
             assert r.status_code == 200
             assert isinstance(r.json(), list)
 
     def test_create_route(self):
         import uuid
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             client.cookies.set("termin_role", "warehouse manager")
             r = client.post("/api/v1/products", json={
                 "sku": f"RT-{uuid.uuid4().hex[:6]}", "name": "Runtime Test",
@@ -126,7 +136,7 @@ class TestAPIRoutes:
             assert r.status_code == 201
 
     def test_reflection_endpoint(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             r = client.get("/api/reflect")
             assert r.status_code == 200
             data = r.json()
@@ -134,13 +144,13 @@ class TestAPIRoutes:
             assert "content" in data
 
     def test_errors_endpoint(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             r = client.get("/api/errors")
             assert r.status_code == 200
             assert isinstance(r.json(), list)
 
     def test_events_endpoint(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             r = client.get("/api/events")
             assert r.status_code == 200
 
@@ -150,11 +160,15 @@ class TestAPIRoutes:
 class TestAllExamplesBoot:
     """Every example IR must produce a working app."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     @pytest.mark.parametrize("name", [
         "hello", "hello_user", "warehouse", "helpdesk", "projectboard", "compute_demo"
     ])
     def test_example_boots_and_serves_home(self, name):
-        with _make_client(name) as client:
+        with _make_client(self.pkgs[name]) as client:
             r = client.get("/")
             assert r.status_code == 200, f"{name} failed to serve /"
 
@@ -164,8 +178,12 @@ class TestAllExamplesBoot:
 class TestRuntimeRegistry:
     """Runtime registry endpoint."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_registry_returns_json(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             r = client.get("/runtime/registry")
             assert r.status_code == 200
             data = r.json()
@@ -175,13 +193,13 @@ class TestRuntimeRegistry:
             assert data["protocols"]["realtime"] == "websocket"
 
     def test_registry_has_presentation_boundary(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             data = client.get("/runtime/registry").json()
             assert "presentation" in data["boundaries"]
             assert data["boundaries"]["presentation"]["location"] == "client"
 
     def test_registry_has_ws_url(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             data = client.get("/runtime/registry").json()
             pres = data["boundaries"]["presentation"]
             assert "/runtime/ws" in pres["channels"]["realtime"]
@@ -190,8 +208,12 @@ class TestRuntimeRegistry:
 class TestRuntimeBootstrap:
     """Runtime bootstrap endpoint."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_bootstrap_returns_identity(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             r = client.get("/runtime/bootstrap")
             assert r.status_code == 200
             data = r.json()
@@ -200,7 +222,7 @@ class TestRuntimeBootstrap:
             assert "scopes" in data["identity"]
 
     def test_bootstrap_returns_pages(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             r = client.get("/runtime/bootstrap",
                            cookies={"termin_role": "warehouse clerk"})
             data = r.json()
@@ -208,20 +230,20 @@ class TestRuntimeBootstrap:
             assert len(data["pages"]) > 0
 
     def test_bootstrap_returns_content_names(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             data = client.get("/runtime/bootstrap").json()
             assert "content_names" in data
             assert "products" in data["content_names"]
 
     def test_bootstrap_returns_schemas(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             data = client.get("/runtime/bootstrap").json()
             assert "schemas" in data
             names = [s["name"]["snake"] for s in data["schemas"]]
             assert "products" in names
 
     def test_bootstrap_returns_computes(self):
-        with _make_client("compute_demo") as client:
+        with _make_client(self.pkgs["compute_demo"]) as client:
             data = client.get("/runtime/bootstrap").json()
             assert "computes" in data
             # compute_demo has computes with body_lines
@@ -231,8 +253,12 @@ class TestRuntimeBootstrap:
 class TestRuntimeWebSocket:
     """WebSocket multiplexer."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_ws_connect_receives_identity(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             with client.websocket_connect("/runtime/ws") as ws:
                 frame = ws.receive_json()
                 assert frame["v"] == 1
@@ -242,7 +268,7 @@ class TestRuntimeWebSocket:
                 assert "scopes" in frame["payload"]
 
     def test_ws_subscribe_returns_current_data(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             with client.websocket_connect("/runtime/ws") as ws:
                 # Read identity frame
                 ws.receive_json()
@@ -258,7 +284,7 @@ class TestRuntimeWebSocket:
                 assert isinstance(frame["payload"]["current"], list)
 
     def test_ws_unsubscribe(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             with client.websocket_connect("/runtime/ws") as ws:
                 ws.receive_json()  # identity
                 ws.send_json({
@@ -273,15 +299,19 @@ class TestRuntimeWebSocket:
 class TestHydrationAttributes:
     """SSR output should contain data-termin-* attributes for hydration."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_data_table_has_source_attribute(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             r = client.get("/inventory_dashboard",
                            cookies={"termin_role": "warehouse clerk"})
             assert 'data-termin-component="data_table"' in r.text
             assert 'data-termin-source="products"' in r.text
 
     def test_table_rows_have_row_id(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             import uuid
             sku = f"HYD-{uuid.uuid4().hex[:6]}"
             client.cookies.set("termin_role", "warehouse manager")
@@ -293,7 +323,7 @@ class TestHydrationAttributes:
             assert "data-termin-row-id" in r.text
 
     def test_table_cells_have_field_attribute(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             import uuid
             sku = f"HYD-{uuid.uuid4().hex[:6]}"
             client.cookies.set("termin_role", "warehouse manager")
@@ -305,18 +335,18 @@ class TestHydrationAttributes:
             assert 'data-termin-field="sku"' in r.text
 
     def test_form_has_component_attribute(self):
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             r = client.get("/add_product",
                            cookies={"termin_role": "warehouse manager"})
             assert 'data-termin-component="form"' in r.text
 
     def test_termin_js_script_tag(self):
-        with _make_client("hello") as client:
+        with _make_client(self.pkgs["hello"]) as client:
             r = client.get("/hello")
             assert '/runtime/termin.js' in r.text
 
     def test_termin_js_served(self):
-        with _make_client("hello") as client:
+        with _make_client(self.pkgs["hello"]) as client:
             r = client.get("/runtime/termin.js")
             assert r.status_code == 200
             assert "TERMIN_VERSION" in r.text
@@ -445,25 +475,29 @@ class TestSystemCELFunctions:
 class TestHighlightRendering:
     """A5: Highlight row rendering produces conditional CSS classes."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_highlight_renders_without_error(self):
         """Warehouse dashboard with highlight condition renders cleanly.
         The highlight references stock_levels fields which don't exist on products,
         so no rows should be highlighted — but it must not crash."""
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             client.cookies.set("termin_role", "warehouse clerk")
             r = client.get("/inventory_dashboard")
             assert r.status_code == 200
 
     def test_highlight_with_string_comparison(self):
         """Helpdesk uses priority == 'critical' || 'high' — renders without errors."""
-        with _make_client("helpdesk") as client:
+        with _make_client(self.pkgs["helpdesk"]) as client:
             client.cookies.set("termin_role", "support agent")
             r = client.get("/ticket_queue")
             assert r.status_code == 200
 
     def test_highlight_applied_when_condition_met(self):
         """When highlight condition fields exist and match, rows get CSS class."""
-        with _make_client("helpdesk") as client:
+        with _make_client(self.pkgs["helpdesk"]) as client:
             import uuid
             client.cookies.set("termin_role", "support agent")
             # Create a critical ticket — should be highlighted
@@ -481,6 +515,10 @@ class TestHighlightRendering:
 class TestActionButtonVisibility:
     """Action buttons must disable/hide based on state machine and user scope."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def _create_product(self, client, status="draft"):
         import uuid
         sku = uuid.uuid4().hex[:6]
@@ -497,7 +535,7 @@ class TestActionButtonVisibility:
 
     def test_draft_product_shows_activate_enabled(self):
         """A draft product should show an enabled Activate button."""
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             self._create_product(client)
             client.cookies.set("termin_role", "warehouse manager")
             r = client.get("/inventory_dashboard")
@@ -507,7 +545,7 @@ class TestActionButtonVisibility:
 
     def test_active_product_disables_activate(self):
         """An active product should show Activate as disabled."""
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             sku, pid = self._create_product(client)
             # Transition to active
             client.post(f"/_transition/products/{pid}/active")
@@ -519,7 +557,7 @@ class TestActionButtonVisibility:
 
     def test_executive_sees_disabled_buttons(self):
         """Executive lacks write inventory scope — buttons should be disabled."""
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             self._create_product(client)
             client.cookies.set("termin_role", "executive")
             r = client.get("/inventory_dashboard")
@@ -531,11 +569,15 @@ class TestActionButtonVisibility:
 class TestDefaultExpr:
     """default_expr fields are auto-populated at create time."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_user_name_default(self):
         """submitted_by with defaults to [User.Name] gets the display name."""
         import uuid
         tag = uuid.uuid4().hex[:6]
-        with _make_client("helpdesk") as client:
+        with _make_client(self.pkgs["helpdesk"]) as client:
             client.cookies.set("termin_role", "customer")
             client.cookies.set("termin_user_name", "Jamie-Leigh")
             r = client.post("/submit_ticket", data={
@@ -575,9 +617,13 @@ class TestDefaultExpr:
 class TestValidateUnique:
     """A7: Unique field validation rejects duplicates on form submit."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_duplicate_sku_rejected(self):
         """Submitting a form with a duplicate unique field should return 409."""
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             import uuid
             sku = uuid.uuid4().hex[:6]
             client.cookies.set("termin_role", "warehouse manager")
@@ -594,6 +640,10 @@ class TestValidateUnique:
 class TestStateTransitionScopeGating:
     """State transitions must enforce required_scope from the state machine."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def _create_product(self, client):
         """Create a product and return its numeric ID (D-11: auto-CRUD uses {id})."""
         import uuid
@@ -608,7 +658,7 @@ class TestStateTransitionScopeGating:
 
     def test_valid_transition_succeeds(self):
         """A user with the right scope can perform a valid transition."""
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             pid = self._create_product(client)
             # warehouse manager has "inventory.write" scope -> can activate
             client.cookies.set("termin_role", "warehouse manager")
@@ -618,7 +668,7 @@ class TestStateTransitionScopeGating:
 
     def test_invalid_transition_rejected(self):
         """Transitioning to an undeclared target state returns 409."""
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             pid = self._create_product(client)
             # draft -> discontinued is not a declared transition
             client.cookies.set("termin_role", "warehouse manager")
@@ -627,7 +677,7 @@ class TestStateTransitionScopeGating:
 
     def test_insufficient_scope_rejected(self):
         """A user without the required scope gets 403."""
-        with _make_client("warehouse") as client:
+        with _make_client(self.pkgs["warehouse"]) as client:
             pid = self._create_product(client)
             # executive has "inventory.read" only — cannot activate (needs "inventory.write")
             client.cookies.set("termin_role", "executive")
@@ -638,9 +688,13 @@ class TestStateTransitionScopeGating:
 class TestComputeEndpoint:
     """E14: Compute endpoint injects Compute system type into CEL context."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_compute_endpoint_returns_result(self):
         """POST /api/v1/compute/{name} executes and returns result."""
-        with _make_client("hrportal") as client:
+        with _make_client(self.pkgs["hrportal"]) as client:
             client.cookies.set("termin_role", "hr business partner")
             r = client.post("/api/v1/compute/calculate_team_bonus_pool", json={"input": {}})
             # May return 200 (empty input = 0 result) or 500 (CEL eval on empty)
@@ -648,7 +702,7 @@ class TestComputeEndpoint:
 
     def test_compute_endpoint_includes_transaction_id(self):
         """Response should include a transaction_id for audit correlation."""
-        with _make_client("hrportal") as client:
+        with _make_client(self.pkgs["hrportal"]) as client:
             client.cookies.set("termin_role", "hr business partner")
             r = client.post("/api/v1/compute/calculate_team_bonus_pool", json={"input": {}})
             if r.status_code == 200:
@@ -656,7 +710,7 @@ class TestComputeEndpoint:
 
     def test_compute_endpoint_scope_gate(self):
         """Employee lacks view_team_metrics — should be 403."""
-        with _make_client("hrportal") as client:
+        with _make_client(self.pkgs["hrportal"]) as client:
             client.cookies.set("termin_role", "employee")
             r = client.post("/api/v1/compute/calculate_team_bonus_pool", json={"input": {}})
             assert r.status_code == 403

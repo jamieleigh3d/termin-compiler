@@ -30,8 +30,10 @@ from termin_runtime import create_termin_app
 from fastapi.testclient import TestClient
 
 
+import json as _json_mod
+from conftest import extract_ir_from_pkg
+
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
-IR_DIR = Path(__file__).parent.parent / "ir_dumps"
 
 
 def _compile(source: str):
@@ -49,8 +51,8 @@ def _compile_file(name: str):
     return _compile(source)
 
 
-def _load_ir(name: str) -> str:
-    return (IR_DIR / f"{name}_ir.json").read_text(encoding="utf-8")
+def _ir_json(pkg_path):
+    return _json_mod.dumps(extract_ir_from_pkg(pkg_path))
 
 
 def _find_component(page, comp_type):
@@ -514,9 +516,13 @@ class TestChatRuntimeRendering:
 class TestChatRuntimeIntegration:
     """Full integration tests using agent_chatbot IR + runtime."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_chat_page_renders_chat_ui(self):
         """The Chat page should render with chat UI elements."""
-        ir_json = _load_ir("agent_chatbot")
+        ir_json = _ir_json(self.pkgs["agent_chatbot"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")
@@ -526,7 +532,7 @@ class TestChatRuntimeIntegration:
 
     def test_chat_input_area_present(self):
         """The Chat page should have an input area."""
-        ir_json = _load_ir("agent_chatbot")
+        ir_json = _ir_json(self.pkgs["agent_chatbot"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")
@@ -536,7 +542,7 @@ class TestChatRuntimeIntegration:
 
     def test_post_message_via_api(self):
         """POST to /api/v1/messages should create a message record."""
-        ir_json = _load_ir("agent_chatbot")
+        ir_json = _ir_json(self.pkgs["agent_chatbot"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")

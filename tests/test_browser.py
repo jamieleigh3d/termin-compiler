@@ -26,12 +26,11 @@ pw = pytest.importorskip("playwright")
 from playwright.sync_api import sync_playwright
 
 from termin_runtime import create_termin_app
+from conftest import extract_ir_from_pkg
 
-IR_DIR = Path(__file__).parent.parent / "ir_dumps"
 
-
-def _load_ir(name: str) -> str:
-    return (IR_DIR / f"{name}_ir.json").read_text(encoding="utf-8")
+def _ir_json(pkg_path):
+    return json.dumps(extract_ir_from_pkg(pkg_path))
 
 
 class BrowserTestServer:
@@ -87,9 +86,9 @@ def browser_context():
 
 
 @pytest.fixture(scope="module")
-def agent_simple_app():
+def agent_simple_app(compiled_packages):
     """Start agent_simple server for the test module."""
-    ir_json = _load_ir("agent_simple")
+    ir_json = _ir_json(compiled_packages["agent_simple"])
     app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
     server = BrowserTestServer(app)
     server.start()

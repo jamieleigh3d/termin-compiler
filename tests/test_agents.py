@@ -19,13 +19,11 @@ from fastapi.testclient import TestClient
 
 from termin_runtime import create_termin_app
 from termin_runtime.ai_provider import AIProvider, build_output_tool, build_agent_tools
+from conftest import extract_ir_from_pkg
 
 
-IR_DIR = Path(__file__).parent.parent / "ir_dumps"
-
-
-def _load_ir(name: str) -> str:
-    return (IR_DIR / f"{name}_ir.json").read_text(encoding="utf-8")
+def _ir_json(pkg_path):
+    return json.dumps(extract_ir_from_pkg(pkg_path))
 
 
 MOCK_DEPLOY = {
@@ -40,9 +38,9 @@ MOCK_DEPLOY = {
 # ── Compiler tests: IR validation ──
 
 class TestAgentSimpleIR:
-    @classmethod
-    def setup_class(cls):
-        cls.ir = json.loads(_load_ir("agent_simple"))
+    @pytest.fixture(scope="class", autouse=True)
+    def _setup_ir(self, compiled_packages):
+        type(self).ir = extract_ir_from_pkg(compiled_packages["agent_simple"])
 
     def test_compute_provider_llm(self):
         comp = self.ir["computes"][0]
@@ -78,9 +76,9 @@ class TestAgentSimpleIR:
 
 
 class TestAgentChatbotIR:
-    @classmethod
-    def setup_class(cls):
-        cls.ir = json.loads(_load_ir("agent_chatbot"))
+    @pytest.fixture(scope="class", autouse=True)
+    def _setup_ir(self, compiled_packages):
+        type(self).ir = extract_ir_from_pkg(compiled_packages["agent_chatbot"])
 
     def test_compute_provider_agent(self):
         comp = self.ir["computes"][0]
@@ -176,9 +174,13 @@ class TestToolSchemaGeneration:
 # ── Runtime integration: event triggers ──
 
 class TestEventTriggeredCompute:
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_agent_simple_creates_record_without_ai(self):
         """Without AI provider configured, the record is created but LLM is skipped."""
-        ir_json = _load_ir("agent_simple")
+        ir_json = _ir_json(self.pkgs["agent_simple"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")
@@ -191,7 +193,7 @@ class TestEventTriggeredCompute:
 
     def test_chatbot_creates_message_with_default_role(self):
         """Message created without explicit role should default to 'user'."""
-        ir_json = _load_ir("agent_chatbot")
+        ir_json = _ir_json(self.pkgs["agent_chatbot"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")
@@ -204,7 +206,7 @@ class TestEventTriggeredCompute:
 
     def test_agent_simple_page_renders(self):
         """The Agent page should render with a form and table."""
-        ir_json = _load_ir("agent_simple")
+        ir_json = _ir_json(self.pkgs["agent_simple"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")
@@ -214,7 +216,7 @@ class TestEventTriggeredCompute:
 
     def test_chatbot_page_renders(self):
         """The Chat page should render with a form and table."""
-        ir_json = _load_ir("agent_chatbot")
+        ir_json = _ir_json(self.pkgs["agent_chatbot"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")
@@ -233,9 +235,13 @@ class TestFormSubmitNoRedirect:
     submit via fetch() and the server should return JSON, not redirect.
     """
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_form_post_returns_json_not_redirect(self):
         """POST to the form page with Accept: application/json should return JSON."""
-        ir_json = _load_ir("agent_simple")
+        ir_json = _ir_json(self.pkgs["agent_simple"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app, raise_server_exceptions=False) as client:
             client.cookies.set("termin_role", "anonymous")
@@ -255,7 +261,7 @@ class TestFormSubmitNoRedirect:
 
     def test_form_post_creates_record_via_api(self):
         """The form can alternatively POST to the API endpoint for AJAX submission."""
-        ir_json = _load_ir("agent_simple")
+        ir_json = _ir_json(self.pkgs["agent_simple"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")
@@ -272,9 +278,13 @@ class TestFormSubmitNoRedirect:
 class TestWebSocketUpdates:
     """Verify that record creation and updates are pushed via WebSocket."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_form_ajax_returns_created_record(self):
         """AJAX form POST should return the created record with id."""
-        ir_json = _load_ir("agent_simple")
+        ir_json = _ir_json(self.pkgs["agent_simple"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")
@@ -290,7 +300,7 @@ class TestWebSocketUpdates:
 
     def test_form_ajax_record_visible_in_api(self):
         """Record created via AJAX form should be visible in the API."""
-        ir_json = _load_ir("agent_simple")
+        ir_json = _ir_json(self.pkgs["agent_simple"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")
@@ -319,7 +329,7 @@ class TestWebSocketUpdates:
 
     def test_websocket_subscribe_gets_current_data(self):
         """WebSocket subscribe should return current records."""
-        ir_json = _load_ir("agent_simple")
+        ir_json = _ir_json(self.pkgs["agent_simple"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")
@@ -339,7 +349,7 @@ class TestWebSocketUpdates:
 
     def test_websocket_receives_push_on_api_create(self):
         """Creating a record via API should push an event to WebSocket subscribers."""
-        ir_json = _load_ir("agent_simple")
+        ir_json = _ir_json(self.pkgs["agent_simple"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")
@@ -359,7 +369,7 @@ class TestWebSocketUpdates:
 
     def test_websocket_receives_push_on_form_create(self):
         """Creating a record via AJAX form should push an event to WebSocket subscribers."""
-        ir_json = _load_ir("agent_simple")
+        ir_json = _ir_json(self.pkgs["agent_simple"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")
@@ -382,7 +392,7 @@ class TestWebSocketUpdates:
 
     def test_websocket_push_payload_contains_record_fields(self):
         """Push payload should be the record dict with field values, not a wrapper."""
-        ir_json = _load_ir("agent_simple")
+        ir_json = _ir_json(self.pkgs["agent_simple"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")

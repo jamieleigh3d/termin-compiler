@@ -448,25 +448,30 @@ class TestAuditLogRoutes:
 
 # ===== Runtime Tests =====
 
-IR_DIR = Path(__file__).parent.parent / "ir_dumps"
+import json as _json_mod
+from conftest import extract_ir_from_pkg
 
 
-def _load_ir(name: str) -> str:
-    return (IR_DIR / f"{name}_ir.json").read_text()
+def _ir_json(pkg_path):
+    return _json_mod.dumps(extract_ir_from_pkg(pkg_path))
 
 
-def _make_client(name: str):
-    """Create a TestClient for an IR dump."""
-    app = create_termin_app(_load_ir(name), strict_channels=False)
+def _make_client(pkg_path):
+    """Create a TestClient for a compiled package."""
+    app = create_termin_app(_ir_json(pkg_path), strict_channels=False)
     return TestClient(app)
 
 
 class TestRuntimeTraceRecording:
     """Test that compute invocations produce trace records in the audit log."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_compute_invocation_writes_trace(self):
         """POST /api/v1/compute/{name} should write a trace record to the audit log."""
-        with _make_client("compute_demo") as client:
+        with _make_client(self.pkgs["compute_demo"]) as client:
             client.cookies.set("termin_role", "order manager")
             # Invoke the compute
             r = client.post("/api/v1/compute/calculate_order_total", json={"input": {}})
@@ -482,7 +487,7 @@ class TestRuntimeTraceRecording:
 
     def test_trace_has_duration(self):
         """Trace records should include timing information."""
-        with _make_client("compute_demo") as client:
+        with _make_client(self.pkgs["compute_demo"]) as client:
             client.cookies.set("termin_role", "order manager")
             client.post("/api/v1/compute/calculate_order_total", json={"input": {}})
             r = client.get("/api/v1/compute_audit_log_calculate_order_total")
@@ -495,7 +500,7 @@ class TestRuntimeTraceRecording:
 
     def test_no_trace_for_audit_none(self):
         """Compute with Audit level: none should NOT write a trace record."""
-        with _make_client("compute_demo") as client:
+        with _make_client(self.pkgs["compute_demo"]) as client:
             client.cookies.set("termin_role", "order manager")
             # triage_order has Audit level: none
             client.post("/api/v1/compute/triage_order", json={"input": {}})
@@ -505,7 +510,7 @@ class TestRuntimeTraceRecording:
 
     def test_trace_records_error_outcome(self):
         """A compute that fails should record outcome='error' and error_message."""
-        with _make_client("compute_demo") as client:
+        with _make_client(self.pkgs["compute_demo"]) as client:
             client.cookies.set("termin_role", "order manager")
             # Invoke with bad input — likely to cause a CEL error
             r = client.post("/api/v1/compute/revenue_report", json={"input": {"invalid": True}})
@@ -518,9 +523,13 @@ class TestRuntimeTraceRecording:
 class TestRuntimeRedaction:
     """Test that audit log records are redacted based on caller scopes."""
 
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
     def test_redaction_of_confidential_values(self):
         """Trace content should redact confidential field values for callers lacking scope."""
-        with _make_client("hrportal") as client:
+        with _make_client(self.pkgs["hrportal"]) as client:
             # Create an employee with confidential salary
             client.cookies.set("termin_role", "hr business partner")
             emp = client.post("/api/v1/employees", json={
