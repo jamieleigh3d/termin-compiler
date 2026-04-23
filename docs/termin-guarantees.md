@@ -1,6 +1,6 @@
 # What Termin Guarantees
 
-**Version:** 0.8.0
+**Version:** 0.9.0
 **Date:** April 2026
 **Status:** Draft for repository inclusion
 
@@ -108,9 +108,9 @@ Vetted providers extend Termin's capabilities while maintaining Tier 1 guarantee
 
 ### Currently Vetted Providers
 
-As of v0.8.0, no providers have completed the formal vetting process. Providers shipped in the Termin reference distribution are marked as "reference" providers — they are maintained alongside the runtime but have not undergone external review.
+As of v0.9.0, no providers have completed the formal vetting process. Providers shipped in the Termin reference distribution are marked as "reference" providers — they are maintained alongside the runtime but have not undergone external review.
 
-Reference providers in v0.8.0:
+Reference providers in v0.9.0:
 - `ai-agent` — integrates Anthropic and OpenAI APIs for agent-mode Compute nodes.
 - `cel` — evaluates Common Expression Language expressions.
 - `http` — outbound HTTP and inbound webhook Channel support.

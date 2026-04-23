@@ -1,6 +1,6 @@
 # Termin Runtime Implementer's Guide
 
-**Version:** 0.8.0
+**Version:** 0.9.0
 **Date:** April 2026
 **Companion to:** `termin-ir-schema.json` (JSON Schema draft 2020-12)
 

@@ -43,7 +43,7 @@ def _c2_ir(boundaries=None, computes=None, content=None, routes=None):
          "content_ref": "restricted_data", "required_scope": "admin"},
     ]
     return json.dumps({
-        "ir_version": "0.8.0", "reflection_enabled": False,
+        "ir_version": "0.9.0", "reflection_enabled": False,
         "app_id": "c2-test", "name": "C2 Test", "description": "",
         "auth": {
             "provider": "stub",
@@ -148,7 +148,7 @@ class TestBoundaryIdentityModeRestrict:
         from fastapi.testclient import TestClient
         # Give writer the admin scope for the route, but NOT restricted.access for boundary
         ir = json.dumps({
-            "ir_version": "0.8.0", "reflection_enabled": False,
+            "ir_version": "0.9.0", "reflection_enabled": False,
             "app_id": "c2-restrict", "name": "C2 Restrict Test", "description": "",
             "auth": {
                 "provider": "stub",
@@ -256,7 +256,7 @@ class TestWebhookIdentityPropagation:
         from termin_runtime import create_termin_app
         from fastapi.testclient import TestClient
         ir = json.dumps({
-            "ir_version": "0.8.0", "reflection_enabled": False,
+            "ir_version": "0.9.0", "reflection_enabled": False,
             "app_id": "wh-id-test", "name": "WH ID Test", "description": "",
             "auth": {
                 "provider": "stub",

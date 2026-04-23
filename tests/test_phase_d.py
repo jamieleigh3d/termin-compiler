@@ -516,7 +516,7 @@ class TestD19Runtime:
 
     def _build_ir(self):
         return json.dumps({
-            "ir_version": "0.8.0",
+            "ir_version": "0.9.0",
             "reflection_enabled": False,
             "app_id": "d19-test",
             "name": "D-19 Test",
@@ -625,7 +625,7 @@ class TestD19Runtime:
 def _block_c_ir(boundaries=None, computes=None):
     """Build a minimal IR for boundary enforcement testing."""
     return json.dumps({
-        "ir_version": "0.8.0",
+        "ir_version": "0.9.0",
         "reflection_enabled": False,
         "app_id": "block-c-test",
         "name": "Block C Test",

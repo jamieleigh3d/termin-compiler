@@ -131,7 +131,7 @@ class TestDependentValueRuntime:
         from termin_runtime import create_termin_app
         from fastapi.testclient import TestClient
         ir = json.dumps({
-            "ir_version": "0.8.0",
+            "ir_version": "0.9.0",
             "reflection_enabled": False,
             "app_id": "dep-val-test",
             "name": "Dep Val Test",
@@ -324,7 +324,7 @@ class TestBoundaryEdgeCases:
              "audit": "actions"},
         ]
         ir = json.dumps({
-            "ir_version": "0.8.0", "reflection_enabled": False,
+            "ir_version": "0.9.0", "reflection_enabled": False,
             "app_id": "boundary-test", "name": "Boundary Test", "description": "",
             "auth": {"provider": "stub", "scopes": ["admin"],
                      "roles": [{"name": "admin", "scopes": ["admin"]}]},
@@ -430,7 +430,7 @@ class TestAgentToolExecution:
         import asyncio
 
         ir = json.dumps({
-            "ir_version": "0.8.0", "reflection_enabled": False,
+            "ir_version": "0.9.0", "reflection_enabled": False,
             "app_id": "agent-tool-test", "name": "Agent Tool Test", "description": "",
             "auth": {"provider": "stub", "scopes": ["admin"],
                      "roles": [{"name": "admin", "scopes": ["admin"]}]},
@@ -613,7 +613,7 @@ class TestAgentToolExecution:
         import time
 
         ir = json.dumps({
-            "ir_version": "0.8.0", "reflection_enabled": False,
+            "ir_version": "0.9.0", "reflection_enabled": False,
             "app_id": "bnd-agent-test", "name": "Bnd Agent Test", "description": "",
             "auth": {"provider": "stub", "scopes": ["admin"],
                      "roles": [{"name": "admin", "scopes": ["admin"]}]},
@@ -732,7 +732,7 @@ class TestTypeCoercionEdgeCases:
         from termin_runtime import create_termin_app
         from fastapi.testclient import TestClient
         ir = json.dumps({
-            "ir_version": "0.8.0", "reflection_enabled": False,
+            "ir_version": "0.9.0", "reflection_enabled": False,
             "app_id": "coerce-test", "name": "Coerce Test", "description": "",
             "auth": {"provider": "stub", "scopes": ["admin"],
                      "roles": [{"name": "admin", "scopes": ["admin"]}]},
@@ -817,7 +817,7 @@ class TestSchedulerCoverage:
         from termin_runtime import create_termin_app
         from fastapi.testclient import TestClient
         ir = json.dumps({
-            "ir_version": "0.8.0", "reflection_enabled": False,
+            "ir_version": "0.9.0", "reflection_enabled": False,
             "app_id": "sched-test", "name": "Sched Test", "description": "",
             "auth": {"provider": "stub", "scopes": ["admin"],
                      "roles": [{"name": "admin", "scopes": ["admin"]}]},
