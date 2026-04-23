@@ -197,11 +197,9 @@ def copy_to_conformance(dry_run: bool):
         print(f"  COPY: fixtures/ir/{f.name}")
         count += 1
 
-    # Schema -> specs/ (or fixtures/ if specs/ doesn't exist)
+    # Schema -> specs/
     schema_src = COMPILER_ROOT / "docs" / "termin-ir-schema.json"
     schema_dst = CONFORMANCE_SPECS_DIR / "termin-ir-schema.json"
-    if not CONFORMANCE_SPECS_DIR.exists():
-        schema_dst = CONFORMANCE_PKG_DIR / "termin-ir-schema.json"
     if schema_src.exists():
         if not dry_run:
             shutil.copy2(schema_src, schema_dst)
