@@ -1175,6 +1175,44 @@ As a "Manager", I want to manage tasks:
         sm = program.state_machines[0]
         assert len(sm.transitions) == 2
 
+    def test_multiline_parenthetical_comment_ignored(self):
+        """A parenthetical comment opened with `(` and not closed on the
+        same line continues across subsequent lines until a line
+        ending with `)`. Used heavily in v0.9 example drafts where
+        the leading explanatory blocks span multiple lines."""
+        src = self._wrap('''(This is the opening line of a multi-line
+parenthetical comment that explains the purpose of the
+content block below. It spans three lines.)
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active or discontinued
+    draft can become active if the user has catalog.manage
+    active can become discontinued if the user has catalog.manage
+  Anyone with "catalog.manage" can view products''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        assert len(program.contents) == 1
+        assert len(program.state_machines) == 1
+
+    def test_multiline_parenthetical_with_blank_lines_inside(self):
+        """Multi-line parens may contain blank lines — common when
+        the comment formats as separated paragraphs."""
+        src = self._wrap('''(First paragraph of a comment
+explaining the next thing.
+
+Second paragraph after a blank line, still inside the
+parenthetical, ending here.)
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has catalog.manage
+  Anyone with "catalog.manage" can view products''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        assert len(program.contents) == 1
+
     def test_multiple_can_also_be_lines_accumulate(self):
         src = self._wrap('''Content called "documents":
   Each document has an approval status which is state:

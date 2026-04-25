@@ -39,14 +39,31 @@ _classify_line = classify_line
 # --- Preprocessor ---
 def _preprocess(source: str) -> list[tuple[int, str]]:
     """Strip comments, blank lines, parenthetical annotations.
-    Join triple-backtick multi-line blocks into single lines."""
+    Join triple-backtick multi-line blocks into single lines.
+
+    Parenthetical comments may span multiple lines: a line that
+    starts with `(` and does not close the parenthetical opens a
+    multi-line comment that continues until a line ending with `)`.
+    Blank lines inside such a comment are preserved as part of the
+    skipped region. This shape is used heavily in v0.9 example
+    drafts whose leading explanatory blocks span paragraphs.
+    """
     result = []
     in_multiline = False
     multiline_start = 0
     multiline_prefix = ""
     multiline_content = []
+    in_paren_comment = False
     for line_num, raw in enumerate(source.splitlines(), start=1):
         s = raw.strip()
+
+        # Handle multi-line parenthetical comment: skip every line
+        # until we find one ending with `)`. Blank lines inside the
+        # comment are skipped without exiting the state.
+        if in_paren_comment:
+            if s.endswith(")"):
+                in_paren_comment = False
+            continue
 
         # Handle triple-backtick multi-line blocks
         if in_multiline:
@@ -66,6 +83,12 @@ def _preprocess(source: str) -> list[tuple[int, str]]:
         # Parenthetical comments — entire non-whitespace content wrapped in parens.
         # Stripped at any indentation so they cannot end a state sub-block.
         if s.startswith("(") and s.endswith(")"):
+            continue
+        # Multi-line parenthetical: opens with `(` but doesn't close
+        # on this line. Enter paren-comment state; subsequent lines
+        # are skipped until we hit one ending with `)`.
+        if s.startswith("(") and not s.endswith(")"):
+            in_paren_comment = True
             continue
 
         # Check for triple-backtick opening (not closed on same line)

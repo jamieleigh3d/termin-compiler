@@ -1,0 +1,99 @@
+(This file targets v0.9 provider grammar — Channel block with named
+Action sub-blocks. Will not compile until Phase 4 lands. Use as a
+worked spec example for `Action called "<name>"` always nested
+inside a Channel.)
+
+(Why named actions exist: a single chat-platform integration may need
+several distinct verbs, each with its own audit posture, its own
+authorization scope, and possibly its own deploy-config-bound target.
+Without named actions, each verb would need its own Channel block
+duplicating provider, auth, and lifecycle. Named actions let one
+Channel ("incident bot") expose three distinct operations that share
+the bot's identity but differ on everything else.
+
+Who invokes the actions: NOT a compute calling them directly. Channel
+actions are triggered by events — state transitions on Content,
+events emitted by other Computes, or external webhook receipts. The
+events come from the audit / state-machine layer; the channel action
+sub-block is the destination side of a publish/subscribe. The example
+below shows three event handlers, one per named action, demonstrating
+the typical wiring.)
+
+(Per-action targets: the deploy config can route different actions to
+different chat targets without changing source. Channel-level config
+sets the default target; per-action overrides nest under
+config.actions.<action-name>:
+
+  "channels": {
+    "incident bot": {
+      "provider": "slack",
+      "config": {
+        "workspace_token_ref": "${SLACK_BOT_TOKEN}",
+        "target": "incidents-prod",
+        "actions": {
+          "page oncall": { "target": "pagers-prod" }
+        }
+      }
+    }
+  }
+)
+
+Application: Incident Bot
+  Description: Posts incident lifecycle events to chat with three named actions: alert on creation, resolve on close, and page-oncall when severity escalates to critical.
+Id: 3a8f2c19-6b04-4e72-9d51-7c8b1a2e6d40
+
+Identity:
+  Scopes are "incident.respond", "incident.manage", "incident.admin", and "incident.page"
+  A "responder" has "incident.respond"
+  A "manager" has "incident.respond" and "incident.manage"
+  An "oncall captain" has "incident.respond", "incident.manage", "incident.admin", and "incident.page"
+
+Content called "incidents":
+  Each incident has a title which is text, required
+  Each incident has a severity which is one of: "low", "medium", "high", "critical"
+  Each incident has a lifecycle which is state:
+    lifecycle starts as open
+    lifecycle can also be acknowledged or resolved
+    open can become acknowledged if the user has incident.respond
+    acknowledged can become resolved if the user has incident.manage
+  Each incident has an opened_at which is automatic
+  Each incident has a resolved_at which is date and time
+  Anyone with "incident.respond" can view incidents
+  Anyone with "incident.manage" can create or update incidents
+  Anyone with "incident.admin" can delete incidents
+
+Channel called "incident bot":
+  Provider is "messaging"
+  Anyone with "incident.respond" can invoke this channel
+
+  Action called "alert":
+    Anyone with "incident.manage" can invoke this
+    Takes incident : incident
+    Send a message: `"🚨 [" + incident.severity + "] " + incident.title`
+
+  Action called "resolve":
+    Anyone with "incident.manage" can invoke this
+    Takes incident : incident
+    Send a message: `"✅ Resolved: " + incident.title + " — opened " + incident.opened_at`
+
+  (Tighter scope than channel default — only oncall captains can page.
+   The deploy config can also route THIS action to a different target
+   (e.g., pagers-prod) without changing source.)
+  Action called "page oncall":
+    Anyone with "incident.page" can invoke this
+    Takes incident : incident
+    Send a message: `"📟 PAGE: " + incident.title + " — severity " + incident.severity`
+
+(Event handlers that wire incident lifecycle to the channel actions.
+This is where the actions actually get invoked. Each handler watches
+for a specific state-machine transition or content event and
+dispatches the appropriate named action.)
+
+When an incident is created:
+  Invoke channel action "alert" on "incident bot" with the new incident
+
+When an incident lifecycle becomes resolved:
+  Invoke channel action "resolve" on "incident bot" with the incident
+
+When an incident severity becomes "critical":
+  Invoke channel action "page oncall" on "incident bot" with the incident

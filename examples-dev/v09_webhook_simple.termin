@@ -1,0 +1,49 @@
+(This file targets v0.9 provider grammar — Channel block + webhook
+provider. Will not compile until Phase 4 lands. Use as a worked spec
+example showing that the destination URL never appears in source.)
+
+(Compare against the deploy config that binds this channel:
+
+  "channels": {
+    "order webhook": {
+      "provider": "webhook",
+      "config": {
+        "target": "https://hooks.example.com/orders",
+        "timeout_ms": 10000,
+        "retry": { "max_attempts": 5, "backoff": "exponential" },
+        "auth": { "type": "hmac", "secret_ref": "${HOOK_SECRET}" }
+      }
+    }
+  }
+
+The same source deploys against any URL by varying only the deploy
+config. No URL leaks into the .termin file.)
+
+Application: Order Notifier
+  Description: Posts an outbound webhook every time an order is fulfilled.
+Id: 7e9b4a23-1f08-4d51-9c6e-8a2d3f5b6c10
+
+Identity:
+  Scopes are "orders.read", "orders.write", and "orders.admin"
+  A "fulfillment clerk" has "orders.read" and "orders.write"
+  A "fulfillment manager" has "orders.read", "orders.write", and "orders.admin"
+
+Content called "orders":
+  Each order has a customer which is text, required
+  Each order has a total which is currency
+  Each order has a fulfilled_at which is automatic
+  Anyone with "orders.read" can view orders
+  Anyone with "orders.write" can create or update orders
+
+Channel called "order webhook":
+  Provider is "webhook"
+  Anyone with "orders.admin" can invoke this channel
+
+  When order fulfilled:
+    Post `{
+      "event": "order.fulfilled",
+      "order_id": order.id,
+      "customer": order.customer,
+      "total": order.total,
+      "fulfilled_at": order.fulfilled_at
+    }`

@@ -1,0 +1,127 @@
+(This file targets v0.9 provider grammar — it will not compile against
+the current v0.8.1 / multi-state-machine grammar. Use as a worked
+spec example for the ai-agent compute tool-grant lines.)
+
+(Exercises every source-level grant a Compute can issue:
+   - Accesses <list>          read-write (full Content tools)
+   - Reads <list>              read-only (query + read only)
+   - Sends to "<channel>" channel
+   - Emits "<event>"
+   - Invokes "<compute>"
+ Together these enumerate the full closed tool surface for an agent
+ per BRD §6.3.3.)
+
+(DESIGN ISSUE flagged for a future BRD: per-app user reputation/profile
+data is decoupled from the identity Principal. Identity owns "who
+authenticated"; the app owns "what we know about that principal in
+this app's domain." The two are linked by Principal.id, stored here
+as a plain text field. Once the identity contract surfaces a typed
+"references Principal" relationship, the principal_id field on
+user_reputation should migrate to that grammar. For now it's text.)
+
+Application: Moderation Agent
+  Description: AI moderator that scores incoming messages on a deterministic risk scale, takes action when warranted, alerts human moderators on edge cases, emits events for downstream consumers, and delegates risk scoring to a CEL helper.
+Id: 4d1c8e90-5b7a-4e21-a3f8-2c1e5d4b9f01
+
+Identity:
+  Scopes are "messages.read", "users.read", "moderation.act", and "moderation.audit"
+  Anonymous has "messages.read"
+  A "moderator" has "messages.read", "users.read", "moderation.act", and "moderation.audit"
+  A "moderation agent" has "messages.read", "users.read", and "moderation.act"
+
+Content called "messages":
+  Each message has a body which is text, required
+  Each message has an author_principal which is text, required
+  Each message has a posted_at which is automatic
+  Anyone with "messages.read" can view messages
+  Anyone with "moderation.act" can update or delete messages
+
+(Per-app reputation data, keyed by Principal.id. Not every author has
+a row here — a brand-new user posts a message before any reputation
+record exists. The agent looks up by author_principal and tolerates a
+missing row by treating absence as reputation = 0.)
+Content called "user reputation":
+  Each user reputation has a principal_id which is unique text, required
+  Each user reputation has a reputation which is whole number
+  Each user reputation has a post_count which is whole number
+  Each user reputation has a joined_at which is automatic
+  Anyone with "users.read" can view user reputation
+  Anyone with "moderation.act" can create or update user reputation
+
+Content called "moderation actions":
+  Each moderation action has a target_message which references messages, restrict on delete
+  Each moderation action has a verdict which is one of: "ok", "warned", "removed", "user_suspended"
+  Each moderation action has a rationale which is text, required
+  Each moderation action has a risk_score which is whole number
+  Each moderation action has a taken_by_principal which is text, required
+  Each moderation action has a taken_at which is automatic
+  Anyone with "moderation.act" can view or create moderation actions
+  Anyone with "moderation.audit" can view moderation actions
+
+(Real CEL use: combines four deterministic signals over structured
+input to produce a 0-11 risk score. Each signal is independently
+auditable and the math is reproducible. Compare to a sentiment
+classifier — that would be an llm or ai-agent compute, not CEL,
+because it's a learned model rather than expression evaluation.
+
+Signals:
+  - Very short messages (< 10 chars): +2  (low-effort spam)
+  - Contains a URL: +3                    (link injection risk)
+  - All-caps message of meaningful length: +2  (shouting / spam)
+  - Author reputation: +4 if negative, +2 if 0..9, 0 otherwise)
+Compute called "message risk score":
+  Transform: takes message : message and author : user reputation, produces score : whole number
+  `score =
+     (size(message.body) < 10 ? 2 : 0)
+     + (message.body.matches("https?://") ? 3 : 0)
+     + (message.body == message.body.upper() && size(message.body) >= 10 ? 2 : 0)
+     + (author.reputation < 0 ? 4 : author.reputation < 10 ? 2 : 0)`
+  Anyone with "moderation.act" can execute this
+  Audit level: none
+
+(Channel the agent uses to ping a human moderator on edge cases.
+The Slack / Teams / Discord product binding plus the channel target
+live in deploy config, not here.)
+Channel called "moderator alerts":
+  Provider is "messaging"
+  Anyone with "moderation.act" can invoke this channel
+
+  When edge case detected:
+    Send a message: `"Edge case on message " + alert.message_id + " — agent confidence " + alert.confidence`
+
+(The agent itself.)
+Compute called "review message":
+  Provider is "ai-agent"
+  Accesses moderation actions               (read-write — agent records its decisions here)
+  Reads messages, user reputation           (read-only — agent inspects but never modifies)
+  Sends to "moderator alerts" channel       (escalation path for human review)
+  Emits "moderation.action_taken"           (downstream consumers subscribe to this)
+  Invokes "message risk score"              (delegates deterministic scoring to CEL)
+  Trigger on event "message.created"
+  Directive is ```
+    You are a content moderator. Read the message body and the
+    author's per-app reputation row (which may be absent for new
+    users). Decide whether the message violates community
+    standards. Be cautious with edge cases — if your confidence
+    is below 0.8, escalate to a human moderator instead of
+    acting unilaterally.
+  ```
+  Objective is ```
+    1. Load the message with content.read("messages", message_id).
+    2. Look up the author's reputation with
+       content.query("user reputation",
+                     {principal_id: message.author_principal}).
+       If no row exists, treat reputation as 0.
+    3. Call compute.invoke("message risk score",
+                           {message: message, author: author_row})
+       to get a numeric score.
+    4. If score >= 7 OR your own confidence is >= 0.8:
+       create a moderation_action with the verdict, rationale,
+       risk_score, and your own principal as taken_by_principal.
+       Then emit "moderation.action_taken" with the action id.
+    5. Else: send to channel "moderator alerts" with the message
+       id and your confidence so a human reviews it.
+  ```
+  Anyone with "moderation.act" can execute this
+  Audit level: actions
+  Anyone with "moderation.audit" can audit
