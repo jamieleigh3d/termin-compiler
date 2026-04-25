@@ -444,7 +444,11 @@ class TestAgentToolExecution:
                       "enum_values": [], "one_of_values": []},
                  ],
                  "audit": "actions", "dependent_values": [],
-                 "has_state_machine": True, "initial_state": "open",
+                 # v0.9 multi-SM IR: state_machines list. machine_name is
+                 # snake_case (= column name).
+                 "state_machines": [
+                     {"machine_name": "task_status", "initial": "open"},
+                 ],
                  "confidentiality_scopes": []},
                 {"name": {"display": "logs", "snake": "logs", "pascal": "Logs"},
                  "singular": "log",
@@ -459,7 +463,7 @@ class TestAgentToolExecution:
                 {"content": "logs", "scope": "admin", "verbs": ["VIEW", "CREATE"]},
             ],
             "state_machines": [{
-                "content_ref": "agent_tasks", "machine_name": "task status",
+                "content_ref": "agent_tasks", "machine_name": "task_status",
                 "initial_state": "open",
                 "transitions": [
                     {"from_state": "open", "to_state": "closed", "required_scope": "admin"},
@@ -577,7 +581,11 @@ class TestAgentToolExecution:
         )
 
     def test_state_transition_tool(self, agent_app_with_mock):
-        """Agent calling state_transition should change record status."""
+        """Agent calling state_transition should change record status.
+
+        v0.9: With one state machine on this content the agent may omit
+        machine_name and the runtime falls back to the only machine
+        (`task_status` here)."""
         client, record_id = self._run_with_mock_tool_calls(
             agent_app_with_mock,
             [("state_transition", {"content_name": "agent_tasks", "record_id": 1,
@@ -1018,16 +1026,17 @@ class TestAnalyzerFuzzyMatchBranches:
             'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
             'Content called "tickets":\n'
             '  Each ticket has a title which is text\n'
-            '  Anyone with "admin" can create tickets\n\n'
-            'State for tickets called "status":\n'
-            '  A ticket starts as "open"\n'
-            '  A ticket can also be "closed"\n'
-            '  An opn ticket can become closed if the user has "admin"\n'
+            '  Each ticket has a status which is state:\n'
+            '    status starts as open\n'
+            '    status can also be closed\n'
+            '    opn can become closed if the user has admin\n'
+            '  Anyone with "admin" can create tickets\n'
         )
         program, errors = parse(source)
         if errors.ok:
             result = analyze(program)
             # May or may not error depending on how "opn" is parsed
+            _ = result
 
     def test_transition_scope_typo(self):
         """Typo in transition scope should trigger fuzzy match."""
@@ -1036,11 +1045,11 @@ class TestAnalyzerFuzzyMatchBranches:
             'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
             'Content called "tickets":\n'
             '  Each ticket has a title which is text\n'
-            '  Anyone with "admin" can create tickets\n\n'
-            'State for tickets called "status":\n'
-            '  A ticket starts as "open"\n'
-            '  A ticket can also be "closed"\n'
-            '  An open ticket can become closed if the user has "admn"\n'
+            '  Each ticket has a status which is state:\n'
+            '    status starts as open\n'
+            '    status can also be closed\n'
+            '    open can become closed if the user has admn\n'
+            '  Anyone with "admin" can create tickets\n'
         )
         program, errors = parse(source)
         if errors.ok:

@@ -42,19 +42,18 @@ A "user" has "read" and "write"
 
 Content called "tickets":
   Each ticket has a title which is text, required
+  Each ticket has a lifecycle which is state:
+    lifecycle starts as open
+    lifecycle can also be closed
+    open can become closed if the user has write
   Anyone with "read" can view tickets
   Anyone with "write" can create or update tickets
-
-State for tickets called "lifecycle":
-  A ticket starts as "open"
-  A ticket can also be "closed"
-  An open ticket can become closed if the user has "write"
 
 As a user, I want to manage tickets:
   Show a page called "Tickets"
   Display a table of tickets with columns: title
   For each ticket, show actions:
-    "Close" transitions to "closed" if available{behavior_clause}
+    "Close" transitions lifecycle to closed if available{behavior_clause}
 '''
     program, errors = parse(src)
     assert errors.ok, errors.format()

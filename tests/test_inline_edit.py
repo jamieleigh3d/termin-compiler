@@ -154,18 +154,17 @@ A "user" has "read" and "write"
 
 Content called "products":
   Each product has a name which is text
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has write
   Anyone with "read" can view products
   Anyone with "write" can update products
 
-State for products called "lifecycle":
-  A product starts as "draft"
-  A product can also be "active"
-  A draft product can become active if the user has "write"
-
 As a user, I want to manage products:
   Show a page called "Products"
-  Display a table of products with columns: name, status
-  Allow inline editing of name, status
+  Display a table of products with columns: name, lifecycle
+  Allow inline editing of name, lifecycle
 '''
 
     def test_valid_declaration(self):
@@ -190,7 +189,7 @@ As a user, I want to manage products:
         result = self._analyze(self.STATE_FIELD_ATTEMPTED)
         assert not result.ok
         msgs = [str(e).lower() for e in result.errors]
-        assert any("status" in m and ("state" in m or "inline" in m)
+        assert any("lifecycle" in m and ("state" in m or "inline" in m)
                    for m in msgs), msgs
 
 

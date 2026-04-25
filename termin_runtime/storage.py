@@ -147,15 +147,34 @@ async def init_db(content_schemas: list[dict], db_path: str = None):
 
             col_defs = ["id INTEGER PRIMARY KEY AUTOINCREMENT"]
 
-            # Status column if has state machine
-            if cs.get("has_state_machine"):
-                initial = cs.get("initial_state", "")
-                col_defs.append(f'"status" TEXT NOT NULL DEFAULT \'{initial}\'')
+            # State machine columns: one TEXT NOT NULL column per state
+            # machine declared on this content. The column name is the
+            # machine_name (already snake_case in the IR — same as the
+            # underlying state-typed field's snake name). Each column's
+            # SQL DEFAULT is the machine's initial state, so records
+            # created without explicit values still land in the right
+            # initial state for every machine on the content.
+            for sm in cs.get("state_machines", []):
+                col = sm["machine_name"]
+                initial = sm.get("initial", "")
+                _assert_safe(col, f"state machine column on {table_name}")
+                col_defs.append(
+                    f'"{col}" TEXT NOT NULL DEFAULT \'{initial}\'')
 
-            # Fields
+            # Fields. State-typed fields are skipped here because each
+            # state machine on this content already emitted its column
+            # in the state-machines block above. The lowering pass keeps
+            # the field in `fields` for analyzer/renderer purposes (so
+            # the edit modal can include it as input_type=state) but the
+            # storage layer must not emit a duplicate column.
+            sm_col_names = {sm["machine_name"]
+                            for sm in cs.get("state_machines", [])}
             fk_defs = []
             for field in cs.get("fields", []):
                 _assert_safe(field["name"], f"field name in {table_name}")
+                if (field.get("business_type") == "state"
+                        or field["name"] in sm_col_names):
+                    continue
                 col_defs.append(_field_to_sql(field))
                 if field.get("foreign_key"):
                     _assert_safe(field["foreign_key"], f"foreign key target in {table_name}")
@@ -174,11 +193,39 @@ async def init_db(content_schemas: list[dict], db_path: str = None):
 
 
 async def create_record(db, content_name: str, data: dict, schema: dict = None,
-                        sm_info: dict = None, terminator=None, event_bus=None):
-    """Insert a new record. Returns the created record dict with id."""
+                        sm_info=None, terminator=None, event_bus=None):
+    """Insert a new record. Returns the created record dict with id.
+
+    `sm_info` accepts either:
+      - the new v0.9 shape: a list of {"machine_name", "column", "initial",
+        "transitions"} dicts (one per state machine on this content), OR
+      - the legacy single-SM dict shape from earlier internal callers.
+
+    State-machine columns are not stripped from `data` even when their value
+    is the empty string, so an explicit empty-string write does not silently
+    fall through to the SQL default. Empty strings on regular optional
+    fields are still stripped (existing behavior)."""
     d = dict(data)
-    # Remove empty strings for optional fields
-    d = {k: v for k, v in d.items() if v != "" or k == "status"}
+    # Identify all state-machine column names on this content and seed
+    # any missing/empty ones with the machine's initial state. This
+    # ensures the returned record dict carries the state column even
+    # when the caller didn't supply it (the SQL DEFAULT also covers
+    # the persisted row but the dict we hand back is built from `d`).
+    state_cols: set[str] = set()
+    if isinstance(sm_info, list):
+        for sm in sm_info:
+            if isinstance(sm, dict) and sm.get("machine_name"):
+                col = sm["machine_name"]
+                state_cols.add(col)
+                if not d.get(col):
+                    d[col] = sm.get("initial", "")
+    elif isinstance(sm_info, dict):
+        # Legacy: single SM dict, status column
+        state_cols.add("status")
+        if not d.get("status"):
+            d["status"] = sm_info.get("initial", "")
+    # Remove empty strings for optional fields, but preserve state columns.
+    d = {k: v for k, v in d.items() if v != "" or k in state_cols}
 
     columns = list(d.keys())
     if not columns:

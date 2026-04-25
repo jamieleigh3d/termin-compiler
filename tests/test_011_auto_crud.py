@@ -84,15 +84,14 @@ Content called "orders":
   Each order has a customer which is text, required
   Each order has a total which is currency
   Each order has a priority which is one of: "low", "medium", "high"
+  Each order has an order lifecycle which is state:
+    order lifecycle starts as pending
+    order lifecycle can also be confirmed or shipped
+    pending can become confirmed if the user has orders.write
+    confirmed can become shipped if the user has orders.admin
   Anyone with "orders.read" can view orders
   Anyone with "orders.write" can create or update orders
   Anyone with "orders.admin" can delete orders
-
-State for orders called "order lifecycle":
-  An order starts as "pending"
-  An order can also be "confirmed" or "shipped"
-  A pending order can become confirmed if the user has "orders.write"
-  A confirmed order can become shipped if the user has "orders.admin"
 """
 
 MULTI_CONTENT = """\
@@ -239,8 +238,9 @@ class TestHeadlessService:
         transition_routes = [r for r in spec.routes
                              if r.content_ref == "orders" and r.kind == RouteKind.TRANSITION]
         paths = {r.path for r in transition_routes}
-        assert "/api/v1/orders/{id}/_transition/confirmed" in paths
-        assert "/api/v1/orders/{id}/_transition/shipped" in paths
+        # v0.9: transition path includes the snake_case machine_name segment.
+        assert "/api/v1/orders/{id}/_transition/order_lifecycle/confirmed" in paths
+        assert "/api/v1/orders/{id}/_transition/order_lifecycle/shipped" in paths
 
     def test_headless_transition_scopes(self):
         """Transition routes don't set route-level scope; do_state_transition checks it."""

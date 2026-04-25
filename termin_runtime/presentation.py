@@ -10,6 +10,8 @@ Walks a component tree (Presentation IR v2) and emits Jinja2 template
 fragments. Each component type has a dedicated renderer function.
 """
 
+import json
+
 from jinja2 import Environment, BaseLoader
 
 jinja_env = Environment(loader=BaseLoader(), autoescape=True)
@@ -300,21 +302,46 @@ def _render_data_table(node: dict) -> str:
             # Transition action (existing behavior).
             target = ap.get("target_state", "")
             safe_target = target.replace(" ", "_")
+            # v0.9 multi-SM: the action button's machine_name (the field
+            # name driving this transition) was lowered into props. Empty
+            # string falls back to the legacy `status` column for IRs
+            # produced by a pre-v0.9 compiler.
+            machine = ap.get("machine_name", "") or "status"
+            safe_machine = machine.replace(" ", "_")
             # Build Jinja conditions:
-            # 1. Is (current_status, target_state) a valid transition?
+            # 1. Is (current_state, target_state) a valid transition for THIS machine?
             # 2. Does the user hold the required scope for this transition?
-            # _sm_transitions is a dict of {(from,to): scope} injected into context
-            valid_check = f'(item.get("status",""), "{target}") in _sm_transitions'
-            scope_check = f'_sm_transitions.get((item.get("status",""), "{target}"), "") in user_scopes or _sm_transitions.get((item.get("status",""), "{target}"), "") == ""'
+            # _sm_transitions_by_machine is keyed by (content, machine_name)
+            # → {(from, to): scope}; falls back to the flat _sm_transitions
+            # union when the per-machine map is missing (legacy IR).
+            sm_lookup_expr = (
+                f'(_sm_transitions_by_machine.get(("{source}", "{machine}"), '
+                f'_sm_transitions))'
+            )
+            current_state_expr = f'item.get("{safe_machine}","")'
+            valid_check = (
+                f'({current_state_expr}, "{target}") in {sm_lookup_expr}'
+            )
+            scope_check = (
+                f'{sm_lookup_expr}.get(({current_state_expr}, "{target}"), "") in user_scopes '
+                f'or {sm_lookup_expr}.get(({current_state_expr}, "{target}"), "") == ""'
+            )
 
             # Wrap each button in a span with transition metadata for client-side re-evaluation
-            btn_attrs = f'data-termin-transition data-target-state="{target}" data-behavior="{behavior}" data-label="{label}"'
+            btn_attrs = (
+                f'data-termin-transition data-target-state="{target}" '
+                f'data-machine-name="{machine}" '
+                f'data-behavior="{behavior}" data-label="{label}"'
+            )
+            transition_url = (
+                f"/_transition/{source}/{safe_machine}/{{{{ item.id }}}}/{safe_target}"
+            )
             if behavior == "hide":
                 # Hide: don't render the button at all when transition unavailable
                 parts.append(f'        <span {btn_attrs}>')
                 parts.append(f'        {{% if {valid_check} and ({scope_check}) %}}')
                 parts.append(
-                    f'        <form method="post" action="/_transition/{source}/{{{{ item.id }}}}/{safe_target}" '
+                    f'        <form method="post" action="{transition_url}" '
                     f'style="display:inline">'
                     f'<button type="submit" class="text-indigo-600 hover:text-indigo-800 text-xs">{label}</button></form>')
                 parts.append(f'        {{% endif %}}')
@@ -324,7 +351,7 @@ def _render_data_table(node: dict) -> str:
                 parts.append(f'        <span {btn_attrs}>')
                 parts.append(f'        {{% if {valid_check} and ({scope_check}) %}}')
                 parts.append(
-                    f'        <form method="post" action="/_transition/{source}/{{{{ item.id }}}}/{safe_target}" '
+                    f'        <form method="post" action="{transition_url}" '
                     f'style="display:inline">'
                     f'<button type="submit" class="text-indigo-600 hover:text-indigo-800 text-xs">{label}</button></form>')
                 parts.append(f'        {{% else %}}')
@@ -636,26 +663,53 @@ def _render_edit_modal(node: dict, content_schemas: dict = None) -> str:
 
     The opener is attached to window as terminOpenEditModal_{content}
     so each row's Edit button onclick can call it with the row id.
-    On Save, the form fires a state-transition POST for status changes
-    (if status changed), then a PUT for the other fields. This keeps
-    state changes on the already-scoped transition path and is
-    independent of the v0.8 PUT-backdoor fix.
+    On Save, the form fires one /_transition/ POST per state-machine
+    field whose value changed (each respecting transition rules + scopes
+    independently), then a PUT for the remaining fields. v0.9 supports
+    multiple state machines on one content; the modal renders one
+    <select data-termin-field="{machine_name}"> per machine and the
+    submit handler walks STATE_MACHINES in order.
     """
     props = node.get("props", {})
     content = props.get("content", "")
     singular = props.get("singular", content[:-1] if content.endswith("s") else content)
     modal_id = f"termin-edit-modal-{content}"
 
-    # Check if the form includes the state field — controls how the
-    # submit handler splits the body between transition and PUT.
-    has_state_field = any(
-        (child.get("props", {}) or {}).get("input_type") == "state"
-        for child in node.get("children", [])
-    )
+    # Collect state-machine field names from the modal's children. Each
+    # field_input child with input_type="state" is one state machine on
+    # this content; data-termin-field on its <select> equals its
+    # machine_name (= column name).
+    state_machine_fields = []
+    seen_machines = set()
+    for child in node.get("children", []):
+        if child.get("type") != "field_input":
+            continue
+        cprops = child.get("props", {}) or {}
+        if cprops.get("input_type") != "state":
+            continue
+        machine = cprops.get("field", "") or cprops.get("state_machine", "")
+        if machine and machine not in seen_machines:
+            seen_machines.add(machine)
+            state_machine_fields.append(machine)
+    # Also fold in entries from content_schemas as a backstop — if the
+    # IR carried a state field but the modal child wasn't tagged
+    # input_type="state" (legacy IR pre-v0.9 lowering), we still want
+    # the JS to know which fields are state machines.
+    if content_schemas:
+        cs = content_schemas.get(content) or {}
+        for sm in cs.get("state_machines", []) or []:
+            mn = sm.get("machine_name", "") if isinstance(sm, dict) else ""
+            if mn and mn not in seen_machines:
+                seen_machines.add(mn)
+                state_machine_fields.append(mn)
+
+    state_machines_json = json.dumps(state_machine_fields)
+    has_state_fields = bool(state_machine_fields)
 
     # user_scopes + per-content transitions are embedded as data
     # attributes so the JS is self-contained and doesn't need window
-    # globals. They're filled in by Jinja at render time.
+    # globals. The transition list now carries machine_name per entry
+    # so each <select> can filter to its own machine's transitions.
     user_scopes_attr = "{{ (user_scopes|list)|tojson }}"
     transitions_attr = (
         "{{ (_sm_transitions_by_content.get('" + content +
@@ -685,17 +739,16 @@ def _render_edit_modal(node: dict, content_schemas: dict = None) -> str:
         f'</dialog>',
     ])
 
-    # Page-level script: opener function, submit handler, state filtering.
-    # Wrapped in an IIFE so we don't leak locals. Exposes
-    # terminOpenEditModal_{content} as the entry point the per-row
-    # Edit button onclick calls.
-    state_js = "true" if has_state_field else "false"
+    # Page-level script: opener function, submit handler, per-machine
+    # state filtering. Wrapped in an IIFE so we don't leak locals.
+    has_state_js = "true" if has_state_fields else "false"
     script = f'''
 <script>
 (function() {{
   const MODAL_ID = "{modal_id}";
   const CONTENT = "{content}";
-  const HAS_STATE_FIELD = {state_js};
+  const STATE_MACHINES = {state_machines_json};
+  const HAS_STATE_FIELDS = {has_state_js};
 
   function getModal() {{ return document.getElementById(MODAL_ID); }}
 
@@ -711,28 +764,31 @@ def _render_edit_modal(node: dict, content_schemas: dict = None) -> str:
       row = await res.json();
     }} catch (err) {{ alert(err.message); return; }}
     form.dataset.rowId = rowId;
-    form.dataset.origStatus = row.status || "";
+    // Capture original value of every state-machine field so the
+    // submit handler can detect which machines actually changed.
+    for (const machine of STATE_MACHINES) {{
+      form.dataset["orig_" + machine] = row[machine] == null ? "" : String(row[machine]);
+    }}
     // Populate inputs by matching data-termin-field.
     form.querySelectorAll("[data-termin-field]").forEach(input => {{
       const k = input.dataset.terminField;
       if (k in row) input.value = row[k] == null ? "" : row[k];
     }});
-    // Filter state dropdown options if present — only valid transitions
-    // from the current state that the user has scope for (plus the
-    // current state itself, always, so the user can save without
-    // changing state).
-    if (HAS_STATE_FIELD) {{
-      const sel = form.querySelector('[data-termin-field="status"]');
-      if (sel) {{
-        const cur = row.status;
-        // Read user scopes + transitions from data attributes on this
-        // dialog (Jinja-rendered). Self-contained; no window globals.
-        let userScopes = [];
-        let transitions = [];
-        try {{ userScopes = JSON.parse(modal.dataset.userScopes || "[]"); }} catch (e) {{}}
-        try {{ transitions = JSON.parse(modal.dataset.smTransitions || "[]"); }} catch (e) {{}}
+    // Per-machine state-dropdown filtering: each <select data-termin-field="{{machine}}">
+    // shows only valid transitions for THIS machine from its current
+    // state, gated by user scopes. The current state is always included.
+    if (HAS_STATE_FIELDS) {{
+      let userScopes = [];
+      let transitions = [];
+      try {{ userScopes = JSON.parse(modal.dataset.userScopes || "[]"); }} catch (e) {{}}
+      try {{ transitions = JSON.parse(modal.dataset.smTransitions || "[]"); }} catch (e) {{}}
+      for (const machine of STATE_MACHINES) {{
+        const sel = form.querySelector('[data-termin-field="' + machine + '"]');
+        if (!sel) continue;
+        const cur = row[machine] == null ? "" : String(row[machine]);
         const validTargets = new Set([cur]);
         for (const t of transitions) {{
+          if (t.machine_name !== machine) continue;
           if (t.from === cur && (!t.scope || userScopes.indexOf(t.scope) !== -1)) {{
             validTargets.add(t.to);
           }}
@@ -752,8 +808,9 @@ def _render_edit_modal(node: dict, content_schemas: dict = None) -> str:
   // Expose the opener under a stable name the per-row Edit button onclick calls.
   window["terminOpenEditModal_" + CONTENT] = openEdit;
 
-  // Submit handler: orchestrate state transition (if status changed)
-  // followed by PUT for other fields.
+  // Submit handler: orchestrate one /_transition/ POST per state-
+  // machine field that changed (in IR order), then a PUT for the
+  // remaining non-state fields.
   document.addEventListener("DOMContentLoaded", function init() {{
     const modal = getModal();
     if (!modal) return;
@@ -765,20 +822,23 @@ def _render_edit_modal(node: dict, content_schemas: dict = None) -> str:
       const fd = new FormData(form);
       const body = {{}};
       fd.forEach((v, k) => {{ body[k] = v; }});
-      const origStatus = form.dataset.origStatus || "";
-      const newStatus = body.status || "";
-      // Always strip status from the PUT body — state changes route
-      // through /_transition/ to respect transition rules + scopes.
-      delete body.status;
       try {{
-        if (HAS_STATE_FIELD && newStatus && newStatus !== origStatus) {{
-          const stateRes = await fetch(
-            `/_transition/${{CONTENT}}/${{rowId}}/${{encodeURIComponent(newStatus)}}`,
-            {{method: "POST"}});
-          if (!stateRes.ok) {{
-            const err = await stateRes.json().catch(() => null);
-            throw new Error((err && err.detail) || ("State change failed: " + stateRes.status));
+        for (const machine of STATE_MACHINES) {{
+          const newVal = body[machine];
+          const origVal = form.dataset["orig_" + machine] || "";
+          if (newVal != null && newVal !== "" && newVal !== origVal) {{
+            const r = await fetch(
+              `/_transition/${{CONTENT}}/${{machine}}/${{rowId}}/${{encodeURIComponent(newVal)}}`,
+              {{method: "POST"}});
+            if (!r.ok) {{
+              const err = await r.json().catch(() => null);
+              throw new Error((err && err.detail) || ("State change failed: " + r.status));
+            }}
           }}
+          // Always strip every state-machine column from the PUT
+          // body — state writes go through /_transition/ regardless
+          // of whether they changed.
+          delete body[machine];
         }}
         if (Object.keys(body).length > 0) {{
           const putRes = await fetch(`/api/v1/${{CONTENT}}/${{rowId}}`, {{

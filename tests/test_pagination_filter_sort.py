@@ -143,12 +143,12 @@ class TestFiltering:
         assert body[0]["name"] == "Widget A"
 
     def test_filter_by_status(self, client):
-        r = client.get("/api/v1/products?status=active")
+        r = client.get("/api/v1/products?product_lifecycle=active")
         assert r.status_code == 200
         body = r.json()
         # RM-001, RM-002, FG-001, PK-001 are active.
         assert len(body) == 4
-        assert all(row["status"] == "active" for row in body)
+        assert all(row["product_lifecycle"] == "active" for row in body)
 
     def test_unknown_filter_field_rejected(self, client):
         # 'unknown_field' is not on the products schema.

@@ -80,15 +80,15 @@ class TestParserFeatureCoverage:
             'Content called "tasks":\n'
             '  Each task has a title which is text, required\n'
             '  Each task has a priority which is one of: "low", "medium", "high"\n'
+            '  Each task has a status which is state:\n'
+            '    status starts as open\n'
+            '    status can also be in progress, review, or closed\n'
+            '    open can become in progress if the user has edit\n'
+            '    in progress can become review if the user has edit\n'
+            '    review can become closed if the user has admin\n'
+            '    closed can become open if the user has admin\n'
             '  Anyone with "view" can view tasks\n'
-            '  Anyone with "edit" can create or update tasks\n\n'
-            'State for tasks called "status":\n'
-            '  A task starts as "open"\n'
-            '  A task can also be "in progress", "review", or "closed"\n'
-            '  An open task can become in progress if the user has "edit"\n'
-            '  An in progress task can become review if the user has "edit"\n'
-            '  A review task can become closed if the user has "admin"\n'
-            '  A closed task can become open if the user has "admin"\n'
+            '  Anyone with "edit" can create or update tasks\n'
         )
         program, errors = parse(source)
         assert errors.ok, errors.format()

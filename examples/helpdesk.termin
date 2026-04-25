@@ -23,6 +23,21 @@ Content called "tickets":
   Each ticket has a submitted by which is text, required, defaults to `User.Name`
   Each ticket has an assigned to which is text
   Each ticket has a created at which is automatic, defaults to `now`
+  Each ticket has a ticket lifecycle which is state:
+    ticket lifecycle starts as open
+    ticket lifecycle can also be in progress, waiting on customer, resolved, or closed
+    open can become in progress if the user has tickets.manage
+      success shows toast `ticket.title + " is now in progress"`
+    in progress can become waiting on customer if the user has tickets.manage
+      success shows toast "Ticket moved to waiting on customer"
+    waiting on customer can become in progress if the user has tickets.create
+      success shows toast "Ticket reopened"
+    in progress can become resolved if the user has tickets.manage
+      success shows banner `ticket.title + " resolved"` dismiss after 10 seconds
+    resolved can become closed if the user has tickets.admin
+      success shows toast "Ticket closed"
+    resolved can become in progress if the user has tickets.create
+      success shows toast "Ticket reopened from resolved"
   Anyone with "tickets.view" can view tickets
   Anyone with "tickets.create" can create tickets
   Anyone with "tickets.manage" can update tickets
@@ -36,24 +51,6 @@ Content called "comments":
   Anyone with "tickets.view" can view comments
   Anyone with "tickets.create" can create comments
 
---- State ---
-
-State for tickets called "ticket lifecycle":
-  A ticket starts as "open"
-  A ticket can also be "in progress", "waiting on customer", "resolved", or "closed"
-  An open ticket can become in progress if the user has "tickets.manage"
-    success shows toast `ticket.title + " is now in progress"`
-  An in progress ticket can become waiting on customer if the user has "tickets.manage"
-    success shows toast "Ticket moved to waiting on customer"
-  A waiting on customer ticket can become in progress if the user has "tickets.create"
-    success shows toast "Ticket reopened"
-  An in progress ticket can become resolved if the user has "tickets.manage"
-    success shows banner `ticket.title + " resolved"` dismiss after 10 seconds
-  A resolved ticket can become closed if the user has "tickets.admin"
-    success shows toast "Ticket closed"
-  A resolved ticket can become in progress if the user has "tickets.create"
-    success shows toast "Ticket reopened from resolved"
-
 --- User Stories ---
 
 As a customer, I want to submit a support ticket
@@ -65,16 +62,16 @@ As a customer, I want to submit a support ticket
 As a support agent, I want to see all open tickets
   so that I can work on resolving them:
     Show a page called "Ticket Queue"
-    Display a table of tickets with columns: title, priority, category, status, assigned to, created at
+    Display a table of tickets with columns: title, priority, category, ticket lifecycle, assigned to, created at
     Highlight rows where `priority == "critical" || priority == "high"`
-    Allow filtering by status, priority, and category
+    Allow filtering by ticket lifecycle, priority, and category
     Allow searching by title or description
     For each ticket, show actions:
-      "Start Work" transitions to "in progress" if available, hide otherwise
-      "Wait on Customer" transitions to "waiting on customer" if available, hide otherwise
-      "Resolve" transitions to "resolved" if available, hide otherwise
-      "Reopen" transitions to "in progress" if available, hide otherwise
-      "Close" transitions to "closed" if available, hide otherwise
+      "Start Work" transitions ticket lifecycle to in progress if available, hide otherwise
+      "Wait on Customer" transitions ticket lifecycle to waiting on customer if available, hide otherwise
+      "Resolve" transitions ticket lifecycle to resolved if available, hide otherwise
+      "Reopen" transitions ticket lifecycle to in progress if available, hide otherwise
+      "Close" transitions ticket lifecycle to closed if available, hide otherwise
     This table subscribes to tickets changes
 
 As a support manager, I want to see ticket metrics

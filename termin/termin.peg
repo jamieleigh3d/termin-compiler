@@ -79,7 +79,9 @@ field_line
     ;
 
 field_clause
-    = 'is' te:type_expr                                #FieldIsType
+    = 'is' 'state:' $                                  #FieldIsStateBlock
+    | 'is' 'state' ':' $                               #FieldIsStateBlockSpaced
+    | 'is' te:type_expr                                #FieldIsType
     | 'references' ref:words_or_quoted constraints:constraints  #FieldReferences
     ;
 
@@ -195,32 +197,43 @@ single_verb
 
 
 # ==================================================================
-# STATE
+# STATE (v0.9: inline as field type — no top-level `State for ...` block)
 # ==================================================================
 
-state_header
-    = 'State' 'for' prefix:('channel'|'compute'|'boundary') target:quoted_string 'called' name:quoted_string ':' $  #StatePrimitive
-    | 'State' 'for' target:words_before_called 'called' name:quoted_string ':' $                                     #StateContent
+# Inline state machine sub-block lines. The classifier emits these only
+# when the parser is inside a `which is state:` field's sub-block.
+
+sm_starts_as_line
+    = field_name:words_before_starts 'starts' 'as' state:state_value $
     ;
 
-state_starts_line
-    = article singular:word 'starts' 'as' state:quoted_string $
+sm_also_line
+    = field_name:words_before_can 'can' 'also' 'be' states:state_or_list $
     ;
 
-state_also_line
-    = article word 'can' 'also' 'be' states:quoted_comma_or_list $
+sm_transition_line
+    = [article] from_state:sm_words_before_can 'can' 'become'
+      to_state:sm_words_before_if 'if' 'the' 'user' 'has' scope:scope_value $
+      #SMTransitionScope
+    | [article] from_state:sm_words_before_can 'can' 'become'
+      to_state:sm_words_before_if 'if' cel:expr $
+      #SMTransitionExpr
     ;
 
-state_transition_line
-    = article from_state:words_before_word_can
-      singular:word 'can' 'become' to_state:words_before_again_if
-      ['again'] 'if' 'the' 'user' 'has' scope:quoted_string $
-      #TransitionScope
-    | article from_state:words_before_word_can
-      singular:word 'can' 'become' to_state:words_before_again_if
-      ['again'] 'if' cel:expr $
-      #TransitionExpr
+# A state value can be quoted or bare (a single word or multi-word phrase
+# stopping before the `or` separator inside a list). Hyphens are legal
+# inside bare state names — `auto-fix-applied` parses as one state.
+state_value = quoted_string | sm_words ;
+
+# State list separated by commas and/or `or`.
+state_or_list
+    = val+:state_or_item { (',' ['or'] | 'or') val+:state_or_item }*
     ;
+
+state_or_item = quoted_string | sm_words_before_or ;
+
+# A scope value can be a quoted string or a bare dotted identifier.
+scope_value = quoted_string | /[A-Za-z_][A-Za-z0-9_.\-]*/ ;
 
 transition_feedback_line
     = trigger:('success'|'error') 'shows' style:('toast'|'banner')
@@ -449,9 +462,11 @@ action_header_line
     ;
 
 action_button_line
-    = label:quoted_string 'transitions' 'to' state:quoted_string
+    = label:quoted_string 'transitions' field_name:words_before_to
+      'to' state:sm_words_before_if
       'if' 'available' ',' 'hide' 'otherwise' $           #ActionHide
-    | label:quoted_string 'transitions' 'to' state:quoted_string
+    | label:quoted_string 'transitions' field_name:words_before_to
+      'to' state:sm_words_before_if
       'if' 'available' [',' 'disable' 'otherwise'] $      #ActionDisable
     | label:quoted_string 'deletes'
       'if' 'available' ',' 'hide' 'otherwise' $           #ActionDeleteHide
@@ -743,6 +758,19 @@ words_before_as = /\w+(?:\s+(?!as\b)\w+)*/ ;
 words_before_changes = /\w+(?:\s+(?!changes\b)\w+)*/ ;
 words_before_or = /\w+(?:\s+(?!or\b)\w+)*/ ;
 words_before_again_if = /[\w-]+(?:\s+(?!again\b|if\b)[\w-]+)*/ ;
+words_before_to = /\w+(?:\s+(?!to\b)\w+)*/ ;
+words_before_if = /\w+(?:\s+(?!if\b)\w+)*/ ;
+words_before_can = /\w+(?:\s+(?!can\b)\w+)*/ ;
+words_before_starts = /\w+(?:\s+(?!starts\b)\w+)*/ ;
+
+# State names: hyphens are legal (e.g. `auto-fix-applied`). Space-separated
+# is the canonical form, but `auto-fix` and `auto fix` both parse. These
+# variants allow [\w-] inside state-machine declarations and transitions.
+# Field/role/content names elsewhere keep \w+ — they're not affected.
+sm_words = /[\w-]+(?:\s+[\w-]+)*/ ;
+sm_words_before_or = /[\w-]+(?:\s+(?!or\b)[\w-]+)*/ ;
+sm_words_before_can = /[\w-]+(?:\s+(?!can\b)[\w-]+)*/ ;
+sm_words_before_if = /[\w-]+(?:\s+(?!if\b)[\w-]+)*/ ;
 
 # Free text (rest of line, greedy — no newlines)
 rest_of_line = /\S[^\n]*/ ;

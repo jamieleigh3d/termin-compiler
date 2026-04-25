@@ -42,12 +42,13 @@ def register_crud_routes(app, ctx: RuntimeContext):
         scope = route.get("scope") or route.get("required_scope")
         lookup_col = route.get("lookup_column", "id")
         target_state = route.get("target_state")
+        machine_name = route.get("machine_name")
 
         if kind == "LIST":
             _make_list_route(app, ctx, path, content_ref, scope)
         elif kind == "CREATE":
             _make_create_route(app, ctx, path, content_ref, scope,
-                               ctx.sm_lookup.get(content_ref))
+                               ctx.sm_lookup.get(content_ref, []))
         elif kind == "GET_ONE":
             _make_get_route(app, ctx, path, content_ref, scope, lookup_col)
         elif kind == "UPDATE":
@@ -56,7 +57,7 @@ def register_crud_routes(app, ctx: RuntimeContext):
             _make_delete_route(app, ctx, path, content_ref, scope, lookup_col)
         elif kind == "TRANSITION":
             _make_transition_route(app, ctx, path, content_ref, scope,
-                                   lookup_col, target_state)
+                                   lookup_col, target_state, machine_name)
 
 
 def _make_list_route(app, ctx, path, cr, sc):
@@ -163,8 +164,19 @@ def _make_create_route(app, ctx, path, cr, sc, sm_info):
             form = await request.form()
             body = {k: v for k, v in form.items() if v}
 
+        # v0.9 multi-SM create gate: strip every state-machine column
+        # from the body before validation+insert. The SQL DEFAULT on
+        # each state column applies the machine's initial state; a
+        # client-supplied value for a state column would otherwise win
+        # over the default and let a caller bootstrap a record already
+        # past its initial state — bypassing the transition rules that
+        # would otherwise gate that move. v0.8 enforced this with a
+        # single-SM shim (`body["status"] = _sm.get("initial", "")`);
+        # v0.9 generalises to every state machine on the Content.
         if _sm:
-            body["status"] = _sm.get("initial", "")
+            state_cols = {sm["machine_name"] for sm in _sm}
+            if state_cols:
+                body = {k: v for k, v in body.items() if k not in state_cols}
 
         schema = ctx.content_lookup.get(_cr, {})
         evaluate_field_defaults(body, schema, ctx.expr_eval, user)
@@ -242,28 +254,41 @@ def _make_update_route(app, ctx, path, cr, sc, lc):
             # Multi-state-machine per content is a v0.9 item; the current
             # runtime supports at most one state machine per content,
             # always named on the implicit `status` column.
-            if existing and "status" in body and _cr in ctx.sm_lookup:
-                new_status = body.get("status", "")
-                cur_status = existing.get("status", "")
-                if new_status != cur_status:
-                    # Transition raises HTTPException(409/403/404) on
-                    # failure — the field updates below are skipped, so
-                    # a rejected transition also rejects any companion
-                    # field changes in the same PUT body.
-                    await do_state_transition(
-                        db, _cr, existing["id"], new_status, user,
-                        ctx.sm_lookup, ctx.terminator, ctx.event_bus,
-                    )
-                    # Strip status from the body — the transition already
-                    # wrote it. Leaving it in would cause update_record
-                    # to redundantly rewrite it (harmless) but we keep
-                    # the code paths distinct.
-                    body = {k: v for k, v in body.items() if k != "status"}
-                else:
-                    # Same-state "change" is a no-op on the state machine;
-                    # drop it so we don't accidentally trigger a
-                    # from==to transition check (which would 409).
-                    body = {k: v for k, v in body.items() if k != "status"}
+            # v0.9 multi-SM PUT-route gate. For every state-machine
+            # column on this content that appears in the body and
+            # whose value differs from the current record, route the
+            # change through do_state_transition() — same security
+            # posture as POST /_transition: declared transitions only,
+            # required_scope enforced, atomic on rejection.
+            #
+            # Same-state writes (X -> X) are dropped from the body so a
+            # client sending the unchanged current state doesn't trip
+            # the from==to transition table check (which would 409
+            # unless a self-transition is explicitly declared).
+            if existing and _cr in ctx.sm_lookup:
+                sm_list = ctx.sm_lookup.get(_cr, [])
+                state_cols = {sm["machine_name"] for sm in sm_list}
+                # Order is intentional: transition each touched machine
+                # in the order they appear in the IR. If any transition
+                # raises, no further machine transitions and no PUT
+                # field updates land — atomicity preserved.
+                touched = [sm for sm in sm_list if sm["machine_name"] in body]
+                for sm in touched:
+                    col = sm["machine_name"]
+                    new_val = body.get(col, "")
+                    cur_val = existing.get(col, "")
+                    if new_val != cur_val:
+                        await do_state_transition(
+                            db, _cr, existing["id"], col, new_val, user,
+                            ctx.sm_lookup, ctx.terminator, ctx.event_bus,
+                        )
+                # Strip all state columns from the body — transitions
+                # have written them (or were no-ops for unchanged values).
+                # Leaving them would cause update_record to redundantly
+                # rewrite the same value (harmless) but we keep the
+                # code paths distinct.
+                if state_cols:
+                    body = {k: v for k, v in body.items() if k not in state_cols}
 
             if existing:
                 merged = dict(existing)
@@ -298,11 +323,20 @@ def _make_delete_route(app, ctx, path, cr, sc, lc):
             await db.close()
 
 
-def _make_transition_route(app, ctx, path, cr, sc, lc, ts):
+def _make_transition_route(app, ctx, path, cr, sc, lc, ts, mn=None):
+    """Per-machine, per-target-state transition route from RouteSpec.
+
+    `mn` is the machine_name (snake_case) the route drives. Required in
+    v0.9 — every transition route addresses one machine on one content.
+    `_make_transition_route` callers from `register_crud_routes` always
+    pass it; older internal callers (none currently) would not, in
+    which case the route falls back to driving the first state machine
+    on the content for backward compatibility.
+    """
     deps = [Depends(ctx.require_scope(sc))] if sc else []
 
     @app.post(path, dependencies=deps)
-    async def transition_route(request: Request, _cr=cr, _lc=lc, _ts=ts):
+    async def transition_route(request: Request, _cr=cr, _lc=lc, _ts=ts, _mn=mn):
         param_val = list(request.path_params.values())[0] if request.path_params else None
         user = ctx.get_current_user(request)
         db = await get_db(ctx.db_path)
@@ -310,8 +344,23 @@ def _make_transition_route(app, ctx, path, cr, sc, lc, ts):
             row = await find_by_field(db, _cr, _lc, param_val)
             if not row:
                 raise HTTPException(status_code=404)
-            return await do_state_transition(db, _cr, row["id"], _ts, user,
-                                             ctx.sm_lookup, ctx.terminator, ctx.event_bus)
+            # Resolve machine_name: if RouteSpec didn't carry it (legacy IR
+            # generated by an older compiler), fall back to the first
+            # state machine on the content. Single-SM content behaves
+            # identically; multi-SM content with a legacy IR would route
+            # ambiguously and is a compiler/runtime version mismatch.
+            machine = _mn
+            if machine is None:
+                sms = ctx.sm_lookup.get(_cr, [])
+                if sms:
+                    machine = sms[0]["machine_name"]
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"No state machine for {_cr}")
+            return await do_state_transition(
+                db, _cr, row["id"], machine, _ts, user,
+                ctx.sm_lookup, ctx.terminator, ctx.event_bus)
         finally:
             await db.close()
 
@@ -488,7 +537,7 @@ def register_channel_routes(app, ctx: RuntimeContext):
                 db = await get_db(ctx.db_path)
                 try:
                     record = await create_record(db, ch_content, record_data,
-                                                 ctx.sm_lookup.get(ch_content))
+                                                 ctx.sm_lookup.get(ch_content, []))
                     await ctx.run_event_handlers(db, ch_content, "created", record)
 
                     ctx.channel_dispatcher._metrics.get(ch_name, {})["received"] = \
@@ -573,12 +622,18 @@ def register_runtime_endpoints(app, ctx: RuntimeContext):
                     "body_lines": comp.get("body_lines", []),
                 })
         content_names = [cs["name"]["snake"] for cs in ctx.ir.get("content", [])]
+        # v0.9 multi-SM: emit one transition map per machine, keyed by
+        # content_ref → machine_name → "from|to" → scope. External clients
+        # see every machine on every content; legacy single-SM clients
+        # that read transitions[content] directly need to update.
         transitions = {}
-        for content_ref, sm_data in ctx.sm_lookup.items():
-            transitions[content_ref] = {
-                f"{from_s}|{to_s}": scope
-                for (from_s, to_s), scope in sm_data["transitions"].items()
-            }
+        for content_ref, sm_list in ctx.sm_lookup.items():
+            transitions[content_ref] = {}
+            for sm in sm_list:
+                transitions[content_ref][sm["machine_name"]] = {
+                    f"{from_s}|{to_s}": scope
+                    for (from_s, to_s), scope in sm["transitions"].items()
+                }
         return {
             "identity": {"role": role, "scopes": user["scopes"], "profile": user["profile"]},
             "pages": user_pages,

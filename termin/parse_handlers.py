@@ -85,6 +85,10 @@ def _parse_line(text: str, rule: str, ln: int):
             fn = ah[:wi].strip()
         wi = text.find(" which ")
         te = _parse_field_type(text[wi+len(" which "):].strip(), ln) if wi >= 0 else TypeExpr(base_type="text", line=ln)
+        # v0.9: a `which is state:` field opens an inline state machine sub-block.
+        # Emit a distinct tag so the assembler can build the StateMachine.
+        if te.base_type == "state":
+            return ("state_field", Field(name=fn, type_expr=te, line=ln), sg)
         return ("field", Field(name=fn, type_expr=te, line=ln), sg)
     if rule == "access_line":
         r = P(text, rule)
@@ -107,31 +111,80 @@ def _parse_line(text: str, rule: str, ln: int):
                 verbs = ["view"]
             return ("access", AccessRule(scope=sc, verbs=verbs, line=ln))
         return ("access", AccessRule(scope=sc, verbs=["view"], line=ln))
-    if rule == "state_header":
-        r = P(text, rule)
-        if r:
-            tgt = _qs(r.get("target",""))
-            mn = _qs(r.get("name",""))
-        else:
-            mn = _fq(text)
-            ci = text.find(" called ")
-            tgt = text[len("State for "):ci].strip() if ci >= 0 else ""
-            for prefix in ("channel ", "compute ", "boundary "):
-                if tgt.startswith(prefix):
-                    tgt = tgt[len(prefix):].strip().strip('"')
-                    break
-        return ("state_header", StateMachine(content_name=tgt, machine_name=mn, singular="", initial_state="", line=ln))
-    if rule == "state_starts_line":
-        r = P(text, rule)
-        if r: return ("state_starts", str(r.get("singular","")).strip(), _qs(r.get("state","")))
-        st = _fq(text); si = text.find(" starts as "); b = text[:si].strip() if si>=0 else ""
-        for a in ("A ","An "):
-            if b.startswith(a): b = b[len(a):]
-        return ("state_starts", b.strip(), st)
-    if rule == "state_also_line":
-        r = P(text, rule); return ("state_also", _ql(r.get("states")) if r else _eqs(text))
-    if rule == "state_transition_line":
-        t = _build_trans(text, ln); return ("state_transition", t) if t else None
+    # v0.9: inline state machine sub-block lines.
+    if rule == "sm_starts_as_line":
+        # `<field name> starts as <state>` — extract field name and initial state.
+        si = text.find(" starts as ")
+        if si < 0:
+            return None
+        field_name = text[:si].strip()
+        state_text = text[si + len(" starts as "):].strip()
+        # State value: quoted or bare; strip quotes if present.
+        if state_text.startswith('"') and state_text.endswith('"'):
+            state_text = state_text[1:-1]
+        return ("sm_starts_as", field_name, state_text)
+    if rule == "sm_also_line":
+        # `<field name> can also be <state list>`
+        ci = text.find(" can also be ")
+        if ci < 0:
+            return None
+        field_name = text[:ci].strip()
+        list_text = text[ci + len(" can also be "):].strip()
+        # Parse states: split on `or` and commas, strip quotes.
+        states = []
+        # Replace ", or " and " or " with comma sentinels for splitting.
+        normalized = list_text
+        for sep in [", or ", ", ", " or "]:
+            normalized = normalized.replace(sep, "\x00")
+        for part in normalized.split("\x00"):
+            p = part.strip()
+            if not p:
+                continue
+            if p.startswith('"') and p.endswith('"'):
+                p = p[1:-1]
+            states.append(p)
+        return ("sm_also", field_name, states)
+    if rule == "sm_transition_line":
+        # `[A|An] <from> can become <to> if the user has <scope>`
+        rest = text.strip()
+        for a in ("A ", "An "):
+            if rest.startswith(a):
+                rest = rest[len(a):]
+                break
+        ci = rest.find(" can become ")
+        if ci < 0:
+            return None
+        from_state = rest[:ci].strip()
+        if from_state.startswith('"') and from_state.endswith('"'):
+            from_state = from_state[1:-1]
+        after = rest[ci + len(" can become "):].strip()
+        # Find the " if " boundary; "if the user has <scope>" or "if <cel>".
+        ii = after.find(" if ")
+        if ii < 0:
+            return None
+        to_state = after[:ii].strip()
+        if to_state.startswith('"') and to_state.endswith('"'):
+            to_state = to_state[1:-1]
+        cond_text = after[ii + len(" if "):].strip()
+        if cond_text.startswith("the user has "):
+            scope_text = cond_text[len("the user has "):].strip()
+            if scope_text.startswith('"') and scope_text.endswith('"'):
+                scope_text = scope_text[1:-1]
+            from .ast_nodes import Transition
+            return ("sm_transition", Transition(
+                from_state=from_state,
+                to_state=to_state,
+                required_scope=scope_text,
+                line=ln,
+            ))
+        # CEL expression form (placeholder — store raw scope string).
+        from .ast_nodes import Transition
+        return ("sm_transition", Transition(
+            from_state=from_state,
+            to_state=to_state,
+            required_scope=cond_text.strip("`"),
+            line=ln,
+        ))
     if rule == "transition_feedback_line":
         return ("transition_feedback", _build_feedback(text, ln))
     if rule == "event_expr_line":
@@ -345,10 +398,10 @@ def _parse_line(text: str, rule: str, ln: int):
         # alternatives under rule_name= dispatch, so we cannot use
         # _rule(r) to discriminate the six alternatives. Instead, we
         # inspect the source text (which is reliable) and use TatSu only
-        # to extract the label/state content.
+        # to extract the label/field/state content.
         r = P(text, rule)
         lower_text = text.lower()
-        has_transitions = " transitions to " in lower_text
+        has_transitions = " transitions " in lower_text
         is_delete = " deletes" in lower_text and not has_transitions
         is_edit = " edits" in lower_text and not has_transitions
         if is_delete:
@@ -358,21 +411,60 @@ def _parse_line(text: str, rule: str, ln: int):
         else:
             kind = "transition"
         behavior = "hide" if "hide otherwise" in lower_text else "disable"
+        machine_name = ""
+        state = ""
         if r:
             label = _qs(r.get("label",""))
-            state = "" if (is_delete or is_edit) else _qs(r.get("state",""))
-        else:
-            # Full text fallback.
-            parts = text.strip()
-            label = _fq(parts) or ""
-            state = ""
             if kind == "transition":
-                si = lower_text.find("transitions to ")
-                if si >= 0:
-                    rest = parts[si+len("transitions to "):]
-                    state = _fq(rest) or (rest.split()[0] if rest else "")
+                # New v0.9 form: `transitions <field> to <state>`
+                fn = r.get("field_name")
+                st = r.get("state")
+                if fn:
+                    machine_name = str(fn).strip()
+                if st:
+                    state = str(st).strip()
+        else:
+            label = _fq(text) or ""
+        # Fallback / supplemental parsing from raw text.
+        if kind == "transition" and (not state or not machine_name):
+            ti = lower_text.find(" transitions ")
+            if ti >= 0:
+                rest = text[ti + len(" transitions "):].strip()
+                # Stop at " to " for field name.
+                to_idx = rest.find(" to ")
+                if to_idx >= 0:
+                    fn_raw = rest[:to_idx].strip()
+                    after = rest[to_idx + len(" to "):].strip()
+                    # State runs until " if ".
+                    if_idx = after.find(" if ")
+                    state_raw = (after[:if_idx] if if_idx >= 0 else after).strip()
+                    if fn_raw.startswith('"') and fn_raw.endswith('"'):
+                        fn_raw = fn_raw[1:-1]
+                    if state_raw.startswith('"') and state_raw.endswith('"'):
+                        state_raw = state_raw[1:-1]
+                    if not machine_name:
+                        machine_name = fn_raw
+                    if not state:
+                        state = state_raw
+        # Strip quotes from TatSu-extracted values too.
+        if state.startswith('"') and state.endswith('"'):
+            state = state[1:-1]
+        if machine_name.startswith('"') and machine_name.endswith('"'):
+            machine_name = machine_name[1:-1]
+        # v0.9 syntactic gate: a transition action button MUST name the field
+        # between `transitions` and `to`. Old syntax `"Label" transitions to <state>`
+        # is removed.
+        if kind == "transition":
+            mn = machine_name.strip()
+            if mn == "to" or not mn:
+                raise ValueError(
+                    "v0.9 action buttons require a field name: "
+                    "'\"Label\" transitions <field> to <state> if available'. "
+                    "Got 'transitions to <state>' (legacy syntax)."
+                )
         return ("directive", ActionButtonDef(
             label=label, target_state=state,
+            machine_name=machine_name,
             unavailable_behavior=behavior, kind=kind, line=ln))
     if rule == "display_agg_line":
         r = P(text, rule); return ("directive", DisplayAggregation(description=str(r.get("text","")).strip() if r else text[len("Display "):].strip(), line=ln))

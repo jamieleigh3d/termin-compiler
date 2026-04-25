@@ -274,7 +274,7 @@ class TestWarehouseFidelity:
     # -- State machine --
     def test_product_lifecycle_initial(self):
         sm = _sm(self.spec, "products")
-        assert sm.machine_name == "product lifecycle"
+        assert sm.machine_name == "product_lifecycle"
         assert sm.initial_state == "draft"
 
     def test_product_lifecycle_states(self):
@@ -719,7 +719,8 @@ class TestSecurityAgentFidelity:
         r = _role(self.spec, "app owner")
         assert set(r.scopes) == {"findings.view"}
 
-    # -- State machine (hyphenated states) --
+    # -- State machine (multi-word states; hyphens collapsed to spaces in v0.9
+    # because the inline state-block grammar does not accept hyphens) --
     def test_remediation_initial(self):
         sm = _sm(self.spec, "findings")
         assert sm.initial_state == "detected"

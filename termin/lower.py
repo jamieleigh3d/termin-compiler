@@ -100,9 +100,13 @@ def lower(program: Program) -> AppSpec:
     for c in program.contents:
         access_map[c.name] = list(c.access_rules)
 
-    sm_by_content: dict[str, StateMachine] = {}
+    # v0.9: a content may own multiple state machines (one per state-typed
+    # field). v0.8 kept a dict keyed by content_name — the later machine
+    # silently overwrote the earlier one. The new structure is a list per
+    # content; downstream code that needs a single machine iterates.
+    sm_by_content: dict[str, list[StateMachine]] = {}
     for sm in program.state_machines:
-        sm_by_content[sm.content_name] = sm
+        sm_by_content.setdefault(sm.content_name, []).append(sm)
 
     # ── Lower content schemas ──
     content_schemas = []
@@ -159,13 +163,19 @@ def lower(program: Program) -> AppSpec:
                     value=dv.values[0] if dv.values else None,
                 ))
 
-        has_sm = c.name in sm_by_content
+        # v0.9: emit the per-content state_machines list. Each entry:
+        # {"machine_name": snake_case_field_name, "initial": initial_state}.
+        # machine_name is the SQL column name — no derivation step anywhere.
+        content_sms = sm_by_content.get(c.name, [])
+        sm_specs = tuple(
+            {"machine_name": _snake(sm.machine_name), "initial": sm.initial_state}
+            for sm in content_sms
+        )
         content_schemas.append(ContentSchema(
             name=_qname(c.name),
             singular=_snake(c.singular) if c.singular else "",
             fields=tuple(fields),
-            has_state_machine=has_sm,
-            initial_state=sm_by_content[c.name].initial_state if has_sm else None,
+            state_machines=sm_specs,
             confidentiality_scopes=tuple(c.confidentiality_scopes),
             audit=c.audit,
             dependent_values=tuple(dep_vals),
@@ -222,7 +232,9 @@ def lower(program: Program) -> AppSpec:
             prim_type = "content"
         state_machines.append(StateMachineSpec(
             content_ref=_snake(sm.content_name),
-            machine_name=sm.machine_name,
+            # v0.9: machine_name is the snake_case field name — also the
+            # SQL column name used by conforming runtimes.
+            machine_name=_snake(sm.machine_name),
             initial_state=sm.initial_state,
             states=tuple(sm.states),
             transitions=tuple(
@@ -372,25 +384,29 @@ def lower(program: Program) -> AppSpec:
             required_scope=delete_scope,
         ))
 
-        # State transition routes (D-11.2)
-        # Deduplicate by target_state — multiple transitions may lead to the
-        # same state from different source states with different scopes.
-        # The runtime's do_state_transition() handler checks scopes based on
-        # the actual (from_state, to_state) pair, so we don't set a route-level
-        # scope here.
-        if c.name in sm_by_content:
-            sm = sm_by_content[c.name]
-            seen_targets = set()
+        # State transition routes (D-11.2).
+        # v0.9: a content may own multiple state machines. The route path
+        # must include the machine_name so the runtime can disambiguate
+        # (two different machines may legitimately share a `to_state` name
+        # — e.g. "approved" on both approval_status and review_status).
+        # Deduplicate per machine by target_state: several transitions on
+        # the same machine may land on the same state from different
+        # sources with different scopes; the runtime's do_state_transition()
+        # handler authorizes based on (from_state, to_state).
+        for sm in sm_by_content.get(c.name, []):
+            sm_col = _snake(sm.machine_name)
+            seen_targets: set[str] = set()
             for tr in sm.transitions:
                 if tr.to_state not in seen_targets:
                     seen_targets.add(tr.to_state)
                     routes.append(RouteSpec(
                         method=HttpMethod.POST,
-                        path=f"{base_path}/{{id}}/_transition/{tr.to_state}",
+                        path=f"{base_path}/{{id}}/_transition/{sm_col}/{tr.to_state}",
                         kind=RouteKind.TRANSITION,
                         content_ref=content_ref,
                         required_scope=None,  # enforced by do_state_transition
                         target_state=tr.to_state,
+                        machine_name=sm_col,
                     ))
 
     # ── Lower pages (Presentation v2: component trees) ──

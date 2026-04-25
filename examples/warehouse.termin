@@ -21,6 +21,16 @@ Content called "products":
   Each product has a description which is text
   Each product has a unit cost which is currency
   Each product has a category which is one of: "raw material", "finished good", "packaging"
+  Each product has a product lifecycle which is state:
+    product lifecycle starts as draft
+    product lifecycle can also be active or discontinued
+    draft can become active if the user has inventory.write
+      success shows toast `product.name + " is now active"`
+      error shows banner "Could not activate product"
+    active can become discontinued if the user has inventory.admin
+      success shows toast `product.name + " has been discontinued"`
+    discontinued can become active if the user has inventory.admin
+      success shows toast `product.name + " reactivated"`
   Anyone with "inventory.read" can view products
   Anyone with "inventory.write" can update products
   Anyone with "inventory.admin" can create or delete products
@@ -43,19 +53,6 @@ Content called "reorder alerts":
   Anyone with "inventory.write" can create reorder alerts
   Anyone with "inventory.admin" can update reorder alerts
 
---- State ---
-
-State for products called "product lifecycle":
-  A product starts as "draft"
-  A product can also be "active" or "discontinued"
-  A draft product can become active if the user has "inventory.write"
-    success shows toast `product.name + " is now active"`
-    error shows banner "Could not activate product"
-  An active product can become discontinued if the user has "inventory.admin"
-    success shows toast `product.name + " has been discontinued"`
-  A discontinued product can become active again if the user has "inventory.admin"
-    success shows toast `product.name + " reactivated"`
-
 --- Events ---
 
 When `stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold`:
@@ -66,14 +63,14 @@ When `stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold`:
 As a warehouse clerk, I want to see all products and their current stock levels
   so that I know what we have on hand:
     Show a page called "Inventory Dashboard"
-    Display a table of products with columns: SKU, name, category, status
+    Display a table of products with columns: SKU, name, category, product lifecycle
     For each product, show stock levels grouped by warehouse
-    Allow filtering by category, warehouse, and status
+    Allow filtering by category, warehouse, and product lifecycle
     Allow searching by SKU or name
     This table subscribes to stock level changes
     For each product, show actions:
-      "Activate" transitions to "active" if available
-      "Discontinue" transitions to "discontinued" if available, hide otherwise
+      "Activate" transitions product lifecycle to active if available
+      "Discontinue" transitions product lifecycle to discontinued if available, hide otherwise
       "Edit" edits if available, hide otherwise
       "Delete" deletes if available, hide otherwise
     Allow inline editing of name, description

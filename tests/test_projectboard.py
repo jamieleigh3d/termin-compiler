@@ -126,7 +126,7 @@ class TestProjectBoardCRUD:
         }, cookies={"termin_role": "developer"})
         assert r.status_code == 201
         d = r.json()
-        assert d["status"] == "backlog"
+        assert d["task_lifecycle"] == "backlog"
         assert d["title"] == "CRUD test task"
 
     def test_update_task(self, client, seeded):
@@ -182,50 +182,50 @@ class TestTaskLifecycle:
         })
         assert r.status_code == 201
         tid = r.json()["id"]
-        assert r.json()["status"] == "backlog"
+        assert r.json()["task_lifecycle"] == "backlog"
 
         # D-11: Transition routes use /_transition/{target_state}
         # backlog → in sprint (project manager)
-        r = client.post(f"/api/v1/tasks/{tid}/_transition/in sprint",
+        r = client.post(f"/api/v1/tasks/{tid}/_transition/task_lifecycle/in sprint",
                         cookies={"termin_role": "project manager"})
         assert r.status_code == 200
-        assert r.json()["status"] == "in sprint"
+        assert r.json()["task_lifecycle"] == "in sprint"
 
         # in sprint → in progress (developer)
-        r = client.post(f"/api/v1/tasks/{tid}/_transition/in progress",
+        r = client.post(f"/api/v1/tasks/{tid}/_transition/task_lifecycle/in progress",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 200
-        assert r.json()["status"] == "in progress"
+        assert r.json()["task_lifecycle"] == "in progress"
 
         # in progress → in review (developer)
-        r = client.post(f"/api/v1/tasks/{tid}/_transition/in review",
+        r = client.post(f"/api/v1/tasks/{tid}/_transition/task_lifecycle/in review",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 200
-        assert r.json()["status"] == "in review"
+        assert r.json()["task_lifecycle"] == "in review"
 
         # Rework: in review → in progress
-        r = client.post(f"/api/v1/tasks/{tid}/_transition/in progress",
+        r = client.post(f"/api/v1/tasks/{tid}/_transition/task_lifecycle/in progress",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 200
-        assert r.json()["status"] == "in progress"
+        assert r.json()["task_lifecycle"] == "in progress"
 
         # Back to review → done
-        client.post(f"/api/v1/tasks/{tid}/_transition/in review", cookies={"termin_role": "developer"})
-        r = client.post(f"/api/v1/tasks/{tid}/_transition/done",
+        client.post(f"/api/v1/tasks/{tid}/_transition/task_lifecycle/in review", cookies={"termin_role": "developer"})
+        r = client.post(f"/api/v1/tasks/{tid}/_transition/task_lifecycle/done",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 200
-        assert r.json()["status"] == "done"
+        assert r.json()["task_lifecycle"] == "done"
 
     def test_reopen_done_task(self, client, seeded):
         """Done tasks can be sent back to in progress."""
-        r = client.post("/api/v1/tasks/1/_transition/in progress",
+        r = client.post("/api/v1/tasks/1/_transition/task_lifecycle/in progress",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 200
-        assert r.json()["status"] == "in progress"
+        assert r.json()["task_lifecycle"] == "in progress"
 
     def test_cannot_skip_to_done(self, client, seeded):
         """Cannot jump from backlog to done."""
-        r = client.post("/api/v1/tasks/2/_transition/done",
+        r = client.post("/api/v1/tasks/2/_transition/task_lifecycle/done",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 409
 
@@ -239,7 +239,7 @@ class TestTaskLifecycle:
         })
         tid = r.json()["id"]
         # Developer lacks 'manage sprints' → can't plan
-        r = client.post(f"/api/v1/tasks/{tid}/_transition/in sprint",
+        r = client.post(f"/api/v1/tasks/{tid}/_transition/task_lifecycle/in sprint",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 403
 
@@ -349,7 +349,7 @@ class TestProjectBoardUI:
 
     def test_board_filter_dropdowns(self, client, seeded):
         r = client.get("/sprint_board")
-        assert 'data-filter="status"' in r.text
+        assert 'data-filter="task_lifecycle"' in r.text
         assert 'data-filter="priority"' in r.text
 
     def test_board_shows_tasks(self, client, seeded):

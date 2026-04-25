@@ -136,17 +136,30 @@ def _register_page_get(app, ctx, page, slug, page_reqs, page_templates,
         try:
             all_transitions = {}
             # Per-content transition lists, used by the edit modal JS to
-            # filter the state dropdown to valid targets reachable from
-            # the current row state and allowed by the user's scopes.
-            # Shape: {content_ref: [{from, to, scope}, ...]}.
+            # filter state dropdowns to valid targets reachable from the
+            # current row state and allowed by the user's scopes.
+            # Shape: {content_ref: [{from, to, scope, machine_name}, ...]}.
+            # With multi-SM the list may contain entries from multiple
+            # machines; the edit modal JS filters by `machine_name` per
+            # dropdown.
             sm_transitions_by_content = {}
-            for sm_content, sm_data in ctx.sm_lookup.items():
-                trans = sm_data.get("transitions", {})
-                all_transitions.update(trans)
-                sm_transitions_by_content[sm_content] = [
-                    {"from": f, "to": t, "scope": s}
-                    for (f, t), s in trans.items()
-                ]
+            # Per-(content, machine_name) transitions for templates that
+            # want machine-scoped lookup. Backward-compatibility flat
+            # `_sm_transitions` (a union over all machines on all contents)
+            # is preserved for templates that key directly on (from, to).
+            sm_transitions_by_machine = {}
+            for sm_content, sm_list in ctx.sm_lookup.items():
+                sm_transitions_by_content[sm_content] = []
+                for sm in sm_list:
+                    trans = sm.get("transitions", {})
+                    machine = sm.get("machine_name", "")
+                    all_transitions.update(trans)
+                    sm_transitions_by_machine[(sm_content, machine)] = trans
+                    sm_transitions_by_content[sm_content].extend([
+                        {"from": f, "to": t, "scope": s,
+                         "machine_name": machine}
+                        for (f, t), s in trans.items()
+                    ])
 
             import datetime
             cel_ctx = {
@@ -177,6 +190,7 @@ def _register_page_get(app, ctx, page, slug, page_reqs, page_templates,
                 "termin_compute_js": compute_js,
                 "_sm_transitions": all_transitions,
                 "_sm_transitions_by_content": sm_transitions_by_content,
+                "_sm_transitions_by_machine": sm_transitions_by_machine,
                 "user_scopes": set(user["scopes"]),
                 "termin_eval": _termin_eval,
                 "flash_msg": flash_msg,
@@ -204,7 +218,9 @@ def _register_page_get(app, ctx, page, slug, page_reqs, page_templates,
 
 def _register_form_post(app, ctx, page, slug, reqs):
     ft = reqs["form_target"]
-    sm_info = ctx.sm_lookup.get(ft)
+    # v0.9: sm_info is a list of state-machine dicts (one per SM on this
+    # content). Empty list = no state machines on this content.
+    sm_info = ctx.sm_lookup.get(ft, [])
     create_as = reqs["create_as"]
     unique_fields = reqs["unique_fields"]
     after_save = reqs["after_save"]
@@ -238,10 +254,13 @@ def _register_form_post(app, ctx, page, slug, reqs):
                 user = ctx.get_current_user(request)
                 evaluate_field_defaults(data, schema, ctx.expr_eval, user)
 
-                if _sm:
-                    data["status"] = _sm.get("initial", "")
-                if _ca:
-                    data["status"] = _ca
+                # v0.9 multi-SM: initial values for state-machine columns
+                # are applied by create_record() below from `_sm` (the list
+                # of SM specs on this content). `create_as` overrides the
+                # initial of a single-SM content — in v0.9 we apply it to
+                # the first machine's column.
+                if _ca and _sm:
+                    data[_sm[0]["machine_name"]] = _ca
                 record = await create_record(db, _ft, data, schema, _sm,
                                              ctx.terminator, ctx.event_bus)
                 await ctx.run_event_handlers(db, _ft, "created", record)

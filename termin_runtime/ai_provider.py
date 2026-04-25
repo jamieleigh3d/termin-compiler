@@ -1217,12 +1217,23 @@ def build_agent_tools(accesses: list[str], content_lookup: dict) -> list[dict]:
         },
         {
             "name": "state_transition",
-            "description": "Transition a record's state to a new state.",
+            "description": (
+                "Transition a record's state machine to a new state. "
+                "If the content has more than one state machine, "
+                "machine_name must be supplied to disambiguate which "
+                "machine to drive."),
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "content_name": {"type": "string", "enum": accesses},
                     "record_id": {"type": "integer"},
+                    "machine_name": {
+                        "type": "string",
+                        "description": (
+                            "Snake-case name of the state machine to drive "
+                            "(also the SQL column). Optional when the "
+                            "content has exactly one state machine."),
+                    },
                     "target_state": {"type": "string", "description": "The state to transition to."},
                 },
                 "required": ["content_name", "record_id", "target_state"],

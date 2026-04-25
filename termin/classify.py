@@ -15,7 +15,7 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Application:", "application_line"), ("Description:", "description_line"), ("Id:", "id_line"),
     ("Users authenticate with", "identity_line"), ("Scopes are", "scopes_line"),
     ("Content called", "content_header"), ("Scoped to", "content_scoped_line"), ("Audit level:", "content_audit_line"), ("Each ", "field_line"),
-    ("Anyone with", "access_line"), ("State for", "state_header"),
+    ("Anyone with", "access_line"),
     ("When `", "event_expr_line"), ("When [", "event_expr_line"),  # backtick first, bracket legacy  # disambiguated in _classify_line for content When
     ("When a ", "event_v1_line"), ("When an ", "event_v1_line"),
     ("Create a ", "event_action_line"), ("Create an ", "event_action_line"),
@@ -82,10 +82,17 @@ def classify_line(text: str) -> str:
     if text.startswith(('A "', 'An "')) and " has " in text: return "role_standard_line"
     if " has " in text and '"' in text and not text.startswith(("A ", "An ", '"', "Content", "Each")):
         return "role_bare_line"
-    if text.startswith(("A ", "An ")):
-        if " starts as " in text: return "state_starts_line"
-        if " can also be " in text: return "state_also_line"
-        if " can become " in text: return "state_transition_line"
+    # v0.9: inline state machine sub-block lines.
+    # `<field> starts as <state>`, `<field> can also be <list>`, `<from> can become <to> if ...`
+    # These are only valid inside `which is state:` sub-blocks; the assembler enforces
+    # that they sit under a state-typed field. Classification by structure is safe
+    # because no other DSL construct uses these phrasings.
+    if " starts as " in text:
+        return "sm_starts_as_line"
+    if " can also be " in text:
+        return "sm_also_line"
+    if " can become " in text and " if " in text:
+        return "sm_transition_line"
     # "can execute this" must be checked BEFORE the prefix loop — lines like
     # 'Anyone with "scope" can execute this' match the "Anyone with" prefix
     # and would be misclassified as access_line instead of compute_access_line
@@ -108,7 +115,11 @@ def classify_line(text: str) -> str:
                     if bt_close >= 0 and "," in text[bt_close:bt_close+3]:
                         return "content_when_line"
             return rule
-    if text.startswith('"') and " transitions to " in text: return "action_button_line"
+    # v0.9: action button form is `"Label" transitions <field> to <state> if available`.
+    # The `to` token sits between field name and target state, so we look for
+    # ` transitions ` and a downstream ` if available`.
+    if text.startswith('"') and " transitions " in text and " if available" in text:
+        return "action_button_line"
     if text.startswith('"') and " deletes" in text and " if available" in text: return "action_button_line"
     if text.startswith('"') and " edits" in text and " if available" in text: return "action_button_line"
     if text.startswith('"') and " links to " in text: return "nav_item_line"

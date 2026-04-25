@@ -92,8 +92,11 @@ class TestWarehouseIR:
 
     def test_products_state_machine(self):
         products = next(t for t in self.spec.content if t.name.snake == "products")
-        assert products.has_state_machine is True
-        assert products.initial_state == "draft"
+        # v0.9: multi-SM — per-content list keyed by snake_case field name.
+        assert len(products.state_machines) == 1
+        entry = products.state_machines[0]
+        assert entry["machine_name"] == "product_lifecycle"
+        assert entry["initial"] == "draft"
 
     def test_stock_levels_foreign_key(self):
         sl = next(t for t in self.spec.content if t.name.snake == "stock_levels")
@@ -140,10 +143,11 @@ class TestWarehouseIR:
     def test_routes(self):
         routes_by_path = {r.path: r for r in self.spec.routes}
         assert "/api/v1/products" in routes_by_path
-        # D-11: Auto-generated transition routes use /_transition/{target_state}
+        # v0.9: transition routes include the machine_name segment so
+        # multi-state-machine content can disambiguate.
         activate = next(r for r in self.spec.routes if r.target_state == "active")
         assert activate.kind == RouteKind.TRANSITION
-        assert activate.path == "/api/v1/products/{id}/_transition/active"
+        assert activate.path == "/api/v1/products/{id}/_transition/product_lifecycle/active"
 
     def test_route_scopes(self):
         create_route = next(r for r in self.spec.routes
@@ -170,7 +174,9 @@ class TestWarehouseIR:
         cat_filter = next(f for f in filters if f.props["field"] == "category")
         assert cat_filter.props["mode"] == "enum"
         assert "raw material" in cat_filter.props["options"]
-        status_filter = next(f for f in filters if f.props["field"] == "status")
+        # v0.9: filter on the state machine column uses the field's
+        # snake_case column name, not the generic "status".
+        status_filter = next(f for f in filters if f.props["field"] == "product_lifecycle")
         assert status_filter.props["mode"] == "state"
         assert "draft" in status_filter.props["options"]
 
@@ -300,10 +306,12 @@ class TestProjectBoardIR:
         assert "done" in sm.states
 
     def test_plan_transition(self):
-        # D-11: Auto-generated transition routes use /_transition/{target_state}
+        # v0.9: Transition routes are namespaced by machine_name (snake_case
+        # field name) so multiple state machines per content can coexist:
+        # /_transition/{machine_name}/{target_state}
         plan_route = next(r for r in self.spec.routes if r.target_state == "in sprint")
         assert plan_route.kind == RouteKind.TRANSITION
-        assert plan_route.path == "/api/v1/tasks/{id}/_transition/in sprint"
+        assert plan_route.path == "/api/v1/tasks/{id}/_transition/task_lifecycle/in sprint"
 
     def test_create_task_form_fields(self):
         ct = next(p for p in self.spec.pages if p.slug == "create_task")
@@ -884,3 +892,197 @@ A "user" has "read"
 '''
         spec = self._parse_and_lower(source)
         assert spec.content[0].audit == "actions"
+
+
+# ============================================================
+# v0.9 multi-state-machine IR lowering
+# ============================================================
+
+
+_SM_BASE_IR = '''Users authenticate with stub
+Scopes are "manage" and "approve"
+A "editor" has "manage" and "approve"
+'''
+
+_SINGLE_SM_SRC = _SM_BASE_IR + '''
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+  Anyone with "manage" can view products
+  Anyone with "manage" can update products
+
+As an editor, I want to manage products so that inventory flows:
+  Show a page called "Products":
+    Display a table of products with columns: lifecycle
+    For each product, show actions:
+      "Activate" transitions lifecycle to active if available
+'''
+
+_MULTI_SM_SRC = _SM_BASE_IR + '''
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+  Each product has an approval status which is state:
+    approval status starts as pending
+    approval status can also be approved
+    pending can become approved if the user has approve
+  Anyone with "manage" can view products
+  Anyone with "manage" can update products
+
+As an editor, I want to manage products so that inventory flows:
+  Show a page called "Products":
+    Display a table of products with columns: lifecycle, approval status
+    For each product, show actions:
+      "Activate" transitions lifecycle to active if available
+      "Approve" transitions approval status to approved if available
+'''
+
+
+def _lower_src(source: str):
+    program, errors = parse(source)
+    assert errors.ok, errors.format()
+    result = analyze(program)
+    assert result.ok, result.format()
+    return lower(program)
+
+
+class TestStateMachineIRLowering:
+    """v0.9: ContentSchema.state_machines list + ComponentNode machine_name prop."""
+
+    # --- Single-SM content --------------------------------------------
+
+    def test_content_schema_has_state_machines_list(self):
+        spec = _lower_src(_SINGLE_SM_SRC)
+        cs = next(c for c in spec.content if c.name.snake == "products")
+        assert isinstance(cs.state_machines, tuple)
+        assert len(cs.state_machines) == 1
+
+    def test_state_machines_entry_shape(self):
+        spec = _lower_src(_SINGLE_SM_SRC)
+        cs = next(c for c in spec.content if c.name.snake == "products")
+        entry = cs.state_machines[0]
+        assert "machine_name" in entry
+        assert "initial" in entry
+        assert entry["machine_name"] == "lifecycle"
+        assert entry["initial"] == "draft"
+
+    def test_no_has_state_machine_field(self):
+        spec = _lower_src(_SINGLE_SM_SRC)
+        cs = next(c for c in spec.content if c.name.snake == "products")
+        # v0.9 removes has_state_machine and initial_state from ContentSchema.
+        assert not hasattr(cs, "has_state_machine")
+        assert not hasattr(cs, "initial_state")
+
+    def test_no_status_in_fields(self):
+        spec = _lower_src(_SINGLE_SM_SRC)
+        cs = next(c for c in spec.content if c.name.snake == "products")
+        # v0.8 auto-injected a generic `status` FieldSpec; v0.9 uses the
+        # field-specific column name instead.
+        for f in cs.fields:
+            assert f.name != "status"
+
+    def test_machine_name_is_snake_case_of_field(self):
+        # "approval status" field → "approval_status" machine_name.
+        spec = _lower_src(_MULTI_SM_SRC)
+        sm_approval = next(
+            sm for sm in spec.state_machines
+            if sm.machine_name == "approval_status"
+        )
+        assert sm_approval.content_ref == "products"
+        assert sm_approval.initial_state == "pending"
+
+    def test_state_machine_spec_machine_name(self):
+        # StateMachineSpec.machine_name is the snake_case field name,
+        # not a user-supplied display name.
+        spec = _lower_src(_SINGLE_SM_SRC)
+        sm = next(sm for sm in spec.state_machines if sm.content_ref == "products")
+        assert sm.machine_name == "lifecycle"
+
+    # --- Multi-SM content ---------------------------------------------
+
+    def test_two_state_machines_in_list(self):
+        spec = _lower_src(_MULTI_SM_SRC)
+        cs = next(c for c in spec.content if c.name.snake == "products")
+        assert len(cs.state_machines) == 2
+        names = sorted(e["machine_name"] for e in cs.state_machines)
+        assert names == ["approval_status", "lifecycle"]
+
+    def test_both_machines_have_correct_initial(self):
+        spec = _lower_src(_MULTI_SM_SRC)
+        cs = next(c for c in spec.content if c.name.snake == "products")
+        by_name = {e["machine_name"]: e["initial"] for e in cs.state_machines}
+        assert by_name["lifecycle"] == "draft"
+        assert by_name["approval_status"] == "pending"
+
+    def test_no_overwriting(self):
+        spec = _lower_src(_MULTI_SM_SRC)
+        # The top-level state_machines list must also contain both entries —
+        # the v0.8 bug was a dict keyed by content_name that dropped the second.
+        sms_for_products = [
+            sm for sm in spec.state_machines if sm.content_ref == "products"
+        ]
+        assert len(sms_for_products) == 2
+        names = sorted(sm.machine_name for sm in sms_for_products)
+        assert names == ["approval_status", "lifecycle"]
+
+    # --- Action button component nodes --------------------------------
+
+    @staticmethod
+    def _collect_action_buttons(page):
+        buttons = []
+        def walk(node):
+            for ch in getattr(node, "children", ()):
+                if ch.type == "action_button":
+                    buttons.append(ch)
+                walk(ch)
+            # Row-action buttons live in data_table.props["row_actions"],
+            # not in children — the renderer pulls them out per row.
+            props = getattr(node, "props", None) or {}
+            row_actions = props.get("row_actions") if isinstance(props, dict) else None
+            if row_actions:
+                for ra in row_actions:
+                    if getattr(ra, "type", None) == "action_button":
+                        buttons.append(ra)
+        walk(page)
+        return buttons
+
+    def test_action_button_has_machine_name_prop(self):
+        spec = _lower_src(_SINGLE_SM_SRC)
+        page = next(p for p in spec.pages if p.name == "Products")
+        buttons = self._collect_action_buttons(page)
+        assert len(buttons) >= 1
+        for btn in buttons:
+            assert "machine_name" in btn.props, btn.props
+
+    def test_action_button_machine_name_is_snake_case(self):
+        spec = _lower_src(_MULTI_SM_SRC)
+        page = next(p for p in spec.pages if p.name == "Products")
+        buttons = self._collect_action_buttons(page)
+        # Find the button that targets "approved" — its machine_name must
+        # be "approval_status" (snake_case of the "approval status" field).
+        approved_btn = None
+        for b in buttons:
+            ts = b.props.get("target_state")
+            ts_val = ts.value if hasattr(ts, "value") else ts
+            if ts_val == "approved":
+                approved_btn = b
+                break
+        assert approved_btn is not None
+        mn = approved_btn.props["machine_name"]
+        mn_val = mn.value if hasattr(mn, "value") else mn
+        assert mn_val == "approval_status"
+
+    def test_two_action_buttons_different_machines(self):
+        spec = _lower_src(_MULTI_SM_SRC)
+        page = next(p for p in spec.pages if p.name == "Products")
+        buttons = self._collect_action_buttons(page)
+        machine_names = set()
+        for b in buttons:
+            mn = b.props["machine_name"]
+            machine_names.add(mn.value if hasattr(mn, "value") else mn)
+        assert "lifecycle" in machine_names
+        assert "approval_status" in machine_names

@@ -1,0 +1,42 @@
+Application: Approval Workflow
+  Description: Document lifecycle and approval management. Demonstrates v0.9 multi-state-machine: each document carries two independent state fields (lifecycle and approval status), each with its own transitions, scope gates, and audit trail.
+Id: c9222f35-1f92-4426-99fc-a97c06243254
+
+Users authenticate with cookie
+Scopes are "docs.edit", "docs.approve", and "docs.admin"
+An "editor" has "docs.edit"
+An "approver" has "docs.approve"
+An "admin" has "docs.edit", "docs.approve", and "docs.admin"
+
+Content called "documents":
+  Each document has a title which is text, required
+  Each document has a body which is text
+  Each document has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be published or archived
+    draft can become published if the user has docs.edit
+    published can become archived if the user has docs.admin
+  Each document has an approval status which is state:
+    approval status starts as pending
+    approval status can also be approved or rejected
+    pending can become approved if the user has docs.approve
+    pending can become rejected if the user has docs.approve
+    rejected can become pending if the user has docs.edit
+  Anyone with "docs.edit" can view, create, update, or delete documents
+  Anyone with "docs.approve" can view documents
+
+As an editor, I want to manage documents so that I can publish content:
+  Show a page called "Documents"
+  Display a table of documents with columns: title, lifecycle, approval status
+  Accept input for title and body
+  For each document, show actions:
+    "Publish" transitions lifecycle to published if available
+    "Archive" transitions lifecycle to archived if available, hide otherwise
+
+As an approver, I want to review documents so that I can control content:
+  Show a page called "Review Queue"
+  Display a table of documents with columns: title, lifecycle, approval status
+  For each document, show actions:
+    "Approve" transitions approval status to approved if available
+    "Reject" transitions approval status to rejected if available
+    "Return for Revision" transitions approval status to pending if available

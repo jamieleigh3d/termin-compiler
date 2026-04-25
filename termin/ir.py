@@ -83,8 +83,11 @@ class ContentSchema:
     fields: tuple[FieldSpec, ...]
     singular: str = ""                               # e.g. "echo" for Content "echoes"
     storage_intent: str = "auto"
-    has_state_machine: bool = False
-    initial_state: Optional[str] = None
+    # v0.9: multi-state-machine support. Each entry is
+    # {"machine_name": snake_case, "initial": state_name}. Replaces the
+    # v0.8 has_state_machine/initial_state pair, which could only hold a
+    # single machine per content.
+    state_machines: tuple[dict, ...] = ()
     confidentiality_scopes: tuple[str, ...] = ()  # content-level scopes (inherited by fields)
     audit: str = "actions"                          # "actions" (default), "debug", or "none"
     dependent_values: tuple['DependentValueSpec', ...] = ()  # D-19: conditional field constraints
@@ -210,6 +213,13 @@ class RouteSpec:
     required_scope: Optional[str] = None
     lookup_column: str = "id"           # column for {param} routes
     target_state: Optional[str] = None  # for TRANSITION routes
+    machine_name: Optional[str] = None  # snake_case state-machine column
+                                        # name; for TRANSITION routes only.
+                                        # Multi-SM content may have several
+                                        # transition routes that share a
+                                        # target_state across machines, so
+                                        # the runtime needs both fields to
+                                        # disambiguate.
 
 
 # ── Pages / UI ──

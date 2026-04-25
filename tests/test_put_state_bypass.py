@@ -11,7 +11,7 @@ directly to the database. Before this fix, a caller could include a
 state-machine-backed field (e.g., `status`) in the PUT body and bypass:
 
   1. The transition rules (draft -> discontinued might not be declared,
-     but a PUT with {"status": "discontinued"} on a draft row would
+     but a PUT with {"product_lifecycle": "discontinued"} on a draft row would
      succeed anyway).
   2. The transition's required_scope (discontinue might require
      inventory.admin, but a caller with only inventory.write could set
@@ -100,21 +100,21 @@ class TestPutRouteBlocksUndeclaredTransitions:
         pid = _create_draft_product(client)
         client.cookies.set("termin_role", "warehouse manager")
         r = client.put(f"/api/v1/products/{pid}",
-                       json={"status": "discontinued"})
+                       json={"product_lifecycle": "discontinued"})
         assert r.status_code == 409, r.text
         # Row unchanged.
         r2 = client.get(f"/api/v1/products/{pid}")
-        assert r2.json()["status"] == "draft"
+        assert r2.json()["product_lifecycle"] == "draft"
 
     def test_put_with_nonexistent_state_rejected(self, client):
         """A target state the state machine does not know is a 409."""
         pid = _create_draft_product(client)
         client.cookies.set("termin_role", "warehouse manager")
         r = client.put(f"/api/v1/products/{pid}",
-                       json={"status": "gibberish"})
+                       json={"product_lifecycle": "gibberish"})
         assert r.status_code == 409, r.text
         r2 = client.get(f"/api/v1/products/{pid}")
-        assert r2.json()["status"] == "draft"
+        assert r2.json()["product_lifecycle"] == "draft"
 
 
 class TestPutRouteEnforcesTransitionScope:
@@ -128,17 +128,17 @@ class TestPutRouteEnforcesTransitionScope:
         pid = _create_draft_product(client)
         # Promote to active first (manager has admin).
         client.cookies.set("termin_role", "warehouse manager")
-        r = client.post(f"/_transition/products/{pid}/active")
+        r = client.post(f"/_transition/products/product_lifecycle/{pid}/active")
         assert r.status_code == 200, r.text
 
         client.cookies.set("termin_role", "warehouse clerk")
         r = client.put(f"/api/v1/products/{pid}",
-                       json={"status": "discontinued"})
+                       json={"product_lifecycle": "discontinued"})
         assert r.status_code == 403, r.text
         # Row unchanged.
         client.cookies.set("termin_role", "warehouse manager")
         r2 = client.get(f"/api/v1/products/{pid}")
-        assert r2.json()["status"] == "active"
+        assert r2.json()["product_lifecycle"] == "active"
 
 
 class TestPutRouteAllowsValidTransitions:
@@ -152,10 +152,10 @@ class TestPutRouteAllowsValidTransitions:
         pid = _create_draft_product(client)
         client.cookies.set("termin_role", "warehouse clerk")
         r = client.put(f"/api/v1/products/{pid}",
-                       json={"status": "active"})
+                       json={"product_lifecycle": "active"})
         assert r.status_code == 200, r.text
         r2 = client.get(f"/api/v1/products/{pid}")
-        assert r2.json()["status"] == "active"
+        assert r2.json()["product_lifecycle"] == "active"
 
 
 class TestPutRouteSimultaneousStateAndFieldUpdate:
@@ -171,12 +171,12 @@ class TestPutRouteSimultaneousStateAndFieldUpdate:
         persist."""
         pid = _create_draft_product(client)
         client.cookies.set("termin_role", "warehouse manager")
-        client.post(f"/_transition/products/{pid}/active")
+        client.post(f"/_transition/products/product_lifecycle/{pid}/active")
 
         client.cookies.set("termin_role", "warehouse clerk")
         r = client.put(f"/api/v1/products/{pid}", json={
             "description": "clerk tried to sneak this in",
-            "status": "discontinued",
+            "product_lifecycle": "discontinued",
         })
         assert r.status_code == 403, r.text
 
@@ -192,12 +192,12 @@ class TestPutRouteSimultaneousStateAndFieldUpdate:
         client.cookies.set("termin_role", "warehouse clerk")
         r = client.put(f"/api/v1/products/{pid}", json={
             "description": "updated at activation",
-            "status": "active",
+            "product_lifecycle": "active",
         })
         assert r.status_code == 200, r.text
         r2 = client.get(f"/api/v1/products/{pid}")
         body = r2.json()
-        assert body["status"] == "active"
+        assert body["product_lifecycle"] == "active"
         assert body["description"] == "updated at activation"
 
 
@@ -214,19 +214,19 @@ class TestPutRouteRegressions:
         assert r.status_code == 200, r.text
         r2 = client.get(f"/api/v1/products/{pid}")
         assert r2.json()["description"] == "plain field update"
-        assert r2.json()["status"] == "draft"  # unchanged
+        assert r2.json()["product_lifecycle"] == "draft"  # unchanged
 
     def test_put_with_same_state_is_noop(self, client):
-        """PUT {"status": "draft"} on a draft row is a no-op on state.
+        """PUT {"product_lifecycle": "draft"} on a draft row is a no-op on state.
         Must not 409 for 'draft -> draft is not declared' — the state
         didn't actually change."""
         pid = _create_draft_product(client)
         client.cookies.set("termin_role", "warehouse clerk")
         r = client.put(f"/api/v1/products/{pid}", json={
-            "status": "draft",
+            "product_lifecycle": "draft",
             "description": "same-state PUT",
         })
         assert r.status_code == 200, r.text
         r2 = client.get(f"/api/v1/products/{pid}")
-        assert r2.json()["status"] == "draft"
+        assert r2.json()["product_lifecycle"] == "draft"
         assert r2.json()["description"] == "same-state PUT"

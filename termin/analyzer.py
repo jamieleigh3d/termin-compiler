@@ -271,7 +271,65 @@ class Analyzer:
                     code="TERMIN-S005",
                 ))
 
+    # v0.9: reserved keywords that may not appear as standalone tokens in
+    # state names (grammar keywords in state sub-blocks + action button lines).
+    STATE_NAME_RESERVED = {
+        "a", "an", "also", "as", "become", "be", "can", "has", "if",
+        "starts", "the", "to", "user",
+    }
+
+    def _state_name_has_reserved_word(self, state: str) -> str | None:
+        """If `state` contains a reserved keyword as a whole word, return it."""
+        for tok in state.split():
+            if tok.lower() in self.STATE_NAME_RESERVED:
+                return tok.lower()
+        return None
+
     def _check_state_machines(self) -> None:
+        # v0.9: per-content machine name uniqueness + state-vs-user-field
+        # column collision. These rely on the Content objects themselves,
+        # so iterate them first.
+        for content in self.program.contents:
+            seen_machines: dict[str, int] = {}
+            # Track all snake_case field names on the content.
+            # For state fields, fields[i].name is the field display name
+            # ("approval status"); snake_casing matches the column name.
+            non_state_snake: dict[str, int] = {}
+            state_field_snake: dict[str, int] = {}
+            for f in content.fields:
+                snake = f.name.lower().replace(" ", "_")
+                if f.type_expr.base_type == "state":
+                    # Duplicate state-typed field name on the same content.
+                    key = snake
+                    if key in seen_machines:
+                        self.errors.add(SemanticError(
+                            message=(
+                                f'Duplicate state machine "{f.name}" on content '
+                                f'"{content.name}": a content may not declare two '
+                                f'state-typed fields with the same name.'
+                            ),
+                            line=f.line,
+                            code="TERMIN-S033",
+                        ))
+                    seen_machines[key] = f.line
+                    state_field_snake[snake] = f.line
+                else:
+                    non_state_snake.setdefault(snake, f.line)
+            # Column collision: a state field and a user field share a
+            # snake_case column name on the same content.
+            for snake, sline in state_field_snake.items():
+                if snake in non_state_snake:
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'State field collision on "{content.name}": '
+                            f'"{snake}" is declared as both a state machine '
+                            f'and a regular field. Rename one of them.'
+                        ),
+                        line=sline,
+                        code="TERMIN-S034",
+                    ))
+
+        # Per-machine checks
         for sm in self.program.state_machines:
             # Allow state machines on Content, Channel, or Compute names
             all_targets = self.content_names | self.channel_names | self.compute_names
@@ -284,6 +342,45 @@ class Analyzer:
                     code="TERMIN-S006",
                     suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
                 ))
+
+            # v0.9: exactly one `starts as` per machine.
+            if sm.starts_as_count > 1:
+                self.errors.add(SemanticError(
+                    message=(
+                        f'State machine "{sm.machine_name}" on "{sm.content_name}" '
+                        f'has multiple "starts as" lines — a machine may declare '
+                        f'its initial state only once.'
+                    ),
+                    line=sm.line,
+                    code="TERMIN-S035",
+                ))
+
+            # v0.9: reserved-keyword tokens in state names.
+            for st in sm.states:
+                bad = self._state_name_has_reserved_word(st)
+                if bad:
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'State name "{st}" in "{sm.machine_name}" contains '
+                            f'reserved keyword "{bad}" — \'{bad}\' is a reserved '
+                            f'keyword and cannot appear in a state name.'
+                        ),
+                        line=sm.line,
+                        code="TERMIN-S036",
+                    ))
+            for tr in sm.transitions:
+                for st in (tr.from_state, tr.to_state):
+                    bad = self._state_name_has_reserved_word(st)
+                    if bad:
+                        self.errors.add(SemanticError(
+                            message=(
+                                f'State name "{st}" in "{sm.machine_name}" contains '
+                                f'reserved keyword "{bad}" — \'{bad}\' is a reserved '
+                                f'keyword and cannot appear in a state name.'
+                            ),
+                            line=tr.line,
+                            code="TERMIN-S036",
+                        ))
 
             all_states = set(sm.states)
             for tr in sm.transitions:
@@ -314,6 +411,84 @@ class Analyzer:
                         code="TERMIN-S009",
                         suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
                     ))
+
+        # v0.9: action button validation — `machine_name` must be a state
+        # field on the acted-on content, and `target_state` must be a
+        # reachable state of that machine.
+        self._check_action_button_state_refs()
+
+    def _check_action_button_state_refs(self) -> None:
+        """Validate v0.9 action button `transitions <field> to <state>` lines.
+
+        Each transition-kind action button is grounded by a preceding
+        DisplayTable (gives us the content_name). The button's
+        `machine_name` must match a state-typed field on that content;
+        `target_state` must appear as a `to_state` in that machine's
+        transition table (self-transitions from `to_state` are valid —
+        they'd be picked up the same way).
+        """
+        # Index state machines by (content_name, snake_machine_name)
+        sm_by_key: dict[tuple[str, str], StateMachine] = {}
+        for sm in self.program.state_machines:
+            key = (sm.content_name, sm.machine_name.lower().replace(" ", "_"))
+            sm_by_key[key] = sm
+
+        # Index state fields per content (snake_case -> True)
+        state_fields_per_content: dict[str, set[str]] = {}
+        for content in self.program.contents:
+            sf = {
+                f.name.lower().replace(" ", "_")
+                for f in content.fields if f.type_expr.base_type == "state"
+            }
+            state_fields_per_content[content.name] = sf
+
+        for story in self.program.stories:
+            current_content: str | None = None
+            for d in story.directives:
+                if isinstance(d, DisplayTable):
+                    current_content = d.content_name
+                elif isinstance(d, ActionButtonDef) and d.kind == "transition":
+                    if not current_content:
+                        continue
+                    content = self._find_content_by_name(current_content)
+                    if content is None:
+                        continue
+                    mn_snake = (d.machine_name or "").lower().replace(" ", "_")
+                    # Machine must be a declared state field on this content.
+                    sfs = state_fields_per_content.get(content.name, set())
+                    if mn_snake not in sfs:
+                        suggestion = _fuzzy_match(mn_snake, sfs) if sfs else None
+                        self.errors.add(SemanticError(
+                            message=(
+                                f'Action button "{d.label}" transitions '
+                                f'"{d.machine_name}" — but "{d.machine_name}" is '
+                                f'not a state field on "{content.name}".'
+                            ),
+                            line=d.line,
+                            code="TERMIN-S037",
+                            suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
+                        ))
+                        continue
+                    # Target state must appear as a to_state in the machine.
+                    sm = sm_by_key.get((content.name, mn_snake))
+                    if sm is None:
+                        continue
+                    reachable = {tr.to_state for tr in sm.transitions}
+                    # Self-transitions: from_state can also equal to_state,
+                    # which is already captured in `reachable` above.
+                    if d.target_state not in reachable:
+                        suggestion = _fuzzy_match(d.target_state, reachable) if reachable else None
+                        self.errors.add(SemanticError(
+                            message=(
+                                f'Action button "{d.label}" targets state '
+                                f'"{d.target_state}" — but "{d.target_state}" '
+                                f'is not a valid transition target of '
+                                f'"{d.machine_name}" on "{content.name}".'
+                            ),
+                            line=d.line,
+                            code="TERMIN-S038",
+                            suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
+                        ))
 
     def _check_events(self) -> None:
         for event in self.program.events:
@@ -366,9 +541,18 @@ class Analyzer:
           TERMIN-S023: Inline editing references an unknown field.
           TERMIN-S024: Inline editing attempted on a state-machine column.
         """
-        # Pre-compute the set of content names that have a state machine
-        # (used for the TERMIN-S024 check).
-        contents_with_sm = {sm.content_name for sm in self.program.state_machines}
+        # v0.9: Pre-compute, per content, the snake_case names of any
+        # state-typed field declared inline on that content. These cannot
+        # be inline-edited (TERMIN-S024).
+        state_fields_by_content: dict[str, set[str]] = {}
+        for content in self.program.contents:
+            snake_names: set[str] = set()
+            for f in content.fields:
+                base = getattr(f.type_expr, "base_type", None)
+                if base == "state":
+                    snake_names.add(f.name.lower().replace(" ", "_"))
+            if snake_names:
+                state_fields_by_content[content.name] = snake_names
 
         for story in self.program.stories:
             current_table_content_name: str | None = None
@@ -403,24 +587,22 @@ class Analyzer:
                         f.name.lower().replace(" ", "_")
                         for f in content.fields
                     }
+                    state_field_snakes = state_fields_by_content.get(
+                        content.name, set())
                     for fname in d.fields:
                         fname_snake = fname.lower().replace(" ", "_")
-                        if fname == "status" or fname_snake == "status":
-                            # Only flag if the content actually has a state
-                            # machine; otherwise there is no `status` column
-                            # special-cased.
-                            if content.name in contents_with_sm:
-                                self.errors.add(SemanticError(
-                                    message=(
-                                        f'Cannot inline-edit the state-machine '
-                                        f'column "status" on "{content.name}" '
-                                        f'— use transition buttons or the '
-                                        f'Edit modal\'s state dropdown instead.'
-                                    ),
-                                    line=d.line,
-                                    code="TERMIN-S024",
-                                ))
-                                continue
+                        if fname_snake in state_field_snakes:
+                            self.errors.add(SemanticError(
+                                message=(
+                                    f'Cannot inline-edit the state-machine '
+                                    f'column "{fname}" on "{content.name}" '
+                                    f'— use transition buttons or the '
+                                    f'Edit modal\'s state dropdown instead.'
+                                ),
+                                line=d.line,
+                                code="TERMIN-S024",
+                            ))
+                            continue
                         if (fname not in schema_fields
                                 and fname_snake not in schema_fields_snake):
                             self.errors.add(SemanticError(

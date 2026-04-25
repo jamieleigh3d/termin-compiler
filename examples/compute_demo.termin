@@ -18,6 +18,12 @@ Content called "orders":
   Each order has a customer which is text, required
   Each order has a total which is currency
   Each order has a priority which is one of: "low", "medium", "high"
+  Each order has an order lifecycle which is state:
+    order lifecycle starts as pending
+    order lifecycle can also be confirmed, shipped, or cancelled
+    pending can become confirmed if the user has orders.write
+    confirmed can become shipped if the user has orders.write
+    pending can become cancelled if the user has orders.admin
   Anyone with "orders.read" can view orders
   Anyone with "orders.write" can create or update orders
   Anyone with "orders.admin" can delete orders
@@ -34,15 +40,6 @@ Content called "reports":
   Each report has a total count which is a whole number
   Each report has a total revenue which is currency
   Anyone with "orders.read" can view reports
-
---- State ---
-
-State for orders called "order lifecycle":
-  An order starts as "pending"
-  An order can also be "confirmed" or "shipped" or "cancelled"
-  A pending order can become confirmed if the user has "orders.write"
-  A confirmed order can become shipped if the user has "orders.write"
-  A pending order can become cancelled if the user has "orders.admin"
 
 --- Compute ---
 
@@ -120,14 +117,14 @@ Boundary called "order reporting":
 As an order clerk, I want to see and create orders
   so that I can process incoming requests:
     Show a page called "Order Dashboard"
-    Display a table of orders with columns: customer, total, priority, status
+    Display a table of orders with columns: customer, total, priority, order lifecycle
     Accept input for customer, priority
-    Allow filtering by priority, status
+    Allow filtering by priority, order lifecycle
 
 As an order manager, I want to see order analytics
   so that I can track business performance:
     Show a page called "Order Analytics"
-    Display a table of orders with columns: customer, total, priority, status
+    Display a table of orders with columns: customer, total, priority, order lifecycle
 
 --- Navigation ---
 

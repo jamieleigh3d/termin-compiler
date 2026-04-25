@@ -66,7 +66,7 @@ class TestHelpdeskCRUD:
         assert r.status_code == 201
         d = r.json()
         assert d["title"] == "Login broken"
-        assert d["status"] == "open"
+        assert d["ticket_lifecycle"] == "open"
         assert d["priority"] == "high"
 
     def test_list_tickets(self, client):
@@ -128,35 +128,35 @@ class TestHelpdeskStateTransitions:
             "submitted_by": "user@test.com"
         })
         # D-11: Transition routes use /_transition/{target_state}
-        r = client.post("/api/v1/tickets/2/_transition/in progress",
+        r = client.post("/api/v1/tickets/2/_transition/ticket_lifecycle/in progress",
                         cookies={"termin_role": "support agent"})
         assert r.status_code == 200
-        assert r.json()["status"] == "in progress"
+        assert r.json()["ticket_lifecycle"] == "in progress"
 
     def test_in_progress_to_waiting(self, client):
-        r = client.post("/api/v1/tickets/2/_transition/waiting on customer",
+        r = client.post("/api/v1/tickets/2/_transition/ticket_lifecycle/waiting on customer",
                         cookies={"termin_role": "support agent"})
         assert r.status_code == 200
-        assert r.json()["status"] == "waiting on customer"
+        assert r.json()["ticket_lifecycle"] == "waiting on customer"
 
     def test_waiting_to_in_progress(self, client):
         """Customer responds, ticket goes back to in progress."""
-        r = client.post("/api/v1/tickets/2/_transition/in progress",
+        r = client.post("/api/v1/tickets/2/_transition/ticket_lifecycle/in progress",
                         cookies={"termin_role": "customer"})
         assert r.status_code == 200
-        assert r.json()["status"] == "in progress"
+        assert r.json()["ticket_lifecycle"] == "in progress"
 
     def test_in_progress_to_resolved(self, client):
-        r = client.post("/api/v1/tickets/2/_transition/resolved",
+        r = client.post("/api/v1/tickets/2/_transition/ticket_lifecycle/resolved",
                         cookies={"termin_role": "support agent"})
         assert r.status_code == 200
-        assert r.json()["status"] == "resolved"
+        assert r.json()["ticket_lifecycle"] == "resolved"
 
     def test_resolved_to_closed(self, client):
-        r = client.post("/api/v1/tickets/2/_transition/closed",
+        r = client.post("/api/v1/tickets/2/_transition/ticket_lifecycle/closed",
                         cookies={"termin_role": "support manager"})
         assert r.status_code == 200
-        assert r.json()["status"] == "closed"
+        assert r.json()["ticket_lifecycle"] == "closed"
 
     def test_cannot_close_open_ticket(self, client):
         """No direct open -> closed transition."""
@@ -165,7 +165,7 @@ class TestHelpdeskStateTransitions:
             "priority": "critical", "category": "bug",
             "submitted_by": "user@test.com"
         })
-        r = client.post("/api/v1/tickets/3/_transition/closed",
+        r = client.post("/api/v1/tickets/3/_transition/ticket_lifecycle/closed",
                         cookies={"termin_role": "support manager"})
         assert r.status_code == 409
 
@@ -176,9 +176,9 @@ class TestHelpdeskStateTransitions:
             "priority": "low", "category": "question",
             "submitted_by": "user@test.com"
         })
-        client.post("/api/v1/tickets/4/_transition/in progress",
+        client.post("/api/v1/tickets/4/_transition/ticket_lifecycle/in progress",
                     cookies={"termin_role": "support agent"})
-        r = client.post("/api/v1/tickets/4/_transition/resolved",
+        r = client.post("/api/v1/tickets/4/_transition/ticket_lifecycle/resolved",
                         cookies={"termin_role": "customer"})
         assert r.status_code == 403
 
@@ -250,7 +250,7 @@ class TestHelpdeskUI:
     def test_filter_dropdowns_present(self, client):
         r = client.get("/ticket_queue")
         html = r.text
-        assert 'data-filter="status"' in html
+        assert 'data-filter="ticket_lifecycle"' in html
         assert 'data-filter="priority"' in html
         assert 'data-filter="category"' in html
 

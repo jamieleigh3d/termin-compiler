@@ -82,19 +82,19 @@ def test_state_transition_to_undefined_state():
     result = _analyze(VALID_BASE + '''
 Content called "tasks":
   Each task has a title which is text
+  Each task has a flow which is state:
+    flow starts as open
+    flow can also be closed
+    open can become nonexistent if the user has write
   Anyone with "read" can view tasks
-
-State for tasks called "flow":
-  A task starts as "open"
-  A task can also be "closed"
-  An open task can become nonexistent if the user has "write"
 ''')
     assert not result.ok
     assert any("undefined state" in str(e).lower() for e in result.errors)
 
 
-def test_state_machine_undefined_content():
-    result = _analyze(VALID_BASE + '''
+def test_state_machine_old_top_level_syntax_rejected():
+    """In v0.9, top-level `State for X called "Y":` is no longer accepted."""
+    _program, parse_errors = parse(VALID_BASE + '''
 Content called "items":
   Each item has a name which is text
   Anyone with "read" can view items
@@ -102,8 +102,8 @@ Content called "items":
 State for nonexistent called "flow":
   A thing starts as "open"
 ''')
-    assert not result.ok
-    assert any("undefined content" in str(e).lower() for e in result.errors)
+    # Old syntax is a parse-time error rather than an analyzer semantic one.
+    assert not parse_errors.ok
 
 
 def test_warehouse_example_passes():
@@ -619,3 +619,225 @@ def test_fuzzy_match_no_suggestion_for_distant():
     assert _fuzzy_match("xyz", candidates) is None
     # "ordrs" is close to "orders" (distance 1)
     assert _fuzzy_match("ordrs", candidates) == "orders"
+
+
+# v0.9 multi-state-machine analyzer tests ---------------------------------
+
+
+_SM_BASE = '''Users authenticate with stub
+Scopes are "manage" and "approve"
+A "editor" has "manage" and "approve"
+'''
+
+
+class TestStateMachineAnalyzer:
+    """Analyzer checks for v0.9 inline state machines (design doc §7)."""
+
+    def _compile(self, src: str):
+        program, parse_errors = parse(src)
+        assert parse_errors.ok, parse_errors.format()
+        return analyze(program)
+
+    # --- Failure cases ----------------------------------------------------
+
+    def test_duplicate_machine_name_on_content(self):
+        result = self._compile(_SM_BASE + '''
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+  Each product has a lifecycle which is state:
+    lifecycle starts as pending
+    lifecycle can also be approved
+    pending can become approved if the user has approve
+  Anyone with "manage" can view products
+''')
+        assert not result.ok
+        msgs = " | ".join(str(e).lower() for e in result.errors)
+        assert "lifecycle" in msgs
+        assert "duplicate" in msgs or "already" in msgs
+
+    def test_duplicate_starts_as(self):
+        result = self._compile(_SM_BASE + '''
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle starts as active
+    lifecycle can also be active
+    draft can become active if the user has manage
+  Anyone with "manage" can view products
+''')
+        assert not result.ok
+        msgs = " | ".join(str(e).lower() for e in result.errors)
+        assert "starts as" in msgs
+        assert "once" in msgs or "multiple" in msgs or "duplicate" in msgs
+
+    def test_reserved_keyword_if_in_state_name(self):
+        result = self._compile(_SM_BASE + '''
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be waiting if ready
+    draft can become waiting if ready if the user has manage
+  Anyone with "manage" can view products
+''')
+        assert not result.ok
+        msgs = " | ".join(str(e).lower() for e in result.errors)
+        assert "if" in msgs
+        assert "reserved" in msgs
+
+    def test_reserved_keyword_can_in_state_name(self):
+        result = self._compile(_SM_BASE + '''
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be can proceed
+    draft can become can proceed if the user has manage
+  Anyone with "manage" can view products
+''')
+        assert not result.ok
+        msgs = " | ".join(str(e).lower() for e in result.errors)
+        assert "can" in msgs
+        assert "reserved" in msgs
+
+    def test_reserved_keyword_as_in_state_name(self):
+        result = self._compile(_SM_BASE + '''
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be draft as submitted
+    draft can become draft as submitted if the user has manage
+  Anyone with "manage" can view products
+''')
+        assert not result.ok
+        msgs = " | ".join(str(e).lower() for e in result.errors)
+        assert "as" in msgs
+        assert "reserved" in msgs
+
+    def test_state_column_collides_with_user_field(self):
+        result = self._compile(_SM_BASE + '''
+Content called "products":
+  Each product has a lifecycle which is text
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+  Anyone with "manage" can view products
+''')
+        assert not result.ok
+        msgs = " | ".join(str(e).lower() for e in result.errors)
+        assert "lifecycle" in msgs
+        assert "collision" in msgs or "collide" in msgs or "conflict" in msgs
+
+    def test_action_button_references_nonexistent_machine(self):
+        result = self._compile(_SM_BASE + '''
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+  Anyone with "manage" can view products
+  Anyone with "manage" can update products
+
+As an editor, I want to manage things so that things happen:
+  Show a page called "Products":
+    Display a table of products with columns: lifecycle
+    For each product, show actions:
+      "Activate" transitions nonexistent to active if available
+''')
+        assert not result.ok
+        msgs = " | ".join(str(e).lower() for e in result.errors)
+        assert "nonexistent" in msgs
+        assert "not a state field" in msgs or "undefined" in msgs or "no state" in msgs
+
+    def test_action_button_target_state_not_reachable(self):
+        result = self._compile(_SM_BASE + '''
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+  Anyone with "manage" can view products
+  Anyone with "manage" can update products
+
+As an editor, I want to manage things so that things happen:
+  Show a page called "Products":
+    Display a table of products with columns: lifecycle
+    For each product, show actions:
+      "Typo" transitions lifecycle to typo if available
+''')
+        assert not result.ok
+        msgs = " | ".join(str(e).lower() for e in result.errors)
+        assert "typo" in msgs
+        assert "not a valid" in msgs or "unreachable" in msgs or "not reachable" in msgs or "undefined" in msgs
+
+    # --- Happy paths ------------------------------------------------------
+
+    def test_self_transition_is_valid(self):
+        result = self._compile(_SM_BASE + '''
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become draft if the user has manage
+    draft can become active if the user has manage
+  Anyone with "manage" can view products
+''')
+        assert result.ok, result.format()
+        # Verify the self-transition is present in the lowered AST
+        from termin.peg_parser import parse_peg
+        program, _ = parse_peg(_SM_BASE + '''
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become draft if the user has manage
+    draft can become active if the user has manage
+  Anyone with "manage" can view products
+''')
+        assert len(program.state_machines) == 1
+        sm = program.state_machines[0]
+        self_trs = [t for t in sm.transitions if t.from_state == t.to_state == "draft"]
+        assert len(self_trs) == 1
+
+    def test_two_machines_different_names_valid(self):
+        result = self._compile(_SM_BASE + '''
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+  Each product has an approval status which is state:
+    approval status starts as pending
+    approval status can also be approved
+    pending can become approved if the user has approve
+  Anyone with "manage" can view products
+''')
+        assert result.ok, result.format()
+
+    def test_starts_as_value_implicit_in_states(self):
+        # `lifecycle starts as draft` is the only reference to `draft`;
+        # `draft` is not repeated in `can also be` but must still appear in states.
+        result = self._compile(_SM_BASE + '''
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+  Anyone with "manage" can view products
+''')
+        assert result.ok, result.format()
+        from termin.peg_parser import parse_peg
+        program, _ = parse_peg(_SM_BASE + '''
+Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+  Anyone with "manage" can view products
+''')
+        assert len(program.state_machines) == 1
+        sm = program.state_machines[0]
+        assert "draft" in set(sm.states)
+        assert "active" in set(sm.states)

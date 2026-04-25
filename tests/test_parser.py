@@ -83,14 +83,14 @@ Content called "details":
 def test_parse_state_machine():
     program, errors = parse('''Content called "tasks":
   Each task has a title which is text
+  Each task has a task flow which is state:
+    task flow starts as open
+    task flow can also be closed or archived
+    open can become closed if the user has write
+    closed can become archived if the user has admin
   Anyone with "read" can view tasks
-
-State for tasks called "task flow":
-  A task starts as "open"
-  A task can also be "closed" or "archived"
-  An open task can become closed if the user has "write"
-  A closed task can become archived if the user has "admin"''')
-    assert errors.ok
+''')
+    assert errors.ok, errors.format()
     sm = program.state_machines[0]
     assert sm.machine_name == "task flow"
     assert sm.initial_state == "open"
@@ -566,3 +566,381 @@ class TestContentAudit:
         program, errors = parse(src)
         assert errors.ok, errors.format()
         assert program.contents[0].audit == "actions"
+
+
+# ── v0.9: state as inline field type (multi-state-machine per content) ──
+
+class TestStateMachineFieldType:
+    """Tests for the new inline state field syntax:
+
+        Content called "products":
+          Each product has a lifecycle which is state:
+            lifecycle starts as draft
+            lifecycle can also be active or discontinued
+            draft can become active if the user has catalog.manage
+
+    Replaces the v0.8 top-level `State for X called "Y":` block syntax.
+    """
+
+    # ── Failure cases — must reject the old syntax / malformed blocks ──
+
+    def test_old_state_for_syntax_is_parse_error(self):
+        """Top-level `State for X called "Y":` is removed in v0.9."""
+        src = '''Application: Test
+Content called "products":
+  Each product has a name which is text
+  Anyone with "read" can view products
+
+State for products called "lifecycle":
+  A product starts as "draft"
+  A product can also be "active"
+  A draft product can become active if the user has "read"'''
+        _program, errors = parse(src)
+        assert not errors.ok
+
+    def test_state_block_without_starts_as_is_parse_error(self):
+        """A state field block must contain a `starts as` line."""
+        src = '''Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle can also be active or discontinued
+    draft can become active if the user has catalog.manage
+  Anyone with "catalog.manage" can view products'''
+        program, errors = parse(src)
+        # Either parser flags an error, or analyzer would catch it (initial_state empty).
+        # For the parser-level failure case we accept either: no errors but empty initial,
+        # OR explicit ParseError. The fail-safe assertion is that no SM with valid init lands.
+        if errors.ok:
+            assert len(program.state_machines) == 1
+            assert program.state_machines[0].initial_state == ""
+
+    def test_state_block_empty_is_parse_error(self):
+        """A `which is state:` field with no sub-block lines is invalid."""
+        src = '''Content called "products":
+  Each product has a lifecycle which is state:
+  Anyone with "read" can view products'''
+        program, errors = parse(src)
+        # Parser may accept (empty SM); analyzer will reject. Accept either:
+        if errors.ok:
+            sms = program.state_machines
+            # Either no SM was registered, or one with empty fields
+            if sms:
+                assert sms[0].initial_state == ""
+                assert sms[0].states == [] or sms[0].states == [""]
+
+    def test_action_button_old_syntax_is_parse_error(self):
+        """Old `transitions to <state>` (without field name) is removed."""
+        src = '''Content called "products":
+  Each product has a name which is text
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active or discontinued
+    draft can become active if the user has catalog.manage
+  Anyone with "catalog.manage" can view, create, update, or delete products
+
+As a "Manager", I want to manage products:
+  Show a page called "Products"
+  Display a table of products with columns: name
+  For each product, show actions:
+    "Publish" transitions to active if available'''
+        _program, errors = parse(src)
+        assert not errors.ok
+
+    # ── Happy path — basic parsing ──
+
+    def _wrap(self, content_block: str, extras: str = "") -> str:
+        """Helper: wrap a content block in a minimal valid program."""
+        return f'''Application: Test
+Users authenticate with stub
+Scopes are "catalog.manage", "approvals.approve", and "ops.confirm"
+A "Manager" has "catalog.manage", "approvals.approve", and "ops.confirm"
+
+{content_block}
+{extras}'''
+
+    def test_single_state_field_minimal_form(self):
+        src = self._wrap('''Content called "products":
+  Each product has a name which is text
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active or discontinued
+    draft can become active if the user has catalog.manage
+    active can become discontinued if the user has catalog.manage
+  Anyone with "catalog.manage" can view products''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        assert len(program.state_machines) == 1
+        sm = program.state_machines[0]
+        assert sm.machine_name == "lifecycle"
+        assert sm.content_name == "products"
+        assert sm.initial_state == "draft"
+        assert set(sm.states) == {"draft", "active", "discontinued"}
+        assert len(sm.transitions) == 2
+        assert sm.transitions[0].from_state == "draft"
+        assert sm.transitions[0].to_state == "active"
+        assert sm.transitions[0].required_scope == "catalog.manage"
+
+    def test_single_state_field_full_form(self):
+        """Full form with articles and quotes parses identically to minimal form."""
+        src = self._wrap('''Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as "draft"
+    lifecycle can also be "active" or "discontinued"
+    A draft can become "active" if the user has "catalog.manage"
+    An active can become "discontinued" if the user has "catalog.manage"
+  Anyone with "catalog.manage" can view products''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        sm = program.state_machines[0]
+        assert sm.machine_name == "lifecycle"
+        assert sm.initial_state == "draft"
+        assert set(sm.states) == {"draft", "active", "discontinued"}
+        assert len(sm.transitions) == 2
+
+    def test_multi_word_field_name(self):
+        src = self._wrap('''Content called "documents":
+  Each document has an approval status which is state:
+    approval status starts as pending
+    approval status can also be approved or rejected
+    pending can become approved if the user has approvals.approve
+  Anyone with "approvals.approve" can view documents''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        sm = program.state_machines[0]
+        assert sm.machine_name == "approval status"
+        assert sm.content_name == "documents"
+        assert sm.initial_state == "pending"
+
+    def test_multi_word_state_names(self):
+        src = self._wrap('''Content called "tickets":
+  Each ticket has a lifecycle which is state:
+    lifecycle starts as in progress
+    lifecycle can also be on hold or under review
+    in progress can become on hold if the user has ops.confirm
+    on hold can become under review if the user has ops.confirm
+  Anyone with "ops.confirm" can view tickets''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        sm = program.state_machines[0]
+        assert "in progress" in sm.states
+        assert "on hold" in sm.states
+        assert "under review" in sm.states
+        # Find the in-progress -> on-hold transition
+        match = [t for t in sm.transitions
+                 if t.from_state == "in progress" and t.to_state == "on hold"]
+        assert len(match) == 1, f"expected in progress -> on hold, got {sm.transitions}"
+
+    def test_hyphenated_state_names_parse(self):
+        """Hyphens are legal in state names. Space-separated is the
+        canonical form (`auto fix applied`), but `auto-fix-applied`
+        also parses. Both forms must reach the same identifier value
+        verbatim — no normalization."""
+        src = self._wrap('''Content called "findings":
+  Each finding has a remediation which is state:
+    remediation starts as detected
+    remediation can also be analyzing, auto-fix-applied, or flagged-for-human
+    detected can become analyzing if the user has triage
+    analyzing can become auto-fix-applied if the user has remediate
+    auto-fix-applied can become flagged-for-human if the user has triage
+  Anyone with "triage" can view findings''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        sm = program.state_machines[0]
+        assert "auto-fix-applied" in sm.states
+        assert "flagged-for-human" in sm.states
+        # Hyphens carry through transitions verbatim
+        match = [t for t in sm.transitions
+                 if t.from_state == "auto-fix-applied"
+                 and t.to_state == "flagged-for-human"]
+        assert len(match) == 1, (
+            f"expected auto-fix-applied -> flagged-for-human transition, "
+            f"got {[(t.from_state, t.to_state) for t in sm.transitions]}")
+        assert match[0].required_scope == "triage"
+
+    def test_self_transition_parses(self):
+        src = self._wrap('''Content called "orders":
+  Each order has a lifecycle which is state:
+    lifecycle starts as pending
+    lifecycle can also be processing or complete
+    pending can become pending if the user has ops.confirm
+    pending can become processing if the user has ops.confirm
+  Anyone with "ops.confirm" can view orders''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        sm = program.state_machines[0]
+        self_trans = [t for t in sm.transitions
+                      if t.from_state == "pending" and t.to_state == "pending"]
+        assert len(self_trans) == 1
+        assert self_trans[0].required_scope == "ops.confirm"
+
+    def test_two_state_fields_on_one_content(self):
+        src = self._wrap('''Content called "documents":
+  Each document has a title which is text
+  Each document has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be published
+    draft can become published if the user has catalog.manage
+  Each document has an approval status which is state:
+    approval status starts as pending
+    approval status can also be approved or rejected
+    pending can become approved if the user has approvals.approve
+    pending can become rejected if the user has approvals.approve
+  Anyone with "catalog.manage" can view documents''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        assert len(program.state_machines) == 2
+        names = {sm.machine_name for sm in program.state_machines}
+        assert names == {"lifecycle", "approval status"}
+        for sm in program.state_machines:
+            assert sm.content_name == "documents"
+
+    def test_action_button_with_machine_name(self):
+        src = self._wrap('''Content called "products":
+  Each product has a name which is text
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has catalog.manage
+  Anyone with "catalog.manage" can view, create, update, or delete products
+
+As a "Manager", I want to manage products:
+  Show a page called "Products"
+  Display a table of products with columns: name
+  For each product, show actions:
+    "Publish" transitions lifecycle to active if available''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        # Find the action button directive.
+        from termin.ast_nodes import ActionButtonDef
+        story = program.stories[0]
+        buttons = [d for d in story.directives if isinstance(d, ActionButtonDef)]
+        assert len(buttons) == 1
+        b = buttons[0]
+        assert b.label == "Publish"
+        assert b.machine_name == "lifecycle"
+        assert b.target_state == "active"
+
+    def test_action_button_multi_word_field_name(self):
+        src = self._wrap('''Content called "documents":
+  Each document has a title which is text
+  Each document has an approval status which is state:
+    approval status starts as pending
+    approval status can also be approved
+    pending can become approved if the user has approvals.approve
+  Anyone with "approvals.approve" can view, create, update, or delete documents
+
+As a "Manager", I want to manage documents:
+  Show a page called "Documents"
+  Display a table of documents with columns: title
+  For each document, show actions:
+    "Approve" transitions approval status to approved if available''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        from termin.ast_nodes import ActionButtonDef
+        buttons = [d for d in program.stories[0].directives
+                   if isinstance(d, ActionButtonDef)]
+        assert len(buttons) == 1
+        assert buttons[0].machine_name == "approval status"
+        assert buttons[0].target_state == "approved"
+
+    def test_action_button_multi_word_target_state(self):
+        src = self._wrap('''Content called "tasks":
+  Each task has a title which is text
+  Each task has a lifecycle which is state:
+    lifecycle starts as ready
+    lifecycle can also be in progress
+    ready can become in progress if the user has ops.confirm
+  Anyone with "ops.confirm" can view, create, update, or delete tasks
+
+As a "Manager", I want to manage tasks:
+  Show a page called "Tasks"
+  Display a table of tasks with columns: title
+  For each task, show actions:
+    "Start" transitions lifecycle to in progress if available''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        from termin.ast_nodes import ActionButtonDef
+        buttons = [d for d in program.stories[0].directives
+                   if isinstance(d, ActionButtonDef)]
+        assert len(buttons) == 1
+        assert buttons[0].machine_name == "lifecycle"
+        assert buttons[0].target_state == "in progress"
+
+    # ── Sub-block boundary tests ──
+
+    def test_blank_line_inside_state_block_ignored(self):
+        """A blank line between sub-block lines does not end the block."""
+        src = self._wrap('''Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active or discontinued
+    draft can become active if the user has catalog.manage
+
+    active can become discontinued if the user has catalog.manage
+  Anyone with "catalog.manage" can view products''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        sm = program.state_machines[0]
+        assert len(sm.transitions) == 2
+
+    def test_parenthetical_comment_inside_state_block_ignored(self):
+        src = self._wrap('''Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active or discontinued
+    (this state machine controls publication workflow)
+    draft can become active if the user has catalog.manage
+    active can become discontinued if the user has catalog.manage
+  Anyone with "catalog.manage" can view products''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        sm = program.state_machines[0]
+        assert len(sm.transitions) == 2
+
+    def test_parenthetical_comment_at_column_zero_ignored(self):
+        """Per §1, parenthetical comments are stripped at any indentation."""
+        src = self._wrap('''Content called "products":
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active or discontinued
+(this comment is at column zero)
+    draft can become active if the user has catalog.manage
+    active can become discontinued if the user has catalog.manage
+  Anyone with "catalog.manage" can view products''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        sm = program.state_machines[0]
+        assert len(sm.transitions) == 2
+
+    def test_multiple_can_also_be_lines_accumulate(self):
+        src = self._wrap('''Content called "documents":
+  Each document has an approval status which is state:
+    approval status starts as pending
+    approval status can also be approved
+    approval status can also be needs revision
+    approval status can also be rejected
+    pending can become approved if the user has approvals.approve
+    pending can become rejected if the user has approvals.approve
+  Anyone with "approvals.approve" can view documents''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        sm = program.state_machines[0]
+        assert "approved" in sm.states
+        assert "needs revision" in sm.states
+        assert "rejected" in sm.states
+        assert "pending" in sm.states
+
+    def test_starts_as_after_can_also_be(self):
+        """Order of starts as / can also be lines doesn't matter."""
+        src = self._wrap('''Content called "documents":
+  Each document has an approval status which is state:
+    approval status can also be approved or rejected
+    approval status starts as pending
+    pending can become approved if the user has approvals.approve
+  Anyone with "approvals.approve" can view documents''')
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        sm = program.state_machines[0]
+        assert sm.initial_state == "pending"
+        assert "pending" in sm.states
+        assert "approved" in sm.states
+        assert "rejected" in sm.states

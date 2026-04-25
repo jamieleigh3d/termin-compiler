@@ -201,70 +201,10 @@ class TestBoundaryAnalyzer:
 # ============================================================
 # Feature 3: State on Non-Content Primitives
 # ============================================================
-
-class TestStateNonContentClassification:
-    def test_classify_state_for_channel(self):
-        assert _classify_line('State for channel "order webhook" called "lifecycle":') == "state_header"
-
-    def test_classify_state_for_compute(self):
-        assert _classify_line('State for compute "calculate total" called "execution":') == "state_header"
-
-
-class TestStateNonContentParser:
-    def test_parse_state_for_channel(self):
-        source = VALID_BASE + (
-            'Channel called "order webhook":\n'
-            '  Carries orders\n'
-            '  Direction: inbound\n'
-            '  Delivery: reliable\n'
-            '  Endpoint: /webhooks/orders\n'
-            '  Requires "orders.write" to send\n\n'
-            'State for channel "order webhook" called "lifecycle":\n'
-            '  A webhook starts as "active"\n'
-            '  A webhook can also be "paused" or "disabled"\n'
-            '  An active webhook can become paused if the user has "orders.admin"\n'
-            '  A paused webhook can become active if the user has "orders.admin"\n'
-        )
-        program, errors = parse(source)
-        assert errors.ok, errors.format()
-        assert len(program.state_machines) == 1
-        sm = program.state_machines[0]
-        assert sm.content_name == "order webhook"
-        assert sm.machine_name == "lifecycle"
-        assert sm.initial_state == "active"
-        assert "paused" in sm.states
-        assert "disabled" in sm.states
-
-
-class TestStateNonContentAnalyzer:
-    def test_state_on_channel_passes_analysis(self):
-        source = VALID_BASE + (
-            'Channel called "order webhook":\n'
-            '  Carries orders\n'
-            '  Direction: inbound\n'
-            '  Delivery: reliable\n'
-            '  Endpoint: /webhooks/orders\n'
-            '  Requires "orders.write" to send\n\n'
-            'State for channel "order webhook" called "lifecycle":\n'
-            '  A webhook starts as "active"\n'
-            '  A webhook can also be "paused"\n'
-            '  An active webhook can become paused if the user has "orders.admin"\n'
-        )
-        program, errors = parse(source)
-        assert errors.ok, errors.format()
-        result = analyze(program)
-        assert result.ok, result.format()
-
-    def test_state_on_undefined_channel_fails(self):
-        source = VALID_BASE + (
-            'State for channel "nonexistent" called "lifecycle":\n'
-            '  A thing starts as "active"\n'
-        )
-        program, errors = parse(source)
-        assert errors.ok, errors.format()
-        result = analyze(program)
-        assert not result.ok
-        assert any("undefined" in str(e).lower() for e in result.errors)
+#
+# Removed in v0.9: state machines are now inline content fields only.
+# The top-level `State for X called "Y":` syntax (including state on channels
+# and computes) has been removed. See docs/design-multi-state-machine.md.
 
 
 # ============================================================
@@ -288,10 +228,6 @@ class TestPhaseD_Integration:
         '  Delivery: reliable\n'
         '  Endpoint: /webhooks/orders\n'
         '  Requires "orders.write" to send\n\n'
-        'State for channel "order webhook" called "lifecycle":\n'
-        '  A webhook starts as "active"\n'
-        '  A webhook can also be "paused"\n'
-        '  An active webhook can become paused if the user has "orders.admin"\n\n'
         'Boundary called "order processing":\n'
         '  Contains orders, order lines\n'
         '  Identity inherits from application\n'

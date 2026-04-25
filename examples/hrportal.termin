@@ -46,16 +46,13 @@ Content called "salary reviews":
   Each salary review has a reason which is text
   Each salary review has an approved by which is text, defaults to `User.Name`
   Each salary review has a created at which is automatic, defaults to `now`
+  Each salary review has a review lifecycle which is state:
+    review lifecycle starts as pending
+    review lifecycle can also be approved or applied
+    pending can become approved if the user has hr.manage
+    approved can become applied if the user has hr.manage
   Anyone with "salary.access" can view salary reviews
   Anyone with "hr.manage" can create or update salary reviews
-
---- State ---
-
-State for salary reviews called "review lifecycle":
-  A review starts as "pending"
-  A review can also be "approved" or "applied"
-  A pending review can become approved if the user has "hr.manage"
-  An approved review can become applied if the user has "hr.manage"
 
 --- Compute ---
 
@@ -100,11 +97,11 @@ As an hr business partner, I want to add new employees
 As an hr business partner, I want to review salary changes
   so that I can manage compensation:
     Show a page called "Salary Reviews"
-    Display a table of salary reviews with columns: employee, review date, old salary, new salary, reason, status, approved by
-    Allow filtering by status
+    Display a table of salary reviews with columns: employee, review date, old salary, new salary, reason, review lifecycle, approved by
+    Allow filtering by review lifecycle
     For each salary review, show actions:
-      "Approve" transitions to "approved" if available
-      "Apply" transitions to "applied" if available
+      "Approve" transitions review lifecycle to approved if available
+      "Apply" transitions review lifecycle to applied if available
 
 --- Navigation ---
 

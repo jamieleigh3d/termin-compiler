@@ -378,9 +378,10 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
                 if bnd_err:
                     return {"error": bnd_err}
                 data = tool_input.get("data", {})
-                sm_info = ctx.sm_lookup.get(cname)
-                if sm_info:
-                    data["status"] = sm_info.get("initial", "")
+                # v0.9 multi-SM: sm_info is the list of state-machine specs
+                # for this content. create_record() seeds initial values
+                # for each machine's column from that list.
+                sm_info = ctx.sm_lookup.get(cname, [])
                 schema = ctx.content_lookup.get(cname, {})
                 rec = await create_record(db, cname, data, schema, sm_info,
                                           ctx.terminator, ctx.event_bus)
@@ -412,8 +413,20 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
                     return {"error": bnd_err}
                 rid = tool_input.get("record_id")
                 target = tool_input.get("target_state")
+                # v0.9: machine_name is required when content has multiple
+                # state machines. Fall back to the single machine when one
+                # exists; raise when ambiguous.
+                machine = tool_input.get("machine_name", "")
+                sm_list = ctx.sm_lookup.get(cname, [])
+                if not machine:
+                    if len(sm_list) == 1:
+                        machine = sm_list[0]["machine_name"]
+                    else:
+                        return {"error": (
+                            f"machine_name is required for state_transition on "
+                            f"'{cname}' (has {len(sm_list)} state machines)")}
                 result = await do_state_transition(
-                    db, cname, rid, target,
+                    db, cname, rid, machine, target,
                     {"role": "service", "scopes": list(ctx.scope_for_content_verb(cname, "update") or [])},
                     ctx.sm_lookup, ctx.terminator, ctx.event_bus)
                 return result

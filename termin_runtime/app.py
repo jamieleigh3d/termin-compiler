@@ -127,15 +127,26 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         if cs.get("singular"):
             ctx.singular_lookup[snake] = cs["singular"]
 
-    # State machine lookup
+    # State machine lookup — v0.9 multi-SM shape.
+    # Maps content_ref -> list[{machine_name, column, initial, transitions}].
+    # A content with two state machines (e.g. lifecycle + approval status)
+    # appears once with two list entries; the legacy one-SM-per-content
+    # overwriting bug from v0.8 (sm_by_content[content] = sm) is gone.
+    from collections import defaultdict
+    _sm_by_content = defaultdict(list)
     for sm in ir.get("state_machines", []):
-        trans_dict = {}
-        for t in sm.get("transitions", []):
-            trans_dict[(t["from_state"], t["to_state"])] = t.get("required_scope", "")
-        ctx.sm_lookup[sm["content_ref"]] = {
+        col = sm["machine_name"]   # already snake_case in IR
+        trans_dict = {
+            (t["from_state"], t["to_state"]): t.get("required_scope", "")
+            for t in sm.get("transitions", [])
+        }
+        _sm_by_content[sm["content_ref"]].append({
+            "machine_name": col,
+            "column": col,           # same as machine_name
             "initial": sm.get("initial_state", ""),
             "transitions": trans_dict,
-        }
+        })
+    ctx.sm_lookup = dict(_sm_by_content)
 
     # Transition feedback
     ctx.transition_feedback = build_transition_feedback(ir)
@@ -286,7 +297,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                 return
             db = await get_db(db_path)
             try:
-                record = await create_record(db, carries, record_data, ctx.sm_lookup.get(carries))
+                record = await create_record(db, carries, record_data, ctx.sm_lookup.get(carries, []))
                 await run_event_handlers(db, carries, "created", record)
                 await ctx.event_bus.publish({
                     "channel_id": f"content.{carries}.created", "data": record})

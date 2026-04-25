@@ -93,7 +93,7 @@ class TestSpec81_DatabaseSchema:
         d = r.json()
         assert d["sku"] == "SCHEMA-001"
         assert d["unit_cost"] == 10.50
-        assert d["status"] == "draft"
+        assert d["product_lifecycle"] == "draft"
 
     def test_unique_sku_constraint(self, client):
         client.cookies.set("termin_role", "warehouse manager")
@@ -151,17 +151,17 @@ class TestSpec82_APIRoutes:
 
     def test_activate_product(self, client):
         pid = _create_product(client, "ACT-001", "Activatable")
-        r = client.post(f"/api/v1/products/{pid}/_transition/active")
+        r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active")
         assert r.status_code == 200
-        assert r.json()["status"] == "active"
+        assert r.json()["product_lifecycle"] == "active"
 
     def test_discontinue_product(self, client):
         pid = _create_product(client, "DIS-001", "Discontinuable")
-        client.post(f"/api/v1/products/{pid}/_transition/active")
-        r = client.post(f"/api/v1/products/{pid}/_transition/discontinued",
+        client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active")
+        r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/discontinued",
                         cookies={"termin_role": "warehouse manager"})
         assert r.status_code == 200
-        assert r.json()["status"] == "discontinued"
+        assert r.json()["product_lifecycle"] == "discontinued"
 
 
 # ============================================================
@@ -199,35 +199,35 @@ class TestSpec83_AccessControl:
 class TestSpec84_StateTransitions:
     def test_cannot_activate_already_active(self, client):
         pid = _create_product(client, "ST-001", "State Test")
-        client.post(f"/api/v1/products/{pid}/_transition/active")
-        r = client.post(f"/api/v1/products/{pid}/_transition/active")
+        client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active")
+        r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active")
         assert r.status_code == 409
 
     def test_cannot_discontinue_draft(self, client):
         """No direct draft -> discontinued path exists."""
         pid = _create_product(client, "ST-002", "Draft Only")
-        r = client.post(f"/api/v1/products/{pid}/_transition/discontinued",
+        r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/discontinued",
                         cookies={"termin_role": "warehouse manager"})
         assert r.status_code == 409
 
     def test_clerk_cannot_discontinue(self, client):
         """Clerk lacks admin scope for active -> discontinued."""
         pid = _create_product(client, "ST-003", "Clerk Block")
-        client.post(f"/api/v1/products/{pid}/_transition/active")
-        r = client.post(f"/api/v1/products/{pid}/_transition/discontinued",
+        client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active")
+        r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/discontinued",
                         cookies={"termin_role": "warehouse clerk"})
         assert r.status_code == 403
 
     def test_reactivate_discontinued(self, client):
         """Discontinued -> active with admin scope."""
         pid = _create_product(client, "ST-004", "Reactivate")
-        client.post(f"/api/v1/products/{pid}/_transition/active")
-        client.post(f"/api/v1/products/{pid}/_transition/discontinued",
+        client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active")
+        client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/discontinued",
                     cookies={"termin_role": "warehouse manager"})
-        r = client.post(f"/api/v1/products/{pid}/_transition/active",
+        r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active",
                         cookies={"termin_role": "warehouse manager"})
         assert r.status_code == 200
-        assert r.json()["status"] == "active"
+        assert r.json()["product_lifecycle"] == "active"
 
 
 # ============================================================
@@ -317,7 +317,7 @@ class TestSpec86_UIRendering:
         form_product = next((p for p in products if p["sku"] == "FORM-001"), None)
         assert form_product is not None
         assert form_product["name"] == "Form Created"
-        assert form_product["status"] == "draft"
+        assert form_product["product_lifecycle"] == "draft"
 
 
 # ============================================================
@@ -382,7 +382,7 @@ class TestSecurityInvariants:
 
     def test_invalid_transition_rejected(self, client):
         pid = _create_product(client, "SEC-001", "Security")
-        r = client.post(f"/api/v1/products/{pid}/_transition/discontinued",
+        r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/discontinued",
                         cookies={"termin_role": "warehouse manager"})
         assert r.status_code == 409
 

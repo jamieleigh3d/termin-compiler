@@ -150,9 +150,9 @@
         },
         "business_type": {
           "type": "string",
-          "enum": ["text", "whole_number", "number", "currency", "percentage", "date", "datetime", "automatic", "boolean", "enum", "reference", "list"],
+          "enum": ["text", "whole_number", "number", "currency", "percentage", "date", "datetime", "automatic", "boolean", "enum", "reference", "list", "state"],
           "default": "text",
-          "description": "Semantic type from the DSL. Runtimes use this for input validation, formatting, and UI hints. 'reference' means a foreign key to another Content. 'enum' means a constrained set of values. 'automatic' means a system-managed timestamp (created_at, updated_at). 'datetime' is a user-entered date+time."
+          "description": "Semantic type from the DSL. Runtimes use this for input validation, formatting, and UI hints. 'reference' means a foreign key to another Content. 'enum' means a constrained set of values. 'automatic' means a system-managed timestamp (created_at, updated_at). 'datetime' is a user-entered date+time. 'state' (v0.9+) means the field is a state machine — each state-typed field on a Content produces a corresponding StateMachineSpec entry; the column name matches the snake_case field name."
         },
         "column_type": {
           "$ref": "#/$defs/FieldType",
@@ -222,7 +222,7 @@
 
     "ContentSchema": {
       "type": "object",
-      "description": "A Content definition — the fundamental data primitive. Each ContentSchema becomes a persistent storage table with an implicit auto-increment 'id' primary key and an optional 'status' column (if has_state_machine is true).",
+      "description": "A Content definition — the fundamental data primitive. Each ContentSchema becomes a persistent storage table with an implicit auto-increment 'id' primary key. State-typed fields produce additional columns named after the field (snake_case) and enforce transitions per the corresponding StateMachineSpec.",
       "required": ["name", "fields"],
       "additionalProperties": false,
       "properties": {
@@ -235,7 +235,7 @@
         "fields": {
           "type": "array",
           "items": { "$ref": "#/$defs/FieldSpec" },
-          "description": "Declared fields. The runtime adds implicit 'id' (auto-increment PK) and 'status' (if state machine) columns — these are NOT listed here."
+          "description": "Declared fields. The runtime adds implicit 'id' (auto-increment PK). State-typed fields are represented as normal FieldSpec entries (business_type='state'); their column name is the snake_case field name."
         },
         "storage_intent": {
           "type": "string",
@@ -243,15 +243,19 @@
           "default": "auto",
           "description": "Storage hint. 'auto' lets the runtime choose (typically persistent). Future: 'ephemeral' for in-memory-only Content."
         },
-        "has_state_machine": {
-          "type": "boolean",
-          "default": false,
-          "description": "Whether this Content has an associated state machine. If true, the runtime adds a 'status' TEXT column and enforces transitions."
-        },
-        "initial_state": {
-          "type": ["string", "null"],
-          "default": null,
-          "description": "The starting state for new records, set automatically on create. Only meaningful when has_state_machine is true."
+        "state_machines": {
+          "type": "array",
+          "default": [],
+          "description": "v0.9: one entry per state-typed field on this Content. machine_name is the snake_case field name (also the SQL column name); initial is the state assigned on create. Multiple entries are allowed — a Content may own several state machines, one per state-typed field.",
+          "items": {
+            "type": "object",
+            "required": ["machine_name", "initial"],
+            "additionalProperties": false,
+            "properties": {
+              "machine_name": { "type": "string" },
+              "initial":      { "type": "string" }
+            }
+          }
         },
         "confidentiality_scopes": {
           "type": "array",
@@ -440,7 +444,7 @@
         },
         "machine_name": {
           "type": "string",
-          "description": "Human-readable name for this state machine."
+          "description": "Snake-case field name. Also used as the SQL column name by conforming runtimes — one column per state machine on the owning Content. A Content may declare multiple state-typed fields, each producing its own StateMachineSpec with a distinct machine_name."
         },
         "initial_state": {
           "type": "string",
@@ -602,6 +606,11 @@
           "type": ["string", "null"],
           "default": null,
           "description": "For TRANSITION routes: the target state to transition to."
+        },
+        "machine_name": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "v0.9: For TRANSITION routes on multi-state-machine Content, the snake_case state-machine identifier this route drives. Same value as the corresponding StateMachineSpec.machine_name and the underlying state-typed field's snake_case name. Two different state machines on the same Content may share a target_state name (e.g. both lifecycle and approval_status could declare an 'approved' state); machine_name is the disambiguator. Null on legacy single-SM IRs and on non-TRANSITION routes."
         }
       }
     },

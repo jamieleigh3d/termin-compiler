@@ -47,6 +47,15 @@ Content called "tasks":
   Each task has an assignee which references team members
   Each task has a points which is a whole number, minimum 0
   Each task has a priority which is one of: "low", "medium", "high", "critical"
+  Each task has a task lifecycle which is state:
+    task lifecycle starts as backlog
+    task lifecycle can also be in sprint, in progress, in review, or done
+    backlog can become in sprint if the user has sprints.manage
+    in sprint can become in progress if the user has tasks.manage
+    in progress can become in review if the user has tasks.manage
+    in review can become done if the user has tasks.manage
+    in review can become in progress if the user has tasks.manage
+    done can become in progress if the user has tasks.manage
   Anyone with "projects.view" can view tasks
   Anyone with "tasks.manage" can create or update tasks
   Anyone with "projects.admin" can delete tasks
@@ -59,25 +68,13 @@ Content called "time logs":
   Anyone with "projects.view" can view time logs
   Anyone with "tasks.manage" can create time logs
 
---- State ---
-
-State for tasks called "task lifecycle":
-  A task starts as "backlog"
-  A task can also be "in sprint", "in progress", "in review", or "done"
-  A backlog task can become in sprint if the user has "sprints.manage"
-  An in sprint task can become in progress if the user has "tasks.manage"
-  An in progress task can become in review if the user has "tasks.manage"
-  An in review task can become done if the user has "tasks.manage"
-  An in review task can become in progress if the user has "tasks.manage"
-  A done task can become in progress if the user has "tasks.manage"
-
 --- User Stories ---
 
 As a developer, I want to see all tasks assigned to my sprint
   so that I know what to work on:
     Show a page called "Sprint Board"
-    Display a table of tasks with columns: title, priority, status, assignee, points
-    Allow filtering by status, priority, and sprint
+    Display a table of tasks with columns: title, priority, task lifecycle, assignee, points
+    Allow filtering by task lifecycle, priority, and sprint
     Allow searching by title
     This table subscribes to tasks changes
 

@@ -28,8 +28,13 @@ from termin.peg_parser import parse_peg as parse
 class TestTransitionFeedbackParsing:
     """Test that feedback lines are parsed and attached to transitions."""
 
-    def _parse_transitions(self, state_block: str):
-        """Parse a minimal app with a state machine and return transitions."""
+    def _parse_transitions(self, sm_block: str):
+        """Parse a minimal app with an inline state machine and return transitions.
+
+        sm_block should be the inner state-machine lines (not the field declaration
+        or the trailing Anyone clauses), already indented 4 spaces to fit inside the
+        content block.
+        """
         src = f'''Application: Test
   Description: Test
 
@@ -39,9 +44,10 @@ A "user" has "manage"
 
 Content called "items":
   Each item has a name which is text
+  Each item has a lifecycle which is state:
+{sm_block}
   Anyone with "manage" can view, create, or update items
-
-{state_block}'''
+'''
         program, errors = parse(src)
         assert errors.ok, errors.format()
         assert len(program.state_machines) == 1
@@ -49,10 +55,9 @@ Content called "items":
 
     def test_transition_without_feedback(self):
         """Transitions without feedback lines should still work."""
-        transitions = self._parse_transitions('''State for items called "lifecycle":
-  An item starts as "draft"
-  An item can also be "active"
-  A draft item can become active if the user has "manage"''')
+        transitions = self._parse_transitions('''    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage''')
         assert len(transitions) == 1
         assert transitions[0].from_state == "draft"
         assert transitions[0].to_state == "active"
@@ -61,11 +66,10 @@ Content called "items":
 
     def test_success_toast_with_cel(self):
         """Success toast with a CEL expression."""
-        transitions = self._parse_transitions('''State for items called "lifecycle":
-  An item starts as "draft"
-  An item can also be "active"
-  A draft item can become active if the user has "manage"
-    success shows toast `item.name + " is now active"`''')
+        transitions = self._parse_transitions('''    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+      success shows toast `item.name + " is now active"`''')
         assert len(transitions) == 1
         fb = transitions[0].feedback
         assert len(fb) == 1
@@ -77,11 +81,10 @@ Content called "items":
 
     def test_error_banner_with_literal(self):
         """Error banner with a plain string literal."""
-        transitions = self._parse_transitions('''State for items called "lifecycle":
-  An item starts as "draft"
-  An item can also be "active"
-  A draft item can become active if the user has "manage"
-    error shows banner "Could not activate item"''')
+        transitions = self._parse_transitions('''    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+      error shows banner "Could not activate item"''')
         fb = transitions[0].feedback
         assert len(fb) == 1
         assert fb[0].trigger == "error"
@@ -92,12 +95,11 @@ Content called "items":
 
     def test_both_success_and_error(self):
         """A transition can have both success and error feedback."""
-        transitions = self._parse_transitions('''State for items called "lifecycle":
-  An item starts as "draft"
-  An item can also be "active"
-  A draft item can become active if the user has "manage"
-    success shows toast `item.name + " activated"`
-    error shows banner "Activation failed"''')
+        transitions = self._parse_transitions('''    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+      success shows toast `item.name + " activated"`
+      error shows banner "Activation failed"''')
         fb = transitions[0].feedback
         assert len(fb) == 2
         assert fb[0].trigger == "success"
@@ -107,25 +109,23 @@ Content called "items":
 
     def test_dismiss_after_seconds(self):
         """Custom dismiss timer."""
-        transitions = self._parse_transitions('''State for items called "lifecycle":
-  An item starts as "draft"
-  An item can also be "active"
-  A draft item can become active if the user has "manage"
-    success shows banner `item.name + " resolved"` dismiss after 10 seconds''')
+        transitions = self._parse_transitions('''    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+      success shows banner `item.name + " resolved"` dismiss after 10 seconds''')
         fb = transitions[0].feedback
         assert fb[0].style == "banner"
         assert fb[0].dismiss_seconds == 10
 
     def test_multiple_transitions_with_feedback(self):
         """Each transition gets its own feedback independently."""
-        transitions = self._parse_transitions('''State for items called "lifecycle":
-  An item starts as "draft"
-  An item can also be "active" or "archived"
-  A draft item can become active if the user has "manage"
-    success shows toast "Item activated"
-  An active item can become archived if the user has "manage"
-    success shows toast "Item archived"
-    error shows banner "Cannot archive"''')
+        transitions = self._parse_transitions('''    lifecycle starts as draft
+    lifecycle can also be active or archived
+    draft can become active if the user has manage
+      success shows toast "Item activated"
+    active can become archived if the user has manage
+      success shows toast "Item archived"
+      error shows banner "Cannot archive"''')
         assert len(transitions) == 2
         assert len(transitions[0].feedback) == 1
         assert len(transitions[1].feedback) == 2
@@ -136,7 +136,7 @@ Content called "items":
 class TestTransitionFeedbackIR:
     """Test that feedback is correctly lowered to the IR."""
 
-    def _compile_transitions(self, state_block: str):
+    def _compile_transitions(self, sm_block: str):
         """Parse and lower, return StateMachineSpec."""
         from termin.lower import lower
         src = f'''Application: Test
@@ -148,9 +148,10 @@ A "user" has "manage"
 
 Content called "items":
   Each item has a name which is text
+  Each item has a lifecycle which is state:
+{sm_block}
   Anyone with "manage" can view, create, or update items
-
-{state_block}'''
+'''
         program, errors = parse(src)
         assert errors.ok, errors.format()
         spec = lower(program)
@@ -158,19 +159,17 @@ Content called "items":
         return spec.state_machines[0]
 
     def test_ir_transition_without_feedback(self):
-        sm = self._compile_transitions('''State for items called "lifecycle":
-  An item starts as "draft"
-  An item can also be "active"
-  A draft item can become active if the user has "manage"''')
+        sm = self._compile_transitions('''    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage''')
         t = sm.transitions[0]
         assert t.feedback == ()
 
     def test_ir_toast_with_cel(self):
-        sm = self._compile_transitions('''State for items called "lifecycle":
-  An item starts as "draft"
-  An item can also be "active"
-  A draft item can become active if the user has "manage"
-    success shows toast `item.name + " activated"`''')
+        sm = self._compile_transitions('''    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+      success shows toast `item.name + " activated"`''')
         t = sm.transitions[0]
         assert len(t.feedback) == 1
         fb = t.feedback[0]
@@ -181,11 +180,10 @@ Content called "items":
         assert fb.dismiss_seconds is None
 
     def test_ir_banner_with_dismiss(self):
-        sm = self._compile_transitions('''State for items called "lifecycle":
-  An item starts as "draft"
-  An item can also be "active"
-  A draft item can become active if the user has "manage"
-    success shows banner "Done" dismiss after 10 seconds''')
+        sm = self._compile_transitions('''    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+      success shows banner "Done" dismiss after 10 seconds''')
         t = sm.transitions[0]
         fb = t.feedback[0]
         assert fb.style == "banner"
@@ -205,7 +203,7 @@ class TestFeedbackExamples:
         assert errors.ok, errors.format()
         spec = lower(program)
         # Find the product lifecycle state machine
-        sm = [s for s in spec.state_machines if s.machine_name == "product lifecycle"][0]
+        sm = [s for s in spec.state_machines if s.machine_name == "product_lifecycle"][0]
         # draft → active should have success toast + error banner
         t_activate = [t for t in sm.transitions
                       if t.from_state == "draft" and t.to_state == "active"][0]
@@ -223,7 +221,7 @@ class TestFeedbackExamples:
         program, errors = parse(src)
         assert errors.ok, errors.format()
         spec = lower(program)
-        sm = [s for s in spec.state_machines if s.machine_name == "ticket lifecycle"][0]
+        sm = [s for s in spec.state_machines if s.machine_name == "ticket_lifecycle"][0]
         # in progress → resolved should have banner with 10s dismiss
         t_resolve = [t for t in sm.transitions
                      if t.from_state == "in progress" and t.to_state == "resolved"][0]
@@ -260,14 +258,14 @@ A "user" has "manage"
 
 Content called "items":
   Each item has a name which is text
+  Each item has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active
+    draft can become active if the user has manage
+      success shows toast `item.name + " activated"`
+      error shows banner "Activation failed"
   Anyone with "manage" can view items
-
-State for items called "lifecycle":
-  An item starts as "draft"
-  An item can also be "active"
-  A draft item can become active if the user has "manage"
-    success shows toast `item.name + " activated"`
-    error shows banner "Activation failed"'''
+'''
         program, errors = parse(src)
         assert errors.ok, errors.format()
         spec = lower(program)

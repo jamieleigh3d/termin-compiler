@@ -127,16 +127,12 @@ def _build_edit_modal(content, sm_by_content, content_by_name):
         props = _build_field_input_props(f, f.name, content_by_name)
         field_inputs.append(ComponentNode(type="field_input", props=props))
 
-    # If the content has a state machine, include the status field as a
-    # state-select. The full list of all states is embedded in props so
-    # the renderer can pre-render options without per-content Jinja
-    # context plumbing. The JS opener filters those options at modal-open
-    # time based on current row state + user scopes + transition rules.
-    sm = sm_by_content.get(content.name)
-    if sm:
-        # Collect all states: initial state + reachable states + any
-        # state named as `to_state` in a transition. Order matters for
-        # stable rendering (initial first, then alphabetical).
+    # If the content has state machines, include one field_input per
+    # machine as a state-select. The full list of all states is embedded
+    # in props so the renderer can pre-render options without per-content
+    # Jinja context plumbing. The JS opener filters those options at
+    # modal-open time based on current row state + user scopes + rules.
+    for sm in sm_by_content.get(content.name, []):
         all_states = {sm.initial_state}
         for tr in sm.transitions:
             all_states.add(tr.from_state)
@@ -144,11 +140,12 @@ def _build_edit_modal(content, sm_by_content, content_by_name):
         # Preserve initial first, then alphabetical for the rest.
         ordered_states = [sm.initial_state] + sorted(
             s for s in all_states if s != sm.initial_state)
+        col = _snake(sm.machine_name)
         state_field_props = {
-            "field": "status",
-            "label": "Status",
+            "field": col,
+            "label": sm.machine_name.title(),
             "input_type": "state",
-            "state_machine": sm.machine_name,
+            "state_machine": col,
             "all_states": ordered_states,
         }
         field_inputs.append(
@@ -218,9 +215,16 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
                     for fname in d.fields:
                         fkey = _snake(fname)
                         mode, options = "text", []
-                        if fkey == "status" and dt_content and dt_content.name in sm_by_content:
+                        # v0.9: match the filter key against any state
+                        # machine's snake_case column name on this content.
+                        sm_match = None
+                        if dt_content:
+                            for sm_candidate in sm_by_content.get(dt_content.name, []):
+                                if _snake(sm_candidate.machine_name) == fkey:
+                                    sm_match = sm_candidate; break
+                        if sm_match is not None:
                             mode = "state"
-                            options = list(sm_by_content[dt_content.name].states)
+                            options = list(sm_match.states)
                         elif dt_content:
                             for cf in dt_content.fields:
                                 if _snake(cf.name) == fkey and cf.type_expr.base_type == "enum":
@@ -358,7 +362,7 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
             elif isinstance(d, CreateAs):
                 if cur_form and form_target_name:
                     for c in program.contents:
-                        if _snake(c.name) == form_target_name and c.name in sm_by_content:
+                        if _snake(c.name) == form_target_name and sm_by_content.get(c.name):
                             cur_form.props["create_as"] = d.initial_state; break
 
             elif isinstance(d, AfterSave):
@@ -495,14 +499,19 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
                                 dt_content, sm_by_content, content_by_name)
                             children.append(modal)
                     else:
+                        # v0.9: transition buttons carry machine_name so the
+                        # runtime can target the right state field on content
+                        # with multiple state machines.
+                        machine_snake = _snake(d.machine_name) if d.machine_name else ""
                         row_actions.append(ComponentNode(
                             type="action_button",
                             props={
                                 "label": d.label,
                                 "action": "transition",
+                                "machine_name": machine_snake,
                                 "target_state": d.target_state,
                                 "visible_when": PropValue(
-                                    value=f".state.canTransition('{d.target_state}')",
+                                    value=f".state.canTransition('{machine_snake}', '{d.target_state}')",
                                     is_expr=True,
                                 ),
                                 "unavailable_behavior": d.unavailable_behavior,

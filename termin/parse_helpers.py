@@ -221,7 +221,11 @@ def _parse_type_text(text: str, ln: int = 0) -> TypeExpr:
 
 
 def _parse_field_type(text: str, ln: int) -> TypeExpr:
-    """Parse a field type clause ('is text', 'references X', etc.)."""
+    """Parse a field type clause ('is text', 'references X', 'is state:', etc.)."""
+    # v0.9: inline state machine field — `which is state:` opens a sub-block.
+    stripped = text.strip()
+    if stripped in ("is state:", "is state :"):
+        return TypeExpr(base_type="state", line=ln)
     if text.startswith("is "): return _parse_type_text(text[len("is "):], ln)
     if text.startswith("references "):
         rt = text[len("references "):].strip(); ci = rt.find(","); ct = ""

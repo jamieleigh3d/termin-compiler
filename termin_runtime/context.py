@@ -43,7 +43,7 @@ class RuntimeContext:
     # Content lookups
     content_lookup: dict = field(default_factory=dict)   # snake -> schema dict
     singular_lookup: dict = field(default_factory=dict)   # snake -> singular string
-    sm_lookup: dict = field(default_factory=dict)         # content_ref -> {initial, transitions}
+    sm_lookup: dict = field(default_factory=dict)         # content_ref -> list[{machine_name, column, initial, transitions}]
 
     # Compute indexes
     compute_specs: dict = field(default_factory=dict)     # snake -> compute IR dict

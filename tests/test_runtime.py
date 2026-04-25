@@ -662,9 +662,9 @@ class TestStateTransitionScopeGating:
             pid = self._create_product(client)
             # warehouse manager has "inventory.write" scope -> can activate
             client.cookies.set("termin_role", "warehouse manager")
-            r = client.post(f"/api/v1/products/{pid}/_transition/active")
+            r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active")
             assert r.status_code == 200
-            assert r.json()["status"] == "active"
+            assert r.json()["product_lifecycle"] == "active"
 
     def test_invalid_transition_rejected(self):
         """Transitioning to an undeclared target state returns 409."""
@@ -672,7 +672,7 @@ class TestStateTransitionScopeGating:
             pid = self._create_product(client)
             # draft -> discontinued is not a declared transition
             client.cookies.set("termin_role", "warehouse manager")
-            r = client.post(f"/api/v1/products/{pid}/_transition/discontinued")
+            r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/discontinued")
             assert r.status_code == 409
 
     def test_insufficient_scope_rejected(self):
@@ -681,7 +681,7 @@ class TestStateTransitionScopeGating:
             pid = self._create_product(client)
             # executive has "inventory.read" only — cannot activate (needs "inventory.write")
             client.cookies.set("termin_role", "executive")
-            r = client.post(f"/api/v1/products/{pid}/_transition/active")
+            r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active")
             assert r.status_code == 403
 
 

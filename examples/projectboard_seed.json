@@ -16,11 +16,11 @@
     {"name": "Sprint 1 - UI", "project": 2, "goal": "React Flow canvas", "capacity": 30}
   ],
   "tasks": [
-    {"title": "PEG parser", "description": "Two-level PEG parser with TatSu", "project": 1, "sprint": 1, "assignee": 1, "points": 8, "priority": "high", "status": "done"},
-    {"title": "Component tree IR", "description": "Replace PageSpec with ComponentNode tree", "project": 1, "sprint": 1, "assignee": 1, "points": 13, "priority": "high", "status": "done"},
-    {"title": "WebSocket multiplexer", "description": "Realtime subscriptions via WebSocket", "project": 1, "sprint": 2, "assignee": 2, "points": 8, "priority": "high", "status": "in progress"},
-    {"title": "Client runtime (termin.js)", "description": "Vanilla JS hydration module", "project": 1, "sprint": 2, "assignee": 1, "points": 5, "priority": "medium", "status": "in progress"},
-    {"title": "Visual editor nodes", "description": "Custom React Flow nodes for all 8 primitives", "project": 2, "sprint": 3, "assignee": 3, "points": 8, "priority": "high", "status": "in sprint"},
-    {"title": "Write test suite", "description": "E2E tests for all examples", "project": 1, "sprint": 2, "assignee": 4, "points": 5, "priority": "medium", "status": "backlog"}
+    {"title": "PEG parser", "description": "Two-level PEG parser with TatSu", "project": 1, "sprint": 1, "assignee": 1, "points": 8, "priority": "high", "task_lifecycle": "done"},
+    {"title": "Component tree IR", "description": "Replace PageSpec with ComponentNode tree", "project": 1, "sprint": 1, "assignee": 1, "points": 13, "priority": "high", "task_lifecycle": "done"},
+    {"title": "WebSocket multiplexer", "description": "Realtime subscriptions via WebSocket", "project": 1, "sprint": 2, "assignee": 2, "points": 8, "priority": "high", "task_lifecycle": "in progress"},
+    {"title": "Client runtime (termin.js)", "description": "Vanilla JS hydration module", "project": 1, "sprint": 2, "assignee": 1, "points": 5, "priority": "medium", "task_lifecycle": "in progress"},
+    {"title": "Visual editor nodes", "description": "Custom React Flow nodes for all 8 primitives", "project": 2, "sprint": 3, "assignee": 3, "points": 8, "priority": "high", "task_lifecycle": "in sprint"},
+    {"title": "Write test suite", "description": "E2E tests for all examples", "project": 1, "sprint": 2, "assignee": 4, "points": 5, "priority": "medium", "task_lifecycle": "backlog"}
   ]
 }

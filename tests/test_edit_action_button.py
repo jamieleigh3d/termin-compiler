@@ -348,17 +348,19 @@ class TestEditButtonRuntime:
         """For a content with a state machine, the modal's status input
         must be a <select> populated with valid target states from the
         current row's state, filtered by user scopes. The element must
-        carry data-termin-field='status'."""
+        carry data-termin-field='product_lifecycle' (the state machine's
+        snake-case field/column name in v0.9 multi-SM IR)."""
         self._seed_product(client)
         client.cookies.set("termin_role", "warehouse manager")
         r = client.get("/inventory_dashboard")
         assert r.status_code == 200
-        # The status field should render as a select, not a plain input.
-        # At minimum: a select element carrying data-termin-field="status".
+        # The state-machine field should render as a select, not a plain
+        # input. At minimum: a select element carrying
+        # data-termin-field="product_lifecycle".
         import re
-        # Search for a <select …data-termin-field="status"…>
         m = re.search(
-            r'<select[^>]*data-termin-field="status"[^>]*>',
+            r'<select[^>]*data-termin-field="product_lifecycle"[^>]*>',
             r.text,
         )
-        assert m, "Expected <select data-termin-field=\"status\"> for state machine field"
+        assert m, ('Expected <select data-termin-field="product_lifecycle"> '
+                   'for state machine field')

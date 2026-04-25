@@ -23,6 +23,14 @@ Content called "incidents":
   Each incident has a summary which is text
   Each incident has an assigned to which is text
   Each incident has an opened at which is automatic
+  Each incident has a response lifecycle which is state:
+    response lifecycle starts as opened
+    response lifecycle can also be investigating, mitigating, resolved, or closed
+    opened can become investigating if the user has incidents.manage
+    investigating can become mitigating if the user has incidents.manage
+    mitigating can become resolved if the user has incidents.manage
+    resolved can become closed if the user has incidents.manage
+    investigating can become resolved if the user has incidents.manage
   Anyone with "incidents.view" can view incidents
   Anyone with "incidents.manage" can create, update, or delete incidents
 
@@ -44,17 +52,6 @@ Content called "alerts":
   Each alert has a triggered at which is automatic
   Anyone with "incidents.view" can view alerts
   Anyone with "incidents.manage" can create alerts
-
---- State ---
-
-State for incidents called "response lifecycle":
-  An incident starts as "opened"
-  An incident can also be "investigating", "mitigating", "resolved", or "closed"
-  An opened incident can become investigating if the user has "incidents.manage"
-  An investigating incident can become mitigating if the user has "incidents.manage"
-  A mitigating incident can become resolved if the user has "incidents.manage"
-  A resolved incident can become closed if the user has "incidents.manage"
-  An investigating incident can become resolved if the user has "incidents.manage"
 
 --- Channels: Data (inbound) ---
 
@@ -188,10 +185,10 @@ As a responder, I want to see and manage active incidents
     Display count of incidents grouped by severity
     Display a table of incidents with columns: title, severity, affected service, response lifecycle, assigned to, opened at
     For each incident, show actions:
-      "Investigate" transitions to "investigating" if available
-      "Mitigate" transitions to "mitigating" if available
-      "Resolve" transitions to "resolved" if available
-      "Close" transitions to "closed" if available
+      "Investigate" transitions response lifecycle to investigating if available
+      "Mitigate" transitions response lifecycle to mitigating if available
+      "Resolve" transitions response lifecycle to resolved if available
+      "Close" transitions response lifecycle to closed if available
     Allow filtering by severity and response lifecycle
     Allow searching by title and affected service
     This table subscribes to incidents changes
@@ -203,10 +200,10 @@ As an operator, I want to see infrastructure status and create incidents
     Display count of incidents grouped by severity
     Display a table of incidents with columns: title, severity, source, affected service, response lifecycle, assigned to, opened at
     For each incident, show actions:
-      "Investigate" transitions to "investigating" if available
-      "Mitigate" transitions to "mitigating" if available
-      "Resolve" transitions to "resolved" if available
-      "Close" transitions to "closed" if available
+      "Investigate" transitions response lifecycle to investigating if available
+      "Mitigate" transitions response lifecycle to mitigating if available
+      "Resolve" transitions response lifecycle to resolved if available
+      "Close" transitions response lifecycle to closed if available
     Allow filtering by severity and response lifecycle
     Section "Deployments":
       Display a table of deployments with columns: service, version, status, deployed by, deployed at

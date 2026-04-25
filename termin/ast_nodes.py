@@ -123,6 +123,10 @@ class StateMachine:
     initial_state: str
     states: list[str] = field(default_factory=list)  # all states including initial
     transitions: list[Transition] = field(default_factory=list)
+    # v0.9: analyzer bookkeeping. Set during assembly so the analyzer can
+    # detect multiple `<field> starts as <state>` lines in a single sub-block
+    # (a semantic error — exactly one initial state per machine).
+    starts_as_count: int = 0
     line: int = 0
 
 
@@ -313,6 +317,7 @@ class ActionButtonDef(Directive):
     """
     label: str = ""
     target_state: str = ""
+    machine_name: str = ""  # v0.9: field name driving the transition
     unavailable_behavior: str = "disable"  # "disable" or "hide"
     kind: str = "transition"  # "transition" or "delete"
 

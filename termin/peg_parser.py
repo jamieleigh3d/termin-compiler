@@ -63,6 +63,8 @@ def _preprocess(source: str) -> list[tuple[int, str]]:
 
         if not s or s.startswith("---"):
             continue
+        # Parenthetical comments — entire non-whitespace content wrapped in parens.
+        # Stripped at any indentation so they cannot end a state sub-block.
         if s.startswith("(") and s.endswith(")"):
             continue
 
@@ -123,27 +125,64 @@ def _assemble(parsed: list) -> Program:
         elif k == "role_alias": prog.role_aliases.append(item[1]); i += 1
         elif k == "content_header":
             ct = item[1]; i += 1
-            for ch in _collect(lambda x: x in ("field","access","content_scoped","content_audit","dependent_value")):
+            current_sm = None  # active state machine being built (for inline `which is state:` fields)
+            last_transition = None
+            content_kinds = (
+                "field", "access", "content_scoped", "content_audit", "dependent_value",
+                "state_field", "sm_starts_as", "sm_also", "sm_transition",
+                "transition_feedback",
+            )
+            for ch in _collect(lambda x: x in content_kinds):
                 if ch[0] == "field":
                     if ch[2]: ct.singular = ch[2]
                     ct.fields.append(ch[1])
-                elif ch[0] == "access": ct.access_rules.append(ch[1])
-                elif ch[0] == "content_scoped": ct.confidentiality_scopes.extend(ch[1])
-                elif ch[0] == "content_audit": ct.audit = ch[1]
-                elif ch[0] == "dependent_value": ct.dependent_values.append(ch[1])
-            prog.contents.append(ct)
-        elif k == "state_header":
-            sm = item[1]; i += 1
-            last_transition = None
-            for ch in _collect(lambda x: x in ("state_starts","state_also","state_transition","transition_feedback")):
-                if ch[0] == "state_starts": sm.singular = ch[1]; sm.initial_state = ch[2]; sm.states.append(sm.initial_state)
-                elif ch[0] == "state_also": sm.states.extend(ch[1])
-                elif ch[0] == "state_transition":
-                    sm.transitions.append(ch[1])
-                    last_transition = ch[1]
+                    current_sm = None
+                    last_transition = None
+                elif ch[0] == "state_field":
+                    # Open a new state machine for this field; also keep the field
+                    # in the content's field list so generic field machinery
+                    # (renderers, schema) sees it.
+                    if ch[2]: ct.singular = ch[2]
+                    ct.fields.append(ch[1])
+                    current_sm = StateMachine(
+                        content_name=ct.name,
+                        machine_name=ch[1].name,  # field display name
+                        singular=ct.singular,
+                        initial_state="",
+                        line=ch[1].line,
+                    )
+                    prog.state_machines.append(current_sm)
+                    last_transition = None
+                elif ch[0] == "sm_starts_as":
+                    if current_sm is not None:
+                        # ch = ("sm_starts_as", field_name, state)
+                        current_sm.initial_state = ch[2]
+                        if ch[2] and ch[2] not in current_sm.states:
+                            current_sm.states.append(ch[2])
+                        current_sm.starts_as_count += 1
+                elif ch[0] == "sm_also":
+                    if current_sm is not None:
+                        # ch = ("sm_also", field_name, [states])
+                        for s in ch[2]:
+                            if s and s not in current_sm.states:
+                                current_sm.states.append(s)
+                elif ch[0] == "sm_transition":
+                    if current_sm is not None:
+                        current_sm.transitions.append(ch[1])
+                        last_transition = ch[1]
                 elif ch[0] == "transition_feedback" and last_transition is not None:
                     last_transition.feedback.append(ch[1])
-            prog.state_machines.append(sm)
+                elif ch[0] == "access":
+                    ct.access_rules.append(ch[1])
+                    current_sm = None
+                    last_transition = None
+                elif ch[0] == "content_scoped":
+                    ct.confidentiality_scopes.extend(ch[1])
+                elif ch[0] == "content_audit":
+                    ct.audit = ch[1]
+                elif ch[0] == "dependent_value":
+                    ct.dependent_values.append(ch[1])
+            prog.contents.append(ct)
         elif k == "event_header":
             ev = item[1]; i += 1
             for ch in _collect(lambda x: x in ("event_action","log_level")):

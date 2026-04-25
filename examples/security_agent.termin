@@ -18,6 +18,16 @@ Content called "findings":
   Each finding has an affected resource which is text, required
   Each finding has a detected at which is automatic
   Each finding has a remediation action which is text
+  Each finding has a remediation which is state:
+    remediation starts as detected
+    remediation can also be analyzing, auto-fix-applied, verified, flagged-for-human, or closed
+    detected can become analyzing if the user has findings.triage
+    analyzing can become auto-fix-applied if the user has findings.remediate
+    analyzing can become flagged-for-human if the user has findings.triage
+    auto-fix-applied can become verified if the user has findings.remediate
+    auto-fix-applied can become flagged-for-human if the user has findings.triage
+    verified can become closed if the user has findings.triage
+    flagged-for-human can become closed if the user has findings.remediate
   Anyone with "findings.view" can view findings
   Anyone with "findings.triage" can create findings
   Anyone with "findings.remediate" can update or delete findings
@@ -30,17 +40,6 @@ Content called "scan runs":
   Each scan run has a status which is one of: "running", "completed", "failed"
   Anyone with "findings.view" can view scan runs
   Anyone with "findings.triage" can create or update scan runs
-
-State for findings called "remediation":
-  A finding starts as "detected"
-  A finding can also be "analyzing", "auto-fix-applied", "verified", "flagged-for-human", or "closed"
-  A detected finding can become analyzing if the user has "findings.triage"
-  An analyzing finding can become auto-fix-applied if the user has "findings.remediate"
-  An analyzing finding can become flagged-for-human if the user has "findings.triage"
-  An auto-fix-applied finding can become verified if the user has "findings.remediate"
-  An auto-fix-applied finding can become flagged-for-human if the user has "findings.triage"
-  A verified finding can become closed if the user has "findings.triage"
-  A flagged-for-human finding can become closed if the user has "findings.remediate"
 
 Channel called "security-tools":
   Direction: outbound

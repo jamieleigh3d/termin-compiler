@@ -23,22 +23,31 @@ from .state import do_state_transition
 def build_transition_feedback(ir: dict) -> dict:
     """Build transition feedback lookup from IR state machines.
 
-    Returns: {(content_ref, from_state, to_state): [feedback_specs]}
+    Returns: {(content_ref, machine_name, from_state, to_state): [feedback_specs]}
+
+    The machine_name component is needed because a content can have
+    multiple state machines, each with its own transitions and its own
+    feedback specs. Without machine_name in the key, two machines that
+    happen to share a (from, to) pair would collide.
     """
     feedback = {}
     for sm in ir.get("state_machines", []):
+        machine = sm["machine_name"]   # already snake_case in IR
         for t in sm.get("transitions", []):
             fb_list = t.get("feedback", [])
             if fb_list:
-                key = (sm["content_ref"], t["from_state"], t["to_state"])
+                key = (sm["content_ref"], machine,
+                       t["from_state"], t["to_state"])
                 feedback[key] = fb_list
     return feedback
 
 
-def get_feedback(transition_feedback: dict, content: str,
+def get_feedback(transition_feedback: dict, content: str, machine_name: str,
                  from_state: str, to_state: str, trigger: str) -> list:
-    """Look up transition feedback specs for a given trigger (success/error)."""
-    specs = transition_feedback.get((content, from_state, to_state), [])
+    """Look up transition feedback specs for a given trigger (success/error)
+    on a specific machine."""
+    specs = transition_feedback.get(
+        (content, machine_name, from_state, to_state), [])
     return [fb for fb in specs if fb["trigger"] == trigger]
 
 
@@ -86,11 +95,21 @@ def append_flash_params(ctx: RuntimeContext, url: str, feedback_specs: list,
 def register_transition_routes(app, ctx: RuntimeContext):
     """Register the generic transition endpoint."""
 
-    @app.post("/_transition/{content}/{record_id}/{target_state}")
-    async def generic_transition(content: str, record_id: int, target_state: str,
+    @app.post("/_transition/{content}/{machine_name}/{record_id}/{target_state}")
+    async def generic_transition(content: str, machine_name: str,
+                                 record_id: int, target_state: str,
                                  request: Request):
-        """Presentation-layer transition by record ID. Converts underscores in
-        target_state back to spaces for multi-word states."""
+        """Presentation-layer transition by record id, naming the state
+        machine explicitly. Multi-state-machine support requires the
+        machine in the route — a content with two machines could share
+        a target_state name across them, and we need to know which
+        column to write.
+
+        Underscores in `target_state` are converted back to spaces so
+        multi-word states (e.g. `in progress`) survive URL encoding.
+        Hyphens in state names (e.g. `auto-fix-applied`) are preserved
+        verbatim — they survive URL encoding without translation.
+        """
         # Reject unknown content types immediately (don't leak SQL errors)
         if content not in ctx.content_lookup:
             raise HTTPException(status_code=404, detail=f"Unknown content: {content}")
@@ -100,18 +119,20 @@ def register_transition_routes(app, ctx: RuntimeContext):
         try:
             # Get full record before transition for feedback CEL evaluation
             record = await get_record_by_id(db, content, record_id) or {}
-            from_state = record.get("status")
+            from_state = record.get(machine_name)   # read this machine's column
 
-            result = await do_state_transition(db, content, record_id, target, user,
-                                               ctx.sm_lookup, ctx.terminator, ctx.event_bus)
+            result = await do_state_transition(
+                db, content, record_id, machine_name, target, user,
+                ctx.sm_lookup, ctx.terminator, ctx.event_bus)
             is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
             # Build feedback message
             feedback_msg = None
             feedback_spec = None
             if from_state:
-                success_fb = get_feedback(ctx.transition_feedback, content,
-                                          from_state, target, "success")
+                success_fb = get_feedback(
+                    ctx.transition_feedback, content, machine_name,
+                    from_state, target, "success")
                 if success_fb:
                     feedback_spec = success_fb[0]
                     feedback_msg = eval_feedback_message(
@@ -122,7 +143,8 @@ def register_transition_routes(app, ctx: RuntimeContext):
             is_browser_form = has_referer and "text/html" in accept and not is_ajax
 
             if is_ajax:
-                response = {"id": record_id, "status": target}
+                # Response key is the machine's column name, not legacy `status`.
+                response = {"id": record_id, machine_name: target}
                 if feedback_msg:
                     response["_flash"] = feedback_msg
                     response["_flash_style"] = feedback_spec["style"]
@@ -134,7 +156,8 @@ def register_transition_routes(app, ctx: RuntimeContext):
                 referer = request.headers.get("referer", "/")
                 if from_state:
                     referer = append_flash_params(
-                        ctx, referer, success_fb or [], record, from_state, target, content)
+                        ctx, referer, success_fb or [], record,
+                        from_state, target, content)
                 return RedirectResponse(url=referer, status_code=303)
             else:
                 # API client — return the record
@@ -144,15 +167,14 @@ def register_transition_routes(app, ctx: RuntimeContext):
             is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
             accept = request.headers.get("accept", "")
             has_referer = bool(request.headers.get("referer"))
-            # API clients (curl, conformance tests) have no Referer and accept JSON.
-            # Browser form submits have a Referer and we redirect with flash params.
             is_browser_form = has_referer and "text/html" in accept and not is_ajax
 
             if is_ajax:
                 error_response = {"detail": exc.detail}
                 if from_state:
-                    error_fb = get_feedback(ctx.transition_feedback, content,
-                                            from_state, target, "error")
+                    error_fb = get_feedback(
+                        ctx.transition_feedback, content, machine_name,
+                        from_state, target, "error")
                     if error_fb:
                         fb = error_fb[0]
                         error_response["_flash"] = eval_feedback_message(
@@ -165,10 +187,12 @@ def register_transition_routes(app, ctx: RuntimeContext):
             elif is_browser_form:
                 referer = request.headers.get("referer", "/")
                 if from_state:
-                    error_fb = get_feedback(ctx.transition_feedback, content,
-                                            from_state, target, "error")
+                    error_fb = get_feedback(
+                        ctx.transition_feedback, content, machine_name,
+                        from_state, target, "error")
                     referer = append_flash_params(
-                        ctx, referer, error_fb, record, from_state, target, content)
+                        ctx, referer, error_fb, record,
+                        from_state, target, content)
                 return RedirectResponse(url=referer, status_code=303)
             else:
                 # API client — return the actual error status
