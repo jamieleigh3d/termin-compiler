@@ -402,11 +402,31 @@ Theme: provider architecture — pluggable presentation, storage, identity, comp
 | **Storage provider architecture** | Vision Layer 2 | Pluggable storage backend. SQLite today, PostgreSQL as the first real alternative provider. Runtime storage interface, migration path for existing `.termin.pkg` archives across providers. |
 | **Identity provider architecture** | Vision Layer 2, roadmap §Deployment | Pluggable identity subsystem. Replaces the stub cookie-based auth with a proper provider interface supporting enterprise single-sign-on standards (SSO, SAML, OIDC). |
 | **Provider Tier 2 review framework** | guarantees Tier 2 | The review standard that gates which providers inherit structural guarantees. Currently undesigned; likely a volunteer-reviewer pool with no commercial funding path. |
-| **Multi-state-machine per content** | v0.8 sprint finding | The current runtime assumes one state machine per content with a hard-coded `status` column (`storage.py:146`, `lower.py:103` `sm_by_content` dict keyed by content name, `context.py:46` `sm_lookup`, `state.py:33`). A second state machine on the same content silently overwrites the first. The DSL grammar already permits multiple state machines per content (e.g., a Product could have a `lifecycle` state machine AND an `approval_status` state machine). Work: (1) rename the state column per SM — e.g. `products.lifecycle`, `products.approval_status` — instead of a single `status`; (2) upgrade `sm_by_content` to `dict[str, list[StateMachine]]`; (3) update PUT + transition routes to address the right column; (4) update the edit form renderer (v0.8 item #5) to show one dropdown per state field; (5) conformance tests for the multi-SM case. Almost certainly lands as part of the distributed architecture pass. |
+| **Multi-state-machine per content** | v0.8 sprint finding | The current runtime assumes one state machine per content with a hard-coded `status` column (`storage.py:146`, `lower.py:103` `sm_by_content` dict keyed by content name, `context.py:46` `sm_lookup`, `state.py:33`). A second state machine on the same content silently overwrites the first. The DSL grammar already permits multiple state machines per content (e.g., a Product could have a `lifecycle` state machine AND an `approval_status` state machine). Work: (1) rename the state column per SM — e.g. `products.lifecycle`, `products.approval_status` — instead of a single `status`; (2) upgrade `sm_by_content` to `dict[str, list[StateMachine]]`; (3) update PUT + transition routes to address the right column; (4) update the edit form renderer (v0.8 item #5) to show one dropdown per state field; (5) conformance tests for the multi-SM case. **Landed on `feature/v0.9` 2026-04-24 — see `docs/design-multi-state-machine.md`.** |
 
 ---
 
-## v1.0 Backlog
+## v0.10.0 Backlog — "App Server / Distributed Runtime"
+
+Theme: a hosted Termin app server on `termin.dev` plus the conformance plumbing
+runtime implementers need to validate distributed runtimes that cannot be
+exercised in-process.
+
+The motivation for the theme: not every conforming runtime can be tested
+locally with the in-process `reference` adapter or the served-uvicorn
+`served-reference` adapter. A runtime built on a managed cloud platform
+(AWS, container orchestrators, serverless) needs to deploy a real instance
+and validate behavior over real HTTP. Today the conformance suite has no
+adapter that targets such a deployment, which means runtime implementers
+have to build a private fork of the conformance plumbing to run the suite
+against their stack. Closing this gap removes a friction point for any
+runtime built on a non-process-local execution model.
+
+| Item | Source | Notes |
+|------|--------|-------|
+| **Hosted Termin app server on `termin.dev`** | v0.10 theme | Stand up a real-HTTP deployment of the reference fixtures (warehouse, helpdesk, projectboard, approval_workflow) on `termin.dev`. Used as the reference live target for conformance runs and as a public demo surface. Topology: **per-fixture subdomain** (`warehouse.termin.dev`, `helpdesk.termin.dev`, ...) — gives each app its own cookie scope so the `termin_role` and `termin_user_name` cookies on one fixture don't leak across to another, simplifies CORS posture per-app, and lets each fixture have its own DNS+TLS lifecycle. Path-prefix hosting was considered and rejected on the cookie-scoping argument. |
+| **Live-HTTP conformance adapter** | conformance#3 (2026-04-25) | Add a fourth adapter `LiveHttpAdapter` (file: `adapter_live_http.py`). `deploy()` reads `TERMIN_BROWSER_BASE_URL`, returns an `AppInfo` with `base_url=<that url>` and `cleanup=None`. `create_session()` overrides default header injection: when `TERMIN_SERVICE_TOKEN` is set, every request carries `Authorization: Bearer $TERMIN_SERVICE_TOKEN` for the deployment perimeter (Cloudflare Access / IAP / equivalent — NOT Termin identity, which still uses `termin_role` / `termin_user_name` cookies set per-test). The Playwright `browser_context` fixture reads `extra_http_headers` from an adapter hook so the same Bearer token reaches the browser. Scope: browser-marked tests only (`pytest -m browser`); the conftest enforces this — non-browser tests skip when the adapter is `live-http`, because the conformance suite is not idempotent and would pollute a shared deployment. The `seeded_warehouse` fixture is unchanged: `warehouse.post()` already routes through the adapter's session and hits the right base URL. Runtime implementers can point this adapter at their own deployment to validate their stack — does not require `termin.dev` specifically. |
+| **Schema / DB lifecycle for the hosted deployment** | v0.10 theme | Hosted deployment needs a redeploy story: which version is live, how IR-schema changes (e.g. v0.8 → v0.9) get applied to the existing DB, when test data is reset between conformance runs. Likely a per-fixture isolated DB plus a "reset to seed" endpoint that's gated by the deployment-perimeter token. |
 
 Items deferred to v1.0 or later. Not prioritized, not scheduled.
 
