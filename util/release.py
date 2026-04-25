@@ -204,22 +204,54 @@ def copy_to_conformance(dry_run: bool):
 
 
 def run_tests(repo_path: Path, label: str):
-    """Run pytest in a repo, return pass/fail."""
+    """Run pytest in a repo, return pass/fail.
+
+    Streams output line-by-line via Popen instead of using capture_output.
+    On Windows + Miniconda Python 3.11, subprocess.run(..., capture_output=
+    True) hangs at end-of-test-run: pytest completes (CPU time matches a
+    clean direct invocation) but the parent never sees the subprocess
+    exit and stdout stays buffered. Streaming with `-u` (unbuffered)
+    avoids this — each line flushes through immediately, and the parent
+    sees EOF cleanly when pytest exits. Tracked as v0.8.2 backlog;
+    fixed here.
+    """
     print(f"\n  Running {label} tests...")
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/", "--tb=short", "-q"],
-        cwd=repo_path, capture_output=True, text=True,
+    cmd = [sys.executable, "-u", "-m", "pytest", "tests/", "--tb=short", "-q"]
+    proc = subprocess.Popen(
+        cmd, cwd=repo_path,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, bufsize=1,
     )
-    # Extract summary line
-    for line in result.stdout.strip().splitlines()[-3:]:
-        if "passed" in line or "failed" in line:
-            print(f"  {line.strip()}")
-    return result.returncode == 0
+    last_lines: list[str] = []
+    try:
+        for line in proc.stdout:
+            line = line.rstrip()
+            # Keep a tail buffer for summary extraction.
+            last_lines.append(line)
+            if len(last_lines) > 20:
+                last_lines.pop(0)
+            # Echo progress dots / failures so the user sees activity.
+            if "passed" in line or "failed" in line or "error" in line.lower():
+                print(f"  {line}")
+    finally:
+        proc.wait()
+    return proc.returncode == 0
 
 
 # ── Main ──
 
 def main():
+    # Force UTF-8 on stdout so the box-drawing chars in the final
+    # checklist don't crash on Windows cp1252. errors='replace' is
+    # defense-in-depth for any other Unicode that might land here in
+    # the future. No-op on platforms whose default already covers it.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        # AttributeError on very old Pythons; OSError if the stream
+        # cannot be reconfigured (e.g., redirected to a non-text sink).
+        pass
+
     parser = argparse.ArgumentParser(description="Termin release preparation")
     parser.add_argument("--ir-version", help="New IR version (e.g., 0.5.0)")
     parser.add_argument("--compiler-version", help="New compiler version (e.g., 0.5.0)")
