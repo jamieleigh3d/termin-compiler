@@ -217,10 +217,17 @@ def compile(source: str, output: str | None, seed_path: str | None,
             ir_companion.write_text(backend._ir_json, encoding="utf-8")
             click.echo(f"IR written to {ir_companion.name}")
         seed_source = source_path.with_name(source_path.stem + "_seed.json")
+        seed_dest = output_path.with_name(output_path.stem + "_seed.json")
         if seed_source.exists():
-            seed_dest = output_path.with_name(output_path.stem + "_seed.json")
             seed_dest.write_text(seed_source.read_text(encoding="utf-8"), encoding="utf-8")
             click.echo(f"Seed data: {seed_dest.name}")
+        elif seed_dest.exists():
+            # No companion seed for the new source — remove any stale
+            # sidecar from a prior compile so the runtime doesn't
+            # silently auto-load it. Without this, the runtime applies
+            # the old seed data to the freshly-compiled app.
+            seed_dest.unlink()
+            click.echo(f"Removed stale seed sidecar: {seed_dest.name}")
         return
 
     # ── Build .termin.pkg ──

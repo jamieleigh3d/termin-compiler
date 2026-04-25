@@ -35,6 +35,80 @@ from .parse_builders import (
 )
 
 
+_KNOWN_VERBS = {"view", "create", "update", "delete"}
+_VERB_HELP = (
+    "Termin verbs are: view, create, update, delete. "
+    "(Did you mean 'view' instead of 'read'?)"
+)
+
+
+def _validate_access_content_name(cn: str) -> None:
+    """Catch verb-list truncation that slipped through grammar.
+
+    When an access grant contains an unknown verb mid-list (e.g. 'create,
+    read, update, and delete documents'), TatSu's verb_phrase falls back
+    to the SingleVerb alternative — capturing only 'create' — and lets
+    rest_of_line greedily consume ', read, update, and delete documents'
+    as the content name. A real content name has none of those features.
+    """
+    if not cn:
+        return
+    if cn.startswith(","):
+        # Verb list got truncated; rest swallowed as content_name.
+        rest = cn.lstrip(", ").rstrip()
+        _check_can_clause_for_unknown_verbs(rest)
+        # If no unknown verb was found, the malformed shape is something
+        # else — surface a generic error.
+        raise ValueError(
+            f"Malformed access grant: content name starts with comma "
+            f"({cn!r}). " + _VERB_HELP
+        )
+    # Look for `, <known-verb>` or ` and <known-verb>` patterns inside
+    # what should be a single content name.
+    lowered = cn.lower()
+    for v in _KNOWN_VERBS:
+        if f", {v}" in lowered or f" and {v}" in lowered or f" or {v}" in lowered:
+            raise ValueError(
+                f"Malformed access grant: content name contains stray "
+                f"verb token ({cn!r}). " + _VERB_HELP
+            )
+
+
+def _check_can_clause_for_unknown_verbs(rest: str) -> None:
+    """Scan a `... can <rest>` clause for unknown verb tokens.
+
+    Walks tokens until the first non-verb/non-connector token that's
+    NOT preceded by a connector — that's the content name. Any unknown
+    word in the verb section raises ValueError with the bad word(s)
+    named.
+    """
+    if not rest:
+        return
+    connectors = {"or", "and", ","}
+    tokens = rest.replace(",", " , ").split()
+    unknowns: list[str] = []
+    verbs_seen = 0
+    for i, t in enumerate(tokens):
+        if t in _KNOWN_VERBS:
+            verbs_seen += 1
+            continue
+        if t in connectors:
+            continue
+        # Non-verb, non-connector. If preceded by a connector OR no
+        # verbs seen yet, this is in the verb section.
+        prev = tokens[i - 1] if i > 0 else ""
+        if prev in connectors or verbs_seen == 0:
+            unknowns.append(t)
+        else:
+            # Content name section starts here; stop scanning.
+            break
+    if unknowns:
+        bad = ", ".join(repr(v) for v in unknowns)
+        raise ValueError(
+            f"Unknown verb(s) {bad} in access grant. " + _VERB_HELP
+        )
+
+
 def _parse_line(text: str, rule: str, ln: int):
     """Parse a single classified line into a tagged AST tuple.
 
@@ -92,24 +166,28 @@ def _parse_line(text: str, rule: str, ln: int):
         return ("field", Field(name=fn, type_expr=te, line=ln), sg)
     if rule == "access_line":
         r = P(text, rule)
-        if r: return ("access", _build_access(r, ln))
+        if r:
+            # Validate that the verb list didn't get truncated. The
+            # grammar's verb_phrase falls back to the single_verb
+            # alternative when later verbs include unknown words
+            # ('read' is a common offender — Termin uses 'view').
+            # When that happens, single_verb captures the first verb
+            # and rest_of_line swallows the comma-separated remainder
+            # as content_name. A content name should never start with
+            # a comma or contain stray known-verb tokens.
+            cn = str(r.get("content_name", "")).strip()
+            _validate_access_content_name(cn)
+            return ("access", _build_access(r, ln))
+        # TatSu rejected the line entirely. Look for unknown verbs in
+        # the rest-of-can clause and raise a clear error rather than
+        # silently truncating.
         sc = _fq(text); ci = text.find(" can ")
         if ci >= 0:
             rest = text[ci+5:].strip()
-            known = {"view", "create", "update", "delete"}
-            words = rest.replace(",", " ").split()
-            verbs = []
-            for w in words:
-                w = w.strip()
-                if w in known:
-                    verbs.append(w)
-                elif w in ("or", "and"):
-                    continue
-                else:
-                    break
-            if not verbs:
-                verbs = ["view"]
-            return ("access", AccessRule(scope=sc, verbs=verbs, line=ln))
+            _check_can_clause_for_unknown_verbs(rest)
+            # If we got here, the failure was something else — preserve
+            # the pre-existing permissive default.
+            return ("access", AccessRule(scope=sc, verbs=["view"], line=ln))
         return ("access", AccessRule(scope=sc, verbs=["view"], line=ln))
     # v0.9: inline state machine sub-block lines.
     if rule == "sm_starts_as_line":

@@ -120,6 +120,51 @@ class TestCompileCommand:
         config = json.loads(deploy_files[0].read_text())
         assert "ai_provider" in config
 
+    # ── v0.8.2: stale companion seed file cleanup on legacy-py compile ──
+    #
+    # When `termin compile X.termin -o app.py` runs and X.termin has no
+    # companion `_seed.json`, any pre-existing `app_seed.json` left over
+    # from a prior compile (perhaps of a DIFFERENT source, or before the
+    # source's seed was removed) must be deleted. The runtime auto-loads
+    # `<output>_seed.json` if present, so a stale one silently injects
+    # wrong seed data into the new app.
+    #
+    # Five test files in this repo previously worked around this with
+    # `if SEED_PATH.exists(): SEED_PATH.unlink()` before invoking
+    # compile. With the fix, the workaround is unnecessary (kept in
+    # place as defense in depth).
+
+    def test_compile_legacy_py_no_seed_cleans_stale_sidecar(self, runner, tmp_workdir):
+        """A stale app_seed.json must be removed when the new source
+        has no companion _seed.json."""
+        # Plant a stale sidecar.
+        stale = tmp_workdir / "app_seed.json"
+        stale.write_text('{"products": [{"name": "stale data"}]}', encoding="utf-8")
+        assert stale.exists()
+        # Compile a source that has NO companion _seed.json.
+        out = tmp_workdir / "app.py"
+        r = runner.invoke(main, ["compile", str(HELLO_TERMIN), "-o", str(out)])
+        assert r.exit_code == 0, r.output
+        assert not stale.exists(), (
+            "Stale app_seed.json should be removed; runtime would otherwise "
+            "auto-load it and inject wrong seed data."
+        )
+
+    def test_compile_legacy_py_with_seed_overwrites_stale(self, runner, tmp_workdir):
+        """When the source HAS a _seed.json, the existing sidecar is
+        replaced with the new content (regression check)."""
+        # Use projectboard.termin which has a companion seed file.
+        seeded_termin = Path(__file__).parent.parent / "examples" / "projectboard.termin"
+        # Plant a stale (different) sidecar at the output stem.
+        stale = tmp_workdir / "app_seed.json"
+        stale.write_text('{"old": "stale"}', encoding="utf-8")
+        out = tmp_workdir / "app.py"
+        r = runner.invoke(main, ["compile", str(seeded_termin), "-o", str(out)])
+        assert r.exit_code == 0, r.output
+        assert stale.exists(), "Sidecar should still exist (overwritten)"
+        # Content must be the new seed, not the stale 'old' marker.
+        assert "old" not in stale.read_text(encoding="utf-8")
+
 
 # ── CLI: utility functions ──
 

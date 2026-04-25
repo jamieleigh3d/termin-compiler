@@ -86,8 +86,11 @@ field_clause
     ;
 
 type_expr
-    = 'unique' bt:base_type cs:constraints   #TypeUnique
-    | bt:base_type cs:constraints            #TypePlain
+    = 'required' 'unique' bt:base_type cs:constraints   #TypeReqUnique
+    | 'unique' 'required' bt:base_type cs:constraints   #TypeUniqueReq
+    | 'required' bt:base_type cs:constraints            #TypeRequired
+    | 'unique' bt:base_type cs:constraints              #TypeUnique
+    | bt:base_type cs:constraints                       #TypePlain
     ;
 
 base_type

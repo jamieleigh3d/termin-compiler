@@ -204,8 +204,23 @@ def _parse_type_text(text: str, ln: int = 0) -> TypeExpr:
         if not changed: break
 
     text = text.strip()
-    if text.startswith("unique "):
-        expr.unique = True; text = text[len("unique "):].strip()
+    # Inverted-form prefixes: 'required' and/or 'unique' may appear
+    # before the base type, in either order, space-separated. The
+    # canonical postfix form is processed in the loop above; this
+    # handles `required text`, `unique text`, `required unique text`,
+    # `unique required text`. Both orderings produce the same TypeExpr
+    # as the canonical form. Loop until neither prefix matches so the
+    # ordering is symmetric.
+    while True:
+        if text.startswith("required "):
+            expr.required = True
+            text = text[len("required "):].strip()
+            continue
+        if text.startswith("unique "):
+            expr.unique = True
+            text = text[len("unique "):].strip()
+            continue
+        break
 
     TM = {"text": "text", "currency": "currency", "number": "number",
           "percentage": "percentage", "true/false": "boolean", "boolean": "boolean",

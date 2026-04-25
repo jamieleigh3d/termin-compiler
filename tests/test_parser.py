@@ -609,6 +609,193 @@ class TestAccessesLineMultiContent:
         assert len(accesses) == 3
 
 
+# ── v0.8.2: Access grant unknown-verb rejection ──
+#
+# Termin verbs are 'view', 'create', 'update', 'delete'. Previously, an
+# unknown verb in the middle of a grant ("can create, read, update, and
+# delete documents") caused TatSu to fail the whole access_line rule
+# (single_verb doesn't match 'read'); the Python fallback then iterated
+# words and `break`-ed on the first unknown, silently truncating the
+# verb list to ['create']. The user sees no error and gets only one
+# verb instead of four. This is a security-adjacent bug: the user
+# thinks they granted four operations and got one.
+#
+# Fix surface: the fallback must detect unknown verbs and raise a clear
+# error naming the bad verb and the valid set.
+
+class TestAccessGrantUnknownVerb:
+    def _content_block(self, can_clause):
+        return f'''Content called "documents":
+  Each document has a title which is text, required
+  Anyone with "docs.edit" can {can_clause} documents
+'''
+
+    def test_unknown_verb_read_raises_with_helpful_message(self):
+        src = self._content_block("create, read, update, and delete")
+        program, errors = parse(src)
+        assert not errors.ok, (
+            "Expected unknown-verb error; instead got verbs="
+            + str(program.contents[0].access_rules[0].verbs if program.contents else "<no content>")
+        )
+        msg = errors.format()
+        assert "read" in msg, f"Error should name the bad verb: {msg}"
+        # Mention at least one valid verb to be helpful.
+        assert any(v in msg for v in ("view", "create", "update", "delete")), (
+            f"Error should mention valid verbs: {msg}"
+        )
+
+    def test_unknown_verb_alone_raises(self):
+        src = self._content_block("frobnicate")
+        program, errors = parse(src)
+        assert not errors.ok
+        assert "frobnicate" in errors.format()
+
+    def test_known_four_verb_and_grant_succeeds(self):
+        """Regression check: the fix must not break the all-known case."""
+        src = self._content_block("view, create, update, and delete")
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        verbs = program.contents[0].access_rules[0].verbs
+        assert verbs == ["view", "create", "update", "delete"], verbs
+
+    def test_known_four_verb_or_grant_succeeds(self):
+        """Regression check: 'or' form still works."""
+        src = self._content_block("view, create, update, or delete")
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        verbs = program.contents[0].access_rules[0].verbs
+        assert verbs == ["view", "create", "update", "delete"], verbs
+
+    def test_known_three_verb_and_grant_succeeds(self):
+        src = self._content_block("view, create, and update")
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        verbs = program.contents[0].access_rules[0].verbs
+        assert verbs == ["view", "create", "update"], verbs
+
+    def test_known_two_verb_and_grant_succeeds(self):
+        src = self._content_block("create and update")
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        verbs = program.contents[0].access_rules[0].verbs
+        assert verbs == ["create", "update"], verbs
+
+
+# ── v0.8.2: Inverted constraint forms on field types ──
+#
+# Canonical Termin form is "which is <base_type>, <constraint>+"
+# (constraints follow the base type, comma-separated). Native English
+# phrasing flips this: "which is required text" reads more naturally
+# than "which is text, required". Both are accepted; both produce the
+# same TypeExpr.
+#
+# Forms covered (per JL 2026-04-25):
+#   which is text                          base, no constraints
+#   which is required text                 inverted required
+#   which is text, required                canonical required
+#   which is unique text                   inverted unique (already supported)
+#   which is text, unique                  canonical unique
+#   which is unique required text          inverted both
+#   which is required unique text          inverted both, swapped order
+#   which is text, unique, required        canonical both
+#   which is text, required, unique        canonical both, swapped order
+
+class TestConstraintForms:
+    def _field_block(self, type_clause):
+        return f'''Content called "documents":
+  Each document has a title which is {type_clause}
+'''
+
+    def _get_title(self, src):
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        return program.contents[0].fields[0]
+
+    def test_plain_text(self):
+        f = self._get_title(self._field_block("text"))
+        assert f.type_expr.base_type == "text"
+        assert not f.type_expr.required
+        assert not f.type_expr.unique
+
+    # — required only —
+
+    def test_canonical_required(self):
+        f = self._get_title(self._field_block("text, required"))
+        assert f.type_expr.base_type == "text"
+        assert f.type_expr.required is True
+        assert not f.type_expr.unique
+
+    def test_inverted_required(self):
+        f = self._get_title(self._field_block("required text"))
+        assert f.type_expr.base_type == "text"
+        assert f.type_expr.required is True, "inverted 'required text' must set required"
+        assert not f.type_expr.unique
+
+    # — unique only —
+
+    def test_canonical_unique(self):
+        f = self._get_title(self._field_block("text, unique"))
+        assert f.type_expr.base_type == "text"
+        assert f.type_expr.unique is True
+        assert not f.type_expr.required
+
+    def test_inverted_unique(self):
+        f = self._get_title(self._field_block("unique text"))
+        assert f.type_expr.base_type == "text"
+        assert f.type_expr.unique is True
+        assert not f.type_expr.required
+
+    # — both required and unique —
+
+    def test_canonical_unique_required(self):
+        f = self._get_title(self._field_block("text, unique, required"))
+        assert f.type_expr.base_type == "text"
+        assert f.type_expr.required is True
+        assert f.type_expr.unique is True
+
+    def test_canonical_required_unique(self):
+        f = self._get_title(self._field_block("text, required, unique"))
+        assert f.type_expr.base_type == "text"
+        assert f.type_expr.required is True
+        assert f.type_expr.unique is True
+
+    def test_inverted_unique_required(self):
+        f = self._get_title(self._field_block("unique required text"))
+        assert f.type_expr.base_type == "text"
+        assert f.type_expr.required is True
+        assert f.type_expr.unique is True
+
+    def test_inverted_required_unique(self):
+        f = self._get_title(self._field_block("required unique text"))
+        assert f.type_expr.base_type == "text"
+        assert f.type_expr.required is True
+        assert f.type_expr.unique is True
+
+    # — TatSu path coverage: every form should parse via TatSu without
+    #   falling through to Python. Otherwise test_no_tatsu_fallbacks
+    #   blocks any example using these forms.
+
+    def test_all_forms_parse_via_tatsu(self):
+        from termin.parse_helpers import _model
+        for clause in [
+            "text",
+            "text, required",
+            "required text",
+            "text, unique",
+            "unique text",
+            "text, unique, required",
+            "text, required, unique",
+            "unique required text",
+            "required unique text",
+        ]:
+            line = f"Each document has a title which is {clause}"
+            try:
+                r = _model.parse(line, rule_name="field_line")
+            except Exception as e:
+                raise AssertionError(f"TatSu rejected {clause!r}: {e}")
+            assert r is not None, f"TatSu returned None for {clause!r}"
+
+
 # ── D-18: Audit declaration on Content ──
 
 class TestContentAudit:
