@@ -75,6 +75,12 @@ Compute called "triage order":
   Anyone with "orders.write" can execute this
   Audit level: none
 
+Compute called "purge cancelled orders":
+  Transform: takes orders, produces orders
+  `orders.filter(o => o.order_lifecycle != "cancelled")`
+  Anyone with "orders.admin" can execute this
+  Audit level: actions
+
 --- Channels ---
 
 Channel called "order webhook":

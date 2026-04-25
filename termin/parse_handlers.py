@@ -542,6 +542,11 @@ def _parse_line(text: str, rule: str, ln: int):
             rest = rest[3:-3].strip()
         return ("compute_directive", rest)
     if rule == "compute_accesses_line":
+        r = P(text, rule)
+        if r is not None:
+            items = _cl(r.get("content_list"))
+            return ("compute_accesses", [w.strip().strip('"') for w in items if w.strip()])
+        # Fallback for any line shape TatSu can't yet handle.
         rest = text[len("Accesses "):].strip()
         items = [w.strip().strip('"') for w in rest.replace(" and ", ",").split(",") if w.strip()]
         return ("compute_accesses", items)

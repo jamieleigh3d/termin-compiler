@@ -17,13 +17,16 @@ tested here. Actual LLM / agent provider behavior is not exercised in
 this file — it covers the endpoint wiring, validation, and permission
 logic. Provider execution is covered elsewhere.
 
-Uses compute_demo.termin which has 5 CEL compute definitions.
+Uses compute_demo.termin which has 6 CEL compute definitions.
 Compute names in snake_case (how the URL routes look them up):
-  calculate_order_total
-  revenue_report
-  split_order_into_lines
-  match_orders_to_lines
-  triage_order
+  calculate_order_total       (orders.write)
+  revenue_report              (orders.read)
+  split_order_into_lines      (orders.write)
+  match_orders_to_lines       (orders.read)
+  triage_order                (orders.write)
+  purge_cancelled_orders      (orders.admin)  ← admin-gated, used to
+                                                deterministically exercise
+                                                the scope-rejection path.
 """
 
 import importlib
@@ -145,32 +148,40 @@ class TestSuccessfulTrigger:
 class TestScopeEnforcement:
     def test_scope_gated_compute_rejects_insufficient_role(self, client):
         """A role lacking the compute's declared required_scope cannot
-        trigger it. Uses revenue_report if it has a scope restriction;
-        otherwise skips gracefully because compute_demo may not have a
-        scope-gated compute."""
-        # Look up the compute's required_scope via reflection-adjacent
-        # paths. The simplest check: try triggering as "order clerk"
-        # (has orders.read + orders.write but not orders.admin) and
-        # expect a 403 if any compute requires orders.admin. If every
-        # compute is accessible to clerk, skip.
+        trigger it.
+
+        Uses purge_cancelled_orders (requires orders.admin) and
+        order clerk (has orders.read + orders.write only). The 403
+        is the security property under test: the compute trigger
+        endpoint enforces required_scope before executing.
+        """
         prev = client.cookies.get("termin_role")
         client.cookies.set("termin_role", "order clerk")
         try:
-            saw_any_403 = False
-            for comp_snake in [
-                "calculate_order_total", "revenue_report",
-                "split_order_into_lines", "match_orders_to_lines",
-                "triage_order",
-            ]:
-                r = client.post(
-                    f"/api/v1/compute/{comp_snake}/trigger",
-                    json={"record": {}, "content_name": "orders"},
-                )
-                if r.status_code == 403:
-                    saw_any_403 = True
-                    break
-            if not saw_any_403:
-                pytest.skip("No scope-gated compute in compute_demo fixture")
+            r = client.post(
+                "/api/v1/compute/purge_cancelled_orders/trigger",
+                json={"record": {}, "content_name": "orders"},
+            )
+            assert r.status_code == 403, (
+                f"Expected 403 for clerk on admin-gated compute, "
+                f"got {r.status_code}: {r.text}"
+            )
+            assert "orders.admin" in r.text
         finally:
             if prev:
                 client.cookies.set("termin_role", prev)
+            else:
+                client.cookies.delete("termin_role")
+
+    def test_scope_gated_compute_accepts_sufficient_role(self, client):
+        """The same admin-gated compute succeeds for a role that has
+        the required scope. Pairs with the rejection test as a
+        positive control: 403 isn't a coincidence, the gate is
+        scope-driven.
+        """
+        # client fixture default role is "order manager" which has admin.
+        r = client.post(
+            "/api/v1/compute/purge_cancelled_orders/trigger",
+            json={"record": {}, "content_name": "orders"},
+        )
+        assert r.status_code == 200, r.text

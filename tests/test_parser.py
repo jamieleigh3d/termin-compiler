@@ -527,9 +527,86 @@ def test_parse_compute_demo():
     source = Path("examples/compute_demo.termin").read_text()
     program, errors = parse(source)
     assert errors.ok, errors.format()
-    assert len(program.computes) == 5
+    assert len(program.computes) == 6
     assert len(program.channels) == 4
     assert len(program.boundaries) == 2
+
+
+# ── v0.8.2: Accesses line multi-content (PEG gap closure) ──
+#
+# `Accesses` inside a Compute block must accept a comma-separated list of
+# content names, with optional Oxford `and`. Previously the TatSu rule
+# captured a single `words` terminal and silently failed on multi-content
+# shapes, falling through to a Python fallback in parse_handlers.py.
+# `test_no_tatsu_fallbacks` catches that fallback; these tests pin the
+# positive contract via TatSu directly so a regression in the grammar
+# rule shape (not just the absence of a fallback) is caught.
+
+class TestAccessesLineMultiContent:
+    def _parse_via_tatsu(self, line):
+        from termin.parse_helpers import _model
+        return _model.parse(line, rule_name="compute_accesses_line")
+
+    def test_single_content_via_tatsu(self):
+        r = self._parse_via_tatsu("Accesses messages")
+        assert r is not None
+
+    def test_two_contents_comma_via_tatsu(self):
+        r = self._parse_via_tatsu("Accesses messages, products")
+        assert r is not None, "TatSu should parse comma-separated contents"
+
+    def test_three_contents_oxford_comma_via_tatsu(self):
+        r = self._parse_via_tatsu("Accesses messages, products, and reports")
+        assert r is not None, "TatSu should parse Oxford-comma form"
+
+    def test_compute_accesses_multi_end_to_end(self):
+        """Parse a Compute block with multi-content Accesses and confirm
+        the AST captures every name. Catches a regression in either the
+        grammar rule OR the handler that consumes its output."""
+        src = '''Compute called "reply":
+  Provider is "ai-agent"
+  Accesses messages, products
+  Trigger on event "message.created"
+  Directive is ```
+    Reply.
+  ```
+  Objective is ```
+    Done.
+  ```
+  Anyone with "chat.use" can execute this
+'''
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        assert len(program.computes) == 1
+        compute = program.computes[0]
+        # Both content names must be captured. Snake-case normalization
+        # happens downstream in lower(); at parse time we expect the
+        # source spelling preserved.
+        accesses = compute.accesses
+        assert "messages" in accesses
+        assert "products" in accesses
+        assert len(accesses) == 2
+
+    def test_compute_accesses_oxford_comma_end_to_end(self):
+        src = '''Compute called "reply":
+  Provider is "ai-agent"
+  Accesses messages, products, and reports
+  Trigger on event "message.created"
+  Directive is ```
+    Reply.
+  ```
+  Objective is ```
+    Done.
+  ```
+  Anyone with "chat.use" can execute this
+'''
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        accesses = program.computes[0].accesses
+        assert "messages" in accesses
+        assert "products" in accesses
+        assert "reports" in accesses
+        assert len(accesses) == 3
 
 
 # ── D-18: Audit declaration on Content ──

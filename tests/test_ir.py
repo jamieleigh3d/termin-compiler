@@ -403,8 +403,8 @@ class TestComputeDemoIR:
 
     # Compute
 
-    def test_five_computes(self):
-        assert len(self.spec.computes) == 5
+    def test_six_computes(self):
+        assert len(self.spec.computes) == 6
 
     def test_compute_transform(self):
         c = next(c for c in self.spec.computes if c.name.snake == "calculate_order_total")

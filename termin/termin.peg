@@ -578,7 +578,15 @@ compute_strategy_line
     ;
 
 compute_accesses_line
-    = 'Accesses' items:words $
+    = 'Accesses' content_list:accesses_list $
+    ;
+
+accesses_list
+    = item+:accesses_item { (',' ['and'] | 'and') item+:accesses_item }*
+    ;
+
+accesses_item
+    = /\w+(?:\s+(?!and\b)(?!,)\w+)*/
     ;
 
 compute_input_field_line
