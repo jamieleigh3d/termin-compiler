@@ -46,3 +46,7 @@ htmlcov/
 
 # Termin packages (root level — build artifacts)
 *.termin.pkg
+
+# Claude Code: settings.json is the team baseline (committed).
+# settings.local.json is the per-developer override slot (gitignored).
+.claude/settings.local.json
