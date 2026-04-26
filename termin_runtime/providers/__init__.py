@@ -35,6 +35,9 @@ from .deploy_config import (
     parse_deploy_config,
 )
 from .binding import resolve_effective_bindings
+from .identity_contract import (
+    Principal, RoleName, IdentityProvider, ANONYMOUS_PRINCIPAL,
+)
 
 __all__ = [
     "Category", "Tier", "ContractDefinition", "ContractRegistry",
@@ -43,4 +46,5 @@ __all__ = [
     "PresentationBinding", "NamedBinding", "DeployConfigError",
     "parse_deploy_config",
     "resolve_effective_bindings",
+    "Principal", "RoleName", "IdentityProvider", "ANONYMOUS_PRINCIPAL",
 ]

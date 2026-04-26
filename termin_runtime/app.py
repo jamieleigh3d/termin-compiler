@@ -34,6 +34,8 @@ from .expression import ExpressionEvaluator
 from .errors import TerminAtor
 from .events import EventBus
 from .identity import make_get_current_user, make_require_scope, make_get_user_from_websocket
+from .providers import Category, ContractRegistry, ProviderRegistry
+from .providers.builtins import register_builtins as register_builtin_providers
 from .storage import get_db, init_db, create_record, insert_raw, count_records
 from .reflection import ReflectionEngine, register_reflection_with_expr_eval
 from .channels import ChannelDispatcher, load_deploy_config, check_deploy_config_warnings
@@ -116,8 +118,37 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     if not any(k.lower() == "anonymous" for k in ctx.roles):
         ctx.roles["anonymous"] = []
 
-    ctx.get_current_user = make_get_current_user(ctx.roles)
-    ctx.get_user_from_ws = make_get_user_from_websocket(ctx.roles)
+    # v0.9 Phase 1: instantiate the bound IdentityProvider via the
+    # provider registry. The runtime ships first-party providers
+    # through the same registration path third-party providers will
+    # use (BRD §10). Deploy config selects which product to bind;
+    # in v0.9 the catalog is "stub" only (one product per contract,
+    # no real auth providers yet) — Phase 2+ adds real bindings.
+    ctx.contract_registry = ContractRegistry.default()
+    ctx.provider_registry = ProviderRegistry()
+    register_builtin_providers(ctx.provider_registry, ctx.contract_registry)
+    identity_binding = (deploy_config or {}).get("bindings", {}).get("identity", {})
+    identity_product = identity_binding.get("provider") or "stub"
+    identity_config = identity_binding.get("config") or {}
+    identity_record = ctx.provider_registry.get(
+        Category.IDENTITY, "default", identity_product
+    )
+    if identity_record is None:
+        # Unknown product in deploy config — fail-closed by binding
+        # the stub so the runtime still starts but the deploy
+        # operator sees the misbinding in logs.
+        identity_record = ctx.provider_registry.get(
+            Category.IDENTITY, "default", "stub"
+        )
+    ctx.identity_provider = identity_record.factory(identity_config)
+
+    app_id = ir.get("app_id", "") or ir.get("name", "") or ""
+    ctx.get_current_user = make_get_current_user(
+        ctx.roles, ctx.identity_provider, app_id,
+    )
+    ctx.get_user_from_ws = make_get_user_from_websocket(
+        ctx.roles, ctx.identity_provider, app_id,
+    )
     ctx.require_scope = make_require_scope(ctx.get_current_user)
 
     # Content lookups

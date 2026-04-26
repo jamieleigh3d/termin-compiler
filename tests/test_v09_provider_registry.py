@@ -175,34 +175,59 @@ class TestProviderRegistry:
         assert "send_message" in rec.features
         assert "thread_reply" not in rec.features
 
-    def test_no_existing_runtime_module_imports_providers(self):
-        """Phase 0 invariant: the providers package exists but no
-        existing runtime module pulls from it. Phase 1+ wires it up
-        per primitive."""
-        import termin_runtime
-        # Sentinel: confirm the package is importable on its own.
-        from termin_runtime import providers  # noqa: F401
-        # And that no primitive module currently references it. This
-        # guards against accidental wiring during Phase 0.
+    def test_unwired_runtime_modules_do_not_import_providers(self):
+        """Phase 1 invariant: identity + app are wired through the
+        provider registry; the other primitive modules are not yet.
+
+        Phase 2+ wires storage, routes, compute_runner, channels.
+        When each phase lands, that module moves out of this list
+        and becomes a wired-and-tested primitive instead.
+
+        The check looks for both absolute (`from termin_runtime.providers`)
+        and relative (`from .providers`) imports so accidental wiring
+        in either form is caught.
+        """
         import importlib
-        for module_name in [
-            "termin_runtime.identity",
+        from termin_runtime import providers  # noqa: F401  (sentinel)
+        unwired = [
             "termin_runtime.storage",
-            "termin_runtime.app",
             "termin_runtime.routes",
             "termin_runtime.compute_runner",
             "termin_runtime.channels",
-        ]:
+        ]
+        for module_name in unwired:
             m = importlib.import_module(module_name)
-            src = m.__file__
-            # Read the source and check it doesn't import providers.
-            with open(src, encoding="utf-8") as f:
+            with open(m.__file__, encoding="utf-8") as f:
                 content = f.read()
             assert "from termin_runtime.providers" not in content, (
-                f"{module_name} imports providers — Phase 0 is "
-                f"scaffolding-only, no primitive should be wired up yet."
+                f"{module_name} imports providers — that primitive is "
+                f"not yet wired through the provider registry. If "
+                f"you're starting that phase, remove this entry from "
+                f"the unwired list."
             )
             assert "import termin_runtime.providers" not in content, (
-                f"{module_name} imports providers — Phase 0 is "
-                f"scaffolding-only, no primitive should be wired up yet."
+                f"{module_name} imports providers — see above."
+            )
+            assert "from .providers" not in content, (
+                f"{module_name} imports providers via relative form — "
+                f"see above."
+            )
+
+    def test_phase_1_wired_modules_do_import_providers(self):
+        """Positive control: Phase 1 specifically wires identity and
+        app through the provider registry. If these stop importing
+        providers, the wire-up was reverted."""
+        import importlib
+        for module_name in ("termin_runtime.identity", "termin_runtime.app"):
+            m = importlib.import_module(module_name)
+            with open(m.__file__, encoding="utf-8") as f:
+                content = f.read()
+            imports_providers = (
+                "from termin_runtime.providers" in content
+                or "import termin_runtime.providers" in content
+                or "from .providers" in content
+            )
+            assert imports_providers, (
+                f"{module_name} no longer imports providers — Phase 1 "
+                f"wire-up appears reverted."
             )

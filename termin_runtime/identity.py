@@ -6,102 +6,219 @@
 
 """Identity helpers for the Termin runtime.
 
-Provides get_current_user() and require_scope() as functions that
-take a ROLES dict as configuration. Supports both HTTP requests
-(cookie-based) and WebSocket connections (handshake auth).
+v0.9 Phase 1: this module is now a thin wrapper over the registered
+IdentityProvider. The runtime constructs a provider from the app's
+deploy config (defaulting to the first-party stub) and passes it
+into make_get_current_user / make_get_user_from_websocket. The
+helpers extract credentials from the request, route through the
+provider for non-Anonymous principals, and translate provider role
+names into effective scopes using the source's Identity-block
+role-to-scope mapping.
+
+Per BRD §6.1, Anonymous bypasses the provider entirely — no
+credentials in the request means no provider call.
+
+The returned User dict shape is unchanged from v0.8 so existing
+templates and CEL expressions (User.Name, User.Authenticated,
+User.Scopes, etc.) continue to work without modification. The dict
+also carries the new "Principal" key (the typed Principal object)
+for code that wants to consume the contract directly.
 """
 
 from fastapi import Request, HTTPException, WebSocket
 
+from .providers.identity_contract import (
+    ANONYMOUS_PRINCIPAL, Principal, IdentityProvider,
+)
 
-def _build_user_object(role: str, scopes: list, display_name: str) -> dict:
+
+def _build_user_object(principal: Principal, role_name: str, scopes: list) -> dict:
     """Build the standard User object available in CEL expressions.
 
-    The User object is the identity contract between auth providers and
-    the runtime. Any auth provider (stub, SSO, OIDC) must produce a User
-    object with these fields. CEL expressions use PascalCase: User.Name,
-    User.Username, User.Role.
+    The User object is the identity contract between auth providers
+    and the runtime. Any auth provider must produce a Principal that
+    flows through this builder. CEL expressions use PascalCase:
+    User.Name, User.Username, User.Role.
     """
-    # v0.9: canonical Anonymous role is the built-in keyword "Anonymous"
-    # (capitalized, no quotes in source). Pre-v0.9 sources had `An "anonymous"
-    # has "..."` which produced lowercase. Compare case-insensitively so
-    # any historical source still maps cleanly.
-    authenticated = role.lower() != "anonymous"
+    authenticated = not principal.is_anonymous
+    display_name = principal.display_name or ("Anonymous" if not authenticated else "User")
     return {
         "Username": display_name.lower().replace(" ", "_") if authenticated else "anonymous",
         "Name": display_name if authenticated else "Anonymous",
         "FirstName": display_name.split()[0] if authenticated and display_name else "Anonymous",
-        "Role": role,
+        "Role": role_name,
         "Scopes": list(scopes),
         "Authenticated": authenticated,
     }
 
 
-def _resolve_role(roles: dict, cookie_value: str | None) -> str:
-    """Resolve a role-cookie value to a canonical role name.
+def _resolve_role_key(roles_to_scopes: dict, candidate: str | None) -> str:
+    """Resolve a role-cookie value to a canonical role name in the
+    source's Identity-block role-to-scope mapping.
 
     Tries exact match first, then case-insensitive. Falls back to the
-    first role in the dict (the source-declared first role, typically
-    Anonymous if present). The case-insensitive path lets historical
-    cookies like `termin_role=anonymous` continue to work after v0.9
+    first role in the dict — typically Anonymous if the source
+    declares one. The case-insensitive path lets historical cookies
+    like `termin_role=anonymous` continue to work after v0.9
     canonicalized the role to `Anonymous` (capitalized).
     """
-    if cookie_value is None:
-        return list(roles.keys())[0]
-    if cookie_value in roles:
-        return cookie_value
-    cv_lower = cookie_value.lower()
-    for r in roles:
-        if r.lower() == cv_lower:
-            return r
-    return list(roles.keys())[0]
+    keys = list(roles_to_scopes.keys())
+    if not keys:
+        return ""  # caller decides what to do with no roles defined
+    if candidate is None:
+        return keys[0]
+    if candidate in roles_to_scopes:
+        return candidate
+    cl = candidate.lower()
+    for k in keys:
+        if k.lower() == cl:
+            return k
+    return keys[0]
 
 
-def make_get_current_user(roles: dict):
-    """Create a get_current_user dependency bound to a specific ROLES dict."""
+def _build_user_dict(
+    principal: Principal,
+    role_name: str,
+    scopes: list,
+) -> dict:
+    """Build the runtime's user dict that gets passed to handlers.
+
+    Shape preserved from v0.8: keys role, scopes, profile, User. The
+    new v0.9 key 'Principal' carries the typed Principal so code that
+    wants to consume the contract directly can.
+    """
+    authenticated = not principal.is_anonymous
+    display_name = principal.display_name or ("Anonymous" if not authenticated else "User")
+    profile = {
+        "FirstName": display_name if authenticated else "Anonymous",
+        "DisplayName": display_name if authenticated else "Anonymous",
+    }
+    user_obj = _build_user_object(principal, role_name, scopes)
+    return {
+        "role": role_name,
+        "scopes": scopes,
+        "profile": profile,
+        "User": user_obj,
+        "Principal": principal,
+    }
+
+
+def _resolve_principal_and_scopes(
+    cookie_role: str | None,
+    cookie_name: str | None,
+    roles_to_scopes: dict,
+    identity_provider: IdentityProvider,
+    app_id: str,
+) -> tuple[Principal, str, list]:
+    """Resolve credentials → (Principal, canonical_role_name, scopes).
+
+    Per BRD §6.1: Anonymous bypasses the provider entirely — when the
+    runtime determines a request is Anonymous, it constructs the
+    Anonymous Principal directly without calling authenticate.
+
+    The runtime determines a request is Anonymous when the resolved
+    role name (after case-insensitive normalization + first-role
+    fallback) is "Anonymous" / "anonymous". This means:
+      - Explicit `termin_role=Anonymous` cookie → Anonymous bypass.
+      - No cookie + first source role is Anonymous → Anonymous bypass.
+      - No cookie + first source role is something else (e.g.,
+        "warehouse clerk") → that role is assumed (the stub
+        provider's dev-friendly default; real providers would
+        reject no-credentials requests).
+
+    Non-Anonymous resolutions route through the provider:
+      - The cookie value is normalized to the canonical source role
+        name before authenticate is called.
+      - provider.authenticate({role, user_name}) → Principal.
+      - provider.roles_for(principal, app_id) → role names.
+      - Effective scopes = union of source scopes for each role.
+    """
+    canonical_role = _resolve_role_key(roles_to_scopes, cookie_role)
+    if canonical_role.lower() == "anonymous":
+        scopes = list(roles_to_scopes.get(canonical_role, []))
+        return ANONYMOUS_PRINCIPAL, canonical_role, scopes
+    user_name = cookie_name or "User"
+    try:
+        principal = identity_provider.authenticate({
+            "role": canonical_role,
+            "user_name": user_name,
+        })
+        provider_roles = identity_provider.roles_for(principal, app_id)
+    except Exception:
+        # Fail-closed per BRD §6.1: provider failure → Anonymous.
+        # Logging is the deploy operator's concern; runtime doesn't
+        # raise so the request proceeds with limited scopes.
+        anon_key = _resolve_role_key(roles_to_scopes, "anonymous")
+        scopes = list(roles_to_scopes.get(anon_key, []))
+        return ANONYMOUS_PRINCIPAL, anon_key, scopes
+
+    # Effective scopes = union over all returned roles. Map provider
+    # role names (which the stub gets from cookies, may be in any
+    # case) back to source canonical names before lookup.
+    effective_scopes: set = set()
+    chosen_role: str = canonical_role
+    for r in provider_roles:
+        canonical = _resolve_role_key(roles_to_scopes, r)
+        effective_scopes.update(roles_to_scopes.get(canonical, []))
+        # If the provider returns the principal's primary role first,
+        # use it; otherwise stick with the cookie-canonical role.
+        if r == canonical_role or canonical == canonical_role:
+            chosen_role = canonical
+    return principal, chosen_role, list(effective_scopes)
+
+
+def make_get_current_user(
+    roles_to_scopes: dict,
+    identity_provider: IdentityProvider,
+    app_id: str = "",
+):
+    """Create a get_current_user dependency bound to a specific
+    role-to-scope mapping and IdentityProvider."""
     def get_current_user(request: Request) -> dict:
-        """Get current user from cookie or default to first role."""
-        role = _resolve_role(roles, request.cookies.get("termin_role"))
-        display_name = request.cookies.get("termin_user_name", "User")
-        scopes = roles[role]
-        profile = {"FirstName": display_name, "DisplayName": display_name}
-        if role.lower() == "anonymous":
-            profile = {"FirstName": "Anonymous", "DisplayName": "Anonymous"}
-        user_obj = _build_user_object(role, scopes, display_name)
-        return {"role": role, "scopes": scopes, "profile": profile, "User": user_obj}
+        cookie_role = request.cookies.get("termin_role")
+        cookie_name = request.cookies.get("termin_user_name")
+        principal, role_name, scopes = _resolve_principal_and_scopes(
+            cookie_role, cookie_name, roles_to_scopes,
+            identity_provider, app_id,
+        )
+        return _build_user_dict(principal, role_name, scopes)
     return get_current_user
 
 
-def make_get_user_from_websocket(roles: dict):
-    """Create a WebSocket auth function. Reads role from cookies or query params."""
+def make_get_user_from_websocket(
+    roles_to_scopes: dict,
+    identity_provider: IdentityProvider,
+    app_id: str = "",
+):
+    """Create a WebSocket auth function bound to a provider."""
     def get_user_from_websocket(ws: WebSocket) -> dict:
-        # Try token query param first (for production auth)
+        # Token query param reserved for future production auth (JWT,
+        # session token); for now fall through to cookie auth.
         token = ws.query_params.get("token")
         if token:
-            # Future: validate JWT/session token
-            # For now, fall through to cookie auth
-            pass
+            pass  # not validated in v0.9
 
-        # Fall back to cookie auth (dev mode)
-        role = _resolve_role(roles, ws.cookies.get("termin_role"))
-        display_name = ws.cookies.get("termin_user_name", "User")
-        scopes = roles[role]
-        profile = {"FirstName": display_name, "DisplayName": display_name}
-        if role.lower() == "anonymous":
-            profile = {"FirstName": "Anonymous", "DisplayName": "Anonymous"}
-        user_obj = _build_user_object(role, scopes, display_name)
-        return {"role": role, "scopes": scopes, "profile": profile, "User": user_obj}
+        cookie_role = ws.cookies.get("termin_role")
+        cookie_name = ws.cookies.get("termin_user_name")
+        principal, role_name, scopes = _resolve_principal_and_scopes(
+            cookie_role, cookie_name, roles_to_scopes,
+            identity_provider, app_id,
+        )
+        return _build_user_dict(principal, role_name, scopes)
     return get_user_from_websocket
 
 
 def make_require_scope(get_current_user_fn):
-    """Create a require_scope factory bound to a specific get_current_user."""
+    """Create a require_scope factory bound to a specific
+    get_current_user."""
     def require_scope(scope: str):
         """FastAPI dependency that checks the user has a required scope."""
         def checker(request: Request):
             user = get_current_user_fn(request)
             if scope not in user["scopes"]:
-                raise HTTPException(status_code=403, detail=f"Requires scope: {scope}")
+                raise HTTPException(
+                    status_code=403, detail=f"Requires scope: {scope}"
+                )
             return user
         return checker
     return require_scope
