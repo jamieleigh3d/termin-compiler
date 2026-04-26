@@ -330,3 +330,201 @@ class TestServiceAndAgent:
             on_behalf_of=None,
         )
         assert agent.on_behalf_of is None
+
+
+# ── Audit log integration: BRD §6.3.4 ──
+
+
+class TestAuditLogPrincipalRecording:
+    """Per BRD §6.3.4, audit records carry the invoking Principal
+    (with on_behalf_of for delegate-mode agents). v0.9 Phase 1 step 4
+    extends the compute audit log schema with three Principal fields:
+
+      - invoked_by_principal_id
+      - invoked_by_display_name
+      - on_behalf_of_principal_id
+
+    These are populated by write_audit_trace when callers pass the
+    invoking Principal. The contract is exercised end-to-end so that
+    when Phase 4 (channels) lands and ai-agent computes start running
+    in delegate mode, the audit trail already captures both the
+    agent's identity and the human it acts for.
+    """
+
+    def test_audit_log_schema_includes_principal_fields(self):
+        """Compute audit log Content type must include the three
+        Principal-tracking fields so the BRD §6.3.4 contract is
+        expressible."""
+        from termin.peg_parser import parse_peg as parse
+        from termin.lower import lower
+        # Use compute_demo since it has audit-enabled computes.
+        from pathlib import Path
+        src = (Path(__file__).parent.parent / "examples" /
+               "compute_demo.termin").read_text()
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        spec = lower(program)
+        # Find any compute audit log Content type.
+        audit_logs = [
+            c for c in spec.content
+            if c.name.snake.startswith("compute_audit_log_")
+        ]
+        assert len(audit_logs) > 0, "compute_demo should have audit logs"
+        log = audit_logs[0]
+        field_names = {f.name for f in log.fields}
+        assert "invoked_by_principal_id" in field_names
+        assert "invoked_by_display_name" in field_names
+        assert "on_behalf_of_principal_id" in field_names
+
+    def _audit_schema_dict(self, audit_ref: str) -> dict:
+        """Build a Content schema dict matching the v0.9 audit log
+        shape (lower.py audit_fields). Used by the trace-recording
+        tests to spin up a minimal DB table."""
+        def _f(name, bt, ct, enum_values=()):
+            return {
+                "name": name, "display_name": name.replace("_", " "),
+                "business_type": bt, "column_type": ct,
+                "required": False, "unique": False,
+                "enum_values": list(enum_values),
+                "minimum": None, "maximum": None,
+                "foreign_key": None, "default_expr": None,
+                "default_is_expr": False, "confidentiality_scopes": [],
+                "one_of_values": [],
+            }
+        return {
+            "name": {"display": audit_ref.replace("_", " "),
+                     "snake": audit_ref, "pascal": "ComputeAuditLog"},
+            "singular": audit_ref,
+            "fields": [
+                _f("compute_name", "text", "TEXT"),
+                _f("invocation_id", "text", "TEXT"),
+                _f("trigger", "text", "TEXT"),
+                _f("started_at", "datetime", "TIMESTAMP"),
+                _f("completed_at", "datetime", "TIMESTAMP"),
+                _f("duration_ms", "number", "REAL"),
+                _f("outcome", "enum", "TEXT",
+                   ("success", "error", "timeout", "cancelled")),
+                _f("total_input_tokens", "number", "INTEGER"),
+                _f("total_output_tokens", "number", "INTEGER"),
+                _f("trace", "text", "TEXT"),
+                _f("error_message", "text", "TEXT"),
+                _f("invoked_by_principal_id", "text", "TEXT"),
+                _f("invoked_by_display_name", "text", "TEXT"),
+                _f("on_behalf_of_principal_id", "text", "TEXT"),
+            ],
+            "audit": "none",
+            "state_machines": [],
+            "dependent_values": [],
+            "confidentiality_scopes": [],
+            "scope_groups": [],
+        }
+
+    def test_write_audit_trace_records_human_principal(self, tmp_path):
+        """A human Principal flowing into write_audit_trace is
+        recorded in the audit row."""
+        import asyncio
+        from termin_runtime.compute_runner import write_audit_trace
+        from termin_runtime.storage import get_db, init_db, list_records
+        from termin_runtime.providers import Principal
+
+        # Minimal IR-shape with one audit-enabled compute. Synthesize
+        # directly to avoid the compile path.
+        audit_ref = "compute_audit_log_demo"
+        schema = self._audit_schema_dict(audit_ref)
+        db_path = str(tmp_path / "audit.db")
+
+        # Mock RuntimeContext — write_audit_trace only reads ctx.db_path
+        # and (for the record path) ctx.ir for redaction; the bare
+        # minimum is fine here.
+        class _Ctx:
+            pass
+        ctx = _Ctx()
+        ctx.db_path = db_path
+        ctx.ir = {"content": [schema], "computes": []}
+
+        comp_dict = {
+            "name": {"display": "demo", "snake": "demo"},
+            "audit_level": "actions",
+            "audit_content_ref": audit_ref,
+        }
+        alice = Principal(
+            id="okta:user-42", type="human", display_name="Alice",
+        )
+
+        async def _go():
+            await init_db([schema], db_path)
+            await write_audit_trace(
+                ctx, comp_dict, invocation_id="inv-1", trigger="api",
+                started_at="2026-04-25T00:00:00Z",
+                completed_at="2026-04-25T00:00:01Z",
+                duration_ms=1000.0, outcome="success",
+                invoked_by=alice,
+            )
+            db = await get_db(db_path)
+            try:
+                rows = await list_records(db, audit_ref)
+            finally:
+                await db.close()
+            return rows
+        rows = asyncio.run(_go())
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["invoked_by_principal_id"] == "okta:user-42"
+        assert row["invoked_by_display_name"] == "Alice"
+        assert row["on_behalf_of_principal_id"] == ""
+
+    def test_write_audit_trace_records_delegate_mode_agent(self, tmp_path):
+        """A delegate-mode agent Principal records both the agent's
+        id AND the human's id — proving the BRD §6.3.4 'agent X
+        acting for user Y did Z' audit shape works end-to-end."""
+        import asyncio
+        from termin_runtime.compute_runner import write_audit_trace
+        from termin_runtime.storage import get_db, init_db, list_records
+        from termin_runtime.providers import Principal
+
+        audit_ref = "compute_audit_log_demo"
+        schema = self._audit_schema_dict(audit_ref)
+        db_path = str(tmp_path / "audit_delegate.db")
+
+        class _Ctx:
+            pass
+        ctx = _Ctx()
+        ctx.db_path = db_path
+        ctx.ir = {"content": [schema], "computes": []}
+
+        # Delegate-mode agent: agent X acting on behalf of human Y.
+        alice = Principal(
+            id="okta:user-42", type="human", display_name="Alice",
+        )
+        moderation_bot = Principal(
+            id="agent:moderation-bot", type="agent",
+            display_name="Moderation Bot",
+            on_behalf_of=alice,
+        )
+        comp_dict = {
+            "name": {"display": "delegate demo", "snake": "delegate_demo"},
+            "audit_level": "actions",
+            "audit_content_ref": audit_ref,
+        }
+
+        async def _go():
+            await init_db([schema], db_path)
+            await write_audit_trace(
+                ctx, comp_dict, invocation_id="inv-2", trigger="event",
+                started_at="2026-04-25T00:00:00Z",
+                completed_at="2026-04-25T00:00:01Z",
+                duration_ms=1000.0, outcome="success",
+                invoked_by=moderation_bot,
+            )
+            db = await get_db(db_path)
+            try:
+                rows = await list_records(db, audit_ref)
+            finally:
+                await db.close()
+            return rows
+        rows = asyncio.run(_go())
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["invoked_by_principal_id"] == "agent:moderation-bot"
+        assert row["invoked_by_display_name"] == "Moderation Bot"
+        assert row["on_behalf_of_principal_id"] == "okta:user-42"

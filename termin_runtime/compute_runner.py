@@ -555,12 +555,33 @@ async def write_audit_trace(ctx: RuntimeContext, comp: dict, invocation_id: str,
                             trigger: str, started_at: str, completed_at: str,
                             duration_ms: float, outcome: str,
                             trace_data: dict = None, error_message: str = None,
-                            total_input_tokens: int = 0, total_output_tokens: int = 0):
-    """Write a trace record to the compute's audit log Content table."""
+                            total_input_tokens: int = 0, total_output_tokens: int = 0,
+                            invoked_by=None):
+    """Write a trace record to the compute's audit log Content table.
+
+    invoked_by: optional Principal who triggered the compute (BRD §6.3.4).
+        For event-triggered computes this is the principal who caused
+        the upstream event; for system-triggered computes (scheduler,
+        startup hooks) it's None and the audit fields are empty.
+        For delegate-mode agent principals, on_behalf_of is also
+        recorded so the audit trail captures 'agent X acting for
+        user Y did Z'.
+    """
     audit_level = comp.get("audit_level", "actions")
     audit_ref = comp.get("audit_content_ref")
     if audit_level == "none" or not audit_ref:
         return
+
+    # Per BRD §6.3.4, principal info on the audit record.
+    invoked_by_id = ""
+    invoked_by_name = ""
+    on_behalf_of_id = ""
+    if invoked_by is not None:
+        invoked_by_id = getattr(invoked_by, "id", "") or ""
+        invoked_by_name = getattr(invoked_by, "display_name", "") or ""
+        obo = getattr(invoked_by, "on_behalf_of", None)
+        if obo is not None:
+            on_behalf_of_id = getattr(obo, "id", "") or ""
 
     trace_json = json.dumps(trace_data) if trace_data else "{}"
     record_data = {
@@ -575,6 +596,9 @@ async def write_audit_trace(ctx: RuntimeContext, comp: dict, invocation_id: str,
         "total_output_tokens": total_output_tokens,
         "trace": trace_json,
         "error_message": error_message or "",
+        "invoked_by_principal_id": invoked_by_id,
+        "invoked_by_display_name": invoked_by_name,
+        "on_behalf_of_principal_id": on_behalf_of_id,
     }
 
     try:

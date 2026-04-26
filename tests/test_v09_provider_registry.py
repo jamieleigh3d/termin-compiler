@@ -286,3 +286,132 @@ class TestProviderRegistry:
                 f"{module_name} no longer imports providers — Phase 1 "
                 f"wire-up appears reverted."
             )
+
+
+# ── Behavioral guard: the runtime actually constructs and uses an
+#    IdentityProvider. Catches the case where Phase 1 imports stay
+#    in place but the runtime path bypasses the provider. ──
+
+
+class TestRuntimeUsesIdentityProvider:
+    """Phase 1 step 4 behavioral guard. Static-import checks are
+    necessary but not sufficient — a future refactor could keep the
+    imports while routing around the provider. These tests exercise
+    the runtime end-to-end and assert the provider is actually
+    consulted."""
+
+    def _make_test_app(self):
+        """Build a minimal app + return its RuntimeContext."""
+        import json
+        from termin_runtime.app import create_termin_app
+        # Construct a tiny IR-shaped dict directly to avoid the full
+        # compile path. Only what's needed for the identity bootstrap.
+        ir = {
+            "name": "Test", "app_id": "test-app",
+            "auth": {
+                "provider": "stub",
+                "scopes": ["app.view"],
+                "roles": [
+                    {"name": "Anonymous", "scopes": ["app.view"]},
+                    {"name": "user", "scopes": ["app.view"]},
+                ],
+            },
+            "content": [], "computes": [], "channels": [],
+            "boundaries": [], "events": [], "pages": [],
+            "routes": [], "state_machines": [],
+            "reflection_enabled": False,
+        }
+        app = create_termin_app(
+            json.dumps(ir),
+            db_path=":memory:",
+            strict_channels=False,
+            deploy_config={},
+        )
+        # The RuntimeContext is stashed on the app; identity_provider
+        # lives there per the Phase 1 step 4 wire-up.
+        return app, app.state.ctx if hasattr(app.state, "ctx") else None
+
+    def test_identity_provider_is_constructed_at_startup(self):
+        """ctx.identity_provider must be a real IdentityProvider
+        instance after create_termin_app returns."""
+        from termin_runtime.providers import IdentityProvider
+        app, ctx = self._make_test_app()
+        assert ctx is not None, "RuntimeContext should be on app.state.ctx"
+        assert ctx.identity_provider is not None
+        assert isinstance(ctx.identity_provider, IdentityProvider)
+
+    def test_get_current_user_routes_through_provider(self):
+        """A request with a non-Anonymous role cookie must produce
+        a user dict whose Principal was constructed by the provider's
+        authenticate path (not a synthesized inline shape)."""
+        from termin_runtime.providers.builtins.identity_stub import (
+            StubIdentityProvider,
+        )
+        app, ctx = self._make_test_app()
+        # Mock request with a role cookie.
+        class _Req:
+            cookies = {"termin_role": "user", "termin_user_name": "Alice"}
+        user = ctx.get_current_user(_Req())
+        principal = user["Principal"]
+        # The Principal id pattern is provider-stamped — the stub
+        # uses 'stub:<hash>'. If the runtime were synthesizing
+        # principals inline (bypassing the provider), the id would
+        # not have this prefix.
+        assert principal.id.startswith("stub:"), (
+            f"Principal id should be provider-stamped; got {principal.id!r}. "
+            f"The runtime appears to bypass the IdentityProvider."
+        )
+        assert principal.display_name == "Alice"
+        assert principal.is_anonymous is False
+
+    def test_anonymous_request_bypasses_provider(self):
+        """Per BRD §6.1: Anonymous bypasses the provider entirely.
+        The runtime must construct ANONYMOUS_PRINCIPAL directly,
+        never call authenticate."""
+        from termin_runtime.providers import ANONYMOUS_PRINCIPAL
+        app, ctx = self._make_test_app()
+        class _Req:
+            cookies = {"termin_role": "Anonymous"}
+        user = ctx.get_current_user(_Req())
+        principal = user["Principal"]
+        # Anonymous principal is the canonical sentinel — same id.
+        assert principal.id == ANONYMOUS_PRINCIPAL.id == "anonymous"
+        assert principal.is_anonymous is True
+        # Stub-id prefix would be a bug — means the runtime called
+        # provider.authenticate for the Anonymous case.
+        assert not principal.id.startswith("stub:")
+
+    def test_unregistered_identity_product_fails_closed(self):
+        """Per BRD §6.1 fail-closed: a deploy_config naming an
+        identity product that isn't registered is a deploy
+        misconfiguration. Runtime must refuse to start rather
+        than silently fall back to stub."""
+        import json
+        import pytest
+        from termin_runtime.app import create_termin_app
+        ir = {
+            "name": "Test", "app_id": "test-app",
+            "auth": {
+                "provider": "stub", "scopes": [],
+                "roles": [{"name": "Anonymous", "scopes": []}],
+            },
+            "content": [], "computes": [], "channels": [],
+            "boundaries": [], "events": [], "pages": [],
+            "routes": [], "state_machines": [],
+            "reflection_enabled": False,
+        }
+        bad_config = {
+            "bindings": {
+                "identity": {"provider": "made-up-sso", "config": {}},
+            },
+        }
+        with pytest.raises(RuntimeError) as exc:
+            create_termin_app(
+                json.dumps(ir),
+                db_path=":memory:",
+                strict_channels=False,
+                deploy_config=bad_config,
+            )
+        msg = str(exc.value)
+        assert "made-up-sso" in msg
+        assert "not registered" in msg.lower()

@@ -665,6 +665,11 @@ def lower(program: Program) -> AppSpec:
         # Standard fields from D-20.2
         # Note: 'id' is omitted here — the runtime storage module auto-adds
         # "id INTEGER PRIMARY KEY AUTOINCREMENT" to every Content table.
+        # v0.9: Per BRD §6.3.4, audit records carry the invoking
+        # Principal (with on_behalf_of for delegate-mode agents).
+        # Stored as text Principal.id values rather than typed
+        # references — Principal-as-typed-reference is a v0.10
+        # design item (see roadmap).
         audit_fields = (
             FieldSpec(name="compute_name", display_name="compute name",
                       business_type="text", column_type=FieldType.TEXT),
@@ -688,6 +693,16 @@ def lower(program: Program) -> AppSpec:
             FieldSpec(name="trace", display_name="trace",
                       business_type="text", column_type=FieldType.TEXT),
             FieldSpec(name="error_message", display_name="error message",
+                      business_type="text", column_type=FieldType.TEXT),
+            # v0.9 Phase 1 step 4: invoking Principal (BRD §6.3.4).
+            FieldSpec(name="invoked_by_principal_id",
+                      display_name="invoked by principal id",
+                      business_type="text", column_type=FieldType.TEXT),
+            FieldSpec(name="invoked_by_display_name",
+                      display_name="invoked by display name",
+                      business_type="text", column_type=FieldType.TEXT),
+            FieldSpec(name="on_behalf_of_principal_id",
+                      display_name="on behalf of principal id",
                       business_type="text", column_type=FieldType.TEXT),
         )
 

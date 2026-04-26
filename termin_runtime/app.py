@@ -134,11 +134,22 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         Category.IDENTITY, "default", identity_product
     )
     if identity_record is None:
-        # Unknown product in deploy config — fail-closed by binding
-        # the stub so the runtime still starts but the deploy
-        # operator sees the misbinding in logs.
-        identity_record = ctx.provider_registry.get(
-            Category.IDENTITY, "default", "stub"
+        # Per BRD §6.1 fail-closed: an unregistered identity product
+        # is a deploy misconfiguration, not a fall-back-to-stub case.
+        # Refuse to start so the operator catches the binding error
+        # at deploy time rather than at the first auth-required
+        # request. In production this is critical: a deploy that
+        # silently falls back to a dev stub when the configured
+        # SSO product is missing would be a security incident.
+        available = ctx.provider_registry.list_products(
+            Category.IDENTITY, "default"
+        )
+        raise RuntimeError(
+            f"Identity provider {identity_product!r} is not registered. "
+            f"Available: {sorted(available) or '<none>'}. "
+            f"Either register the provider before calling "
+            f"create_termin_app(), or update the deploy config "
+            f"bindings.identity.provider to a registered product."
         )
     ctx.identity_provider = identity_record.factory(identity_config)
 
@@ -415,5 +426,12 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     register_sse_routes(app, ctx)
     register_page_routes(app, ctx)
     register_channel_routes(app, ctx)
+
+    # Stash the RuntimeContext on app.state for introspection by
+    # tests, debugging tools, and runtime extension code that wants
+    # to access ctx.identity_provider / ctx.contract_registry / etc.
+    # Not part of the public ASGI contract — consumers using this
+    # accept that the field is runtime-internal.
+    app.state.ctx = ctx
 
     return app
