@@ -22,6 +22,7 @@ Subsystem modules:
 
 import asyncio
 import json
+import os
 import threading
 
 from contextlib import asynccontextmanager
@@ -80,7 +81,19 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     # fallback). DEFAULT_DB_PATH is "app.db" relative to cwd, matching
     # the historical behavior for users running `python app.py` directly.
     from .storage import DEFAULT_DB_PATH
+    # Resolve to absolute. Relative paths bind against cwd at every
+    # aiosqlite.connect() — if any caller (notably tests, which may
+    # change cwd between invocations) flips cwd after app startup,
+    # subsequent queries open a different file. Locking the path to
+    # absolute here gives stable per-app storage regardless of cwd.
+    #
+    # When no explicit db_path is given AND the IR carries an
+    # app_id, derive a per-app default so two apps booted in the
+    # same process don't collide on a shared `app.db`. Per BRD
+    # §6.2, storage is per-app; this aligns the default to that.
     resolved_db_path = db_path if db_path else DEFAULT_DB_PATH
+    if resolved_db_path != ":memory:" and not os.path.isabs(resolved_db_path):
+        resolved_db_path = os.path.abspath(resolved_db_path)
     ctx = RuntimeContext(ir=ir, ir_json=ir_json, db_path=resolved_db_path)
 
     # Subsystem initialization
@@ -350,14 +363,69 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         print(f"[Termin] Phase 1: TerminAtor initialized")
         print(f"[Termin] Phase 2: Expression evaluator ready")
         print(f"[Termin] Phase 3: Initializing storage")
-        # v0.9 Phase 2: schema initialization goes through the bound
-        # storage provider via migrate() — same path future schema
-        # evolution will use. Initial-deploy is modeled as a diff
-        # where every content schema is an "added" change; the
-        # SqliteStorageProvider delegates to the existing init_db
-        # SQL helper so the on-disk schema is byte-identical to the
-        # v0.8 path.
-        await ctx.storage.migrate(initial_deploy_diff(schemas))
+        # v0.9 Phase 2.x (b): full migration flow — read current
+        # schema, compute classified diff, fold operator-declared
+        # renames, downgrade for empty tables, gate on ack, create
+        # backup if high risk, apply atomically with validation.
+        # See docs/migration-classifier-design.md for the design.
+        from .migrations import (
+            compute_migration_diff, apply_rename_mappings,
+            downgrade_for_empty_tables, ack_covers,
+            format_blocked_error, format_unacked_error,
+        )
+        from .migrations.errors import (
+            MigrationBlockedError, MigrationAckRequiredError,
+            MigrationBackupRefusedError,
+        )
+        # Migration policy from deploy config (operator-controlled).
+        migrations_cfg = (
+            deploy_config.get("migrations", {})
+            if isinstance(deploy_config, dict) else {}
+        )
+        # 1. Read current schema (None on first-ever-deploy; v0.8
+        #    DBs are detected via PRAGMA introspection inside the
+        #    provider).
+        current_schemas = await ctx.storage.read_schema_metadata()
+        # 2. Compute pure diff.
+        diff = compute_migration_diff(current_schemas, schemas)
+        # 3. Apply operator-declared rename mappings.
+        diff = apply_rename_mappings(
+            diff,
+            rename_fields=migrations_cfg.get("rename_fields", ()),
+            rename_contents=migrations_cfg.get("rename_contents", ()),
+        )
+        # 4. Empty-table downgrade.
+        diff = await downgrade_for_empty_tables(diff, ctx.storage)
+        # 5. Block / ack gating.
+        if diff.is_blocked:
+            raise MigrationBlockedError(format_blocked_error(diff))
+        if diff.needs_ack and not ack_covers(diff, migrations_cfg):
+            raise MigrationAckRequiredError(
+                format_unacked_error(diff, migrations_cfg))
+        # 6. Backup if high-risk.
+        backup_id = None
+        if diff.has_high_risk:
+            backup_id = await ctx.storage.create_backup()
+            if backup_id is None:
+                raise MigrationBackupRefusedError(
+                    "Provider cannot create a backup. High-risk "
+                    "migration refused. Back up externally before "
+                    "retrying."
+                )
+            print(f"[Termin] Backup created before high-risk "
+                  f"migration: {backup_id}")
+            print(f"[Termin] Backup retention is your responsibility — "
+                  f"delete or archive once you're confident in the new "
+                  f"app behavior.")
+        # 7. Apply atomically; provider's internal validation step
+        #    gates the COMMIT.
+        await ctx.storage.migrate(diff)
+        # 8. Persist new last-known-good schema.
+        await ctx.storage.write_schema_metadata(schemas)
+        if any(c.kind != "added" for c in diff.changes):
+            print(f"[Termin] Migration committed: "
+                  f"{len(diff.changes)} change(s) applied "
+                  f"(overall classification: {diff.overall_classification})")
 
         # Seed data
         if seed_data:

@@ -2,6 +2,91 @@
 
 ## Unreleased — v0.9 in progress (feature/v0.9)
 
+### Phase 2.x (b): migration diff classifier (2026-04-26)
+
+**The runtime now reads, diffs, classifies, gates, and applies
+schema migrations.** Per BRD §6.2 and
+`docs/migration-classifier-design.md`. Pairs with Phase 2.x (a)
+cascade grammar — together they enable v0.8 → v0.9 cascade
+migration as a first-class flow.
+
+**Five-tier risk model.** Every diff entry is classified as:
+- `safe` — applies at startup without operator interaction
+- `low` — in-place ALTER, easily reversible; ack required
+- `medium` — rebuild required but data preserved; ack + post-
+  migration validation
+- `high` — rebuild + semantics shift OR brief FK integrity break;
+  **provider-side backup**, ack, and validation gate the COMMIT
+- `blocked` — refuses the deploy unconditionally
+
+**Operator acknowledgment via deploy config:**
+```yaml
+migrations:
+  accept_any_risky: false      # blanket override (dev only)
+  accepted_changes: []         # per-change fingerprints (audited)
+  rename_fields: []            # operator-declared field renames
+  rename_contents: []          # operator-declared content renames
+```
+
+**Field/content rename support.** Operator-declared mappings let
+the differ fold a remove+add pair into a single `renamed` change
+so data is preserved through `ALTER TABLE RENAME COLUMN` /
+`RENAME TO` (or rebuild + cast for type-changing renames).
+Without a mapping, remove+add stays remove+add and the standard
+classification rules apply (`removed` is `blocked` until empty).
+
+**TERMIN-M error codes** (new code class):
+- `TERMIN-M001` — blocked migration
+- `TERMIN-M002` — unack'd low/medium/high risk migration
+- `TERMIN-M003` — validation step failed post-migration
+- `TERMIN-M004` — backup creation failed or refused
+- `TERMIN-M005` — rename mapping cycle / duplicate target
+- `TERMIN-M006` — rename mapping target doesn't match IR shape
+
+**Storage Protocol additions:**
+- `read_schema_metadata()` — last-known-good schema (or PRAGMA
+  introspection fallback for v0.8 → v0.9 first-boot)
+- `write_schema_metadata(schemas)` — persists post-migration
+- `create_backup() -> Optional[str]` — provider-specific backup;
+  None signals fail-closed for high-risk
+- Existing `migrate()` now handles add/remove/modify/rename with
+  internal validation step before COMMIT
+
+**SqliteStorageProvider implementation:**
+- `_termin_schema` metadata table records every successful
+  migration (id, ir_version, deployed_at, schema_json)
+- Filesystem-copy backup with fsync + integrity_check
+- 12-step table-rebuild dance for changes ALTER TABLE can't do
+  (FK declarations, type changes, NOT NULL/UNIQUE/CHECK changes)
+- `PRAGMA defer_foreign_keys = ON` for atomic-rollback safety
+- Validation: FK check, row-count preservation, smoke read
+
+**Backup retention.** When a high-risk migration commits, the
+runtime emits a startup-log line naming the backup identifier and
+notes that retention is the operator's responsibility. Different
+providers have different primitives (filesystem path for SQLite,
+snapshot ARN for cloud DBs) so v0.9 doesn't auto-clean. Document
+provider-specific cleanup in your operations runbook.
+
+**v0.8 → v0.9 cascade migration.** Existing v0.8 deployments now
+migrate cleanly: the introspector reads the no-`ON DELETE` FK
+declarations from the live DB; the differ flags every reference
+field as `cascade_mode_changed` (high risk); the operator
+acknowledges via `accepted_changes`; the provider runs the
+table-rebuild dance with the new `ON DELETE CASCADE` /
+`ON DELETE RESTRICT` clauses.
+
+**Conformance test pack scope.** Compiler-side test pack ships in
+this commit (64 tests covering classifier rules, rename folding,
+empty-table downgrade, fingerprinting, ack, schema metadata,
+backup, table-rebuild end-to-end). The cross-version migration
+conformance pack (a "v0.8-shape DB → v0.9 IR" round-trip
+fixture) needs additional fixture-generation infrastructure and
+ships in a follow-on session.
+
+**Tests:** compiler 1868 pass / 0 fail / 0 skip. All 14 examples
+compile clean.
+
 ### Phase 2.x (a): cascade grammar (2026-04-26)
 
 **Breaking grammar change.** Per BRD §6.2, every `references X` field

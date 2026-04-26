@@ -805,8 +805,13 @@ class TestDbPathIsolation:
             "test fail you've reintroduced the cross-app contamination "
             "vector."
         )
-        # A constant default is fine — it's never mutated.
-        assert storage.DEFAULT_DB_PATH == "app.db"
+        # DEFAULT_DB_PATH is a constant — never mutated by runtime
+        # code. The test conftest's autouse _isolated_test_db
+        # fixture monkeypatches it per-test (Phase 2.x b) so each
+        # test gets a fresh DB; that's still "not mutated by
+        # runtime code" since pytest restores after the test.
+        assert isinstance(storage.DEFAULT_DB_PATH, str)
+        assert storage.DEFAULT_DB_PATH  # non-empty
 
     def test_two_apps_keep_separate_dbs(self, compiled_packages, tmp_path):
         """Boot two apps with separate db_paths; rows in one don't appear

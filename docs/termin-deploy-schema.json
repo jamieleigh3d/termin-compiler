@@ -31,6 +31,10 @@
       "type": "object",
       "description": "Runtime-specific configuration. Freeform — each runtime defines its own schema. Common keys: database, log_level, port.",
       "additionalProperties": true
+    },
+    "migrations": {
+      "$ref": "#/$defs/MigrationsConfig",
+      "description": "v0.9+ schema migration policy. Controls operator-acknowledgment of risky changes, declares field/content rename mappings."
     }
   },
   "$defs": {
@@ -162,6 +166,70 @@
           "type": "object",
           "additionalProperties": true,
           "description": "Provider-specific configuration (realm, issuer URL, JWKS endpoint, etc.)."
+        }
+      }
+    },
+    "MigrationsConfig": {
+      "type": "object",
+      "description": "v0.9+ schema migration policy. See docs/migration-classifier-design.md for the 5-tier risk model and ack workflow.",
+      "additionalProperties": false,
+      "properties": {
+        "accept_any_risky": {
+          "type": "boolean",
+          "default": false,
+          "description": "Blanket-accept any low/medium/high-risk migration. Convenient for dev; in prod, prefer per-change fingerprint ack via accepted_changes for audit trail. Cannot bypass blocked classifications — those always refuse."
+        },
+        "accepted_changes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Per-change fingerprints the operator has reviewed and accepted. Format: <content>.<field>:<change-kind>:<short-hash> for field changes; <content>:<change-kind>:<short-hash> for content changes. The runtime emits the required fingerprints in the deploy-time error when an unack'd risky change is detected; copy them here."
+        },
+        "rename_fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FieldRenameMapping" },
+          "default": [],
+          "description": "Operator-declared field rename mappings. Without these, a remove+add pair in the diff is classified blocked (data loss). With a mapping, the differ folds the pair into a single 'renamed' change and applies via SQL ALTER TABLE RENAME COLUMN (or rebuild + cast for type changes)."
+        },
+        "rename_contents": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ContentRenameMapping" },
+          "default": [],
+          "description": "Operator-declared content (table) rename mappings. Same shape as rename_fields but at the table level."
+        }
+      }
+    },
+    "FieldRenameMapping": {
+      "type": "object",
+      "required": ["content", "from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string",
+          "description": "Snake_case name of the content type that owns the field."
+        },
+        "from": {
+          "type": "string",
+          "description": "Old field name (the snake_case column to rename from)."
+        },
+        "to": {
+          "type": "string",
+          "description": "New field name."
+        }
+      }
+    },
+    "ContentRenameMapping": {
+      "type": "object",
+      "required": ["from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "description": "Old content (table) name (snake_case)."
+        },
+        "to": {
+          "type": "string",
+          "description": "New content (table) name."
         }
       }
     }

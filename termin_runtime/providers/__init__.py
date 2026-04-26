@@ -42,6 +42,8 @@ from .storage_contract import (
     StorageProvider, Predicate, Eq, Ne, Gt, Gte, Lt, Lte, In, Contains,
     And, Or, Not, OrderBy, QueryOptions, Page, CascadeMode,
     FieldChange, ContentChange, MigrationDiff, initial_deploy_diff,
+    CLASSIFICATIONS, worst_classification,
+    BackupFailedError, MigrationValidationError,
 )
 
 __all__ = [
@@ -56,4 +58,6 @@ __all__ = [
     "Eq", "Ne", "Gt", "Gte", "Lt", "Lte", "In", "Contains",
     "And", "Or", "Not", "OrderBy", "QueryOptions", "Page", "CascadeMode",
     "FieldChange", "ContentChange", "MigrationDiff", "initial_deploy_diff",
+    "CLASSIFICATIONS", "worst_classification",
+    "BackupFailedError", "MigrationValidationError",
 ]

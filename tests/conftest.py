@@ -12,6 +12,7 @@ dict. Tests that need IR JSON call extract_ir_from_pkg(pkg_path) to open the
 package and extract the IR — no pre-compiled JSON files required.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -22,6 +23,34 @@ sys.path.insert(0, str(Path(__file__).parent))
 from helpers import extract_ir_from_pkg
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
+
+
+@pytest.fixture(autouse=True)
+def _isolated_test_db(tmp_path, monkeypatch):
+    """Auto-isolate each test's storage to a fresh tmp DB.
+
+    The runtime's storage default (`app.db` relative to cwd, see
+    DEFAULT_DB_PATH in storage.py) means every test that doesn't
+    explicitly set `db_path` would otherwise share the project-root
+    `app.db` with every other test in the session.
+
+    Phase 2.x (b) made schema-mismatch a hard error (the migration
+    classifier sees test A's leftover content as a "removed" change
+    when test B deploys a different IR). This fixture sidesteps the
+    issue by monkeypatching DEFAULT_DB_PATH to a per-test absolute
+    path; tests stay isolated without having to thread db_path
+    through every create_termin_app call AND without flipping cwd
+    (which would break tests that resolve example paths relative
+    to the project root).
+
+    The journal flagged this as a v0.9.x autouse fixture work item
+    (entry 2026-04-26 storage extraction) — paying that debt down
+    now.
+    """
+    db_path = str(tmp_path / "app.db")
+    monkeypatch.setattr(
+        "termin_runtime.storage.DEFAULT_DB_PATH", db_path)
+    yield
 
 
 @pytest.fixture(scope="session")

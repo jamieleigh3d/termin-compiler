@@ -82,10 +82,18 @@ class UvicornTestServer:
 
 
 @pytest.fixture(scope="module")
-def agent_simple_server(compiled_packages):
-    """Start a real server with agent_simple app (shared across module)."""
+def agent_simple_server(compiled_packages, tmp_path_factory):
+    """Start a real server with agent_simple app (shared across module).
+
+    Uses a module-scoped tmp DB so this fixture's storage stays
+    isolated from channel_simple_server (Phase 2.x b: the migration
+    classifier rejects schema drift between two apps that would
+    otherwise share the cwd-default app.db).
+    """
     ir_json = _ir_json(compiled_packages["agent_simple"])
-    app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+    db_path = str(tmp_path_factory.mktemp("agent_simple") / "app.db")
+    app = create_termin_app(ir_json, strict_channels=False,
+                            deploy_config={}, db_path=db_path)
     server = UvicornTestServer(app)
     server.start()
     yield server
@@ -93,10 +101,15 @@ def agent_simple_server(compiled_packages):
 
 
 @pytest.fixture(scope="module")
-def channel_simple_server(compiled_packages):
-    """Start a real server with channel_simple app (shared across module)."""
+def channel_simple_server(compiled_packages, tmp_path_factory):
+    """Start a real server with channel_simple app (shared across module).
+
+    See agent_simple_server docstring re: per-fixture db isolation.
+    """
     ir_json = _ir_json(compiled_packages["channel_simple"])
-    app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+    db_path = str(tmp_path_factory.mktemp("channel_simple") / "app.db")
+    app = create_termin_app(ir_json, strict_channels=False,
+                            deploy_config={}, db_path=db_path)
     server = UvicornTestServer(app)
     server.start()
     yield server

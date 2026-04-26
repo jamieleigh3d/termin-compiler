@@ -122,6 +122,7 @@ Items deferred to v1.0 or later. Not prioritized, not scheduled. Captured here s
 | Agent-authored application deployment | product-strategy.md | Agent writes .termin, compiles, deploys — requires stable agent runtime first |
 | Agent prompt versioning and rollback | product-strategy.md | Treat prompts as deployable artifacts |
 | Delegate identity mode for agents | confidentiality-spec.md | Agent acts on behalf of caller (vs service identity) |
+| Operator-supplied custom migration validators | migration-classifier-design.md §3.12.3 | v0.9 ships only auto validation (FK check, row counts, schema metadata, smoke read). Custom validators would let operators express domain invariants (e.g., "every order has a non-null customer post-migration"); reserve a Protocol method later if/when needed. |
 
 ---
 

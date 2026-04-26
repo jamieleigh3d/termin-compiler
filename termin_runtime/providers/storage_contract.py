@@ -263,6 +263,35 @@ class CascadeMode(str, Enum):
     RESTRICT = "restrict"
 
 
+# ── Migration errors ──
+
+
+class BackupFailedError(RuntimeError):
+    """Provider attempted to create a backup and failed (disk full,
+    permission denied, integrity_check failed, etc.). The runtime
+    translates this to TERMIN-M004 and refuses the migration."""
+
+
+class MigrationValidationError(RuntimeError):
+    """Provider's internal validation step failed after applying the
+    diff but before COMMIT. The transaction has been rolled back; if
+    a backup was created, the operator can restore from it. The
+    runtime translates this to TERMIN-M003.
+
+    Attributes:
+        failures: tuple of human-readable failure descriptions.
+        backup_id: optional operator-visible backup identifier
+                   (set by the runtime after the provider raises).
+    """
+    def __init__(self, failures, backup_id: Optional[str] = None) -> None:
+        self.failures = tuple(failures)
+        self.backup_id = backup_id
+        msg = "Migration validation failed: " + "; ".join(self.failures)
+        if backup_id:
+            msg += f" (recovery: {backup_id})"
+        super().__init__(msg)
+
+
 # ── Schema migration ──
 #
 # Phase 2 ships the contract surface; the runtime's diff classifier
@@ -270,32 +299,104 @@ class CascadeMode(str, Enum):
 # providers can implement migrate() against a stable type.
 
 
+# Phase 2.x (b) — five-tier classification per
+# docs/migration-classifier-design.md §3.12.1.
+#
+# Worst-to-best: blocked > high > medium > low > safe.
+# - blocked: refuse the deploy.
+# - high:    rebuild + data semantics shift (or FK integrity briefly
+#            broken). Backup + validation step + ack required.
+# - medium:  rebuild but data preserved. Validation + ack required.
+# - low:     in-place ALTER, easily reversible. Ack required.
+# - safe:    no operator interaction.
+CLASSIFICATIONS: tuple = ("safe", "low", "medium", "high", "blocked")
+_CLASS_RANK: dict = {c: i for i, c in enumerate(CLASSIFICATIONS)}
+
+
+def worst_classification(*classifications: str) -> str:
+    """Return the worst (rightmost) classification per CLASSIFICATIONS
+    ordering. Any unknown value raises ValueError."""
+    if not classifications:
+        return "safe"
+    for c in classifications:
+        if c not in _CLASS_RANK:
+            raise ValueError(
+                f"Unknown classification: {c!r}. Must be one of "
+                f"{CLASSIFICATIONS}.")
+    return max(classifications, key=lambda c: _CLASS_RANK[c])
+
+
+# Allowed FieldChange.kind values per §3.10 + §3.13 (rename support).
+# Each kind carries a structured `detail` dict whose shape depends
+# on the kind; classifier relies on this granularity to emit
+# the correct tier per §3.3.
+_FIELD_CHANGE_KINDS: tuple = (
+    "added",                  # detail = {"spec": <full FieldSpec dict>}
+    "removed",                # detail = {} (field name is enough)
+    "renamed",                # detail = {"from": str, "to": str, "type_changed": bool}
+    "type_changed",           # detail = {"from_type": str, "to_type": str}
+    "required_added",         # detail = {}
+    "required_removed",       # detail = {}
+    "unique_added",           # detail = {}
+    "unique_removed",         # detail = {}
+    "bounds_changed",         # detail = {"from": {min, max}, "to": {min, max}, "tightening": bool}
+    "enum_values_changed",    # detail = {"added": [..], "removed": [..]}
+    "cascade_mode_changed",   # detail = {"from": str | None, "to": str}
+    "foreign_key_changed",    # detail = {"from": str | None, "to": str | None}
+)
+
+
 @dataclass(frozen=True)
 class FieldChange:
-    """One field-level change within a content schema modification."""
-    kind: str  # "added" | "removed" | "type_changed" | "constraint_changed"
+    """One field-level change within a content schema modification.
+
+    Phase 2.x (b) widens kind from the original 4-state enum to ~12
+    granular kinds so the classifier can emit the right tier per
+    docs/migration-classifier-design.md §3.3.
+    """
+    kind: str
     field_name: str
     detail: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.kind not in _FIELD_CHANGE_KINDS:
+            raise ValueError(
+                f"FieldChange.kind must be one of {_FIELD_CHANGE_KINDS}, "
+                f"got {self.kind!r}"
+            )
+
+
+# Allowed ContentChange.kind values. Phase 2.x (b) adds "renamed"
+# per §3.13 so operator-declared rename mappings can fold a
+# remove+add pair into a single entry without losing the data.
+_CONTENT_CHANGE_KINDS: tuple = ("added", "removed", "modified", "renamed")
 
 
 @dataclass(frozen=True)
 class ContentChange:
     """One content-level change in the migration diff."""
-    kind: str  # "added" | "removed" | "modified"
+    kind: str
     content_name: str
-    classification: str  # "safe" | "risky" | "blocked"
-    schema: Optional[Mapping[str, Any]] = None  # full schema for added; partial for modified
+    classification: str
+    schema: Optional[Mapping[str, Any]] = None  # full schema for added/modified/renamed
     field_changes: tuple = field(default_factory=tuple)
+    detail: Mapping[str, Any] = field(default_factory=dict)
+    # detail shape per kind:
+    #   "added"    : {} (schema carries everything)
+    #   "removed"  : {} (content_name is enough)
+    #   "modified" : {} (field_changes carry the deltas)
+    #   "renamed"  : {"from": str}  (content_name is the new name)
 
     def __post_init__(self) -> None:
-        if self.kind not in ("added", "removed", "modified"):
+        if self.kind not in _CONTENT_CHANGE_KINDS:
             raise ValueError(
-                f"ContentChange.kind must be 'added' | 'removed' | 'modified', got {self.kind!r}"
+                f"ContentChange.kind must be one of {_CONTENT_CHANGE_KINDS}, "
+                f"got {self.kind!r}"
             )
-        if self.classification not in ("safe", "risky", "blocked"):
+        if self.classification not in CLASSIFICATIONS:
             raise ValueError(
-                f"ContentChange.classification must be 'safe' | 'risky' | 'blocked', "
-                f"got {self.classification!r}"
+                f"ContentChange.classification must be one of "
+                f"{CLASSIFICATIONS}, got {self.classification!r}"
             )
         if not isinstance(self.field_changes, tuple):
             object.__setattr__(self, "field_changes", tuple(self.field_changes))
@@ -324,10 +425,44 @@ class MigrationDiff:
         return any(c.classification == "blocked" for c in self.changes)
 
     @property
+    def has_high_risk(self) -> bool:
+        """True iff any change is classified high risk. Runtime
+        requires operator ack AND triggers a backup before applying."""
+        return any(c.classification == "high" for c in self.changes)
+
+    @property
+    def has_medium_risk(self) -> bool:
+        """True iff any change is classified medium risk. Runtime
+        requires operator ack."""
+        return any(c.classification == "medium" for c in self.changes)
+
+    @property
+    def has_low_risk(self) -> bool:
+        """True iff any change is classified low risk. Runtime
+        requires operator ack."""
+        return any(c.classification == "low" for c in self.changes)
+
+    @property
+    def needs_ack(self) -> bool:
+        """True iff any change is classified low/medium/high risk.
+        Runtime requires the deploy config to acknowledge the
+        non-safe portion of the diff before applying."""
+        return self.has_low_risk or self.has_medium_risk or self.has_high_risk
+
+    @property
     def has_risky(self) -> bool:
-        """True iff any change is classified risky. Runtime requires
-        operator confirmation before invoking migrate() in that case."""
-        return any(c.classification == "risky" for c in self.changes)
+        """Backwards-compat shim — pre-2.x (b) callers used a single
+        `risky` tier. Returns True iff the diff has any non-safe,
+        non-blocked change."""
+        return self.needs_ack
+
+    @property
+    def overall_classification(self) -> str:
+        """Worst classification across all changes; "safe" if empty
+        diff."""
+        if not self.changes:
+            return "safe"
+        return worst_classification(*(c.classification for c in self.changes))
 
 
 # ── Storage contract Protocol ──
@@ -377,6 +512,69 @@ class StorageProvider(Protocol):
         Raises if any change is classified "blocked" — providers
         defer that judgment to the runtime, but should defensively
         refuse a blocked diff to catch runtime bugs.
+
+        Phase 2.x (b): Providers now implement modify/remove/rename
+        paths in addition to add. The runtime's classifier ensures
+        the diff arrives with each change tagged at the appropriate
+        tier (safe/low/medium/high); the provider applies what it
+        is told. Provider runs an internal validation step before
+        committing the transaction (FK integrity, row-count
+        preservation for rebuilt tables, schema metadata
+        round-trip). If validation fails, the transaction is rolled
+        back and a MigrationValidationError is raised — the runtime
+        translates that to TERMIN-M003.
+        """
+        ...
+
+    async def read_schema_metadata(self) -> Optional[Mapping[str, Any]]:
+        """Return the last-stored schema (the IR `content` list) for
+        this provider, or None if no metadata has ever been written.
+
+        Used by the runtime to compute (current → target) migration
+        diffs at startup. On first-ever-v0.9 boot against a v0.8
+        database, the provider may also fall back to schema
+        introspection (sqlite_master, PRAGMA table_info) if the
+        metadata table doesn't exist — the runtime is agnostic to
+        the source.
+
+        Returns None on a brand-new deployment (empty database with
+        no tables and no metadata). The runtime then runs an
+        initial-deploy migration that creates everything.
+        """
+        ...
+
+    async def write_schema_metadata(
+        self, content_schemas: Sequence[Mapping[str, Any]]
+    ) -> None:
+        """Persist the just-applied schema as the new
+        last-known-good. Called by the runtime after migrate()
+        succeeds and validation passes. The provider stores it in
+        whatever shape it prefers (a metadata table for SQL
+        backends, an item in a control-plane partition for
+        DynamoDB, etc.); read_schema_metadata returns it on the
+        next boot.
+        """
+        ...
+
+    async def create_backup(self) -> Optional[str]:
+        """Create a backup of the storage state, suitable for
+        recovering from a failed high-risk migration (per
+        docs/migration-classifier-design.md §3.12.2).
+
+        Returns an operator-visible identifier for the backup (a
+        file path for SQLite, a snapshot ARN for cloud DBs, etc.).
+        The runtime surfaces this identifier in startup-log lines
+        and migration-failure errors so the operator can find the
+        recovery path.
+
+        Returns None if this provider cannot create a backup in the
+        current configuration. The runtime treats None as a
+        fail-closed signal: high-risk migrations refuse to proceed.
+        Operators must back up externally before retrying.
+
+        Raises BackupFailedError on attempted-but-failed backup
+        (disk full, permission denied, etc.); the runtime translates
+        that to TERMIN-M004.
         """
         ...
 

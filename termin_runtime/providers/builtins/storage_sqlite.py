@@ -34,7 +34,12 @@ Provider boundary discipline (BRD §6.2 "Provider's job is small"):
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+import json
+import os
+import shutil
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Mapping, Optional, Sequence
 
 import aiosqlite
 
@@ -75,14 +80,28 @@ class SqliteStorageProvider:
     # ── Lifecycle ──
 
     async def migrate(self, diff: sc.MigrationDiff) -> None:
-        """Apply a schema migration.
+        """Apply a schema migration atomically.
 
-        v0.9 Phase 2 implements initial-deploy migration (all changes
-        are 'added'). Modify and remove changes are recognized but
-        not yet executed — they raise NotImplementedError so callers
-        get a clear signal rather than silent data loss. Phase 2.x
-        completes the modify/remove paths after the runtime's diff
-        classifier lands.
+        Phase 2.x (b) implementation per
+        docs/migration-classifier-design.md §3.6, §3.12, §3.13.
+
+        Sequence:
+          1. Refuse if diff is blocked.
+          2. Open transaction with `defer_foreign_keys=ON`.
+          3. Snapshot pre-migration row counts for rebuilt tables.
+          4. For each change in dependency-safe order, apply:
+               - "added": init_db's CREATE TABLE path
+               - "removed": DROP TABLE
+               - "renamed" (content): ALTER TABLE RENAME TO
+               - "modified": rebuild dance (CREATE new + INSERT
+                  SELECT + DROP old + RENAME) OR in-place ALTER
+                  for additions / column renames depending on the
+                  field changes
+          5. Run validation step (FK check, row count preservation,
+             schema metadata round-trip, smoke read).
+          6. If validation fails, raise MigrationValidationError —
+             the transaction unwinds.
+          7. On success, COMMIT and return.
         """
         if diff.is_blocked:
             raise ValueError(
@@ -91,35 +110,401 @@ class SqliteStorageProvider:
                 "before invoking the provider."
             )
 
-        added_schemas: list[Mapping[str, Any]] = []
-        for change in diff.changes:
-            if change.kind == "added":
-                if change.schema is None:
+        # Fast path for the all-added initial-deploy case (Phase 2
+        # behavior preserved): batch-init via init_db.
+        if all(c.kind == "added" for c in diff.changes):
+            schemas = [c.schema for c in diff.changes if c.schema is not None]
+            if schemas:
+                await _storage.init_db(schemas, self._db_path)
+            return
+
+        # Mixed / non-trivial migration. Use the per-change executor.
+        db = await self._connect()
+        try:
+            # SQLite's defer_foreign_keys = ON (3.18+) defers FK
+            # checking to COMMIT time, which is what we want during
+            # the rebuild dance: temporary FK breakage is OK as long
+            # as everything reconciles before COMMIT.
+            await db.execute("PRAGMA defer_foreign_keys = ON")
+            # Snapshot pre-migration row counts for rebuilt tables.
+            pre_counts = await self._snapshot_row_counts(db, diff)
+
+            for change in diff.changes:
+                await self._apply_one_change(db, change)
+
+            # Validation step BEFORE commit.
+            failures = await self._validate(db, diff, pre_counts)
+            if failures:
+                # Roll back and surface a structured error.
+                await db.rollback()
+                raise sc.MigrationValidationError(failures)
+
+            await db.commit()
+        finally:
+            await db.close()
+
+    async def _apply_one_change(self, db, change: sc.ContentChange) -> None:
+        if change.kind == "added":
+            if change.schema is None:
+                raise ValueError(
+                    f"'added' change for {change.content_name!r} "
+                    f"is missing a schema")
+            # Reuse init_db's CREATE TABLE path. init_db's own
+            # transaction handling is irrelevant here — it uses the
+            # commit-on-completion idiom and we run it inside our
+            # own transaction; the implicit BEGIN gets folded.
+            await _storage.init_db([change.schema], self._db_path)
+            return
+
+        if change.kind == "removed":
+            tn = _storage._assert_safe(change.content_name, "table name")
+            await db.execute(f'DROP TABLE IF EXISTS {_storage._q(tn)}')
+            return
+
+        if change.kind == "renamed":
+            old_name = change.detail.get("from")
+            new_name = change.content_name
+            _storage._assert_safe(old_name, "old table name")
+            _storage._assert_safe(new_name, "new table name")
+            await db.execute(
+                f'ALTER TABLE {_storage._q(old_name)} '
+                f'RENAME TO {_storage._q(new_name)}')
+            return
+
+        if change.kind == "modified":
+            await self._apply_modified(db, change)
+            return
+
+        raise ValueError(f"unknown ContentChange.kind: {change.kind!r}")
+
+    async def _apply_modified(self, db, change: sc.ContentChange) -> None:
+        """Apply a 'modified' change. If every FieldChange is an
+        in-place-able operation (ADD COLUMN, RENAME COLUMN), use
+        ALTER TABLE; otherwise run the table-rebuild dance."""
+        in_place_kinds = {"added", "renamed"}
+        if all(fc.kind in in_place_kinds for fc in change.field_changes):
+            await self._apply_modified_in_place(db, change)
+            return
+        await self._rebuild_table(db, change)
+
+    async def _apply_modified_in_place(
+        self, db, change: sc.ContentChange,
+    ) -> None:
+        """ALTER TABLE for the simple in-place cases."""
+        tn = _storage._assert_safe(change.content_name, "table name")
+        for fc in change.field_changes:
+            if fc.kind == "added":
+                spec = fc.detail.get("spec") or {}
+                col_sql = _storage._field_to_sql(spec)
+                # Foreign keys can't be added via ALTER — those go
+                # through rebuild. The classifier blocks this case
+                # so we shouldn't see it here, but defense in depth.
+                if spec.get("foreign_key"):
                     raise ValueError(
-                        f"MigrationDiff 'added' change for "
-                        f"{change.content_name!r} is missing a schema"
-                    )
-                added_schemas.append(change.schema)
-            elif change.kind in ("modified", "removed"):
-                # Phase 2 ships the contract surface; the modify/remove
-                # paths land with the runtime's diff classifier in a
-                # follow-on. Raising NotImplementedError preserves data
-                # integrity — the deploy fails fast rather than partially
-                # migrating.
-                raise NotImplementedError(
-                    f"SqliteStorageProvider does not yet implement "
-                    f"{change.kind!r} migrations (content "
-                    f"{change.content_name!r}). v0.9 Phase 2 ships "
-                    f"initial-deploy only; modify/remove land with "
-                    f"the diff-classifier follow-on."
+                        f"in-place ADD COLUMN cannot include a foreign "
+                        f"key on {tn}.{fc.field_name}; this should have "
+                        f"gone through the rebuild path")
+                await db.execute(
+                    f'ALTER TABLE {_storage._q(tn)} ADD COLUMN {col_sql}')
+            elif fc.kind == "renamed":
+                old_name = fc.detail.get("from")
+                new_name = fc.detail.get("to") or fc.field_name
+                _storage._assert_safe(old_name, "old field name")
+                _storage._assert_safe(new_name, "new field name")
+                await db.execute(
+                    f'ALTER TABLE {_storage._q(tn)} '
+                    f'RENAME COLUMN {_storage._q(old_name)} '
+                    f'TO {_storage._q(new_name)}')
+
+    async def _rebuild_table(self, db, change: sc.ContentChange) -> None:
+        """The canonical 12-step SQLite ALTER-via-rebuild dance per
+        docs/migration-classifier-design.md §3.6.
+
+        Composes the new table from the target schema, copies data
+        from the old table mapping columns appropriately (handling
+        renames + additions + removals), drops the old, renames the
+        new.
+        """
+        old_name = change.content_name
+        target_schema = change.schema or {}
+        if not target_schema:
+            raise ValueError(
+                f"_rebuild_table: 'modified' change for {old_name!r} "
+                f"has no schema")
+
+        _storage._assert_safe(old_name, "table name")
+        # Temp name must satisfy the safe-identifier regex
+        # (^[a-z][a-z0-9_]*$) — leading underscore is unsafe per
+        # storage._SAFE_IDENTIFIER, so prefix with a letter.
+        tmp_name = f"trebuild_{old_name}"
+        _storage._assert_safe(tmp_name, "rebuild table name")
+
+        # Build the column → column source mapping for INSERT SELECT.
+        # Default: same name on both sides. Renamed fields map old
+        # name → new name. Removed fields are skipped on the SELECT
+        # side. Added fields are skipped on the SELECT side (they
+        # take the column DEFAULT or NULL).
+        new_fields = list(target_schema.get("fields", []))
+        renames_by_new: dict = {}
+        added_names: set = set()
+        for fc in change.field_changes:
+            if fc.kind == "renamed":
+                renames_by_new[fc.detail.get("to") or fc.field_name] = (
+                    fc.detail.get("from"))
+            elif fc.kind == "added":
+                added_names.add(fc.field_name)
+
+        # Determine the source column for each target column. State-
+        # machine columns and `id` are always present on both sides.
+        target_col_to_source: dict = {"id": "id"}
+        sm_columns = [
+            sm["machine_name"]
+            for sm in target_schema.get("state_machines", [])
+        ]
+        for sm_col in sm_columns:
+            target_col_to_source[sm_col] = sm_col
+
+        for f in new_fields:
+            if f.get("business_type") == "state":
+                continue  # state-machine columns handled above
+            name = f["name"]
+            if name in added_names:
+                continue  # no source column — let DEFAULT fill it
+            source = renames_by_new.get(name, name)
+            target_col_to_source[name] = source
+
+        # Step 1: CREATE TABLE for the new shape, with the temp
+        # name. We piggyback on init_db by passing a schema dict
+        # that has the temp name. init_db emits FK declarations
+        # with the new ON DELETE clauses (per cascade grammar).
+        rebuild_schema = dict(target_schema)
+        # init_db uses name.snake — patch it for the rebuild.
+        rebuild_schema = {
+            **rebuild_schema,
+            "name": {
+                "snake": tmp_name,
+                "display": tmp_name,
+                "pascal": tmp_name,
+            },
+        }
+        await _storage.init_db([rebuild_schema], self._db_path)
+
+        # Step 2: INSERT new (cols) SELECT (source_cols) FROM old.
+        target_cols = list(target_col_to_source.keys())
+        source_cols = [target_col_to_source[c] for c in target_cols]
+        for c in target_cols:
+            _storage._assert_safe(c, "rebuild target column")
+        for c in source_cols:
+            _storage._assert_safe(c, "rebuild source column")
+        target_cols_sql = ", ".join(_storage._q(c) for c in target_cols)
+        source_cols_sql = ", ".join(_storage._q(c) for c in source_cols)
+        await db.execute(
+            f'INSERT INTO {_storage._q(tmp_name)} ({target_cols_sql}) '
+            f'SELECT {source_cols_sql} FROM {_storage._q(old_name)}')
+
+        # Step 3: DROP old table.
+        await db.execute(f'DROP TABLE {_storage._q(old_name)}')
+
+        # Step 4: RENAME tmp → old name.
+        await db.execute(
+            f'ALTER TABLE {_storage._q(tmp_name)} '
+            f'RENAME TO {_storage._q(old_name)}')
+
+    # ── Validation ─────────────────────────────────────────────────
+
+    async def _snapshot_row_counts(
+        self, db, diff: sc.MigrationDiff,
+    ) -> dict:
+        """Snapshot row counts for tables that will be rebuilt, so
+        we can validate post-rebuild that no rows were lost."""
+        counts: dict = {}
+        for change in diff.changes:
+            if change.kind != "modified":
+                continue
+            # Only snapshot if a rebuild is going to happen.
+            in_place_kinds = {"added", "renamed"}
+            if all(fc.kind in in_place_kinds for fc in change.field_changes):
+                continue
+            tn = change.content_name
+            try:
+                cursor = await db.execute(
+                    f'SELECT COUNT(*) FROM {_storage._q(tn)}')
+                row = await cursor.fetchone()
+                counts[tn] = int(row[0]) if row else 0
+            except Exception:
+                counts[tn] = None  # table didn't exist; nothing to compare
+        return counts
+
+    async def _validate(
+        self, db, diff: sc.MigrationDiff, pre_counts: dict,
+    ) -> tuple:
+        """Run the validation step. Returns a tuple of failure
+        descriptions (empty if all checks pass)."""
+        failures: list = []
+
+        # 1. PRAGMA foreign_key_check returns no rows.
+        cursor = await db.execute("PRAGMA foreign_key_check")
+        fk_violations = await cursor.fetchall()
+        if fk_violations:
+            failures.append(
+                f"foreign_key_check found {len(fk_violations)} violation(s)"
+            )
+
+        # 2. Row-count preservation for rebuilt tables.
+        for table, pre in pre_counts.items():
+            if pre is None:
+                continue
+            cursor = await db.execute(
+                f'SELECT COUNT(*) FROM {_storage._q(table)}')
+            row = await cursor.fetchone()
+            post = int(row[0]) if row else 0
+            if post != pre:
+                failures.append(
+                    f"row count mismatch on {table!r}: "
+                    f"pre={pre}, post={post}"
                 )
 
-        if added_schemas:
-            # Delegate to the existing init_db helper so the SQL stays
-            # in one place. init_db is idempotent (CREATE TABLE IF NOT
-            # EXISTS), so running it on every startup is safe even when
-            # the diff is empty.
-            await _storage.init_db(added_schemas, self._db_path)
+        # 3. Smoke read on each non-removed migrated content.
+        for change in diff.changes:
+            if change.kind == "removed":
+                continue
+            tn = change.content_name
+            try:
+                cursor = await db.execute(
+                    f'SELECT 1 FROM {_storage._q(tn)} LIMIT 1')
+                await cursor.fetchall()
+            except Exception as e:
+                failures.append(
+                    f"smoke read failed on {tn!r}: {e}")
+
+        return tuple(failures)
+
+    # ── Schema metadata ────────────────────────────────────────────
+
+    _METADATA_TABLE = "_termin_schema"
+
+    async def read_schema_metadata(self) -> Optional[Sequence[Mapping[str, Any]]]:
+        """Return the last-stored schema (the IR `content` list).
+
+        First tries the `_termin_schema` metadata table. If that
+        table doesn't exist (first-ever-v0.9 boot, possibly against
+        a v0.8 DB), falls back to schema introspection — the runtime
+        sees the v0.8 shape as the "current" and computes a diff
+        against the v0.9 IR.
+
+        Returns None when the database is brand-new (no tables at
+        all). The runtime then runs an initial-deploy migration.
+        """
+        from ...migrations.introspect import introspect_sqlite_schema
+        db = await self._connect()
+        try:
+            # Does the metadata table exist?
+            cursor = await db.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name=?",
+                (self._METADATA_TABLE,),
+            )
+            row = await cursor.fetchone()
+            if row is not None:
+                cursor = await db.execute(
+                    f'SELECT schema_json FROM {_storage._q(self._METADATA_TABLE)} '
+                    f'ORDER BY id DESC LIMIT 1')
+                row = await cursor.fetchone()
+                if row is None:
+                    return None
+                return json.loads(row[0])
+            # No metadata table. Are there ANY user tables?
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM sqlite_master "
+                "WHERE type='table' AND name NOT LIKE 'sqlite_%' "
+                "AND name != ?",
+                (self._METADATA_TABLE,),
+            )
+            row = await cursor.fetchone()
+            count = int(row[0]) if row else 0
+            if count == 0:
+                return None  # brand-new database
+            # v0.8 → v0.9 first-boot path: introspect.
+            return await introspect_sqlite_schema(db)
+        finally:
+            await db.close()
+
+    async def write_schema_metadata(
+        self, content_schemas: Sequence[Mapping[str, Any]],
+    ) -> None:
+        """Persist the just-applied schema as the new
+        last-known-good. Creates `_termin_schema` if not present."""
+        db = await self._connect()
+        try:
+            await db.execute(
+                f'CREATE TABLE IF NOT EXISTS {_storage._q(self._METADATA_TABLE)} ('
+                f'    id INTEGER PRIMARY KEY AUTOINCREMENT,'
+                f'    ir_version TEXT NOT NULL DEFAULT \'0.9.0\','
+                f'    deployed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+                f'    schema_json TEXT NOT NULL'
+                f')'
+            )
+            await db.execute(
+                f'INSERT INTO {_storage._q(self._METADATA_TABLE)} '
+                f'(schema_json) VALUES (?)',
+                (json.dumps(list(content_schemas)),),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
+    # ── Backup ──────────────────────────────────────────────────────
+
+    async def create_backup(self) -> Optional[str]:
+        """Filesystem-copy the SQLite database file. Returns the
+        backup path. Raises sc.BackupFailedError on any failure.
+
+        Per docs/migration-classifier-design.md §3.12.2."""
+        if self._db_path == ":memory:":
+            # In-memory DB has nothing to back up; treat as
+            # "cannot backup" so the runtime fails closed.
+            return None
+        if not os.path.exists(self._db_path):
+            # No DB yet; nothing to back up. Return None to signal
+            # the runtime that a backup wasn't possible. (For a
+            # fresh deploy this won't happen — diff would be all-
+            # added and high-risk wouldn't trigger.)
+            return None
+
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+        backup_path = f"{self._db_path}.pre-{ts}.bak"
+
+        try:
+            shutil.copy2(self._db_path, backup_path)
+            # fsync to ensure the bytes hit disk before the migration
+            # touches the source. Windows requires a writable fd for
+            # fsync (read-only mode raises EBADF), so open for
+            # writing-no-truncate. POSIX accepts either.
+            fd = os.open(backup_path, os.O_RDWR)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        except OSError as e:
+            raise sc.BackupFailedError(
+                f"could not create SQLite backup at {backup_path!r}: {e}"
+            ) from e
+
+        # Verify the backup with PRAGMA integrity_check.
+        verify = await aiosqlite.connect(backup_path)
+        try:
+            cursor = await verify.execute("PRAGMA integrity_check")
+            row = await cursor.fetchone()
+            result = (row[0] if row else "") or ""
+            if result.lower() != "ok":
+                raise sc.BackupFailedError(
+                    f"integrity_check on backup {backup_path!r} "
+                    f"returned {result!r}"
+                )
+        finally:
+            await verify.close()
+
+        return backup_path
 
     # ── CRUD ──
 

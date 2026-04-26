@@ -168,15 +168,36 @@ class TestMigrationDiff:
         ))
         assert diff.is_blocked
 
-    def test_risky_change_marks_diff_risky(self):
+    def test_low_risk_change_needs_ack(self):
         diff = MigrationDiff(changes=(
             ContentChange(
                 kind="modified", content_name="x",
-                classification="risky",
+                classification="low",
             ),
         ))
-        assert diff.has_risky
+        assert diff.has_low_risk
+        assert diff.needs_ack
+        assert diff.has_risky  # backwards-compat shim
         assert not diff.is_blocked
+
+    def test_high_risk_change_needs_ack_and_marks_high(self):
+        diff = MigrationDiff(changes=(
+            ContentChange(
+                kind="modified", content_name="x",
+                classification="high",
+            ),
+        ))
+        assert diff.has_high_risk
+        assert diff.needs_ack
+        assert not diff.is_blocked
+
+    def test_overall_classification_is_worst(self):
+        diff = MigrationDiff(changes=(
+            ContentChange(kind="added", content_name="a", classification="safe"),
+            ContentChange(kind="modified", content_name="b", classification="medium"),
+            ContentChange(kind="modified", content_name="c", classification="high"),
+        ))
+        assert diff.overall_classification == "high"
 
     def test_classification_validated(self):
         with pytest.raises(ValueError, match="classification"):
@@ -355,18 +376,20 @@ class TestSqliteProviderCRUD:
             await provider.migrate(diff)
 
     @pytest.mark.asyncio
-    async def test_migrate_modify_not_yet_implemented(self, tmp_db):
-        # v0.9 Phase 2 ships initial-deploy only. modify/remove
-        # raises NotImplementedError so the deploy fails fast rather
-        # than silently dropping data.
+    async def test_migrate_blocked_diff_refused(self, tmp_db):
+        # The provider defensively refuses a blocked diff even
+        # though the runtime should reject before invoking. v0.9
+        # Phase 2.x (b) implements modify/remove, so the historical
+        # NotImplementedError path is gone — the only refusal is
+        # for blocked.
         provider = SqliteStorageProvider({"db_path": tmp_db})
         diff = MigrationDiff(changes=(
             ContentChange(
                 kind="modified", content_name="products",
-                classification="safe",
+                classification="blocked",
             ),
         ))
-        with pytest.raises(NotImplementedError, match="modified"):
+        with pytest.raises(ValueError, match="blocked"):
             await provider.migrate(diff)
 
     @pytest.mark.asyncio
