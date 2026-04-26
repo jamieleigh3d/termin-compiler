@@ -34,7 +34,9 @@ from .expression import ExpressionEvaluator
 from .errors import TerminAtor
 from .events import EventBus
 from .identity import make_get_current_user, make_require_scope, make_get_user_from_websocket
-from .providers import Category, ContractRegistry, ProviderRegistry
+from .providers import (
+    Category, ContractRegistry, ProviderRegistry, initial_deploy_diff,
+)
 from .providers.builtins import register_builtins as register_builtin_providers
 from .storage import get_db, init_db, create_record, insert_raw, count_records
 from .reflection import ReflectionEngine, register_reflection_with_expr_eval
@@ -163,6 +165,41 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
             f"bindings.identity.provider to a registered product."
         )
     ctx.identity_provider = identity_record.factory(identity_config)
+
+    # v0.9 Phase 2: instantiate the bound StorageProvider via the
+    # provider registry. Same loading path as identity (BRD §10
+    # "One loading path for all providers"). Deploy config selects
+    # which product to bind; v0.9 ships "sqlite" only. The provider
+    # holds its own db_path so multiple apps in one process never
+    # share storage state — fixes the v0.8 _db_path module-global
+    # contamination class.
+    storage_binding = (deploy_config or {}).get("bindings", {}).get("storage", {})
+    storage_product = storage_binding.get("provider") or "sqlite"
+    storage_config = dict(storage_binding.get("config") or {})
+    # Honor the legacy db_path argument by feeding it into the
+    # provider config when no explicit binding override exists.
+    # Tests pass db_path positionally; production callers pass it
+    # through the deploy config.
+    if "db_path" not in storage_config:
+        storage_config["db_path"] = resolved_db_path
+    storage_record = ctx.provider_registry.get(
+        Category.STORAGE, "default", storage_product
+    )
+    if storage_record is None:
+        # Fail-closed: storage is Tier 1 — app down if down. An
+        # unregistered product at deploy time is a misconfiguration
+        # that should surface immediately, not at the first CRUD call.
+        available = ctx.provider_registry.list_products(
+            Category.STORAGE, "default"
+        )
+        raise RuntimeError(
+            f"Storage provider {storage_product!r} is not registered. "
+            f"Available: {sorted(available) or '<none>'}. "
+            f"Either register the provider before calling "
+            f"create_termin_app(), or update the deploy config "
+            f"bindings.storage.provider to a registered product."
+        )
+    ctx.storage = storage_record.factory(storage_config)
 
     app_id = ir.get("app_id", "") or ir.get("name", "") or ""
     ctx.get_current_user = make_get_current_user(
@@ -313,10 +350,14 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         print(f"[Termin] Phase 1: TerminAtor initialized")
         print(f"[Termin] Phase 2: Expression evaluator ready")
         print(f"[Termin] Phase 3: Initializing storage")
-        # Pass the resolved path (never None) so storage.init_db can't
-        # fall through to its fallback constant — the app is the
-        # authoritative source for db_path, not module state.
-        await init_db(schemas, resolved_db_path)
+        # v0.9 Phase 2: schema initialization goes through the bound
+        # storage provider via migrate() — same path future schema
+        # evolution will use. Initial-deploy is modeled as a diff
+        # where every content schema is an "added" change; the
+        # SqliteStorageProvider delegates to the existing init_db
+        # SQL helper so the on-disk schema is byte-identical to the
+        # v0.8 path.
+        await ctx.storage.migrate(initial_deploy_diff(schemas))
 
         # Seed data
         if seed_data:

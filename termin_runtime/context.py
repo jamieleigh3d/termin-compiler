@@ -34,6 +34,13 @@ class RuntimeContext:
     ai_provider: Any = None        # AIProvider
     conn_manager: Any = None       # ConnectionManager (set after creation)
 
+    # v0.9 Phase 2: storage provider (StorageProvider Protocol).
+    # Set by app.py from the bound storage provider — every CRUD
+    # path in the runtime goes through this instance, never through
+    # direct storage.py imports. Per-app instance (no globals);
+    # see providers/builtins/storage_sqlite.py for the SQLite impl.
+    storage: Any = None            # StorageProvider
+
     # Identity functions
     get_current_user: Callable = None
     get_user_from_ws: Callable = None

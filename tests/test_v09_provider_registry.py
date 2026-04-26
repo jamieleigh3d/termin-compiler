@@ -231,22 +231,22 @@ class TestProviderRegistry:
         assert "thread_reply" not in rec.features
 
     def test_unwired_runtime_modules_do_not_import_providers(self):
-        """Phase 1 invariant: identity + app are wired through the
-        provider registry; the other primitive modules are not yet.
+        """Phase 2 invariant: identity + app + routes + pages are
+        wired through the provider registry. compute_runner and
+        channels are not yet (Phase 3 / Phase 4).
 
-        Phase 2+ wires storage, routes, compute_runner, channels.
-        When each phase lands, that module moves out of this list
-        and becomes a wired-and-tested primitive instead.
+        The legacy storage.py module remains as the SQL implementation
+        layer behind the SQLite provider — it is intentionally not
+        wired through the provider registry. The provider class wraps
+        storage.py, not the other way around.
 
-        The check looks for both absolute (`from termin_runtime.providers`)
-        and relative (`from .providers`) imports so accidental wiring
-        in either form is caught.
+        When each later phase lands, that module moves out of this
+        list and becomes a wired-and-tested primitive instead.
         """
         import importlib
         from termin_runtime import providers  # noqa: F401  (sentinel)
         unwired = [
             "termin_runtime.storage",
-            "termin_runtime.routes",
             "termin_runtime.compute_runner",
             "termin_runtime.channels",
         ]
@@ -268,22 +268,34 @@ class TestProviderRegistry:
                 f"see above."
             )
 
-    def test_phase_1_wired_modules_do_import_providers(self):
-        """Positive control: Phase 1 specifically wires identity and
-        app through the provider registry. If these stop importing
-        providers, the wire-up was reverted."""
+    def test_wired_modules_do_import_providers(self):
+        """Positive control: Phases 1 and 2 wire identity, app,
+        routes, and pages through the provider registry. If any of
+        these stop importing providers, the wire-up was reverted."""
         import importlib
-        for module_name in ("termin_runtime.identity", "termin_runtime.app"):
+        for module_name in (
+            "termin_runtime.identity",
+            "termin_runtime.app",
+            "termin_runtime.routes",
+            "termin_runtime.pages",
+        ):
             m = importlib.import_module(module_name)
             with open(m.__file__, encoding="utf-8") as f:
                 content = f.read()
-            imports_providers = (
-                "from termin_runtime.providers" in content
-                or "import termin_runtime.providers" in content
-                or "from .providers" in content
-            )
+            # Match an actual import line (not commented out). The
+            # substring check `"from .providers" in content` would
+            # match `# from .providers import ...` too, which is the
+            # exact form a "I'll quickly comment this out" revert
+            # produces — so we enforce an uncommented import line.
+            import re
+            imports_providers = bool(re.search(
+                r'(?m)^\s*(?:from\s+termin_runtime\.providers'
+                r'|import\s+termin_runtime\.providers'
+                r'|from\s+\.providers)\b',
+                content,
+            ))
             assert imports_providers, (
-                f"{module_name} no longer imports providers — Phase 1 "
+                f"{module_name} no longer imports providers — "
                 f"wire-up appears reverted."
             )
 

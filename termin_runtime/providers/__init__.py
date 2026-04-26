@@ -38,6 +38,11 @@ from .binding import resolve_effective_bindings
 from .identity_contract import (
     Principal, RoleName, IdentityProvider, ANONYMOUS_PRINCIPAL,
 )
+from .storage_contract import (
+    StorageProvider, Predicate, Eq, Ne, Gt, Gte, Lt, Lte, In, Contains,
+    And, Or, Not, OrderBy, QueryOptions, Page, CascadeMode,
+    FieldChange, ContentChange, MigrationDiff, initial_deploy_diff,
+)
 
 __all__ = [
     "Category", "Tier", "ContractDefinition", "ContractRegistry",
@@ -47,4 +52,8 @@ __all__ = [
     "parse_deploy_config",
     "resolve_effective_bindings",
     "Principal", "RoleName", "IdentityProvider", "ANONYMOUS_PRINCIPAL",
+    "StorageProvider", "Predicate",
+    "Eq", "Ne", "Gt", "Gte", "Lt", "Lte", "In", "Contains",
+    "And", "Or", "Not", "OrderBy", "QueryOptions", "Page", "CascadeMode",
+    "FieldChange", "ContentChange", "MigrationDiff", "initial_deploy_diff",
 ]

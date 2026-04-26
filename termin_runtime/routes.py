@@ -11,6 +11,7 @@ endpoints. Inbound webhook handlers. SSE streams.
 """
 
 import json
+import sqlite3
 
 from fastapi import Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
@@ -21,6 +22,9 @@ from .storage import (
     get_db, create_record, get_record, update_record, delete_record,
     list_records, find_by_field,
 )
+from .providers import (
+    Eq, And, OrderBy, QueryOptions, CascadeMode,
+)
 from .state import do_state_transition
 from .confidentiality import redact_record, redact_records, check_write_access
 from .boundaries import check_boundary_identity
@@ -29,6 +33,62 @@ from .validation import (
     validate_min_max_constraints, evaluate_field_defaults, strip_unknown_fields,
 )
 from .compute_runner import redact_audit_traces
+
+
+# v0.9 Phase 2: cross-cutting helpers that wrap ctx.storage with the
+# event-publishing + error-routing concerns the legacy storage.py
+# entrypoints used to bundle in. The provider stays pure (BRD §6.2
+# "Provider's job is small"); the runtime owns the workflow.
+
+async def _publish_content_event(ctx, kind: str, content_name: str, record: dict):
+    """Publish a {created|updated|deleted} event for a content row."""
+    if ctx.event_bus is None:
+        return
+    payload = {
+        "type": f"{content_name}_{kind}",
+        "channel_id": f"content.{content_name}.{kind}",
+        "content_name": content_name,
+    }
+    if kind == "deleted":
+        payload["record_id"] = record.get("id")
+    else:
+        payload["data"] = record
+    await ctx.event_bus.publish(payload)
+
+
+def _route_terminator(ctx, content_name: str, exc: Exception) -> None:
+    """Route a storage exception through TerminAtor as a validation
+    error. No-op if no terminator is configured. Exception is
+    re-raised by the caller — TerminAtor records, doesn't intercept."""
+    if ctx.terminator is None:
+        return
+    from .errors import TerminError
+    ctx.terminator.route(TerminError(
+        source=content_name, kind="validation", message=str(exc),
+    ))
+
+
+def _seed_state_columns(body: dict, sm_info, *, strip_existing: bool = False) -> dict:
+    """Apply state-machine initial values to a creation body.
+
+    If strip_existing is True (CREATE-route gate), state columns are
+    removed entirely so the SQL DEFAULT applies — preserves the
+    transition-rules-only-via-transitions invariant.
+    Otherwise (e.g. internal seeding), a missing/empty state column
+    is filled with the machine's initial state.
+    """
+    if not sm_info:
+        return body
+    out = dict(body)
+    if isinstance(sm_info, list):
+        state_cols = {sm["machine_name"] for sm in sm_info if sm.get("machine_name")}
+        if strip_existing:
+            return {k: v for k, v in out.items() if k not in state_cols}
+        for sm in sm_info:
+            col = sm.get("machine_name", "")
+            if col and not out.get(col):
+                out[col] = sm.get("initial", "")
+    return out
 
 
 def register_crud_routes(app, ctx: RuntimeContext):
@@ -77,23 +137,35 @@ def _make_list_route(app, ctx, path, cr, sc):
             raise HTTPException(status_code=403, detail=bnd_id_err)
 
         schema = ctx.content_lookup.get(_cr, {})
+        schema_fields = {f["name"] for f in schema.get("fields", [])}
+        # Implicit columns the contract layer also accepts.
+        schema_fields.update({"id", "status"})
+        # State machine columns — multi-SM in v0.9.
+        for sm in ctx.sm_lookup.get(_cr, []):
+            schema_fields.add(sm["machine_name"])
 
-        # Parse pagination: ?limit=N&offset=N.
+        # Parse pagination: ?limit=N&offset=N. v0.9 storage contract
+        # uses cursor-based pagination (BRD §6.2); the SQLite provider
+        # encodes offsets as cursors so the legacy ?offset URL param
+        # still works without a contract change.
         qp = request.query_params
-        limit = None
-        offset = None
+        # Default: no limit (return everything) — preserves the v0.8
+        # callers' expectation. Provider's QueryOptions.limit defaults
+        # to 50, which is the contract default; the route opts out by
+        # passing a large value when the caller didn't ask for one.
+        limit_from_url = None
+        offset = 0
         if "limit" in qp:
             try:
-                limit = int(qp["limit"])
+                limit_from_url = int(qp["limit"])
             except ValueError:
                 raise HTTPException(
                     status_code=400,
                     detail=f"limit must be an integer, got {qp['limit']!r}")
-            if limit < 0:
+            if limit_from_url < 0:
                 raise HTTPException(
                     status_code=400, detail="limit must be non-negative")
-            if limit > 1000:
-                # Protect the runtime from pathological queries.
+            if limit_from_url > 1000:
                 raise HTTPException(
                     status_code=400, detail="limit must not exceed 1000")
         if "offset" in qp:
@@ -108,39 +180,64 @@ def _make_list_route(app, ctx, path, cr, sc):
                     status_code=400, detail="offset must be non-negative")
 
         # Parse sort: ?sort=field or ?sort=field:asc or ?sort=field:desc.
-        sort_by = None
-        sort_dir = None
+        order_by_list: list[OrderBy] = []
         if "sort" in qp:
             raw = qp["sort"]
             if ":" in raw:
-                sort_by, sort_dir = raw.split(":", 1)
+                sf, sd = raw.split(":", 1)
             else:
-                sort_by, sort_dir = raw, "asc"
+                sf, sd = raw, "asc"
+            sd_lower = sd.lower()
+            if sd_lower not in ("asc", "desc"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"sort direction must be 'asc' or 'desc', got {sd!r}")
+            if sf not in schema_fields:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"unknown sort field '{sf}' for {_cr}")
+            order_by_list.append(OrderBy(field=sf, direction=sd_lower))
 
-        # Parse filters: every non-reserved query param becomes a
-        # {field: value} equality filter. Schema validation in list_records
-        # rejects unknown fields.
-        filters = {k: v for k, v in qp.items() if k not in _reserved_params}
+        # Parse filters: non-reserved query params become Eq predicates.
+        filter_eqs: list = []
+        for k, v in qp.items():
+            if k in _reserved_params:
+                continue
+            if k not in schema_fields:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"unknown filter field '{k}' for {_cr}")
+            filter_eqs.append(Eq(field=k, value=v))
+        predicate = None
+        if len(filter_eqs) == 1:
+            predicate = filter_eqs[0]
+        elif len(filter_eqs) > 1:
+            predicate = And(predicates=tuple(filter_eqs))
 
-        db = await get_db(ctx.db_path)
+        # If no limit was supplied, fall back to the contract max so
+        # legacy "return all" behavior is preserved within reason.
+        # 1000 matches QueryOptions' upper bound and the v0.8 list
+        # endpoint's protective cap.
+        effective_limit = limit_from_url if limit_from_url is not None else 1000
+        cursor = None
+        if offset:
+            from .providers.builtins.storage_sqlite import _encode_cursor
+            cursor = _encode_cursor(offset)
+        options = QueryOptions(
+            limit=effective_limit,
+            cursor=cursor,
+            order_by=tuple(order_by_list),
+        )
         try:
-            try:
-                records = await list_records(
-                    db, _cr,
-                    limit=limit, offset=offset,
-                    filters=filters if filters else None,
-                    sort_by=sort_by, sort_dir=sort_dir,
-                    schema=schema if (filters or sort_by) else None,
-                )
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
-            records = redact_records(records, schema, set(user_scopes))
-            if _cr.startswith("compute_audit_log_"):
-                records = await redact_audit_traces(
-                    ctx, records, _cr, set(user_scopes))
-            return records
-        finally:
-            await db.close()
+            page = await ctx.storage.query(_cr, predicate, options)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        records = [dict(r) for r in page.records]
+        records = redact_records(records, schema, set(user_scopes))
+        if _cr.startswith("compute_audit_log_"):
+            records = await redact_audit_traces(
+                ctx, records, _cr, set(user_scopes))
+        return records
 
 
 def _make_create_route(app, ctx, path, cr, sc, sm_info):
@@ -170,13 +267,8 @@ def _make_create_route(app, ctx, path, cr, sc, sm_info):
         # client-supplied value for a state column would otherwise win
         # over the default and let a caller bootstrap a record already
         # past its initial state — bypassing the transition rules that
-        # would otherwise gate that move. v0.8 enforced this with a
-        # single-SM shim (`body["status"] = _sm.get("initial", "")`);
-        # v0.9 generalises to every state machine on the Content.
-        if _sm:
-            state_cols = {sm["machine_name"] for sm in _sm}
-            if state_cols:
-                body = {k: v for k, v in body.items() if k not in state_cols}
+        # would otherwise gate that move.
+        body = _seed_state_columns(body, _sm, strip_existing=True)
 
         schema = ctx.content_lookup.get(_cr, {})
         evaluate_field_defaults(body, schema, ctx.expr_eval, user)
@@ -185,24 +277,44 @@ def _make_create_route(app, ctx, path, cr, sc, sm_info):
         validate_dependent_values(_cr, body, ctx.content_lookup, ctx.expr_eval)
         body = strip_unknown_fields(body, schema)
 
-        db = await get_db(ctx.db_path)
+        # v0.9 Phase 2: persist via ctx.storage. The provider returns
+        # the persisted row (id assigned). The route owns the
+        # cross-cutting concerns the legacy create_record had bundled:
+        # state-column response seeding, event publishing, IR event
+        # handlers, and TerminAtor error routing.
         try:
-            record = await create_record(db, _cr, body, schema, _sm,
-                                         ctx.terminator, ctx.event_bus)
-            await ctx.run_event_handlers(db, _cr, "created", record)
-            user_scopes_set = set(user.get("scopes", []))
-            return redact_record(record, schema, user_scopes_set)
+            record = await ctx.storage.create(_cr, body)
+            # Seed state columns into the response dict. The SQL DEFAULT
+            # has already applied to the persisted row; the in-memory
+            # dict needs the columns too so downstream callers see a
+            # consistent shape.
+            record = _seed_state_columns(dict(record), _sm)
+            # event_bus publish — listeners (WebSocket forwarder,
+            # subscribers) get notified. This is the channel-id
+            # broadcast separate from IR-declared event handlers.
+            await _publish_content_event(ctx, "created", _cr, record)
         except HTTPException:
             raise
         except Exception as e:
+            _route_terminator(ctx, _cr, e)
             err_msg = str(e)
             if "UNIQUE constraint" in err_msg:
                 raise HTTPException(status_code=409, detail=err_msg)
             if "NOT NULL constraint" in err_msg:
                 raise HTTPException(status_code=400, detail=err_msg)
             raise HTTPException(status_code=500, detail=err_msg)
+
+        # IR-declared event handlers (When ...: Create a ..., Send to
+        # channel ...) still need a raw db handle for their nested
+        # insert paths (they call insert_raw directly). v0.9.x cleanup
+        # item: route those through ctx.storage too.
+        db = await get_db(ctx.db_path)
+        try:
+            await ctx.run_event_handlers(db, _cr, "created", record)
         finally:
             await db.close()
+
+        return redact_record(record, schema, set(user.get("scopes", [])))
 
 
 def _make_get_route(app, ctx, path, cr, sc, lc):
@@ -211,20 +323,30 @@ def _make_get_route(app, ctx, path, cr, sc, lc):
     @app.get(path, dependencies=deps)
     async def get_route(request: Request, _cr=cr, _lc=lc):
         param_val = list(request.path_params.values())[0] if request.path_params else None
-        db = await get_db(ctx.db_path)
-        try:
-            record = await get_record(db, _cr, param_val, _lc)
-            schema = ctx.content_lookup.get(_cr, {})
-            user = ctx.get_current_user(request)
-            user_scopes = set(user.get("scopes", []))
-            record = redact_record(record, schema, user_scopes)
-            if _cr.startswith("compute_audit_log_"):
-                records = await redact_audit_traces(
-                    ctx, [record], _cr, set(user_scopes))
-                record = records[0] if records else record
-            return record
-        finally:
-            await db.close()
+        # v0.9 Phase 2: Read by primary key uses ctx.storage.read; for
+        # alternate-key lookups (lookup_column != "id") we fall back
+        # to a query() with an Eq predicate. The provider boundary
+        # only knows primary keys; alternate-key lookups are runtime
+        # convenience layered on top.
+        if _lc == "id":
+            record = await ctx.storage.read(_cr, param_val)
+        else:
+            page = await ctx.storage.query(
+                _cr, Eq(field=_lc, value=param_val),
+                QueryOptions(limit=1),
+            )
+            record = dict(page.records[0]) if page.records else None
+        if record is None:
+            raise HTTPException(status_code=404, detail="Not found")
+        schema = ctx.content_lookup.get(_cr, {})
+        user = ctx.get_current_user(request)
+        user_scopes = set(user.get("scopes", []))
+        record = redact_record(record, schema, user_scopes)
+        if _cr.startswith("compute_audit_log_"):
+            records = await redact_audit_traces(
+                ctx, [record], _cr, set(user_scopes))
+            record = records[0] if records else record
+        return record
 
 
 def _make_update_route(app, ctx, path, cr, sc, lc):
@@ -240,73 +362,87 @@ def _make_update_route(app, ctx, path, cr, sc, lc):
         write_err = check_write_access(body, schema, user_scopes)
         if write_err:
             raise HTTPException(status_code=403, detail=write_err)
-        db = await get_db(ctx.db_path)
-        try:
-            existing = await get_record(db, _cr, param_val, _lc)
-            # ── State-machine gate on PUT (v0.8 PUT-backdoor closure) ──
-            #
-            # If the body carries a state-machine-backed column and the
-            # value differs from the current record, route that change
-            # through do_state_transition which enforces the declared
-            # transition rules + required_scope. This gives PUT the same
-            # security posture as POST /_transition for state changes.
-            #
-            # Multi-state-machine per content is a v0.9 item; the current
-            # runtime supports at most one state machine per content,
-            # always named on the implicit `status` column.
-            # v0.9 multi-SM PUT-route gate. For every state-machine
-            # column on this content that appears in the body and
-            # whose value differs from the current record, route the
-            # change through do_state_transition() — same security
-            # posture as POST /_transition: declared transitions only,
-            # required_scope enforced, atomic on rejection.
-            #
-            # Same-state writes (X -> X) are dropped from the body so a
-            # client sending the unchanged current state doesn't trip
-            # the from==to transition table check (which would 409
-            # unless a self-transition is explicitly declared).
-            if existing and _cr in ctx.sm_lookup:
-                sm_list = ctx.sm_lookup.get(_cr, [])
-                state_cols = {sm["machine_name"] for sm in sm_list}
-                # Order is intentional: transition each touched machine
-                # in the order they appear in the IR. If any transition
-                # raises, no further machine transitions and no PUT
-                # field updates land — atomicity preserved.
-                touched = [sm for sm in sm_list if sm["machine_name"] in body]
-                for sm in touched:
-                    col = sm["machine_name"]
-                    new_val = body.get(col, "")
-                    cur_val = existing.get(col, "")
-                    if new_val != cur_val:
-                        await do_state_transition(
-                            db, _cr, existing["id"], col, new_val, user,
-                            ctx.sm_lookup, ctx.terminator, ctx.event_bus,
-                        )
-                # Strip all state columns from the body — transitions
-                # have written them (or were no-ops for unchanged values).
-                # Leaving them would cause update_record to redundantly
-                # rewrite the same value (harmless) but we keep the
-                # code paths distinct.
-                if state_cols:
-                    body = {k: v for k, v in body.items() if k not in state_cols}
 
-            if existing:
-                merged = dict(existing)
-                merged.update(body)
-                validate_dependent_values(_cr, merged, ctx.content_lookup, ctx.expr_eval)
-            else:
-                validate_dependent_values(_cr, body, ctx.content_lookup, ctx.expr_eval)
-            if body:
-                record = await update_record(db, _cr, param_val, body, _lc,
-                                             ctx.terminator, ctx.event_bus)
+        # v0.9 Phase 2: lookup goes through ctx.storage.read (id) or
+        # query() (alternate key). The state-machine PUT-gate still
+        # uses a raw db handle because do_state_transition() reads
+        # and writes via low-level helpers; that path is a v0.9.x
+        # cleanup item — wiring transitions through ctx.storage is
+        # straightforward but cascades into state.py + transitions.py.
+        if _lc == "id":
+            existing = await ctx.storage.read(_cr, param_val)
+            target_id = param_val
+        else:
+            page = await ctx.storage.query(
+                _cr, Eq(field=_lc, value=param_val),
+                QueryOptions(limit=1),
+            )
+            existing = dict(page.records[0]) if page.records else None
+            target_id = existing["id"] if existing else None
+
+        # ── State-machine PUT-route gate ──
+        #
+        # If the body carries any state-machine column whose value
+        # differs from the current record, route that change through
+        # do_state_transition — same security posture as POST
+        # /_transition: declared transitions only, required_scope
+        # enforced, atomic on rejection. Multi-SM in v0.9: each
+        # touched machine transitions in IR order; any failure stops
+        # the chain and rolls subsequent updates.
+        if existing and _cr in ctx.sm_lookup:
+            sm_list = ctx.sm_lookup.get(_cr, [])
+            state_cols = {sm["machine_name"] for sm in sm_list}
+            touched = [sm for sm in sm_list if sm["machine_name"] in body]
+            if touched:
+                db = await get_db(ctx.db_path)
+                try:
+                    for sm in touched:
+                        col = sm["machine_name"]
+                        new_val = body.get(col, "")
+                        cur_val = existing.get(col, "")
+                        if new_val != cur_val:
+                            await do_state_transition(
+                                db, _cr, existing["id"], col, new_val, user,
+                                ctx.sm_lookup, ctx.terminator, ctx.event_bus,
+                            )
+                finally:
+                    await db.close()
+            if state_cols:
+                body = {k: v for k, v in body.items() if k not in state_cols}
+
+        if existing:
+            merged = dict(existing)
+            merged.update(body)
+            validate_dependent_values(_cr, merged, ctx.content_lookup, ctx.expr_eval)
+        else:
+            validate_dependent_values(_cr, body, ctx.content_lookup, ctx.expr_eval)
+
+        if body and target_id is not None:
+            try:
+                record = await ctx.storage.update(_cr, target_id, body)
+            except Exception as e:
+                _route_terminator(ctx, _cr, e)
+                raise
+            if record is None:
+                raise HTTPException(status_code=404, detail="Not found")
+            record = dict(record)
+            await _publish_content_event(ctx, "updated", _cr, record)
+            db = await get_db(ctx.db_path)
+            try:
                 await ctx.run_event_handlers(db, _cr, "updated", record)
-            else:
-                # Body was status-only and already applied via transition.
-                # Return the post-transition record.
-                record = await get_record(db, _cr, param_val, _lc)
-            return redact_record(record, schema, user_scopes)
-        finally:
-            await db.close()
+            finally:
+                await db.close()
+        else:
+            # Body was state-only and already applied via transition,
+            # OR there was no record to update. Return the current
+            # record post-transition (or 404).
+            if target_id is None:
+                raise HTTPException(status_code=404, detail="Not found")
+            record = await ctx.storage.read(_cr, target_id)
+            if record is None:
+                raise HTTPException(status_code=404, detail="Not found")
+
+        return redact_record(record, schema, user_scopes)
 
 
 def _make_delete_route(app, ctx, path, cr, sc, lc):
@@ -315,12 +451,40 @@ def _make_delete_route(app, ctx, path, cr, sc, lc):
     @app.delete(path, dependencies=deps)
     async def delete_route(request: Request, _cr=cr, _lc=lc):
         param_val = list(request.path_params.values())[0] if request.path_params else None
-        db = await get_db(ctx.db_path)
+        # v0.9 Phase 2: delete via ctx.storage. RESTRICT is the
+        # contract default; cascade on delete grammar is a follow-on
+        # (BRD §6.2). Alternate-key delete first resolves to id via
+        # query() — the provider boundary only deletes by primary key.
         try:
-            await delete_record(db, _cr, param_val, _lc, ctx.terminator, ctx.event_bus)
-            return {"deleted": True}
-        finally:
-            await db.close()
+            target_id = param_val
+            if _lc != "id":
+                page = await ctx.storage.query(
+                    _cr, Eq(field=_lc, value=param_val),
+                    QueryOptions(limit=1),
+                )
+                if not page.records:
+                    raise HTTPException(status_code=404, detail="Record not found")
+                target_id = page.records[0].get("id")
+            deleted = await ctx.storage.delete(
+                _cr, target_id, cascade_mode=CascadeMode.RESTRICT,
+            )
+        except HTTPException:
+            raise
+        except sqlite3.IntegrityError as e:
+            msg = str(e)
+            if "FOREIGN KEY" in msg.upper():
+                singular = _cr[:-1] if _cr.endswith("s") else _cr
+                detail = (
+                    f"Cannot delete this {singular}: "
+                    f"other records reference it. Remove or reassign those first."
+                )
+                _route_terminator(ctx, _cr, e)
+                raise HTTPException(status_code=409, detail=detail)
+            raise
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Record not found")
+        await _publish_content_event(ctx, "deleted", _cr, {"id": target_id})
+        return {"deleted": True}
 
 
 def _make_transition_route(app, ctx, path, cr, sc, lc, ts, mn=None):

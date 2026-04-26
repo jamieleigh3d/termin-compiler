@@ -23,20 +23,25 @@ To register all built-in providers in one call, use
 """
 
 from .identity_stub import StubIdentityProvider, register_stub_identity
+from .storage_sqlite import SqliteStorageProvider, register_sqlite_storage
 
 
 def register_builtins(provider_registry, contract_registry):
     """Register all first-party providers with the given registry.
 
-    Phase 1: only the stub identity provider. Phase 2+ adds storage
-    (sqlite), compute (default-CEL, llm via anthropic), channels
-    (webhook, email, messaging) etc.
+    Phase 1: stub identity provider.
+    Phase 2: SQLite storage provider.
+    Phase 3+ adds compute (default-CEL, llm via anthropic) and
+    channels (webhook, email, messaging).
     """
     register_stub_identity(provider_registry, contract_registry)
+    register_sqlite_storage(provider_registry, contract_registry)
 
 
 __all__ = [
     "StubIdentityProvider",
     "register_stub_identity",
+    "SqliteStorageProvider",
+    "register_sqlite_storage",
     "register_builtins",
 ]

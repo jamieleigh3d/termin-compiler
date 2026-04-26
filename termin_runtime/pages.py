@@ -19,6 +19,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
 from .context import RuntimeContext
 from .storage import get_db, create_record, update_record, list_records, find_by_field
+from .providers import Eq, QueryOptions
 from .confidentiality import redact_records
 from .presentation import build_nav_html, build_base_template, build_page_template, build_merged_page_template
 from .validation import evaluate_field_defaults
@@ -213,16 +214,26 @@ def _register_page_get(app, ctx, page, slug, page_reqs, page_templates,
                 "flash_dismiss": int(flash_dismiss) if flash_dismiss else None,
             }
 
-            # Load data sources
+            # Load data sources via the storage contract. v0.9 Phase 2:
+            # page rendering reads through ctx.storage.query — same path
+            # the auto-CRUD list route uses. limit=1000 matches the
+            # legacy "return all" behavior; large content sets should
+            # paginate via the auto-CRUD endpoint.
             user_scopes = set(user.get("scopes", []))
             for src in _reqs["sources"]:
-                records = await list_records(db, src)
+                page = await ctx.storage.query(
+                    src, None, QueryOptions(limit=1000),
+                )
+                records = [dict(r) for r in page.records]
                 schema = ctx.content_lookup.get(src, {})
                 template_ctx["items"] = redact_records(records, schema, user_scopes)
 
-            # Form reference lists
+            # Form reference lists — same path.
             for ref in _reqs["ref_lists"]:
-                template_ctx[f"{ref}_list"] = await list_records(db, ref)
+                page = await ctx.storage.query(
+                    ref, None, QueryOptions(limit=1000),
+                )
+                template_ctx[f"{ref}_list"] = [dict(r) for r in page.records]
 
             content_html = page_templates[_sl].render(**template_ctx)
             return base_template.render(content=content_html, **template_ctx)
@@ -246,55 +257,92 @@ def _register_form_post(app, ctx, page, slug, reqs):
         form = await request.form()
         data = dict(form)
         edit_id = data.pop("edit_id", "")
-        db = await get_db(ctx.db_path)
-        try:
-            schema = ctx.content_lookup.get(_ft, {})
+        record = None
+        schema = ctx.content_lookup.get(_ft, {})
 
-            # A7: Validate unique fields before insert
-            if not edit_id and _uf:
-                for uf in _uf:
-                    val = data.get(uf, "")
-                    if val:
-                        existing = await find_by_field(db, _ft, uf, val)
-                        if existing:
-                            raise HTTPException(
-                                status_code=409,
-                                detail=f"A record with {uf} '{val}' already exists")
+        # v0.9 Phase 2: unique-field check uses ctx.storage.query with
+        # an Eq predicate — replaces the legacy find_by_field helper.
+        if not edit_id and _uf:
+            for uf in _uf:
+                val = data.get(uf, "")
+                if val:
+                    page_result = await ctx.storage.query(
+                        _ft, Eq(field=uf, value=val), QueryOptions(limit=1),
+                    )
+                    if page_result.records:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"A record with {uf} '{val}' already exists")
 
-            if edit_id:
-                await update_record(db, _ft, edit_id, data, "id",
-                                    ctx.terminator, ctx.event_bus)
-            else:
-                user = ctx.get_current_user(request)
-                evaluate_field_defaults(data, schema, ctx.expr_eval, user)
+        if edit_id:
+            try:
+                updated = await ctx.storage.update(_ft, edit_id, data)
+            except Exception as e:
+                from .errors import TerminError
+                if ctx.terminator:
+                    ctx.terminator.route(TerminError(
+                        source=_ft, kind="validation", message=str(e)))
+                raise
+            if updated is not None:
+                if ctx.event_bus:
+                    await ctx.event_bus.publish({
+                        "type": f"{_ft}_updated",
+                        "channel_id": f"content.{_ft}.updated",
+                        "content_name": _ft,
+                        "data": dict(updated),
+                    })
+        else:
+            user = ctx.get_current_user(request)
+            evaluate_field_defaults(data, schema, ctx.expr_eval, user)
 
-                # v0.9 multi-SM: initial values for state-machine columns
-                # are applied by create_record() below from `_sm` (the list
-                # of SM specs on this content). `create_as` overrides the
-                # initial of a single-SM content — in v0.9 we apply it to
-                # the first machine's column.
-                if _ca and _sm:
-                    data[_sm[0]["machine_name"]] = _ca
-                record = await create_record(db, _ft, data, schema, _sm,
-                                             ctx.terminator, ctx.event_bus)
+            # v0.9 multi-SM: state-machine column initial values are
+            # the route's responsibility (provider stays SM-agnostic).
+            # `create_as` overrides the initial of the first SM on
+            # this content; remaining machines get their declared
+            # initial state.
+            for sm in (_sm or []):
+                col = sm.get("machine_name", "")
+                if col and not data.get(col):
+                    data[col] = sm.get("initial", "")
+            if _ca and _sm:
+                data[_sm[0]["machine_name"]] = _ca
+
+            try:
+                record = await ctx.storage.create(_ft, data)
+            except Exception as e:
+                from .errors import TerminError
+                if ctx.terminator:
+                    ctx.terminator.route(TerminError(
+                        source=_ft, kind="validation", message=str(e)))
+                raise
+            record = dict(record)
+            if ctx.event_bus:
+                await ctx.event_bus.publish({
+                    "type": f"{_ft}_created",
+                    "channel_id": f"content.{_ft}.created",
+                    "content_name": _ft,
+                    "data": record,
+                })
+            db = await get_db(ctx.db_path)
+            try:
                 await ctx.run_event_handlers(db, _ft, "created", record)
+            finally:
+                await db.close()
 
-            # AJAX response
-            accept = request.headers.get("accept", "")
-            is_ajax = ("application/json" in accept
-                       or request.headers.get("x-requested-with", "").lower() == "xmlhttprequest")
-            if is_ajax:
-                if edit_id:
-                    return JSONResponse({"ok": True, "id": edit_id, "action": "updated"})
-                elif record:
-                    return JSONResponse(record)
-                else:
-                    return JSONResponse({"ok": True})
+        # AJAX response
+        accept = request.headers.get("accept", "")
+        is_ajax = ("application/json" in accept
+                   or request.headers.get("x-requested-with", "").lower() == "xmlhttprequest")
+        if is_ajax:
+            if edit_id:
+                return JSONResponse({"ok": True, "id": edit_id, "action": "updated"})
+            elif record:
+                return JSONResponse(record)
+            else:
+                return JSONResponse({"ok": True})
 
-            redirect_url = f"/{_sl}"
-            if _as and _as.startswith("return_to:"):
-                target_slug = _as.split(":", 1)[1].strip()
-                redirect_url = f"/{target_slug}"
-            return RedirectResponse(url=redirect_url, status_code=303)
-        finally:
-            await db.close()
+        redirect_url = f"/{_sl}"
+        if _as and _as.startswith("return_to:"):
+            target_slug = _as.split(":", 1)[1].strip()
+            redirect_url = f"/{target_slug}"
+        return RedirectResponse(url=redirect_url, status_code=303)
