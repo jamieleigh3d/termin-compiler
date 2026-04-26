@@ -26,6 +26,14 @@ class TypeExpr:
     enum_values: list[str] = field(default_factory=list)
     one_of_values: list = field(default_factory=list)  # D-19: is one of constraint (numbers or strings)
     references: Optional[str] = None  # name of referenced Content
+    cascade_mode: Optional[str] = None  # v0.9: "cascade" | "restrict" | None.
+                                        # Only meaningful when base_type=="reference".
+                                        # Required by analyzer for every reference field.
+    _cascade_modes_seen: tuple = ()   # v0.9: every cascade-mode token
+                                       # detected on this field (in source order).
+                                       # The analyzer reads this to emit S041
+                                       # when both "cascade on delete" and
+                                       # "restrict on delete" appear.
     list_type: Optional[str] = None   # inner type for "list of <type>"
     default_expr: Optional[str] = None  # CEL expression or literal string for default value
     default_is_expr: bool = False       # True = CEL from [brackets]; False = literal from "quotes"

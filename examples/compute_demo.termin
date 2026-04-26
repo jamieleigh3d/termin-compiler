@@ -24,7 +24,7 @@ Content called "orders":
   Anyone with "orders.admin" can delete orders
 
 Content called "order lines":
-  Each order line has a parent order which references orders, required
+  Each order line has a parent order which references orders, required, restrict on delete
   Each order line has a product name which is text, required
   Each order line has a quantity which is a whole number, minimum 1
   Each order line has a unit price which is currency

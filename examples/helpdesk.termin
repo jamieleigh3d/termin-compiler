@@ -39,7 +39,7 @@ Content called "tickets":
   Anyone with "tickets.admin" can delete tickets
 
 Content called "comments":
-  Each comment has a ticket which references tickets, required
+  Each comment has a ticket which references tickets, required, cascade on delete
   Each comment has an author which is text, required, defaults to `User.Name`
   Each comment has a body which is text, required
   Each comment has a posted at which is automatic, defaults to `now`

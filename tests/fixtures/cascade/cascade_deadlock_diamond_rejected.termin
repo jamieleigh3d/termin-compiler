@@ -1,0 +1,31 @@
+Application: Cascade-Restrict Deadlock Diamond
+  Description: Diamond pattern - two cascade-incoming and one restrict-incoming on the same node (TERMIN-S codes d)
+Id: a1c0c1a0-cade-4a00-9000-000000000014
+
+Identity:
+  Scopes are "dm.view", "dm.manage"
+  A "tester" has "dm.view" and "dm.manage"
+
+Content called "roots":
+  Each root has a label which is text, required
+  Anyone with "dm.view" can view roots
+  Anyone with "dm.manage" can create roots
+
+Content called "branches":
+  Each branch has a label which is text, required
+  Each branch has a root which references roots, required, cascade on delete
+  Anyone with "dm.view" can view branches
+  Anyone with "dm.manage" can create branches
+
+Content called "twigs":
+  Each twig has a label which is text, required
+  Each twig has a branch which references branches, required, cascade on delete
+  Each twig has an alt branch which references branches, cascade on delete
+  Anyone with "dm.view" can view twigs
+  Anyone with "dm.manage" can create twigs
+
+Content called "leaves":
+  Each leaf has a label which is text, required
+  Each leaf has a branch which references branches, required, restrict on delete
+  Anyone with "dm.view" can view leaves
+  Anyone with "dm.manage" can create leaves

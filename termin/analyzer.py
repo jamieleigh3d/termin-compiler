@@ -155,6 +155,7 @@ class Analyzer:
         self._check_role_aliases()
         self._check_role_scopes()
         self._check_content_references()
+        self._check_cascade_graph()
         self._check_state_machines()
         self._check_events()
         self._check_stories()
@@ -240,12 +241,67 @@ class Analyzer:
     def _check_content_references(self) -> None:
         for content in self.program.contents:
             for field in content.fields:
-                if field.type_expr.references:
-                    if field.type_expr.references not in self.content_names:
-                        suggestion = _fuzzy_match(field.type_expr.references, self.content_names)
+                te = field.type_expr
+                seen_modes = getattr(te, "_cascade_modes_seen", ())
+
+                # v0.9 TERMIN-S041: declaring both `cascade on delete`
+                # AND `restrict on delete` on the same field is a
+                # parse-detectable conflict.
+                if len(set(seen_modes)) > 1:
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'Field "{field.name}" in "{content.name}" declares '
+                            f'both "cascade on delete" and "restrict on delete". '
+                            f'Choose exactly one.'
+                        ),
+                        line=field.line,
+                        code="TERMIN-S041",
+                    ))
+
+                # v0.9 TERMIN-S040: cascade declarations only apply
+                # to reference fields. Cascade-on-non-reference is
+                # rejected even when the field would otherwise be
+                # well-formed.
+                if te.cascade_mode and te.base_type != "reference":
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'"{te.cascade_mode} on delete" only applies to '
+                            f'reference fields. Field "{field.name}" in '
+                            f'"{content.name}" has type "{te.base_type}". '
+                            f'Cascade is only meaningful for fields declared '
+                            f'with "references <content>".'
+                        ),
+                        line=field.line,
+                        code="TERMIN-S040",
+                    ))
+
+                if te.references:
+                    # v0.9 TERMIN-S039: every reference field MUST
+                    # declare cascade behavior. Bare `references X` is
+                    # not allowed; the BRD §6.2 audit-over-authorship
+                    # tenet requires deletion blast radius to be
+                    # visible in source.
+                    if te.cascade_mode is None:
+                        self.errors.add(SemanticError(
+                            message=(
+                                f'Reference field "{field.name}" in '
+                                f'"{content.name}" must declare cascade '
+                                f'behavior. Add ", cascade on delete" or '
+                                f'", restrict on delete" to the line. '
+                                f'"cascade on delete" → when the parent is '
+                                f'deleted, this record is deleted too. '
+                                f'"restrict on delete" → refuse parent '
+                                f'deletion while any record references it.'
+                            ),
+                            line=field.line,
+                            code="TERMIN-S039",
+                        ))
+
+                    if te.references not in self.content_names:
+                        suggestion = _fuzzy_match(te.references, self.content_names)
                         self.errors.add(SemanticError(
                             message=f'Field "{field.name}" in "{content.name}" references '
-                                    f'undefined content "{field.type_expr.references}"',
+                                    f'undefined content "{te.references}"',
                             line=field.line,
                             code="TERMIN-S003",
                             suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
@@ -270,6 +326,158 @@ class Analyzer:
                     line=content.line,
                     code="TERMIN-S005",
                 ))
+
+    def _check_cascade_graph(self) -> None:
+        """v0.9 BRD §6.2: enforce structural soundness of the cascade
+        graph.
+
+        TERMIN-S042: A content cannot simultaneously be the target of
+        any `cascade on delete` reference AND the target of any
+        `restrict on delete` reference. That combination is a runtime
+        deadlock — deleting the upstream parent cascade-deletes this
+        content, which then fails because a downstream restrict
+        prevents it. Whole transaction rolls back; the upstream
+        record can never be deleted while restrict-protectors exist.
+        Better to surface the structural defect at compile time than
+        ship the deadlock.
+
+        TERMIN-S043: Multi-content cascade cycles are rejected. Any
+        cascade cycle that doesn't terminate in a self-reference
+        produces version-dependent behavior in SQLite and is not
+        portable to other backends. Self-references are allowed
+        (tree-delete is a useful pattern).
+        """
+        # cascade_in[child] = [(parent, field, line)] — child is
+        # cascade-deleted when parent is deleted (because child has a
+        # field with `references parent, cascade on delete`).
+        # restrict_in[parent] = [(protector, field, line)] — parent's
+        # deletion is restricted by protector (because protector has a
+        # field with `references parent, restrict on delete`).
+        cascade_in: dict[str, list[tuple[str, str, int]]] = {}
+        restrict_in: dict[str, list[tuple[str, str, int]]] = {}
+        for c in self.program.contents:
+            for f in c.fields:
+                te = f.type_expr
+                if not te.references or te.references not in self.content_names:
+                    continue
+                if te.cascade_mode == "cascade":
+                    cascade_in.setdefault(c.name, []).append(
+                        (te.references, f.name, f.line))
+                elif te.cascade_mode == "restrict":
+                    restrict_in.setdefault(te.references, []).append(
+                        (c.name, f.name, f.line))
+
+        # S042: deadlock if any content is BOTH cascade-deleted from
+        # above (parent cascades to it) AND has its own deletion
+        # restrict-protected from below (some other content
+        # restrict-references it).
+        for target in sorted(set(cascade_in.keys()) & set(restrict_in.keys())):
+            cascade_edges = cascade_in[target]
+            restrict_edges = restrict_in[target]
+            cascade_descs = "; ".join(
+                f'deleted when "{parent}" is deleted (cascade via '
+                f'{target}.{fn}, line {ln})'
+                for (parent, fn, ln) in cascade_edges)
+            restrict_descs = "; ".join(
+                f'protected by "{prot}" (restrict via {prot}.{fn}, '
+                f'line {ln})'
+                for (prot, fn, ln) in restrict_edges)
+            min_line = min(
+                ln for _, _, ln in cascade_edges + restrict_edges)
+            self.errors.add(SemanticError(
+                message=(
+                    f'Transitive cascade-restrict deadlock involving '
+                    f'"{target}". "{target}" is {cascade_descs}, AND '
+                    f'"{target}" is {restrict_descs}. Deleting the '
+                    f'upstream parent would cascade-delete "{target}", '
+                    f'which would then fail because of the restrict-'
+                    f'protector(s), aborting the entire transaction. '
+                    f'Resolve by changing the cascade edge to "restrict '
+                    f'on delete" (require explicit cleanup of '
+                    f'"{target}" first) OR changing the restrict edge '
+                    f'to "cascade on delete" (let the cascade propagate '
+                    f'all the way through).'
+                ),
+                line=min_line,
+                code="TERMIN-S042",
+            ))
+
+        # S043: multi-content cascade cycle. Build the cascade-only
+        # subgraph where edge P → C means "deleting P cascade-deletes
+        # C." Self-loops are allowed (skip them). DFS from each node;
+        # if we revisit a node already on the current stack and the
+        # back-edge isn't a self-loop, that's a cycle.
+        # cascade_edges_out[parent] = list of (child, field, line)
+        cascade_edges_out: dict[str, list[tuple[str, str, str, int]]] = {}
+        for c in self.program.contents:
+            for f in c.fields:
+                te = f.type_expr
+                if (te.references and te.cascade_mode == "cascade"
+                        and te.references in self.content_names):
+                    parent = te.references
+                    child = c.name
+                    if parent == child:
+                        continue  # self-cascade explicitly allowed
+                    cascade_edges_out.setdefault(parent, []).append(
+                        (child, c.name, f.name, f.line))
+
+        # DFS with cycle detection.
+        WHITE, GRAY, BLACK = 0, 1, 2
+        color: dict[str, int] = {n: WHITE for n in self.content_names}
+        parent_in_dfs: dict[str, tuple] = {}  # node → (predecessor, child_record)
+        reported_cycles: set[frozenset] = set()
+
+        def visit(node: str) -> None:
+            color[node] = GRAY
+            for (child, _ref_content, _ref_field, _line) in cascade_edges_out.get(node, []):
+                edge_record = (node, child)
+                if color.get(child, BLACK) == GRAY:
+                    # back-edge → cycle. Reconstruct the cycle path.
+                    cycle = [child]
+                    cur = node
+                    while cur != child and cur in parent_in_dfs:
+                        cycle.append(cur)
+                        cur = parent_in_dfs[cur][0]
+                    cycle.append(child)
+                    cycle.reverse()
+                    cycle_set = frozenset(cycle)
+                    if cycle_set in reported_cycles:
+                        continue
+                    reported_cycles.add(cycle_set)
+                    edge_descs = []
+                    for i in range(len(cycle) - 1):
+                        a, b = cycle[i], cycle[i + 1]
+                        for (ch, ref_c, ref_f, ln) in cascade_edges_out.get(a, []):
+                            if ch == b:
+                                edge_descs.append(
+                                    f'"{a}" cascade-deletes "{b}" '
+                                    f'(via {ref_c}.{ref_f}, line {ln})')
+                                break
+                    min_line = min(
+                        ln
+                        for n in cycle[:-1]
+                        for (_, _, _, ln) in cascade_edges_out.get(n, []))
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'Cascade cycle detected: {" → ".join(cycle)}. '
+                            f'{". ".join(edge_descs)}. Cascade cycles produce '
+                            f'undefined or backend-dependent behavior at '
+                            f'delete time. Self-references (a content '
+                            f'referencing itself) are the only allowed form '
+                            f'of cyclic cascade. Resolve by changing one '
+                            f'edge in the cycle to "restrict on delete".'
+                        ),
+                        line=min_line,
+                        code="TERMIN-S043",
+                    ))
+                elif color.get(child, BLACK) == WHITE:
+                    parent_in_dfs[child] = (node, edge_record)
+                    visit(child)
+            color[node] = BLACK
+
+        for n in sorted(cascade_edges_out.keys()):
+            if color[n] == WHITE:
+                visit(n)
 
     # v0.9: reserved keywords that may not appear as standalone tokens in
     # state names (grammar keywords in state sub-blocks + action button lines).

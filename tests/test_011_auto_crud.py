@@ -110,7 +110,7 @@ Content called "projects":
 
 Content called "tasks":
   Each task has a title which is text, required
-  Each task has a project which references projects
+  Each task has a project which references projects, restrict on delete
   Anyone with "read" can view tasks
   Anyone with "write" can create or update tasks
 """

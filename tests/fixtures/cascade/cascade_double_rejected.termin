@@ -1,0 +1,18 @@
+Application: Cascade Double Rejected
+  Description: Both cascade and restrict on the same reference must fail (TERMIN-S codes c)
+Id: a1c0c1a0-cade-4a00-9000-000000000012
+
+Identity:
+  Scopes are "d.view", "d.manage"
+  A "tester" has "d.view" and "d.manage"
+
+Content called "parents":
+  Each parent has a name which is text, required
+  Anyone with "d.view" can view parents
+  Anyone with "d.manage" can create parents
+
+Content called "children":
+  Each child has a label which is text, required
+  Each child has a parent which references parents, required, cascade on delete, restrict on delete
+  Anyone with "d.view" can view children
+  Anyone with "d.manage" can create children

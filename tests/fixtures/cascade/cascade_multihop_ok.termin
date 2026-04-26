@@ -1,0 +1,25 @@
+Application: Cascade Multi-Hop
+  Description: A to B to C all cascade. Static check passes (no restrict involved).
+Id: a1c0c1a0-cade-4a00-9000-000000000004
+
+Identity:
+  Scopes are "mh.view", "mh.manage", "mh.delete"
+  A "tester" has "mh.view", "mh.manage", and "mh.delete"
+
+Content called "as":
+  Each a has a label which is text, required
+  Anyone with "mh.view" can view as
+  Anyone with "mh.manage" can create as
+  Anyone with "mh.delete" can delete as
+
+Content called "bs":
+  Each b has a label which is text, required
+  Each b has an a which references as, required, cascade on delete
+  Anyone with "mh.view" can view bs
+  Anyone with "mh.manage" can create bs
+
+Content called "cs":
+  Each c has a label which is text, required
+  Each c has a b which references bs, required, cascade on delete
+  Anyone with "mh.view" can view cs
+  Anyone with "mh.manage" can create cs

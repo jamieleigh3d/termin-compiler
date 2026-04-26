@@ -190,6 +190,12 @@
           "default": null,
           "description": "Snake_case name of the target Content when business_type is 'reference'. The runtime creates a foreign key constraint to that Content's 'id' column."
         },
+        "cascade_mode": {
+          "type": ["string", "null"],
+          "enum": ["cascade", "restrict", null],
+          "default": null,
+          "description": "v0.9+: cascade behavior on delete of the referenced parent. Required when business_type is 'reference'. 'cascade' = delete this row when the parent is deleted (ON DELETE CASCADE). 'restrict' = refuse parent delete if any rows reference it (ON DELETE RESTRICT). Null when business_type is not 'reference'. The compiler enforces this invariant statically (TERMIN-S039) and rejects transitive cascade-restrict deadlocks (TERMIN-S042) and multi-content cascade cycles (TERMIN-S043) before any IR is emitted."
+        },
         "is_auto": {
           "type": "boolean",
           "default": false,
@@ -217,7 +223,30 @@
           "default": [],
           "description": "Field-level constraint: value must be one of the listed strings. Empty means no constraint. Unified with enum_values — one_of can apply to any base type, not just enums."
         }
-      }
+      },
+      "allOf": [
+        {
+          "description": "v0.9+ cascade invariant: cascade_mode is required exactly when business_type is 'reference'.",
+          "if": {
+            "properties": { "business_type": { "const": "reference" } },
+            "required": ["business_type"]
+          },
+          "then": {
+            "properties": {
+              "cascade_mode": {
+                "type": "string",
+                "enum": ["cascade", "restrict"]
+              }
+            },
+            "required": ["cascade_mode"]
+          },
+          "else": {
+            "properties": {
+              "cascade_mode": { "type": "null" }
+            }
+          }
+        }
+      ]
     },
 
     "ContentSchema": {

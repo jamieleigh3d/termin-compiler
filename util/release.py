@@ -37,6 +37,14 @@ CONFORMANCE_ROOT = COMPILER_ROOT.parent / "termin-conformance"
 
 EXAMPLES_DIR = COMPILER_ROOT / "examples"
 CONFORMANCE_PKG_DIR = CONFORMANCE_ROOT / "fixtures"
+
+# v0.9: cascade-grammar test fixtures live in tests/fixtures/cascade/
+# (compiler side) and conformance-side at fixtures-cascade/. Negative
+# fixtures (whose names end in `_rejected.termin`) are NOT compiled —
+# they are loaded as raw text by tests that assert the compiler
+# rejects them. Only positive fixtures get .termin.pkg artifacts.
+CASCADE_FIXTURES_DIR = COMPILER_ROOT / "tests" / "fixtures" / "cascade"
+CONFORMANCE_CASCADE_PKG_DIR = CONFORMANCE_ROOT / "fixtures-cascade"
 CONFORMANCE_SPECS_DIR = CONFORMANCE_ROOT / "specs"
 
 # Files that contain version strings
@@ -166,6 +174,60 @@ def compile_examples(dry_run: bool):
                 print(f"  FAIL: {name} — {result.stderr.strip()}")
                 continue
             print(f"  COMPILE: {name}.termin -> {name}.termin.pkg")
+            count += 1
+        except Exception as e:
+            print(f"  FAIL ({type(e).__name__}): {name} — {e}")
+
+    return count
+
+
+def compile_cascade_fixtures(dry_run: bool):
+    """v0.9: compile positive cascade-grammar fixtures into the
+    conformance repo's fixtures-cascade/ directory.
+
+    Negative fixtures (those ending in `_rejected.termin`) are NOT
+    compiled — they're consumed as raw .termin text by tests that
+    assert the compiler rejects them. The negative fixtures stay in
+    the compiler-side tests/fixtures/cascade/ tree only; conformance
+    runtimes don't need access to them because they're testing the
+    compiler, not the runtime.
+    """
+    if not CASCADE_FIXTURES_DIR.exists():
+        return 0
+
+    if not dry_run and CONFORMANCE_ROOT.exists():
+        CONFORMANCE_CASCADE_PKG_DIR.mkdir(parents=True, exist_ok=True)
+
+    count = 0
+    for fn in sorted(os.listdir(CASCADE_FIXTURES_DIR)):
+        if not fn.endswith(".termin"):
+            continue
+        if fn.endswith("_rejected.termin"):
+            continue  # negative fixtures aren't deployable
+        name = fn.replace(".termin", "")
+        src = CASCADE_FIXTURES_DIR / fn
+        pkg_out = CONFORMANCE_CASCADE_PKG_DIR / f"{name}.termin.pkg"
+
+        if dry_run:
+            print(f"  COMPILE (cascade): {fn} -> {name}.termin.pkg")
+            count += 1
+            continue
+
+        if not CONFORMANCE_ROOT.exists():
+            continue  # no conformance repo to write into
+
+        try:
+            cmd = [
+                sys.executable, "-m", "termin.cli", "compile",
+                str(src),
+                "-o", str(pkg_out),
+            ]
+            result = subprocess.run(
+                cmd, cwd=COMPILER_ROOT, capture_output=True, text=True)
+            if result.returncode != 0:
+                print(f"  FAIL (cascade): {name} — {result.stderr.strip()}")
+                continue
+            print(f"  COMPILE (cascade): {fn} -> {name}.termin.pkg")
             count += 1
         except Exception as e:
             print(f"  FAIL ({type(e).__name__}): {name} — {e}")
@@ -307,6 +369,15 @@ def main():
         print(f"\nCompiling all examples...")
         n = compile_examples(args.dry_run)
         print(f"  {n} examples compiled")
+
+        # ── Compile v0.9 cascade test fixtures ──
+        # Positive cascade fixtures are runtime-deployable and live in
+        # the conformance repo's fixtures-cascade/ directory. Negative
+        # fixtures (compile-error cases) stay compiler-side as raw
+        # .termin text.
+        print(f"\nCompiling cascade test fixtures...")
+        n = compile_cascade_fixtures(args.dry_run)
+        print(f"  {n} cascade fixtures compiled")
 
         if conformance_ok:
             # ── Copy IR dumps + schema to conformance ──

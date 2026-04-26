@@ -22,7 +22,7 @@ Content called "orders":
   Anyone with "orders.admin" can delete orders
 
 Content called "order items":
-  Each order item has an order which references orders
+  Each order item has an order which references orders, restrict on delete
   Each order item has a product name which is text, required
   Each order item has a quantity which is a whole number, required, minimum 1
   Each order item has a unit price which is currency

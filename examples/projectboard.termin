@@ -22,13 +22,13 @@ Content called "team members":
   Each team member has a name which is text, required
   Each team member has an email which is unique text, required
   Each team member has a role which is one of: "developer", "designer", "qa", "devops"
-  Each team member has a project which references projects, required
+  Each team member has a project which references projects, required, restrict on delete
   Anyone with "projects.view" can view team members
   Anyone with "projects.admin" can create or update team members
 
 Content called "sprints":
   Each sprint has a name which is text, required
-  Each sprint has a project which references projects, required
+  Each sprint has a project which references projects, required, restrict on delete
   Each sprint has a goal which is text
   Each sprint has a capacity which is a whole number, minimum 0
   Anyone with "projects.view" can view sprints
@@ -37,9 +37,9 @@ Content called "sprints":
 Content called "tasks":
   Each task has a title which is text, required
   Each task has a description which is text
-  Each task has a project which references projects, required
-  Each task has a sprint which references sprints
-  Each task has an assignee which references team members
+  Each task has a project which references projects, required, restrict on delete
+  Each task has a sprint which references sprints, restrict on delete
+  Each task has an assignee which references team members, restrict on delete
   Each task has a points which is a whole number, minimum 0
   Each task has a priority which is one of: "low", "medium", "high", "critical"
   Each task has a task lifecycle which is state:
@@ -56,8 +56,8 @@ Content called "tasks":
   Anyone with "projects.admin" can delete tasks
 
 Content called "time logs":
-  Each time log has a task which references tasks, required
-  Each time log has a team member which references team members, required
+  Each time log has a task which references tasks, required, cascade on delete
+  Each time log has a team member which references team members, required, restrict on delete
   Each time log has a hours which is currency
   Each time log has a logged at which is automatic
   Anyone with "projects.view" can view time logs

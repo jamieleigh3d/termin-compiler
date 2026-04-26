@@ -1,0 +1,19 @@
+Application: Cascade Cycle Rejected
+  Description: Multi-content cascade cycle (A -> B -> A) must fail (TERMIN-S codes e)
+Id: a1c0c1a0-cade-4a00-9000-000000000015
+
+Identity:
+  Scopes are "cy.view", "cy.manage"
+  A "tester" has "cy.view" and "cy.manage"
+
+Content called "alphas":
+  Each alpha has a label which is text, required
+  Each alpha has a beta which references betas, cascade on delete
+  Anyone with "cy.view" can view alphas
+  Anyone with "cy.manage" can create alphas
+
+Content called "betas":
+  Each beta has a label which is text, required
+  Each beta has an alpha which references alphas, cascade on delete
+  Anyone with "cy.view" can view betas
+  Anyone with "cy.manage" can create betas

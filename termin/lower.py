@@ -133,6 +133,7 @@ def lower(program: Program) -> AppSpec:
                 enum_values=tuple(f.type_expr.enum_values),
                 one_of_values=tuple(f.type_expr.one_of_values),
                 foreign_key=_snake(f.type_expr.references) if f.type_expr.references else None,
+                cascade_mode=f.type_expr.cascade_mode,
                 is_auto=f.type_expr.base_type == "automatic",
                 list_type=f.type_expr.list_type,
                 default_expr=default_ir,

@@ -57,6 +57,9 @@ class FieldSpec:
     enum_values: tuple[str, ...] = ()  # non-empty for enum columns
     one_of_values: tuple = ()          # D-19: is one of constraint values (numbers or strings)
     foreign_key: Optional[str] = None  # target table snake name
+    cascade_mode: Optional[str] = None # v0.9: "cascade" | "restrict" | None.
+                                       # Required when foreign_key is set; None otherwise.
+                                       # Drives ON DELETE clause in storage SQL.
     is_auto: bool = False              # automatic timestamp
     list_type: Optional[str] = None    # inner type for JSON list columns
     default_expr: Optional[str] = None # CEL expression or literal string for default value

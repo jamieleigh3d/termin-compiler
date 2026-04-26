@@ -1,0 +1,18 @@
+Application: Cascade Bare References Rejected
+  Description: Bare "references X" with no cascade clause must fail (TERMIN-S codes a)
+Id: a1c0c1a0-cade-4a00-9000-000000000010
+
+Identity:
+  Scopes are "bare.view", "bare.manage"
+  A "tester" has "bare.view" and "bare.manage"
+
+Content called "parents":
+  Each parent has a name which is text, required
+  Anyone with "bare.view" can view parents
+  Anyone with "bare.manage" can create parents
+
+Content called "children":
+  Each child has a label which is text, required
+  Each child has a parent which references parents, required
+  Anyone with "bare.view" can view children
+  Anyone with "bare.manage" can create children

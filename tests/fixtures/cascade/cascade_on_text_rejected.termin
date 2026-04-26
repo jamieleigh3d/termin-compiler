@@ -1,0 +1,12 @@
+Application: Cascade On Non-Reference Rejected
+  Description: cascade on delete on a text field must fail (TERMIN-S codes b)
+Id: a1c0c1a0-cade-4a00-9000-000000000011
+
+Identity:
+  Scopes are "x.view", "x.manage"
+  A "tester" has "x.view" and "x.manage"
+
+Content called "things":
+  Each thing has a label which is text, required, cascade on delete
+  Anyone with "x.view" can view things
+  Anyone with "x.manage" can create things

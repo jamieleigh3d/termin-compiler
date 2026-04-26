@@ -1,0 +1,25 @@
+Application: Cascade Demo
+  Description: Test fixture for cascade and restrict on delete behavior
+Id: a1c0c1a0-cade-4a00-9000-000000000001
+
+Identity:
+  Scopes are "cascade.view", "cascade.manage", "cascade.delete"
+  A "tester" has "cascade.view", "cascade.manage", and "cascade.delete"
+
+Content called "parents":
+  Each parent has a name which is text, required
+  Anyone with "cascade.view" can view parents
+  Anyone with "cascade.manage" can create parents
+  Anyone with "cascade.delete" can delete parents
+
+Content called "cascade children":
+  Each cascade child has a label which is text, required
+  Each cascade child has a parent which references parents, required, cascade on delete
+  Anyone with "cascade.view" can view cascade children
+  Anyone with "cascade.manage" can create cascade children
+
+Content called "restrict children":
+  Each restrict child has a label which is text, required
+  Each restrict child has a parent which references parents, required, restrict on delete
+  Anyone with "cascade.view" can view restrict children
+  Anyone with "cascade.manage" can create restrict children

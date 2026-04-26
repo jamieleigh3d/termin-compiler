@@ -1,0 +1,19 @@
+Application: Cascade Optional FK
+  Description: Non-required cascade reference for NULL-FK cascade behavior
+Id: a1c0c1a0-cade-4a00-9000-000000000003
+
+Identity:
+  Scopes are "opt.view", "opt.manage", "opt.delete"
+  A "tester" has "opt.view", "opt.manage", and "opt.delete"
+
+Content called "categories":
+  Each category has a name which is text, required
+  Anyone with "opt.view" can view categories
+  Anyone with "opt.manage" can create categories
+  Anyone with "opt.delete" can delete categories
+
+Content called "items":
+  Each item has a label which is text, required
+  Each item has a category which references categories, cascade on delete
+  Anyone with "opt.view" can view items
+  Anyone with "opt.manage" can create items

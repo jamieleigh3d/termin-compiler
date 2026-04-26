@@ -156,6 +156,18 @@ def _parse_type_text(text: str, ln: int = 0) -> TypeExpr:
         expr.confidentiality_scopes = [s.strip().strip('"') for s in re.findall(r'"([^"]*)"', scope_str)]
         text = text[:cm.start()] + text[cm.end():]
 
+    # v0.9: cascade declarations on type_text fields. They are not
+    # legal here (cascade only makes sense on `references` fields),
+    # but recording them lets the analyzer emit a precise S040
+    # error rather than silently dropping the violation. We strip
+    # the tokens so the rest of the parser sees clean text.
+    _record_cascade_modes(expr, text)
+    for phrase in (", cascade on delete", ", restrict on delete",
+                   "cascade on delete,", "restrict on delete,",
+                   "cascade on delete", "restrict on delete"):
+        text = text.replace(phrase, "")
+    text = text.strip().rstrip(",").strip()
+
     # D-19: Extract "is one of: val1, val2, ..." constraint
     ioo_match = re.search(r',?\s*is\s+one\s+of:\s*(.+)', text, re.IGNORECASE)
     if ioo_match:
@@ -248,5 +260,29 @@ def _parse_field_type(text: str, ln: int) -> TypeExpr:
         te = TypeExpr(base_type="reference", references=rt.strip('"'), line=ln)
         if "required" in ct: te.required = True
         if "unique" in ct: te.unique = True
+        _record_cascade_modes(te, ct)
         return te
     return TypeExpr(base_type="text", line=ln)
+
+
+def _record_cascade_modes(te, constraint_tail: str) -> None:
+    """v0.9: scan a constraint tail for `cascade on delete` and
+    `restrict on delete`. Records declared mode(s) on the TypeExpr.
+
+    The analyzer enforces:
+      - S039: every reference field MUST declare exactly one mode.
+      - S040: cascade declarations on non-reference fields are
+              rejected (this helper runs from both reference and
+              type_text paths so the analyzer sees the violation).
+      - S041: declaring both modes on the same field is rejected.
+              The `_cascade_modes_seen` tuple records every detected
+              mode so the analyzer can cite both.
+    """
+    seen = []
+    if "cascade on delete" in constraint_tail:
+        seen.append("cascade")
+    if "restrict on delete" in constraint_tail:
+        seen.append("restrict")
+    if seen:
+        te.cascade_mode = seen[0]
+        te._cascade_modes_seen = tuple(seen)

@@ -1,0 +1,24 @@
+Application: Cascade-Restrict Deadlock Simple
+  Description: A cascade B restrict C transitive deadlock must fail at compile time (TERMIN-S codes d)
+Id: a1c0c1a0-cade-4a00-9000-000000000013
+
+Identity:
+  Scopes are "dl.view", "dl.manage"
+  A "tester" has "dl.view" and "dl.manage"
+
+Content called "as":
+  Each a has a label which is text, required
+  Anyone with "dl.view" can view as
+  Anyone with "dl.manage" can create as
+
+Content called "bs":
+  Each b has a label which is text, required
+  Each b has an a which references as, required, cascade on delete
+  Anyone with "dl.view" can view bs
+  Anyone with "dl.manage" can create bs
+
+Content called "cs":
+  Each c has a label which is text, required
+  Each c has a b which references bs, required, restrict on delete
+  Anyone with "dl.view" can view cs
+  Anyone with "dl.manage" can create cs

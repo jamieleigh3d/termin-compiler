@@ -134,6 +134,8 @@ constraints
 constraint
     = 'required'              #Required
     | 'unique'                #Unique
+    | 'cascade' 'on' 'delete' #CascadeOnDelete
+    | 'restrict' 'on' 'delete' #RestrictOnDelete
     | 'minimum' val:number    #Minimum
     | 'maximum' val:number    #Maximum
     | 'is' 'one' 'of:' vals:literal_list  #IsOneOf

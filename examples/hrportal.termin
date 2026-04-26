@@ -34,7 +34,7 @@ Content called "departments":
 
 Content called "salary reviews":
   Scoped to "salary.access"
-  Each salary review has an employee which references employees, required
+  Each salary review has an employee which references employees, required, restrict on delete
   Each salary review has a review date which is a date
   Each salary review has an old salary which is currency
   Each salary review has a new salary which is currency

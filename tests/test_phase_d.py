@@ -38,7 +38,7 @@ Content called "orders":
   Anyone with "orders.write" can create or update orders
 
 Content called "order lines":
-  Each order line has a parent order which references orders, required
+  Each order line has a parent order which references orders, required, restrict on delete
   Each order line has a quantity which is a whole number, minimum 1
   Anyone with "orders.read" can view order lines
   Anyone with "orders.write" can create or update order lines

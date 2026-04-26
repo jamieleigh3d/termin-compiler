@@ -451,10 +451,17 @@ def _make_delete_route(app, ctx, path, cr, sc, lc):
     @app.delete(path, dependencies=deps)
     async def delete_route(request: Request, _cr=cr, _lc=lc):
         param_val = list(request.path_params.values())[0] if request.path_params else None
-        # v0.9 Phase 2: delete via ctx.storage. RESTRICT is the
-        # contract default; cascade on delete grammar is a follow-on
-        # (BRD §6.2). Alternate-key delete first resolves to id via
-        # query() — the provider boundary only deletes by primary key.
+        # v0.9: delete via ctx.storage. cascade_mode at the contract
+        # boundary is the caller's intent ("if any children, what
+        # should happen?"). The actual cascade semantics for this
+        # delete come from each child's FK declaration in the schema
+        # (ON DELETE CASCADE vs ON DELETE RESTRICT, emitted by
+        # init_db from the IR's FieldSpec.cascade_mode). RESTRICT
+        # at this level just means "if the schema says any child
+        # should restrict, honor that." The SqliteStorageProvider
+        # ignores the arg in v0.9 since SQLite's FK enforcement is
+        # the source of truth. Future providers (Postgres, DynamoDB)
+        # may consult it.
         try:
             target_id = param_val
             if _lc != "id":

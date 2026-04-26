@@ -31,7 +31,7 @@ Content called "products":
   Anyone with "inventory.admin" can create or delete products
 
 Content called "stock levels":
-  Each stock level has a product which references products, required
+  Each stock level has a product which references products, required, restrict on delete
   Each stock level has a warehouse which is text, required
   Each stock level has a quantity which is a whole number, minimum 0
   Each stock level has a reorder threshold which is a whole number, minimum 0
@@ -39,7 +39,7 @@ Content called "stock levels":
   Anyone with "inventory.write" can create or update stock levels
 
 Content called "reorder alerts":
-  Each reorder alert has a product which references products, required
+  Each reorder alert has a product which references products, required, cascade on delete
   Each reorder alert has a warehouse which is text, required
   Each reorder alert has a current quantity which is a whole number
   Each reorder alert has a threshold which is a whole number

@@ -187,7 +187,25 @@ async def init_db(content_schemas: list[dict], db_path: str = None):
                 col_defs.append(_field_to_sql(field))
                 if field.get("foreign_key"):
                     _assert_safe(field["foreign_key"], f"foreign key target in {table_name}")
-                    fk_defs.append(f'FOREIGN KEY ({_q(field["name"])}) REFERENCES {_q(field["foreign_key"])}(id)')
+                    # v0.9: emit explicit ON DELETE clause from the
+                    # schema-declared cascade_mode. The compiler
+                    # enforces that every reference field has a
+                    # cascade_mode (TERMIN-S039), so reaching this
+                    # branch with a missing cascade_mode means the
+                    # IR was hand-edited or produced by a non-
+                    # conforming compiler — fail loudly.
+                    cm = field.get("cascade_mode")
+                    if cm not in ("cascade", "restrict"):
+                        raise ValueError(
+                            f"Field {field['name']!r} on {table_name!r}: "
+                            f"cascade_mode must be 'cascade' or 'restrict' "
+                            f"on a foreign-key column, got {cm!r}"
+                        )
+                    on_delete = cm.upper()
+                    fk_defs.append(
+                        f'FOREIGN KEY ({_q(field["name"])}) REFERENCES '
+                        f'{_q(field["foreign_key"])}(id) ON DELETE {on_delete}'
+                    )
 
             all_defs = col_defs + fk_defs
             cols_sql = ",\n                ".join(all_defs)

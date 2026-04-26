@@ -1,5 +1,84 @@
 # Changelog
 
+## Unreleased — v0.9 in progress (feature/v0.9)
+
+### Phase 2.x (a): cascade grammar (2026-04-26)
+
+**Breaking grammar change.** Per BRD §6.2, every `references X` field
+must now declare cascade behavior explicitly. Bare `references X`
+fails compilation. The audit-over-authorship tenet says deletion
+blast radius must be visible in source review, not inferred at
+runtime.
+
+**New syntax:**
+- `references X, cascade on delete` — when the parent is deleted,
+  this record is deleted alongside it (`ON DELETE CASCADE`).
+- `references X, restrict on delete` — when the parent is deleted
+  while any record references it, the delete is refused with HTTP
+  409 (`ON DELETE RESTRICT`).
+
+There is no implicit default. Both clauses are equally explicit.
+
+**New compile-time errors:**
+- `TERMIN-S039` — reference field missing cascade clause.
+- `TERMIN-S040` — `cascade on delete` / `restrict on delete` declared
+  on a non-reference field.
+- `TERMIN-S041` — both `cascade on delete` AND `restrict on delete`
+  declared on the same reference.
+- `TERMIN-S042` — *transitive cascade-restrict deadlock*. A content
+  cannot simultaneously be cascade-deleted from above AND
+  restrict-protected from below; SQLite (and any FK-aware backend)
+  aborts the cascade transaction. The compiler now rejects this
+  structural defect at compile time, naming every contributing edge
+  (file:line) and suggesting two resolutions: change the cascade edge
+  to restrict, or change the restrict edge to cascade.
+- `TERMIN-S043` — multi-content cascade cycle (`A → B → A` via
+  cascade edges). Cycle behavior is backend-dependent and not
+  portable. Self-cascade (a content referencing itself) is allowed
+  for tree-delete semantics.
+
+**IR change:** `FieldSpec.cascade_mode: "cascade" | "restrict" | null`.
+Required when `business_type == "reference"`, null otherwise. The IR
+JSON schema enforces the invariant structurally via `if/then/else`,
+so any conforming runtime gets the check at validation time.
+
+**Runtime change:** SQLite storage emits explicit `ON DELETE CASCADE`
+or `ON DELETE RESTRICT` in `FOREIGN KEY` declarations, derived from
+the schema-declared `cascade_mode`. Previously the FK was emitted
+with no `ON DELETE` clause (SQLite default `NO ACTION`, which
+behaves like RESTRICT at commit time).
+
+**Examples migrated.** All 13 references-using fields across 7
+example apps (`compute_demo`, `headless_service`, `helpdesk`,
+`hrportal`, `projectboard`, `warehouse`) now carry explicit cascade
+declarations:
+- `helpdesk` comments → ticket: `cascade on delete` (comments are
+  subordinate to their ticket).
+- `warehouse` reorder alerts → product: `cascade on delete` (alerts
+  are derived).
+- All others: `restrict on delete` (deliberate cleanup required).
+- `projectboard` redesigned to all-restrict (except `time logs →
+  task` cascade) so the cascade graph passes the new S042 check;
+  this is a product judgment for the example, not a compiler
+  constraint.
+
+**Migration story for existing deployments.** v0.8 `.termin` files
+using bare `references` will fail to compile in v0.9 — add the
+required clause to each. Existing v0.8 *databases* retain their old
+FK declarations (no `ON DELETE` clause) under `CREATE TABLE IF NOT
+EXISTS`; a redeploy on top of an existing app.db keeps the v0.8 FK
+behavior. The full v0.8-DB → v0.9-cascade migration story (rebuild
+tables to pick up the new `ON DELETE` clauses) is Phase 2.x (b)
+territory and will land alongside the schema diff classifier per BRD
+§6.2.
+
+**Conformance suite:** new test pack `tests/test_v09_cascade.py`
+(9 tests) plus 4 new fixtures in `fixtures-cascade/` covering both
+modes, self-cascade, optional FK, and multi-hop chains.
+
+**Tests:** compiler 1803 pass / 0 fail. Conformance 172 pass +
+21 skipped (browser-only, `served-reference` adapter not active).
+
 ## v0.8.1 (2026-04-21)
 
 ### Theme: Maintenance release

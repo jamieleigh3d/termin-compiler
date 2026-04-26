@@ -1,0 +1,14 @@
+Application: Cascade Self-Reference
+  Description: Self-referencing cascade for tree-delete semantics
+Id: a1c0c1a0-cade-4a00-9000-000000000002
+
+Identity:
+  Scopes are "tree.view", "tree.manage", "tree.delete"
+  A "tester" has "tree.view", "tree.manage", and "tree.delete"
+
+Content called "tree nodes":
+  Each tree node has a label which is text, required
+  Each tree node has a parent which references tree nodes, cascade on delete
+  Anyone with "tree.view" can view tree nodes
+  Anyone with "tree.manage" can create tree nodes
+  Anyone with "tree.delete" can delete tree nodes
