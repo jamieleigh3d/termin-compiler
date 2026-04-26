@@ -72,7 +72,7 @@ A line consisting entirely of a backtick expression is a Compute body line:
 Compute called "SayHelloTo":
   Transform: takes name : text, produces greeting : text
   `greeting = "Hello, " + name + "!"`
-  "user" can execute this
+  Anyone with "app.view" can execute this
 ```
 
 ### 1.5 Array Index Safety

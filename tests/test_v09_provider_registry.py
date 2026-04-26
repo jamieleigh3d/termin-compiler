@@ -100,6 +100,61 @@ class TestContractRegistry:
         assert reg.get_contract(Category.COMPUTE, "ai-agent").naming == "named"
         assert reg.get_contract(Category.CHANNELS, "messaging").naming == "named"
 
+    def test_register_contract_extends_catalog(self):
+        """Per BRD §4 (revised): contracts are semi-open. Providers
+        can register new contracts within existing primitive
+        categories. The geospatial-compute case from JL's review."""
+        reg = ContractRegistry.default()
+        assert reg.get_contract(Category.COMPUTE, "geospatial") is None
+        new_contract = ContractDefinition(
+            name="geospatial",
+            category=Category.COMPUTE,
+            tier=Tier.TIER_1,
+            naming="named",
+            description="Domain-specific geospatial transforms.",
+        )
+        reg.register_contract(new_contract)
+        c = reg.get_contract(Category.COMPUTE, "geospatial")
+        assert c is not None
+        assert c.naming == "named"
+        # Built-in contracts in the same category still present.
+        assert reg.get_contract(Category.COMPUTE, "ai-agent") is not None
+
+    def test_register_contract_rejects_duplicate(self):
+        """A provider cannot silently shadow a built-in contract.
+        Replacing a built-in requires a spec evolution + new release."""
+        reg = ContractRegistry.default()
+        duplicate = ContractDefinition(
+            name="ai-agent",  # already exists
+            category=Category.COMPUTE,
+            tier=Tier.TIER_1,
+            naming="named",
+            description="Trying to override the built-in.",
+        )
+        with pytest.raises(ValueError) as exc:
+            reg.register_contract(duplicate)
+        assert "already registered" in str(exc.value)
+
+    def test_register_contract_allows_same_name_in_different_category(self):
+        """Same contract name is fine if it lives under a different
+        primitive category (unlikely in practice but the constraint
+        is per (category, name))."""
+        reg = ContractRegistry.default()
+        # Hypothetical: a presentation contract also named "default-CEL"
+        # (the compute one). Different category, different contract.
+        new_contract = ContractDefinition(
+            name="default-CEL",
+            category=Category.PRESENTATION,
+            tier=Tier.TIER_1,
+            naming="implicit",
+            description="Hypothetical presentation contract sharing a name.",
+        )
+        # Should NOT raise.
+        reg.register_contract(new_contract)
+        # Both still resolvable.
+        assert reg.get_contract(Category.COMPUTE, "default-CEL") is not None
+        assert reg.get_contract(Category.PRESENTATION, "default-CEL") is not None
+
 
 # ── Provider registry: empty by default, supports registration ──
 

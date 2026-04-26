@@ -395,18 +395,19 @@ def test_parse_bare_role():
 
 
 def test_parse_compute_typed_params():
+    """v0.9: compute access is scope-based; the v0.8 bare-role form was
+    removed. Test now uses Anyone with "<scope>"."""
     program, errors = parse('''Compute called "greet":
   Transform: takes u : UserProfile, produces "msg" : Text
   [msg = "Hello " + u.Name]
-  Admin can execute this''')
+  Anyone with "admin.execute" can execute this''')
     assert errors.ok, errors.format()
     c = program.computes[0]
     assert c.input_params[0].name == "u"
     assert c.input_params[0].type_name == "UserProfile"
     assert c.output_params[0].name == "msg"
     assert c.output_params[0].type_name == "Text"
-    assert c.access_role == "Admin"
-    assert c.access_scope is None
+    assert c.access_scope == "admin.execute"
     assert len(c.body_lines) >= 1
 
 
@@ -431,14 +432,17 @@ def test_parse_event_expr():
 
 
 def test_parse_compute_expr_body():
+    """v0.9: compute access uses scope-based form
+    `Anyone with "<scope>" can execute this`. The v0.8 bare-role
+    form `"<role>" can execute this` was removed (see
+    TestRoleBasedComputeAccessRemoved)."""
     program, errors = parse('''Compute called "greet":
   Transform: takes u : UserProfile, produces greeting : Text
   `greeting = "Hello, " + u.FirstName + "!"`
-  "Admin" can execute this''')
+  Anyone with "admin.execute" can execute this''')
     assert errors.ok, errors.format()
     c = program.computes[0]
     assert 'greeting = "Hello, " + u.FirstName + "!"' in c.body_lines
-    assert c.access_role == "Admin"
 
 
 def test_parse_highlight_expr():
@@ -494,7 +498,9 @@ def test_parse_hello_user_example():
     assert len(program.roles) == 2
     assert len(program.stories) == 2
     assert len(program.computes) == 1
-    assert program.computes[0].access_role == "user"
+    # v0.9: SayHelloTo is scope-gated on "app.view" (was bare-role
+    # `"user" can execute this` in v0.8 — that form was removed).
+    assert program.computes[0].access_scope == "app.view"
 
 
 def test_parse_hello_example():
@@ -515,6 +521,54 @@ def test_parse_compute_demo():
     assert len(program.computes) == 6
     assert len(program.channels) == 4
     assert len(program.boundaries) == 2
+
+
+# ── v0.9: Compute access scope-based canonical, role-based removed ──
+#
+# v0.8 had two grammar shapes for granting compute execution:
+#   - Anyone with "<scope>" can execute this  (scope-based — canonical)
+#   - "<role>" can execute this               (role-based — removed in v0.9)
+# These translated to different IR with different semantics, which was
+# confusing. v0.9 removes the role-based form; sources using it produce
+# a clear migration error pointing at the scope-based equivalent.
+
+class TestRoleBasedComputeAccessRemoved:
+    _COMPUTE_PREAMBLE = '''Application: Test
+Id: 11111111-2222-3333-4444-555555555555
+
+Identity:
+  Scopes are "app.view"
+  A "user" has "app.view"
+
+Compute called "say_hi":
+  Transform: takes name : text, produces greeting : text
+  `greeting = "Hello, " + name + "!"`
+'''
+
+    def test_scope_based_form_succeeds(self):
+        """`Anyone with "<scope>" can execute this` is the canonical
+        v0.9 form."""
+        src = self._COMPUTE_PREAMBLE + '  Anyone with "app.view" can execute this\n'
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        assert len(program.computes) == 1
+
+    def test_role_based_form_rejected(self):
+        """`"<role>" can execute this` is removed in v0.9."""
+        src = self._COMPUTE_PREAMBLE + '  "user" can execute this\n'
+        program, errors = parse(src)
+        assert not errors.ok, "v0.8 role-based compute access must error in v0.9"
+        msg = errors.format()
+        # Error should mention the migration path.
+        assert "Anyone with" in msg or "scope" in msg.lower()
+
+    def test_role_based_form_error_names_role(self):
+        src = self._COMPUTE_PREAMBLE + '  "warehouse manager" can execute this\n'
+        program, errors = parse(src)
+        assert not errors.ok
+        msg = errors.format()
+        # Helpful error mentions the role name so the user knows which line.
+        assert "warehouse manager" in msg or "execute this" in msg
 
 
 # ── v0.8.2: Accesses line multi-content (PEG gap closure) ──

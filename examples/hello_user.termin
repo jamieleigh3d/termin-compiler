@@ -18,5 +18,5 @@ As user, I want to see a page "Hello" so that I can be greeted:
 Compute called "SayHelloTo":
   Transform: takes name : text, produces greeting : text
   `greeting = "Hello, " + name + "!"`
-  "user" can execute this
+  Anyone with "app.view" can execute this
   Audit level: none

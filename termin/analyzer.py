@@ -805,27 +805,22 @@ class Analyzer:
                 ))
 
     def _check_compute_has_access(self) -> None:
-        """Every Compute must have an access rule."""
-        role_names_lower = {r.lower() for r in self.role_names}
+        """Every Compute must have an access rule.
+
+        v0.9: only the scope-based form `Anyone with "<scope>" can
+        execute this` is valid. The v0.8 bare-role form was removed
+        — see termin/parse_handlers.py compute_access_line handler
+        for the rejection migration error.
+        """
         for compute in self.program.computes:
-            if not compute.access_scope and not compute.access_role:
+            if not compute.access_scope:
                 self.errors.add(SecurityError(
                     message=f'Compute "{compute.name}" has no access rule. '
-                            f'Every Compute must declare who can execute it.',
+                            f'Every Compute must declare who can execute it: '
+                            f'`Anyone with "<scope>" can execute this`.',
                     line=compute.line,
                     code="TERMIN-X004",
                 ))
-            if compute.access_role:
-                if (compute.access_role.lower() not in role_names_lower
-                        and compute.access_role.lower() != "anonymous"):
-                    suggestion = _fuzzy_match(compute.access_role, self.role_names)
-                    self.errors.add(SemanticError(
-                        message=f'Compute "{compute.name}" references undefined '
-                                f'role "{compute.access_role}"',
-                        line=compute.line,
-                        code="TERMIN-S019",
-                        suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
-                    ))
 
     # ── Channel Checks ──
 

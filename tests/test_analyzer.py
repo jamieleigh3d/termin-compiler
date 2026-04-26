@@ -409,30 +409,12 @@ def test_hello_example_passes():
     assert result.ok, result.format()
 
 
-def test_compute_role_access_valid():
-    result = _analyze(VALID_BASE + '''
-Content called "items":
-  Each item has a name which is text
-  Anyone with "read" can view items
-
-Compute called "summarize":
-  Reduce: takes items, produces items
-  user can execute this
-''')
-    assert result.ok, result.format()
-
-
-def test_compute_role_access_undefined():
-    result = _analyze(VALID_BASE + '''
-Content called "items":
-  Each item has a name which is text
-  Anyone with "read" can view items
-
-Compute called "summarize":
-  Reduce: takes items, produces items
-  nonexistent_role can execute this
-''')
-    assert not result.ok
+# v0.9: bare-role compute access form `<role> can execute this` was
+# removed. The previous test_compute_role_access_valid and
+# test_compute_role_access_undefined tested that form; both are now
+# deleted. The replacement coverage is in
+# tests/test_parser.py::TestRoleBasedComputeAccessRemoved which tests
+# the migration-error rejection path.
 
 
 def test_hello_user_example_passes():

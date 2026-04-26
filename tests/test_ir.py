@@ -485,7 +485,10 @@ class TestComputeDemoIR:
         assert len(c.input_params) == 1
         assert c.input_params[0].name == "name"
         assert c.input_params[0].type_name == "text"
-        assert c.required_role == "user"
+        # v0.9: scope-based compute access (was required_role == "user"
+        # in v0.8; bare-role form removed).
+        assert c.required_scope == "app.view"
+        assert c.required_role is None
 
     def test_hello_user_merged_pages(self):
         spec = _load_and_lower("hello_user.termin")

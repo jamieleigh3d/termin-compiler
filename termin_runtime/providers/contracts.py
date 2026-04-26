@@ -184,19 +184,56 @@ _BUILTIN_CONTRACTS: tuple[ContractDefinition, ...] = (
 
 @dataclass
 class ContractRegistry:
-    """Catalog of contracts. Phase 0 is read-only and pre-populated.
+    """Catalog of contracts within each primitive category.
 
-    Use ContractRegistry.default() to get the built-in catalog.
-    Phase 1+ may extend this if vetted-third-party contracts are
-    added — but the closed-primitive principle (Tenet 4) means new
-    contracts are rare and require BRD evolution.
+    Per BRD §4: primitives are closed (Tenet 4 audit promise — the
+    eight primitive categories are fixed by core spec), but contracts
+    within each category are semi-open. The reference runtime ships
+    a fixed built-in catalog via `ContractRegistry.default()`, and
+    providers can register new contracts within existing categories
+    via `register_contract()`. New contracts add new shapes WITHIN a
+    primitive — they don't extend the primitive itself, so the
+    structural audit surface stays locked to the eight categories.
+
+    Use cases for runtime-registered contracts:
+      - A Carbon-style presentation provider registers a new
+        presentation contract with a different rendering body shape.
+      - A geospatial compute provider registers a new compute
+        contract whose body lines have geospatial-specific syntax.
+
+    The compiler delegates body-line verification to the provider's
+    parser per BRD §5.3 (three-kinds-of-params model).
     """
-    contracts: tuple[ContractDefinition, ...] = field(default_factory=tuple)
+    contracts: list[ContractDefinition] = field(default_factory=list)
 
     @classmethod
     def default(cls) -> "ContractRegistry":
-        """Built-in catalog per BRD §4 and §6."""
-        return cls(contracts=_BUILTIN_CONTRACTS)
+        """Built-in catalog per BRD §4 and §6. Mutable — providers
+        may extend via register_contract(). New ContractRegistry
+        instances start fresh; default() always begins from the
+        built-in baseline."""
+        return cls(contracts=list(_BUILTIN_CONTRACTS))
+
+    def register_contract(
+        self,
+        contract: ContractDefinition,
+    ) -> None:
+        """Register a new contract under an existing primitive category.
+
+        Raises ValueError if a contract with the same (category, name)
+        is already registered — providers should not silently shadow
+        built-in contracts. To replace a built-in, the spec must
+        evolve and ship a new release.
+        """
+        existing = self.get_contract(contract.category, contract.name)
+        if existing is not None:
+            raise ValueError(
+                f"Contract ({contract.category.value}, {contract.name!r}) "
+                f"is already registered. New contracts must use a unique "
+                f"(category, name) within the registry; built-in "
+                f"contracts cannot be redefined at runtime."
+            )
+        self.contracts.append(contract)
 
     def categories(self) -> Iterable[Category]:
         seen = set()

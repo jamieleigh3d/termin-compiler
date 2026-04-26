@@ -579,17 +579,32 @@ def _parse_line(text: str, rule: str, ln: int):
     if rule == "compute_body_expr_line": return ("compute_body", text[1:-1].strip())
     if rule == "compute_body_multiline": return ("compute_body_multiline", text[3:-3].strip())
     if rule == "compute_access_line":
+        # v0.9: only the scope-based form is canonical
+        # (Anyone with "<scope>" can execute this). The bare-role form
+        # `"<role>" can execute this` was removed because it had
+        # different semantics (direct role check vs scope check) and
+        # caused confusion in source review.
+        if not text.startswith("Anyone with"):
+            # Try to extract whatever was on the LHS of "can execute this"
+            # so the error message can name the offending role.
+            ci = text.find(" can execute this")
+            offender = text[:ci].strip().strip('"') if ci >= 0 else text.strip()
+            raise ValueError(
+                f"`\"{offender}\" can execute this` is removed in v0.9. "
+                f"Use the scope-based form: "
+                f'`Anyone with "<scope>" can execute this`. '
+                f"Compute access grants now match Content access grants — "
+                f"both gate on scope, not role name. The role-to-scope "
+                f"mapping in the Identity block determines who can "
+                f"execute. See termin-roadmap.md (v0.9 backlog)."
+            )
         r = P(text, rule)
         if r:
-            val = _qs(r.get("role",""))
-            if _rule(r) == "ComputeAccessAnyone" or text.startswith("Anyone with"):
-                return ("access", AccessRule(scope=val, verbs=["execute"], line=ln))
-            return ("compute_access", val)
-        ci = text.find(" can execute this")
-        raw = text[:ci].strip().strip('"') if ci>=0 else ""
-        if text.startswith("Anyone with"):
-            return ("access", AccessRule(scope=_fq(text), verbs=["execute"], line=ln))
-        return ("compute_access", raw)
+            val = _qs(r.get("role", ""))
+            return ("access", AccessRule(scope=val, verbs=["execute"], line=ln))
+        # TatSu fell through but text starts with "Anyone with" —
+        # extract scope from quotes as a defensive fallback.
+        return ("access", AccessRule(scope=_fq(text), verbs=["execute"], line=ln))
     if rule == "compute_audit_access_line":
         r = P(text, "compute_audit_access_line")
         if r:

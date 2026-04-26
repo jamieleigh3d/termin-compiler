@@ -21,6 +21,18 @@ setup(
         "cel-python>=0.5.0",
         "httpx>=0.25.0",
     ],
+    extras_require={
+        # Test dependencies. Install with: pip install -e .[test]
+        # pytest-asyncio is required for the runtime / WebSocket /
+        # agent test suites; without it, pytest emits "Unknown config
+        # option: asyncio_mode" warnings against the asyncio_mode
+        # setting in pyproject.toml.
+        "test": [
+            "pytest>=8.0",
+            "pytest-asyncio>=0.21",
+            "pytest-cov>=4.0",
+        ],
+    },
     package_data={
         "termin": ["termin.peg"],
         "termin_runtime": ["static/*.js", "static/*.css"],

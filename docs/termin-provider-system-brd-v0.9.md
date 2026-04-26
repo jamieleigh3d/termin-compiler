@@ -18,6 +18,24 @@
   leaf-wins on conflicting values.
 - §10: every provider — including the built-in stubs — loads through
   the same provider registry. No special-cased "built-in" code path.
+- §4: clarified primitives-vs-contracts distinction. Primitives stay
+  closed (Tenet 4 audit promise); contracts are semi-open within
+  each primitive's category — providers can register new contracts
+  at runtime by declaring a body-line template (§5.3). The compiler
+  owns parsing and hands the provider structured data; provider
+  authors don't write parsers.
+- §5.3: rewritten to make explicit that providers register a
+  **template** describing their body-line shape, not a parser.
+  The compiler dispatches sub-language content (CEL, LLM prompts,
+  etc.) to the right downstream validator and hands the provider
+  extracted, typed values.
+- §8 + §11: future enhancement note for `final` markers on boundary
+  config entries (enterprise-wide identity provider lockdown).
+  Tracked as a v0.10 roadmap item.
+- Appendix A: `hello_user.termin` migration uses the canonical
+  scope-based form `Anyone with "app.view" can execute this`. The
+  v0.8 bare-role form is removed in v0.9 (see termin-roadmap.md
+  v0.9 backlog).
 
 ---
 
@@ -63,13 +81,35 @@ Per-level conformance advertisement is required (a provider may implement levels
 
 ## 4. Provider Categories Overview
 
+**Primitives are closed; contracts are semi-open.** The eight primitive
+categories (Content, Compute, Channel, Identity, Boundary, Reflection,
+Presentation, Audit) are fixed by core spec — Tenet 4's audit promise
+depends on the audit grammar locking onto exactly these primitives.
+Adding a new primitive requires BRD evolution and a major spec release.
+
+The **contracts within each category** are semi-open. The reference
+runtime ships a fixed catalog of built-in contracts (one per implicit
+category; three Compute, four Channel for the named categories), but
+providers can register new contracts within an existing category at
+runtime. The motivating case is Presentation: a Carbon-style
+provider may register a new presentation contract whose body lines
+have a different shape than the default. **The provider declares
+the shape via a template** (see §5.3 three-kinds-of-params model);
+the compiler does the parsing and hands the provider extracted,
+structured data. Provider authors don't write parsers.
+
+A new contract does NOT extend the primitive — it adds a new shape
+WITHIN one primitive's category. The structural audit surface stays
+the same: every contract still binds to one of the eight primitive
+categories.
+
 | Category | Contract Naming | Source Declaration | Tier | Built-in Contracts |
 |---|---|---|---|---|
 | **Identity** | Implicit | `Identity:` block (scopes + roles + Anonymous) | **Tier 0** — fabric down if down | (single contract surface) |
 | **Storage** | Implicit | Use of `Content called` | **Tier 1** — app down if down | (single contract surface) |
-| **Compute** | Named in source for non-default | `Compute called`, `Provider is "X"` | **Tier 1** — app down if down | `default-CEL`, `llm`, `ai-agent` |
-| **Channels** | Named in source | `Channel called`, `Provider is "X"` | **Tier 2** — integration degraded only | `webhook`, `email`, `messaging`, `event-stream` |
-| **Presentation** | Implicit | Use of `Display`, `Show`, etc. | **Tier 1** — app down if down | (deferred to BRD #2) |
+| **Compute** | Named in source for non-default | `Compute called`, `Provider is "X"` | **Tier 1** — app down if down | `default-CEL`, `llm`, `ai-agent` (extensible) |
+| **Channels** | Named in source | `Channel called`, `Provider is "X"` | **Tier 2** — integration degraded only | `webhook`, `email`, `messaging`, `event-stream` (extensible) |
+| **Presentation** | Implicit | Use of `Display`, `Show`, etc. | **Tier 1** — app down if down | (deferred to BRD #2; extensible) |
 
 **Tier classification rules:**
 
@@ -102,13 +142,55 @@ Using a primitive in source implies a contract requirement. Categories split int
 
 ### 5.3 The three-kinds-of-params model
 
-Provider declarations in source use three kinds of parameters with distinct validation paths:
+**The compiler owns parsing.** Providers do NOT implement parsers
+or ASTs for their body lines. Instead, a provider registers a
+**template** with the compiler describing the shape of each body
+line in its contract — what tokens are expected, which positions
+hold symbol-references, which hold literals, which hold backtick
+content. The compiler parses the source against that template and
+hands the provider already-extracted, structured data.
 
-1. **Symbol-references** (e.g., `Input from field <path>`, `Trigger on event <name>`) — validated against the AST by the host parser.
-2. **Backtick-content** (e.g., `Directive is \`\`\`...\`\`\``, the CEL body) — handed to the provider's parser for validation.
-3. **Literals** (numbers, enums, strings) — simple type check.
+This is the audit-over-authorship tenet (Tenet 1) applied to the
+provider seam: a provider author should describe *what* their
+contract's source shape looks like, not implement *how* to parse it.
 
-`Provider is "<name>"` always lives in an indented sub-block under the primitive that needs it. Never as a top-level keyword.
+Provider declarations in source use three kinds of parameters with
+distinct validation paths:
+
+1. **Symbol-references** (e.g., `Input from field <path>`,
+   `Trigger on event <name>`) — the provider's template names the
+   slot and its expected referent type (field, event, content,
+   compute, channel). The host compiler resolves the symbol against
+   the AST at parse time and hands the provider a typed reference.
+2. **Backtick-content** (e.g., `Directive is \`\`\`...\`\`\``, the CEL
+   body) — the compiler tokenizes (extracts text between backticks
+   or triple-backticks). The provider's template declares the
+   expected sub-language so the compiler can dispatch downstream
+   validation (CEL: hand to cel-python; LLM prompts: hand to the
+   LLM provider's prompt validator if any). The provider receives
+   the extracted, sub-language-validated string — never raw source
+   bytes it has to re-tokenize.
+3. **Literals** (numbers, enums, strings) — the template declares
+   the literal kind and any allowed values (enum) or numeric range.
+   The compiler enforces; the provider receives a typed value.
+
+A provider's template is itself the source of truth for body-line
+shape — not a separate parser. The compiler discovers templates
+from the registered provider's metadata at startup and incorporates
+them into the grammar dispatch table. Adding a new contract /
+provider therefore requires:
+
+  - Declaring the contract surface (existing `ContractDefinition`).
+  - Registering the body-line template alongside the provider
+    factory at registration time.
+  - Implementing the runtime behavior for the contract's operations
+    (e.g., `authenticate` / `roles_for` for identity).
+
+There is no provider-side PEG, no provider-side AST type to
+implement, and no provider-side string parsing.
+
+`Provider is "<name>"` always lives in an indented sub-block under
+the primitive that needs it. Never as a top-level keyword.
 
 ### 5.4 Identity block
 
@@ -775,6 +857,28 @@ across levels.
 **Required tooling:**
 - `termin show-effective-config <app> <environment>` — produces the resolved view from root to leaf for audit.
 
+**Future enhancement: `final` markers (post-v0.9).** v0.9 has only
+"leaf wins." A future enhancement adds a `final` marker on boundary
+config entries so that a value set at a higher boundary cannot be
+overridden by lower levels. The motivating use case is enterprise-
+wide identity: a root boundary administrator binds the company's
+SSO product as the identity provider and marks it `final`,
+preventing any org / app / team from accidentally (or
+intentionally) downgrading to a stub or different SSO. Other plausible
+candidates: storage encryption settings, audit-log retention windows,
+required confidentiality scopes. Likely shape:
+
+```json
+"identity": {
+  "provider": "okta",
+  "config": { "tenant": "acme.okta.com" },
+  "final": true
+}
+```
+
+Out of scope for v0.9 (see §11) but recorded here so the boundary-
+merge implementation in Phase 0 doesn't accidentally preclude it.
+
 ---
 
 ## 9. Conformance
@@ -867,6 +971,7 @@ The following are recognized as future work but not part of the v0.9 milestone:
 
 **Boundary model:**
 - Override / augment / forbid semantics for boundary inheritance
+- `final` markers on boundary config entries (prevent lower-level override; motivating case is enterprise-wide identity provider — see §8 "Future enhancement")
 - Per-environment boundary config variants beyond simple multiple deploy configs
 - Boundary-level sub-organization beyond the three-level model
 
@@ -922,7 +1027,7 @@ As user, I want to see a page "Hello" so that I can be greeted:
 Compute called "SayHelloTo":
   Transform: takes name : text, produces greeting : text
   `greeting = "Hello, " + name + "!"`
-  "user" can execute this
+  Anyone with "app.view" can execute this
   Audit level: none
 ```
 

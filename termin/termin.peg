@@ -626,8 +626,11 @@ field_ref
 
 compute_access_line
     = 'Anyone' 'with' role:quoted_string 'can' 'execute' 'this' $  #ComputeAccessAnyone
-    | role:word_or_quoted 'can' 'execute' 'this' $                  #ComputeAccessRole
     ;
+# v0.9 removed the bare-role form `"<role>" can execute this`. The
+# classifier still routes such lines to compute_access_line; the
+# handler detects the missing-Anyone-with shape and raises a clear
+# migration error pointing at the canonical scope-based form.
 
 compute_audit_access_line
     = 'Anyone' 'with' scope:quoted_string 'can' 'audit' $  #ComputeAuditAnyone
