@@ -714,3 +714,130 @@ class TestComputeEndpoint:
             client.cookies.set("termin_role", "employee")
             r = client.post("/api/v1/compute/calculate_team_bonus_pool", json={"input": {}})
             assert r.status_code == 403
+
+
+# ── v0.9 Anonymous-template regression tests ──
+# These are regression tests for the v0.9.x flake-fix sprint. The
+# bug: v0.9 canonicalized the anonymous role name to "Anonymous"
+# (capital A) but the navbar template's role-switcher form still
+# compared `current_role != "anonymous"` (lowercase). The condition
+# evaluated True → user_name input rendered → page had two text
+# inputs → browser tests using `page.locator("form")` selected the
+# wrong input → form submits got hijacked to /set-role. The fix
+# replaced the string comparison with a structural is_anonymous
+# flag derived from the typed Principal. These tests prevent the
+# regression and codify the contract.
+
+class TestAnonymousNavTemplate:
+    """For an anonymous user the role-switcher form must NOT render
+    a user_name text input — that input is the source of multi-form
+    selector hijacking in browser tests."""
+
+    @pytest.fixture(autouse=True)
+    def _pkgs(self, compiled_packages):
+        self.pkgs = compiled_packages
+
+    def test_anonymous_no_username_input(self):
+        """Anonymous user gets a navbar with role select but no name input."""
+        with _make_client(self.pkgs["agent_simple"]) as client:
+            r = client.get("/agent")
+            assert r.status_code == 200
+            # The role-switcher form lives in the nav. user_name input
+            # only renders for non-anonymous roles.
+            assert 'name="user_name"' not in r.text, (
+                "Anonymous user should not see user_name input — "
+                "v0.9 template bug regression"
+            )
+
+    def test_anonymous_role_renders_capitalized(self):
+        """The Anonymous role appears in the role-switcher option list
+        with the canonical capitalized name (not 'anonymous')."""
+        with _make_client(self.pkgs["agent_simple"]) as client:
+            r = client.get("/agent")
+            # The select option is title-cased via the |title filter
+            # but the value attribute carries the raw canonical name.
+            assert 'value="Anonymous"' in r.text
+
+    def test_explicit_lowercase_anonymous_cookie_still_anonymous(self):
+        """A historical cookie `termin_role=anonymous` (lowercase) must
+        still resolve as Anonymous — the resolver normalizes case."""
+        with _make_client(self.pkgs["agent_simple"]) as client:
+            client.cookies.set("termin_role", "anonymous")
+            r = client.get("/agent")
+            assert r.status_code == 200
+            # Still anonymous → no user_name input
+            assert 'name="user_name"' not in r.text
+
+
+class TestAnonymousRoleCanonical:
+    """ctx.roles uses canonical 'Anonymous' (capital A) when the
+    source did not declare an anonymous role. Pre-v0.9 the synthesized
+    default was lowercase 'anonymous', which mismatched the role-name
+    casing expected elsewhere (template, reflection)."""
+
+    def test_synthesized_anonymous_role_is_canonical(self, compiled_packages):
+        # warehouse declares no Anonymous role — runtime must synthesize one
+        ir_json = _ir_json(compiled_packages["warehouse"])
+        app = create_termin_app(ir_json, strict_channels=False)
+        roles = list(app.state.ctx.roles.keys())
+        assert "Anonymous" in roles, (
+            f"Synthesized anonymous role should be canonical 'Anonymous'; "
+            f"got roles={roles}"
+        )
+        assert "anonymous" not in roles, (
+            "Lowercase 'anonymous' should not coexist with canonical 'Anonymous' "
+            "(v0.8 default was lowercase — that path is gone in v0.9)"
+        )
+
+
+class TestDbPathIsolation:
+    """Two apps in the same process must not share storage state. The
+    v0.8 bug was a module-level _db_path that init_db() rewrote on
+    each call — one app's init_db could redirect another app's
+    get_db(None) calls. v0.9 made db_path strictly per-RuntimeContext."""
+
+    def test_no_module_global_db_path(self):
+        """The runtime must not expose a mutable module-level _db_path."""
+        from termin_runtime import storage
+        assert not hasattr(storage, "_db_path"), (
+            "storage._db_path module global removed in v0.9 — apps "
+            "carry db_path on RuntimeContext instead. If you see this "
+            "test fail you've reintroduced the cross-app contamination "
+            "vector."
+        )
+        # A constant default is fine — it's never mutated.
+        assert storage.DEFAULT_DB_PATH == "app.db"
+
+    def test_two_apps_keep_separate_dbs(self, compiled_packages, tmp_path):
+        """Boot two apps with separate db_paths; rows in one don't appear
+        in the other. Without the v0.9 fix this was racy because
+        init_db rewrote _db_path globally."""
+        import asyncio
+        from termin_runtime.storage import get_db, count_records, insert_raw
+
+        ir_json = _ir_json(compiled_packages["agent_simple"])
+        db_a = str(tmp_path / "a.db")
+        db_b = str(tmp_path / "b.db")
+
+        # Boot both apps via lifespan to run init_db.
+        with TestClient(create_termin_app(
+            ir_json, db_path=db_a, strict_channels=False
+        )) as client_a:
+            with TestClient(create_termin_app(
+                ir_json, db_path=db_b, strict_channels=False
+            )) as client_b:
+                # Insert a row through app A's API.
+                r = client_a.post(
+                    "/api/v1/completions",
+                    json={"prompt": "isolation_test_a"},
+                )
+                assert r.status_code in (200, 201), r.text
+
+                # App B should not see app A's row.
+                r_b = client_b.get("/api/v1/completions")
+                assert r_b.status_code == 200
+                prompts_b = [c["prompt"] for c in r_b.json()]
+                assert "isolation_test_a" not in prompts_b, (
+                    f"App B saw app A's row — db_path leaked. "
+                    f"Got prompts={prompts_b}"
+                )

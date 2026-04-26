@@ -180,10 +180,24 @@ def _register_page_get(app, ctx, page, slug, page_reqs, page_templates,
             flash_level = request.query_params.get("_flash_level", "success")
             flash_dismiss = request.query_params.get("_flash_dismiss")
 
+            # Structural is_anonymous flag derived from the typed
+            # Principal — templates should use this rather than string-
+            # comparing current_role, which is fragile across casing
+            # (v0.9 canonicalized the role name to "Anonymous" but
+            # historical templates compared to "anonymous"). Falls back
+            # to a case-insensitive role-name check if Principal isn't
+            # in the user dict (defensive — every code path through
+            # identity.py now puts it there).
+            principal = user.get("Principal")
+            is_anonymous = (
+                principal.is_anonymous if principal is not None
+                else str(user.get("role", "")).lower() == "anonymous"
+            )
             template_ctx = {
                 "page_title": _pg["name"],
                 "current_role": user["role"],
                 "current_user_name": user["profile"]["DisplayName"],
+                "is_anonymous": is_anonymous,
                 "user_profile_json": json.dumps(user["profile"]),
                 "roles": list(ctx.roles.keys()),
                 "q": q,

@@ -70,10 +70,22 @@ class ReflectionEngine:
         self._channel_metrics[name][metric] = value
 
     def identity_context(self, user):
+        # isAnonymous is derived structurally from the typed Principal
+        # when present — string-comparing role names is fragile because
+        # v0.9 canonicalized to "Anonymous" (capital A) but historical
+        # callers used "anonymous" (lowercase). The fallback path uses
+        # a case-insensitive comparison so legacy callers without a
+        # Principal in the user dict still get the right answer.
+        principal = user.get('Principal') if isinstance(user, dict) else None
+        if principal is not None:
+            is_anonymous = principal.is_anonymous
+        else:
+            role = user.get('role', 'Anonymous') if isinstance(user, dict) else 'Anonymous'
+            is_anonymous = str(role).lower() == 'anonymous'
         return {
-            'role': user.get('role', 'anonymous'),
-            'scopes': user.get('scopes', []),
-            'isAnonymous': user.get('role', 'anonymous') == 'anonymous',
+            'role': user.get('role', 'Anonymous') if isinstance(user, dict) else 'Anonymous',
+            'scopes': user.get('scopes', []) if isinstance(user, dict) else [],
+            'isAnonymous': is_anonymous,
         }
 
     def roles(self):

@@ -16,7 +16,14 @@ import aiosqlite
 from pathlib import Path
 
 
-_db_path: str = "app.db"
+# Default database path used when no explicit db_path is provided.
+# This is a constant — historically a mutable module global that
+# init_db() rewrote per-app, which caused cross-app contamination
+# when multiple apps booted in the same process (one app's init_db
+# would steer get_db(None) calls in another app to the wrong file).
+# v0.9 made it a constant: each app's db_path lives in its
+# RuntimeContext and runtime code passes ctx.db_path explicitly.
+DEFAULT_DB_PATH: str = "app.db"
 
 # Safe identifier pattern: lowercase letters, digits, underscores. Must start with a letter.
 _SAFE_IDENTIFIER = re.compile(r'^[a-z][a-z0-9_]*$')
@@ -54,8 +61,15 @@ def _q(name: str) -> str:
 
 
 async def get_db(db_path: str = None) -> aiosqlite.Connection:
-    """Get an async SQLite connection."""
-    path = db_path or _db_path
+    """Get an async SQLite connection.
+
+    Production callers pass ctx.db_path; the None fallback exists for
+    tests and direct CLI invocations of init_db. There is no module-
+    global state — falling through to None routes to DEFAULT_DB_PATH
+    deterministically, no matter what other apps in the same process
+    are doing.
+    """
+    path = db_path or DEFAULT_DB_PATH
     db = await aiosqlite.connect(path)
     db.row_factory = aiosqlite.Row
     await db.execute("PRAGMA foreign_keys = ON")
@@ -118,8 +132,8 @@ async def init_db(content_schemas: list[dict], db_path: str = None):
 
     Each schema has: name.snake, fields[], has_state_machine, initial_state.
     """
-    # Validate all identifiers up front, before any side effects (global
-    # mutation or DB open). Malicious IR must fail without leaving state.
+    # Validate all identifiers up front, before any side effects (DB
+    # open). Malicious IR must fail without leaving state.
     for cs in content_schemas:
         table_name = cs["name"]["snake"]
         _assert_safe(table_name, "table name")
@@ -128,18 +142,13 @@ async def init_db(content_schemas: list[dict], db_path: str = None):
             if field.get("foreign_key"):
                 _assert_safe(field["foreign_key"], f"foreign key target in {table_name}")
 
-    # Always reset _db_path — if db_path is None, fall back to the
-    # "app.db" default rather than inheriting a value set by a
-    # previous init_db call. Without this reset, a prior test that
-    # passed db_path=<tempfile> would leak that path into a later
-    # caller who passes db_path=None, so subsequent get_db() calls
-    # would route to the stale tempfile DB (and accumulate state
-    # across tests). Bug surfaced in the v0.8 sprint — pagination
-    # tests saw leftover products from test_compute_demo's tempfile.
-    global _db_path
-    _db_path = db_path if db_path else "app.db"
-
-    db = await get_db()
+    # No global mutation — db_path resolves to either the caller's
+    # explicit path or DEFAULT_DB_PATH. Each app's RuntimeContext
+    # carries its own db_path and runtime code passes ctx.db_path
+    # explicitly to every get_db() call. The previous module-global
+    # _db_path caused cross-app contamination when one app's init_db
+    # rewrote the global and another app's get_db(None) read it.
+    db = await get_db(db_path)
     try:
         for cs in content_schemas:
             table_name = cs["name"]["snake"]

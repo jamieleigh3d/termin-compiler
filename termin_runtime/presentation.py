@@ -990,7 +990,7 @@ def build_base_template(app_name: str, nav_html: str) -> object:
                     <option value="{{{{ rname }}}}" {{% if rname == current_role %}}selected{{% endif %}}>{{{{ rname|title }}}}</option>
                     {{% endfor %}}
                 </select>
-                {{% if current_role != "anonymous" %}}
+                {{% if not is_anonymous %}}
                 <label class="text-sm text-gray-600 ml-2">Name:</label>
                 <input type="text" name="user_name" value="{{{{ current_user_name }}}}"
                        placeholder="Display name" class="text-sm border rounded px-2 py-1 w-28"

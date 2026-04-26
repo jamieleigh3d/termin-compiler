@@ -72,7 +72,14 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     app_name = ir.get("name", "Termin App")
 
     # ── Build RuntimeContext ──
-    ctx = RuntimeContext(ir=ir, ir_json=ir_json, db_path=db_path)
+    # Resolve db_path immediately so ctx.db_path is never None — every
+    # runtime caller passes ctx.db_path through to get_db, and we want
+    # the value visible at app construction (not buried in storage's
+    # fallback). DEFAULT_DB_PATH is "app.db" relative to cwd, matching
+    # the historical behavior for users running `python app.py` directly.
+    from .storage import DEFAULT_DB_PATH
+    resolved_db_path = db_path if db_path else DEFAULT_DB_PATH
+    ctx = RuntimeContext(ir=ir, ir_json=ir_json, db_path=resolved_db_path)
 
     # Subsystem initialization
     ctx.expr_eval = ExpressionEvaluator()
@@ -115,8 +122,12 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     # Identity
     for role in ir.get("auth", {}).get("roles", []):
         ctx.roles[role["name"]] = role["scopes"]
+    # v0.9: canonical Anonymous role name is capitalized "Anonymous".
+    # If the source declared no anonymous role, synthesize an empty
+    # one under the canonical name so role-key comparisons (template,
+    # reflection, identity resolution) stay consistent.
     if not any(k.lower() == "anonymous" for k in ctx.roles):
-        ctx.roles["anonymous"] = []
+        ctx.roles["Anonymous"] = []
 
     # v0.9 Phase 1: instantiate the bound IdentityProvider via the
     # provider registry. The runtime ships first-party providers
@@ -302,11 +313,14 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         print(f"[Termin] Phase 1: TerminAtor initialized")
         print(f"[Termin] Phase 2: Expression evaluator ready")
         print(f"[Termin] Phase 3: Initializing storage")
-        await init_db(schemas, db_path)
+        # Pass the resolved path (never None) so storage.init_db can't
+        # fall through to its fallback constant — the app is the
+        # authoritative source for db_path, not module state.
+        await init_db(schemas, resolved_db_path)
 
         # Seed data
         if seed_data:
-            db = await get_db(db_path)
+            db = await get_db(resolved_db_path)
             try:
                 for content_name, records in seed_data.items():
                     cnt = await count_records(db, content_name)
@@ -337,7 +351,7 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
             record_data = {k: v for k, v in data.items() if k in known_cols}
             if not record_data:
                 return
-            db = await get_db(db_path)
+            db = await get_db(resolved_db_path)
             try:
                 record = await create_record(db, carries, record_data, ctx.sm_lookup.get(carries, []))
                 await run_event_handlers(db, carries, "created", record)

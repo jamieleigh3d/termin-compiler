@@ -752,8 +752,31 @@ class TestReflectionEngine:
         assert ctx["isAnonymous"] is False
 
     def test_identity_context_anonymous(self, engine):
+        # v0.9: canonical role name is "Anonymous" (capital A). Empty
+        # user dict → defaults to canonical anonymous. isAnonymous
+        # uses case-insensitive comparison so callers passing legacy
+        # lowercase "anonymous" still resolve to True.
         ctx = engine.identity_context({})
-        assert ctx["role"] == "anonymous"
+        assert ctx["role"] == "Anonymous"
+        assert ctx["isAnonymous"] is True
+
+    def test_identity_context_anonymous_lowercase_role(self, engine):
+        # Legacy callers that pass user["role"]="anonymous" (lowercase)
+        # must still be recognized as anonymous — case-insensitive.
+        ctx = engine.identity_context({"role": "anonymous"})
+        assert ctx["isAnonymous"] is True
+
+    def test_identity_context_with_principal(self, engine):
+        # When the user dict carries a typed Principal, isAnonymous
+        # is read from the contract (Principal.is_anonymous), not
+        # by comparing the role string. This is the v0.9 path.
+        from termin_runtime.providers.identity_contract import (
+            ANONYMOUS_PRINCIPAL,
+        )
+        ctx = engine.identity_context({
+            "role": "Anonymous",
+            "Principal": ANONYMOUS_PRINCIPAL,
+        })
         assert ctx["isAnonymous"] is True
 
     def test_roles(self, engine):

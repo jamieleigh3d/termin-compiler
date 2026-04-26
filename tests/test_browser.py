@@ -86,10 +86,21 @@ def browser_context():
 
 
 @pytest.fixture(scope="module")
-def agent_simple_app(compiled_packages):
-    """Start agent_simple server for the test module."""
+def agent_simple_app(compiled_packages, tmp_path_factory):
+    """Start agent_simple server for the test module.
+
+    Uses a per-module tempfile DB so this test module never sees
+    rows left behind by other test modules' app.db. Without this,
+    `python -m pytest tests/` would leave a polluted ./app.db that
+    a subsequent run of just this module would inherit (the v0.8
+    "completions table has 6 rows from test_async_websocket"
+    contamination).
+    """
     ir_json = _ir_json(compiled_packages["agent_simple"])
-    app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+    db_path = str(tmp_path_factory.mktemp("agent_simple") / "agent_simple.db")
+    app = create_termin_app(
+        ir_json, db_path=db_path, strict_channels=False, deploy_config={},
+    )
     server = BrowserTestServer(app)
     server.start()
     yield server
@@ -115,18 +126,18 @@ class TestBrowserFormSubmit:
         page.wait_for_selector("[id='termin-status']", timeout=5000)
         page.wait_for_timeout(500)  # let WS subscribe complete
 
-        # Find the form and fill the input by its name attribute (field name, not label)
-        form = page.locator("form")
-        # Use input[name=prompt] — field name from IR, not English label
-        prompt_input = form.locator("input[name='prompt'], input[type='text']").first
+        # Scope to the Termin-generated content form via data-termin-component.
+        # The page also contains a nav role-switcher form; using the bare
+        # `form` selector matches both, and chained .locator() searches
+        # across all matches — that's how the v0.9 Anonymous-template
+        # regression hijacked these tests for ~2 weeks.
+        form = page.locator("[data-termin-component='form']")
+        prompt_input = form.locator("input[name='prompt']")
         prompt_input.fill("browser test prompt")
-
-        # Click submit button by type, not by label text
         form.locator("button[type='submit']").click()
 
         # Wait for a row with our prompt to appear in the table
         table = page.locator("[data-termin-component='data_table']")
-        # Wait for any row, then check for our specific value
         page.wait_for_timeout(2000)
 
         # Find our prompt in any cell
@@ -147,9 +158,9 @@ class TestBrowserFormSubmit:
         table = page.locator("[data-termin-component='data_table']")
         initial_count = table.locator("[data-termin-row-id]").count()
 
-        # Submit one record
-        form = page.locator("form")
-        prompt_input = form.locator("input[name='prompt'], input[type='text']").first
+        # Submit one record (scoped to content form — see test above)
+        form = page.locator("[data-termin-component='form']")
+        prompt_input = form.locator("input[name='prompt']")
         prompt_input.fill("dedup browser test")
         form.locator("button[type='submit']").click()
 
@@ -170,8 +181,8 @@ class TestBrowserFormSubmit:
         page.wait_for_selector("[id='termin-status']", timeout=5000)
         page.wait_for_timeout(500)
 
-        form = page.locator("form")
-        prompt_input = form.locator("input[name='prompt'], input[type='text']").first
+        form = page.locator("[data-termin-component='form']")
+        prompt_input = form.locator("input[name='prompt']")
         prompt_input.fill("clear test")
         form.locator("button[type='submit']").click()
 
