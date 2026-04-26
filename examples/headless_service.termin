@@ -2,10 +2,10 @@ Application: Order Service
   Description: A headless order processing service
 Id: d11a0000-0000-0000-0000-000000000001
 
-Users authenticate with stub
-Scopes are "orders.read", "orders.write", and "orders.admin"
-A "writer" has "orders.read" and "orders.write"
-A "admin" has "orders.read", "orders.write", and "orders.admin"
+Identity:
+  Scopes are "orders.read", "orders.write", and "orders.admin"
+  A "writer" has "orders.read" and "orders.write"
+  A "admin" has "orders.read", "orders.write", and "orders.admin"
 
 Content called "orders":
   Each order has a customer which is text, required

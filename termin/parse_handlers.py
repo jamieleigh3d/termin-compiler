@@ -123,8 +123,29 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule); return ("description", str(r["desc"]).strip() if r else text[len("Description:"):].strip())
     if rule == "id_line":
         r = P(text, rule); return ("app_id", str(r["id"]).strip() if r else text[len("Id:"):].strip())
+    if rule == "identity_block_open_line":
+        # v0.9 Phase 1: bare top-level `Identity:` opens the sub-block.
+        # Run through TatSu first so test_no_tatsu_fallbacks sees the
+        # rule was matched; the parse result has no useful payload
+        # (just the keyword) so we ignore it and emit a sentinel tag
+        # the assembler uses to construct the Identity AST node and
+        # to gate subsequent scopes/role lines.
+        P(text, rule)
+        return ("identity_block_open", Identity(provider="stub", line=ln))
     if rule == "identity_line":
-        r = P(text, rule); return ("identity", Identity(provider=str(r["provider"]).strip() if r else text.split("with",1)[1].strip(), line=ln))
+        # v0.9 Phase 1: `Users authenticate with X` is removed.
+        # Authentication is implied by the presence of any non-Anonymous
+        # role inside the Identity block. Provider product names
+        # (stub, okta, etc.) live in deploy config, not source.
+        raise ValueError(
+            "`Users authenticate with X` is removed in v0.9. "
+            "Identity is now declared in an `Identity:` block:\n"
+            "  Identity:\n"
+            "    Scopes are \"...\"\n"
+            "    A \"role\" has \"...\"\n"
+            "    Anonymous has \"...\"\n"
+            "Authentication provider (stub, okta, etc.) lives in deploy config."
+        )
     if rule == "scopes_line":
         r = P(text, rule); return ("scopes", _ql(r.get("scopes")) if r else _eqs(text))
     if rule == "role_standard_line":

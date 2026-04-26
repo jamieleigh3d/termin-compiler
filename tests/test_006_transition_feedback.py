@@ -38,9 +38,9 @@ class TestTransitionFeedbackParsing:
         src = f'''Application: Test
   Description: Test
 
-Users authenticate with stub
-Scopes are "manage"
-A "user" has "manage"
+Identity:
+  Scopes are "manage"
+  A "user" has "manage"
 
 Content called "items":
   Each item has a name which is text
@@ -142,9 +142,9 @@ class TestTransitionFeedbackIR:
         src = f'''Application: Test
   Description: Test
 
-Users authenticate with stub
-Scopes are "manage"
-A "user" has "manage"
+Identity:
+  Scopes are "manage"
+  A "user" has "manage"
 
 Content called "items":
   Each item has a name which is text
@@ -252,9 +252,9 @@ class TestFeedbackIRSerialization:
         src = '''Application: Test
   Description: Test
 
-Users authenticate with stub
-Scopes are "manage"
-A "user" has "manage"
+Identity:
+  Scopes are "manage"
+  A "user" has "manage"
 
 Content called "items":
   Each item has a name which is text

@@ -120,9 +120,9 @@ class TestVerbLowering:
         src = f'''Application: Test
   Description: Test
 
-Users authenticate with stub
-Scopes are "read", "write", and "admin"
-A "user" has "read" and "write"
+Identity:
+  Scopes are "read", "write", and "admin"
+  A "user" has "read" and "write"
 
 Content called "items":
   Each item has a name which is text
@@ -172,9 +172,9 @@ Content called "items":
         src = '''Application: Test
   Description: Test
 
-Users authenticate with stub
-Scopes are "read"
-A "user" has "read"
+Identity:
+  Scopes are "read"
+  A "user" has "read"
 
 Content called "items":
   Each item has a name which is text

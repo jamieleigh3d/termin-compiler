@@ -395,8 +395,8 @@ class TestSecurityInvariants:
     def test_compile_rejects_missing_access_rules(self):
         from termin.peg_parser import parse_peg as parse
         from termin.analyzer import analyze
-        source = ('Users authenticate with stub\nScopes are "read"\n'
-                  'A "user" has "read"\n'
+        source = ('Identity:\n  Scopes are "read"\n'
+                  '  A "user" has "read"\n'
                   'Content called "broken":\n  Each broken has a name which is text\n')
         program, _ = parse(source)
         result = analyze(program)
@@ -406,8 +406,8 @@ class TestSecurityInvariants:
     def test_compile_rejects_undefined_reference(self):
         from termin.peg_parser import parse_peg as parse
         from termin.analyzer import analyze
-        source = ('Users authenticate with stub\nScopes are "read"\n'
-                  'A "user" has "read"\n'
+        source = ('Identity:\n  Scopes are "read"\n'
+                  '  A "user" has "read"\n'
                   'Content called "items":\n'
                   '  Each item has a ref which references ghosts, required\n'
                   '  Anyone with "read" can view items\n')

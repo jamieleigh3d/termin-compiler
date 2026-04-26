@@ -2,12 +2,11 @@ Application: Security Agent
   Description: Autonomous agent that patrols the app fabric for security issues, auto-remediates safe fixes, and escalates findings that require human judgment
 Id: 33902654-92f7-460e-9002-64e0a5a07d16
 
-Users authenticate with oidc
-Scopes are "findings.view", "findings.triage", "findings.remediate", and "alerts.send"
-
-A "platform engineer" has "findings.view", "findings.triage", "findings.remediate", and "alerts.send"
-A "security reviewer" has "findings.view" and "findings.triage"
-An "app owner" has "findings.view"
+Identity:
+  Scopes are "findings.view", "findings.triage", "findings.remediate", and "alerts.send"
+  A "platform engineer" has "findings.view", "findings.triage", "findings.remediate", and "alerts.send"
+  A "security reviewer" has "findings.view" and "findings.triage"
+  An "app owner" has "findings.view"
 
 Content called "findings":
   Each finding has an app name which is text, required

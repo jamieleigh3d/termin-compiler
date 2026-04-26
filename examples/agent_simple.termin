@@ -2,10 +2,9 @@ Application: Agent Simple
   Description: Minimal AI agent — submit a prompt, get a completion
 Id: 2b909f99-d936-4469-843c-2fdc6aceef60
 
-Users authenticate with stub
-Scopes are "agent.use"
-
-An "anonymous" has "agent.use"
+Identity:
+  Scopes are "agent.use"
+  Anonymous has "agent.use"
 
 Content called "completions":
   Each completion has a prompt which is text, required

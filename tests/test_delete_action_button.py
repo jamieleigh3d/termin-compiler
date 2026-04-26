@@ -52,10 +52,10 @@ class TestParseDeleteAction:
         """Shared preamble for parser tests: a minimal valid program
         that declares a Delete action on products."""
         return f'''Application: Test
-Users authenticate with stub
-Scopes are "read", "write", and "admin"
-A "clerk" has "read" and "write"
-A "manager" has "read", "write", and "admin"
+Identity:
+  Scopes are "read", "write", and "admin"
+  A "clerk" has "read" and "write"
+  A "manager" has "read", "write", and "admin"
 
 Content called "products":
   Each product has a name which is text, required
@@ -109,9 +109,9 @@ As a manager, I want to manage products:
     def test_existing_transition_action_still_parses(self):
         """Regression guard: adding Delete must not break transitions."""
         src = '''Application: Test
-Users authenticate with stub
-Scopes are "read" and "write"
-A "user" has "read" and "write"
+Identity:
+  Scopes are "read" and "write"
+  A "user" has "read" and "write"
 
 Content called "tickets":
   Each ticket has a title which is text, required
@@ -143,9 +143,9 @@ class TestAnalyzeDeleteAction:
     """Semantic checks around the Delete action."""
 
     VALID = '''Application: Test
-Users authenticate with stub
-Scopes are "read", "write", and "admin"
-A "manager" has "read", "write", and "admin"
+Identity:
+  Scopes are "read", "write", and "admin"
+  A "manager" has "read", "write", and "admin"
 
 Content called "products":
   Each product has a name which is text, required
@@ -160,9 +160,9 @@ As a manager, I want to manage products:
 '''
 
     NO_DELETE_RULE = '''Application: Test
-Users authenticate with stub
-Scopes are "read" and "write"
-A "user" has "read" and "write"
+Identity:
+  Scopes are "read" and "write"
+  A "user" has "read" and "write"
 
 Content called "products":
   Each product has a name which is text, required
@@ -201,9 +201,9 @@ class TestLowerDeleteAction:
     with action='delete' and the correct required_scope."""
 
     SRC = '''Application: Test
-Users authenticate with stub
-Scopes are "read", "write", and "admin"
-A "manager" has "read", "write", and "admin"
+Identity:
+  Scopes are "read", "write", and "admin"
+  A "manager" has "read", "write", and "admin"
 
 Content called "products":
   Each product has a name which is text, required

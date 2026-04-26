@@ -666,7 +666,10 @@ class TestSecurityAgentFidelity:
         assert self.spec.name == "Security Agent"
 
     def test_auth_provider(self):
-        assert self.spec.auth.provider == "oidc"
+        # In v0.9 the auth provider lives in deploy config, not in the
+        # `.termin` source. The assembler defaults provider="stub" as a
+        # sentinel when no deploy override is present.
+        assert self.spec.auth.provider == "stub"
 
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}

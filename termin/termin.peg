@@ -38,6 +38,18 @@ id_line
 # ==================================================================
 # IDENTITY
 # ==================================================================
+#
+# v0.9: top-level Identity: opens a sub-block holding scopes + roles
+# + Anonymous. Sub-block lines are scopes_line + role_*_line; the
+# assembler enforces that they appear after the opener. The v0.8
+# top-level `Users authenticate with X` line is removed entirely;
+# its handler raises a v0.9-migration error to guide users to the
+# new shape. Identity provider product names (stub, okta, etc.) live
+# in the deploy config, not source.
+
+identity_block_open_line
+    = 'Identity' ':' $
+    ;
 
 identity_line
     = 'Users' 'authenticate' 'with' provider:word $

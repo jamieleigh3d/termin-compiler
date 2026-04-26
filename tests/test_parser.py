@@ -17,29 +17,10 @@ def test_parse_application():
     assert program.application.description == "A test app"
 
 
-def test_parse_identity():
-    program, errors = parse(
-        'Users authenticate with stub\n'
-        'Scopes are "read", "write", and "admin"'
-    )
-    assert errors.ok
-    assert program.identity.provider == "stub"
-    assert program.identity.scopes == ["read", "write", "admin"]
-
-
-def test_parse_roles():
-    program, errors = parse(
-        'Users authenticate with stub\n'
-        'Scopes are "read" and "write"\n'
-        'A "user" has "read"\n'
-        'A "admin" has "read" and "write"'
-    )
-    assert errors.ok
-    assert len(program.roles) == 2
-    assert program.roles[0].name == "user"
-    assert program.roles[0].scopes == ["read"]
-    assert program.roles[1].name == "admin"
-    assert program.roles[1].scopes == ["read", "write"]
+# test_parse_identity and test_parse_roles removed in v0.9: they tested the
+# v0.8 top-level `Users authenticate with X` and bare `Scopes are`/`A "..."
+# has` lines that no longer exist as top-level grammar. v0.9 coverage of the
+# Identity: block lives in TestStateMachineFieldType::test_v09_identity_block_basic.
 
 
 def test_parse_content_fields():
@@ -403,7 +384,11 @@ def test_parse_inline_page():
 
 
 def test_parse_bare_role():
-    program, errors = parse('Anonymous has "view" and "write"')
+    program, errors = parse(
+        'Identity:\n'
+        '  Scopes are "view" and "write"\n'
+        '  Anonymous has "view" and "write"'
+    )
     assert errors.ok, errors.format()
     assert program.roles[0].name == "Anonymous"
     assert program.roles[0].scopes == ["view", "write"]
@@ -519,7 +504,7 @@ def test_parse_hello_example():
     assert errors.ok, errors.format()
     assert program.application.name == "Hello World"
     assert len(program.stories) == 1
-    assert program.stories[0].role == "anonymous"
+    assert program.stories[0].role == "Anonymous"
 
 
 def test_parse_compute_demo():
@@ -914,9 +899,9 @@ As a "Manager", I want to manage products:
     def _wrap(self, content_block: str, extras: str = "") -> str:
         """Helper: wrap a content block in a minimal valid program."""
         return f'''Application: Test
-Users authenticate with stub
-Scopes are "catalog.manage", "approvals.approve", and "ops.confirm"
-A "Manager" has "catalog.manage", "approvals.approve", and "ops.confirm"
+Identity:
+  Scopes are "catalog.manage", "approvals.approve", and "ops.confirm"
+  A "Manager" has "catalog.manage", "approvals.approve", and "ops.confirm"
 
 {content_block}
 {extras}'''
@@ -1194,6 +1179,95 @@ Content called "products":
         assert errors.ok, errors.format()
         assert len(program.contents) == 1
         assert len(program.state_machines) == 1
+
+    def test_v09_identity_block_basic(self):
+        """v0.9 Phase 1: Identity: block opener at column zero
+        introduces a sub-block holding scopes + roles + Anonymous.
+        Top-level `Users authenticate with X` is removed entirely."""
+        src = '''Application: Test
+Id: c9222f35-1f92-4426-99fc-a97c06243254
+
+Identity:
+  Scopes are "app.view"
+  A "user" has "app.view"
+  Anonymous has "app.view"
+
+Content called "documents":
+  Each document has a title which is text, required
+  Anyone with "app.view" can view documents
+'''
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        # Identity contains scopes; roles list contains user + Anonymous.
+        assert program.identity is not None
+        assert "app.view" in program.identity.scopes
+        names = {r.name for r in program.roles}
+        assert "user" in names
+        assert "Anonymous" in names
+
+    def test_v09_users_authenticate_line_rejected(self):
+        """The v0.8 top-level `Users authenticate with X` line is
+        removed in v0.9. Sources that still use it must error
+        clearly so the user knows to migrate."""
+        src = '''Application: Test
+Id: c9222f35-1f92-4426-99fc-a97c06243254
+
+Users authenticate with stub
+Scopes are "app.view"
+A "user" has "app.view"
+
+Content called "documents":
+  Each document has a title which is text
+  Anyone with "app.view" can view documents
+'''
+        program, errors = parse(src)
+        assert not errors.ok, "v0.8 top-level identity lines must error in v0.9"
+        msg = errors.format()
+        # The error should mention either the `Identity:` block or
+        # the removed line — guides the user toward migration.
+        assert "Identity" in msg or "authenticate" in msg.lower()
+
+    def test_v09_top_level_scopes_without_block_rejected(self):
+        """Top-level `Scopes are` outside the Identity block is also
+        removed. The Identity block is the only home for scopes."""
+        src = '''Application: Test
+Id: c9222f35-1f92-4426-99fc-a97c06243254
+
+Scopes are "app.view"
+A "user" has "app.view"
+
+Content called "documents":
+  Each document has a title which is text
+  Anyone with "app.view" can view documents
+'''
+        program, errors = parse(src)
+        assert not errors.ok
+        msg = errors.format()
+        assert "Identity" in msg
+
+    def test_v09_identity_block_with_multiple_roles(self):
+        """Identity block with 3+ roles, multi-scope grants, Oxford
+        comma scope lists. Mirrors the warehouse example shape."""
+        src = '''Application: Test
+Id: c9222f35-1f92-4426-99fc-a97c06243254
+
+Identity:
+  Scopes are "inventory.read", "inventory.write", and "inventory.admin"
+  A "warehouse clerk" has "inventory.read" and "inventory.write"
+  A "warehouse manager" has "inventory.read", "inventory.write", and "inventory.admin"
+  An "executive" has "inventory.read"
+  Anonymous has "inventory.read"
+
+Content called "products":
+  Each product has a name which is text, required
+  Anyone with "inventory.read" can view products
+'''
+        program, errors = parse(src)
+        assert errors.ok, errors.format()
+        scopes = set(program.identity.scopes)
+        assert {"inventory.read", "inventory.write", "inventory.admin"} <= scopes
+        names = {r.name for r in program.roles}
+        assert names == {"warehouse clerk", "warehouse manager", "executive", "Anonymous"}
 
     def test_multiline_parenthetical_with_blank_lines_inside(self):
         """Multi-line parens may contain blank lines — common when

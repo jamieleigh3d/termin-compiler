@@ -2,11 +2,11 @@ Application: Approval Workflow
   Description: Document lifecycle and approval management. Demonstrates v0.9 multi-state-machine: each document carries two independent state fields (lifecycle and approval status), each with its own transitions, scope gates, and audit trail.
 Id: c9222f35-1f92-4426-99fc-a97c06243254
 
-Users authenticate with cookie
-Scopes are "docs.edit", "docs.approve", and "docs.admin"
-An "editor" has "docs.edit"
-An "approver" has "docs.approve"
-An "admin" has "docs.edit", "docs.approve", and "docs.admin"
+Identity:
+  Scopes are "docs.edit", "docs.approve", and "docs.admin"
+  An "editor" has "docs.edit"
+  An "approver" has "docs.approve"
+  An "admin" has "docs.edit", "docs.approve", and "docs.admin"
 
 Content called "documents":
   Each document has a title which is text, required

@@ -2,16 +2,11 @@ Application: Project Management Board
   Description: Track projects, sprints, and tasks from backlog to done
 Id: 98883884-b402-42a0-858f-20defd9f1184
 
---- Identity ---
-
-Users authenticate with stub
-Scopes are "projects.view", "tasks.manage", "sprints.manage", and "projects.admin"
-
---- Roles ---
-
-A "developer" has "projects.view" and "tasks.manage"
-A "project manager" has "projects.view", "tasks.manage", "sprints.manage", and "projects.admin"
-A "stakeholder" has "projects.view"
+Identity:
+  Scopes are "projects.view", "tasks.manage", "sprints.manage", and "projects.admin"
+  A "developer" has "projects.view" and "tasks.manage"
+  A "project manager" has "projects.view", "tasks.manage", "sprints.manage", and "projects.admin"
+  A "stakeholder" has "projects.view"
 
 --- Content ---
 

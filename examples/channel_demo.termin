@@ -2,16 +2,11 @@ Application: Incident Response Hub
   Description: Demonstrates all Channel patterns — data, action, hybrid, streaming, and event-driven sends
 Id: e4f29a81-6c33-4f2d-b1a9-2c8e5d73f410
 
---- Identity ---
-
-Users authenticate with stub
-Scopes are "incidents.view", "incidents.manage", "infra.operate", "alerts.send", and "deploy.read"
-
---- Roles ---
-
-A "responder" has "incidents.view", "incidents.manage", and "alerts.send"
-An "operator" has "incidents.view", "incidents.manage", "infra.operate", "alerts.send", and "deploy.read"
-A "viewer" has "incidents.view"
+Identity:
+  Scopes are "incidents.view", "incidents.manage", "infra.operate", "alerts.send", and "deploy.read"
+  A "responder" has "incidents.view", "incidents.manage", and "alerts.send"
+  An "operator" has "incidents.view", "incidents.manage", "infra.operate", "alerts.send", and "deploy.read"
+  A "viewer" has "incidents.view"
 
 --- Content ---
 

@@ -76,6 +76,13 @@ def classify_line(text: str) -> str:
 
     Returns the rule name string, or "unknown" if unrecognized.
     """
+    # v0.9 Phase 1: top-level `Identity:` (exact, bare) opens the
+    # Identity sub-block. Must dispatch before the prefix loop so
+    # the existing ('Identity:', 'compute_identity_line') prefix
+    # entry doesn't shadow it. Indented `Identity: service` (with a
+    # mode word after) inside Compute blocks still classifies as
+    # compute_identity_line via the prefix loop.
+    if text == "Identity:": return "identity_block_open_line"
     # Transition feedback must be checked early — CEL messages can contain " has " which triggers role_bare_line
     if text.startswith(("success ", "error ")) and " shows " in text: return "transition_feedback_line"
     if text.startswith('"') and " is alias for " in text: return "role_alias_line"

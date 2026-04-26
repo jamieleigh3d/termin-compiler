@@ -139,13 +139,42 @@ def _assemble(parsed: list) -> Program:
         elif k == "app_id":
             if prog.application: prog.application.app_id = item[1]
             i += 1
-        elif k == "identity": prog.identity = item[1]; i += 1
-        elif k == "scopes":
-            if prog.identity: prog.identity.scopes = item[1]
-            else: prog.identity = Identity(provider="stub", scopes=item[1])
+        elif k == "identity_block_open":
+            # v0.9 Phase 1: Identity: block opener creates the
+            # Identity AST node. Subsequent scopes / role / role_alias
+            # tags attach to it.
+            prog.identity = item[1]
             i += 1
-        elif k == "role": prog.roles.append(item[1]); i += 1
-        elif k == "role_alias": prog.role_aliases.append(item[1]); i += 1
+        elif k == "scopes":
+            if prog.identity is None:
+                # v0.9 Phase 1: top-level Scopes are without an
+                # Identity: block opener is invalid. Surface a
+                # migration error rather than silently auto-creating
+                # an Identity (the v0.8 behavior).
+                raise ValueError(
+                    "`Scopes are \"...\"` must appear inside an "
+                    "`Identity:` block in v0.9. Wrap your scopes + "
+                    "roles + Anonymous lines under a top-level "
+                    "`Identity:` line."
+                )
+            prog.identity.scopes = item[1]
+            i += 1
+        elif k == "role":
+            if prog.identity is None:
+                raise ValueError(
+                    f"Role declaration `{item[1].name}` must appear "
+                    f"inside an `Identity:` block in v0.9. Wrap your "
+                    f"scopes + roles + Anonymous lines under a "
+                    f"top-level `Identity:` line."
+                )
+            prog.roles.append(item[1]); i += 1
+        elif k == "role_alias":
+            if prog.identity is None:
+                raise ValueError(
+                    "Role alias declaration must appear inside an "
+                    "`Identity:` block in v0.9."
+                )
+            prog.role_aliases.append(item[1]); i += 1
         elif k == "content_header":
             ct = item[1]; i += 1
             current_sm = None  # active state machine being built (for inline `which is state:` fields)

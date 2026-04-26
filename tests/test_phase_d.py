@@ -26,11 +26,10 @@ VALID_BASE = '''\
 Application: Phase D Test
   Description: Tests for Phase D features
 
-Users authenticate with stub
-Scopes are "orders.read", "orders.write", and "orders.admin"
-
-An "order clerk" has "orders.read" and "orders.write"
-An "order manager" has "orders.read", "orders.write", and "orders.admin"
+Identity:
+  Scopes are "orders.read", "orders.write", and "orders.admin"
+  An "order clerk" has "orders.read" and "orders.write"
+  An "order manager" has "orders.read", "orders.write", and "orders.admin"
 
 Content called "orders":
   Each order has a customer which is text, required
@@ -271,10 +270,9 @@ D19_BASE = '''\
 Application: D-19 Test
   Description: Dependent field values test
 
-Users authenticate with stub
-Scopes are "orders.read" and "orders.write"
-
-An "order clerk" has "orders.read" and "orders.write"
+Identity:
+  Scopes are "orders.read" and "orders.write"
+  An "order clerk" has "orders.read" and "orders.write"
 
 Content called "laptop orders":
   Each order has a size which is an enum, is one of: "14-inch", "16-inch"
@@ -341,8 +339,8 @@ class TestD19Parser:
 Application: Is One Of Test
   Description: Test
 
-Users authenticate with stub
-Scopes are "read"
+Identity:
+  Scopes are "read"
 
 Content called "orders":
   Each order has a ram which is a whole number, is one of: 8, 16, 24, 32
@@ -382,8 +380,8 @@ class TestD19IR:
 Application: One Of IR Test
   Description: Test
 
-Users authenticate with stub
-Scopes are "read"
+Identity:
+  Scopes are "read"
 
 Content called "orders":
   Each order has a ram which is a whole number, is one of: 8, 16, 24
@@ -404,8 +402,8 @@ class TestD19Analyzer:
 Application: Analyzer Test
   Description: Test
 
-Users authenticate with stub
-Scopes are "read" and "write"
+Identity:
+  Scopes are "read" and "write"
 
 Content called "orders":
   Each order has a size which is an enum, is one of: "14-inch", "16-inch"
@@ -426,8 +424,8 @@ Content called "orders":
 Application: Exhaustiveness Test
   Description: Test
 
-Users authenticate with stub
-Scopes are "read" and "write"
+Identity:
+  Scopes are "read" and "write"
 
 Content called "laptops":
   Each laptop has a size which is one of: "small", "medium", "large"

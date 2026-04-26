@@ -67,11 +67,10 @@ COMPUTE_WITH_AUDIT = """\
 Application: Audit Demo
   Description: Tests D-20 agent observability
 
-Users authenticate with stub
-Scopes are "items.read", "items.write", and "compute.audit"
-
-A "user" has "items.read" and "items.write"
-An "auditor" has "items.read" and "compute.audit"
+Identity:
+  Scopes are "items.read", "items.write", and "compute.audit"
+  A "user" has "items.read" and "items.write"
+  An "auditor" has "items.read" and "compute.audit"
 
 Content called "items":
   Each item has a name which is text, required
@@ -91,10 +90,9 @@ COMPUTE_AUDIT_DEBUG = """\
 Application: Debug Audit
   Description: Compute with debug audit level
 
-Users authenticate with stub
-Scopes are "items.read", "items.write", and "debug.audit"
-
-A "user" has "items.read" and "items.write"
+Identity:
+  Scopes are "items.read", "items.write", and "debug.audit"
+  A "user" has "items.read" and "items.write"
 
 Content called "items":
   Each item has a name which is text, required
@@ -113,10 +111,9 @@ COMPUTE_AUDIT_NONE = """\
 Application: No Audit
   Description: Compute with audit disabled
 
-Users authenticate with stub
-Scopes are "items.read" and "items.write"
-
-A "user" has "items.read" and "items.write"
+Identity:
+  Scopes are "items.read" and "items.write"
+  A "user" has "items.read" and "items.write"
 
 Content called "items":
   Each item has a name which is text, required
@@ -134,10 +131,9 @@ COMPUTE_DEFAULT_AUDIT = """\
 Application: Default Audit
   Description: Compute with default audit level (actions)
 
-Users authenticate with stub
-Scopes are "items.read", "items.write", and "audit.scope"
-
-A "user" has "items.read" and "items.write"
+Identity:
+  Scopes are "items.read", "items.write", and "audit.scope"
+  A "user" has "items.read" and "items.write"
 
 Content called "items":
   Each item has a name which is text, required
@@ -155,10 +151,9 @@ MULTIPLE_COMPUTES = """\
 Application: Multi Compute
   Description: Multiple computes each get their own audit log
 
-Users authenticate with stub
-Scopes are "items.read", "items.write", "reports.read", and "ops.audit"
-
-A "user" has "items.read" and "items.write"
+Identity:
+  Scopes are "items.read", "items.write", "reports.read", and "ops.audit"
+  A "user" has "items.read" and "items.write"
 
 Content called "items":
   Each item has a name which is text, required
@@ -186,10 +181,9 @@ AGENT_WITH_AUDIT = """\
 Application: Agent Audit
   Description: AI agent compute with audit
 
-Users authenticate with stub
-Scopes are "items.read", "items.write", and "agent.audit"
-
-A "user" has "items.read" and "items.write"
+Identity:
+  Scopes are "items.read", "items.write", and "agent.audit"
+  A "user" has "items.read" and "items.write"
 
 Content called "items":
   Each item has a name which is text, required

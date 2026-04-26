@@ -2,10 +2,9 @@ Application: Channel Simple
   Description: Minimal channel demo with loopback — outbound channel sends to the app's own inbound webhook, proving the full dispatch pipeline without external services
 Id: b7e1c3a0-4f89-4d1e-a293-8c0d1f6e2b57
 
-Users authenticate with stub
-Scopes are "messages.all"
-
-An "anonymous" has "messages.all"
+Identity:
+  Scopes are "messages.all"
+  Anonymous has "messages.all"
 
 Content called "notes":
   Each note has a title which is text, required

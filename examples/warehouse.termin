@@ -2,16 +2,11 @@ Application: Warehouse Inventory Manager
   Description: Track products and stock levels across warehouses
 Id: 3e157422-d10c-4a2b-b6c3-9f80fc80f27b
 
---- Identity ---
-
-Users authenticate with stub
-Scopes are "inventory.read", "inventory.write", and "inventory.admin"
-
---- Roles ---
-
-A "warehouse clerk" has "inventory.read" and "inventory.write"
-A "warehouse manager" has "inventory.read", "inventory.write", and "inventory.admin"
-An "executive" has "inventory.read"
+Identity:
+  Scopes are "inventory.read", "inventory.write", and "inventory.admin"
+  A "warehouse clerk" has "inventory.read" and "inventory.write"
+  A "warehouse manager" has "inventory.read", "inventory.write", and "inventory.admin"
+  An "executive" has "inventory.read"
 
 --- Content ---
 

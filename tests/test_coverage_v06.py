@@ -31,7 +31,7 @@ class TestWhenClauseParsing:
         """When clause with 'must be' (equals constraint)."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "products":\n'
             '  Each product has a size which is one of: "small", "medium", "large"\n'
             '  Each product has a color which is text\n'
@@ -49,7 +49,7 @@ class TestWhenClauseParsing:
         """When clause with 'defaults to' constraint."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "products":\n'
             '  Each product has a size which is one of: "small", "medium", "large"\n'
             '  Each product has a color which is text\n'
@@ -91,7 +91,7 @@ class TestWhenClauseParsing:
         """Unconditional 'field must be one of:' should parse correctly."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a priority which is text\n'
             '  Anyone with "admin" can create items\n'
@@ -109,7 +109,7 @@ class TestWhenClauseParsing:
         """Field declared with 'is one of:' should parse correctly."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a priority which is one of: "low", "medium", "high"\n'
             '  Anyone with "admin" can create items\n'
@@ -877,7 +877,7 @@ class TestParserErrorPaths:
         """When clause with unclosed backtick should fail gracefully."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a name which is text\n'
             '  Anyone with "admin" can create items\n'
@@ -890,7 +890,7 @@ class TestParserErrorPaths:
         """When clause without comma after condition."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a name which is text\n'
             '  Anyone with "admin" can create items\n'
@@ -902,7 +902,7 @@ class TestParserErrorPaths:
         """When clause with condition but no must be / defaults to."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a name which is text\n'
             '  Anyone with "admin" can create items\n'
@@ -951,7 +951,7 @@ class TestParserErrorPaths:
         """'is one of: ... , required' should strip the required keyword from values."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a priority which is one of: "low", "high", required\n'
             '  Anyone with "admin" can create items\n'
@@ -1023,7 +1023,7 @@ class TestAnalyzerFuzzyMatchBranches:
         """Typo in transition from_state should trigger fuzzy match."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "tickets":\n'
             '  Each ticket has a title which is text\n'
             '  Each ticket has a status which is state:\n'
@@ -1042,7 +1042,7 @@ class TestAnalyzerFuzzyMatchBranches:
         """Typo in transition scope should trigger fuzzy match."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "tickets":\n'
             '  Each ticket has a title which is text\n'
             '  Each ticket has a status which is state:\n'
@@ -1061,7 +1061,7 @@ class TestAnalyzerFuzzyMatchBranches:
         """Typo in Accesses content name should trigger fuzzy match."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "tickets":\n'
             '  Each ticket has a title which is text\n'
             '  Anyone with "admin" can create tickets\n\n'
@@ -1081,7 +1081,7 @@ class TestAnalyzerFuzzyMatchBranches:
         """Typo in Output creates content should trigger fuzzy match."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "tickets":\n'
             '  Each ticket has a title which is text\n'
             '  Anyone with "admin" can create tickets\n\n'
@@ -1104,7 +1104,7 @@ class TestAnalyzerFuzzyMatchBranches:
         """Typo in event action create content should trigger fuzzy match (line 277)."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "tickets":\n'
             '  Each ticket has a title which is text\n'
             '  Anyone with "admin" can create tickets\n\n'
@@ -1120,7 +1120,7 @@ class TestAnalyzerFuzzyMatchBranches:
         """Error handler with typo in source should trigger fuzzy match (line 676)."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "tickets":\n'
             '  Each ticket has a title which is text\n'
             '  Anyone with "admin" can create tickets\n\n'
@@ -1138,7 +1138,7 @@ class TestAnalyzerFuzzyMatchBranches:
         """Typo in channel requirement scope should trigger fuzzy match (line 536)."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a name which is text\n'
             '  Anyone with "admin" can create items\n\n'
@@ -1159,7 +1159,7 @@ class TestAnalyzerFuzzyMatchBranches:
         """Typo in Compute output content should trigger fuzzy match (line 463)."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a name which is text\n'
             '  Anyone with "admin" can create items\n\n'
@@ -1177,7 +1177,7 @@ class TestAnalyzerFuzzyMatchBranches:
         """Lowering a program with dependent values produces DependentValueSpec (line 238)."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a size which is one of: "small", "large"\n'
             '  Each item has a color which is text\n'
@@ -1199,7 +1199,7 @@ class TestAnalyzerFuzzyMatchBranches:
         """Lowering 'must be' produces equals DependentValueSpec (line 238)."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a size which is one of: "small", "large"\n'
             '  Each item has a color which is text\n'
@@ -1219,7 +1219,7 @@ class TestAnalyzerFuzzyMatchBranches:
         """Typo in Compute required scope should trigger fuzzy match."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a name which is text\n'
             '  Anyone with "admin" can create items\n\n'
@@ -1274,9 +1274,9 @@ class TestCLIJsonErrors:
         src = tmp_path / "bad_ref.termin"
         src.write_text(
             'Application: Test\n  Description: test\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "admin"\n'
-            'A "admin" has "admin"\n\n'
+            'Identity:\n'
+            '  Scopes are "admin"\n'
+            '  A "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a name which is text\n'
             '  Anyone with "admin" can view items\n\n'
@@ -1297,7 +1297,7 @@ class TestAnalyzerFuzzyMatch:
     def test_boundary_contains_typo_gets_suggestion(self):
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "orders":\n'
             '  Each order has a title which is text\n'
             '  Anyone with "admin" can view orders\n\n'
@@ -1317,7 +1317,7 @@ class TestAnalyzerFuzzyMatch:
         """Boundary restricting to undefined scope should error with TERMIN-X006."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a name which is text\n'
             '  Anyone with "admin" can view items\n\n'
@@ -1335,7 +1335,7 @@ class TestAnalyzerFuzzyMatch:
         """Error handler referencing undefined primitive should error."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a name which is text\n'
             '  Anyone with "admin" can view items\n\n'
@@ -1351,7 +1351,7 @@ class TestAnalyzerFuzzyMatch:
     def test_dependent_value_undefined_field_gets_suggestion(self):
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\nScopes are "admin"\nA "admin" has "admin"\n\n'
+            'Identity:\n  Scopes are "admin"\n  A "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a color which is text\n'
             '  Anyone with "admin" can create items\n'

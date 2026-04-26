@@ -73,10 +73,10 @@ class TestParserFeatureCoverage:
         """State machine parsing exercises transition fallback paths."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "view", "edit", and "admin"\n'
-            'An "editor" has "view" and "edit"\n'
-            'An "admin" has "view", "edit", and "admin"\n\n'
+            'Identity:\n'
+            '  Scopes are "view", "edit", and "admin"\n'
+            '  An "editor" has "view" and "edit"\n'
+            '  An "admin" has "view", "edit", and "admin"\n\n'
             'Content called "tasks":\n'
             '  Each task has a title which is text, required\n'
             '  Each task has a priority which is one of: "low", "medium", "high"\n'
@@ -103,8 +103,8 @@ class TestParserFeatureCoverage:
         """Event with create action exercises event parsing."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "admin"\nAn "admin" has "admin"\n\n'
+            'Identity:\n'
+            '  Scopes are "admin"\n  An "admin" has "admin"\n\n'
             'Content called "orders":\n'
             '  Each order has a customer which is text\n'
             '  Anyone with "admin" can create or view orders\n\n'
@@ -121,8 +121,8 @@ class TestParserFeatureCoverage:
         """Display directives exercise presentation parsing."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "view"\nA "viewer" has "view"\n\n'
+            'Identity:\n'
+            '  Scopes are "view"\n  A "viewer" has "view"\n\n'
             'Content called "products":\n'
             '  Each product has a name which is text, required\n'
             '  Each product has a category which is one of: "A", "B", "C"\n'
@@ -146,8 +146,8 @@ class TestParserFeatureCoverage:
         """Form with submit exercises form parsing paths."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "edit"\nAn "editor" has "edit"\n\n'
+            'Identity:\n'
+            '  Scopes are "edit"\n  An "editor" has "edit"\n\n'
             'Content called "notes":\n'
             '  Each note has a title which is text, required\n'
             '  Each note has a body which is long text\n'
@@ -173,8 +173,8 @@ class TestParserFeatureCoverage:
         """Channel with typed RPC actions exercises channel parsing."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "admin"\nAn "admin" has "admin"\n\n'
+            'Identity:\n'
+            '  Scopes are "admin"\n  An "admin" has "admin"\n\n'
             'Content called "orders":\n'
             '  Each order has a title which is text\n'
             '  Anyone with "admin" can create or view orders\n\n'
@@ -198,8 +198,8 @@ class TestParserFeatureCoverage:
         """Event with Send to channel exercises event send parsing."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "admin"\nAn "admin" has "admin"\n\n'
+            'Identity:\n'
+            '  Scopes are "admin"\n  An "admin" has "admin"\n\n'
             'Content called "orders":\n'
             '  Each order has a title which is text\n'
             '  Anyone with "admin" can create or view orders\n\n'
@@ -219,8 +219,8 @@ class TestParserFeatureCoverage:
         """Compute with CEL body exercises compute parsing."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "admin"\nAn "admin" has "admin"\n\n'
+            'Identity:\n'
+            '  Scopes are "admin"\n  An "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a value which is currency\n'
             '  Anyone with "admin" can view items\n\n'
@@ -236,8 +236,8 @@ class TestParserFeatureCoverage:
         """Compute with LLM provider exercises provider parsing."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "admin"\nAn "admin" has "admin"\n\n'
+            'Identity:\n'
+            '  Scopes are "admin"\n  An "admin" has "admin"\n\n'
             'Content called "summaries":\n'
             '  Each summary has a prompt which is text\n'
             '  Each summary has a response which is long text\n'
@@ -262,8 +262,8 @@ class TestParserFeatureCoverage:
         """Error handler exercises error handler parsing."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "admin"\nAn "admin" has "admin"\n\n'
+            'Identity:\n'
+            '  Scopes are "admin"\n  An "admin" has "admin"\n\n'
             'Content called "items":\n'
             '  Each item has a name which is text\n'
             '  Anyone with "admin" can create items\n\n'
@@ -277,8 +277,8 @@ class TestParserFeatureCoverage:
         """Mark rows as exercises semantic mark parsing."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "view"\nA "viewer" has "view"\n\n'
+            'Identity:\n'
+            '  Scopes are "view"\n  A "viewer" has "view"\n\n'
             'Content called "tasks":\n'
             '  Each task has a title which is text\n'
             '  Each task has a priority which is one of: "low", "high"\n'
@@ -296,8 +296,8 @@ class TestParserFeatureCoverage:
         """Related data display exercises related parsing."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "view"\nA "viewer" has "view"\n\n'
+            'Identity:\n'
+            '  Scopes are "view"\n  A "viewer" has "view"\n\n'
             'Content called "projects":\n'
             '  Each project has a name which is text\n'
             '  Anyone with "view" can view projects\n\n'
@@ -318,8 +318,8 @@ class TestParserFeatureCoverage:
         """Highlight expression exercises highlight parsing."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "view"\nA "viewer" has "view"\n\n'
+            'Identity:\n'
+            '  Scopes are "view"\n  A "viewer" has "view"\n\n'
             'Content called "items":\n'
             '  Each item has a quantity which is a whole number\n'
             '  Each item has a minimum which is a whole number\n'
@@ -337,8 +337,8 @@ class TestParserFeatureCoverage:
         """Text with CEL expression exercises text/expression parsing."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "view"\nA "viewer" has "view"\n\n'
+            'Identity:\n'
+            '  Scopes are "view"\n  A "viewer" has "view"\n\n'
             'Content called "items":\n'
             '  Each item has a name which is text\n'
             '  Anyone with "view" can view items\n\n'
@@ -362,8 +362,8 @@ class TestLoweringBranches:
         """WebSocket channel lowering."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "admin"\nAn "admin" has "admin"\n\n'
+            'Identity:\n'
+            '  Scopes are "admin"\n  An "admin" has "admin"\n\n'
             'Content called "events":\n'
             '  Each event has a data which is text\n'
             '  Anyone with "admin" can view events\n\n'
@@ -386,8 +386,8 @@ class TestLoweringBranches:
         """Multiple pages for same role exercises page merge logic."""
         source = (
             'Application: Test\n  Description: t\n\n'
-            'Users authenticate with stub\n'
-            'Scopes are "view"\nA "viewer" has "view"\n\n'
+            'Identity:\n'
+            '  Scopes are "view"\n  A "viewer" has "view"\n\n'
             'Content called "items":\n'
             '  Each item has a name which is text\n'
             '  Anyone with "view" can view items\n\n'

@@ -82,9 +82,9 @@ class TestChatDSLParsing:
   Description: Test chat parsing
 Id: 00000000-0000-0000-0000-000000000000
 
-Users authenticate with stub
-Scopes are "chat.use"
-An "anonymous" has "chat.use"
+Identity:
+  Scopes are "chat.use"
+  Anonymous has "chat.use"
 
 Content called "messages":
   Each message has a role which is one of: "user", "assistant"
@@ -115,9 +115,9 @@ As an anonymous, I want to chat
   Description: Test mapped chat
 Id: 00000000-0000-0000-0000-000000000001
 
-Users authenticate with stub
-Scopes are "chat.use"
-An "anonymous" has "chat.use"
+Identity:
+  Scopes are "chat.use"
+  Anonymous has "chat.use"
 
 Content called "chat messages":
   Each chat message has a sender which is text
@@ -145,9 +145,9 @@ As an anonymous, I want to chat
   Description: Test
 Id: 00000000-0000-0000-0000-000000000002
 
-Users authenticate with stub
-Scopes are "use"
-An "anonymous" has "use"
+Identity:
+  Scopes are "use"
+  Anonymous has "use"
 
 Content called "msgs":
   Each msg has a role which is text
@@ -176,9 +176,9 @@ class TestChatIRLowering:
   Description: Test chat IR
 Id: 00000000-0000-0000-0000-000000000010
 
-Users authenticate with stub
-Scopes are "chat.use"
-An "anonymous" has "chat.use"
+Identity:
+  Scopes are "chat.use"
+  Anonymous has "chat.use"
 
 Content called "messages":
   Each message has a role which is one of: "user", "assistant"
@@ -201,9 +201,9 @@ As an anonymous, I want to chat
   Description: Test chat props
 Id: 00000000-0000-0000-0000-000000000011
 
-Users authenticate with stub
-Scopes are "chat.use"
-An "anonymous" has "chat.use"
+Identity:
+  Scopes are "chat.use"
+  Anonymous has "chat.use"
 
 Content called "messages":
   Each message has a role which is one of: "user", "assistant"
@@ -226,9 +226,9 @@ As an anonymous, I want to chat
   Description: Test
 Id: 00000000-0000-0000-0000-000000000012
 
-Users authenticate with stub
-Scopes are "chat.use"
-An "anonymous" has "chat.use"
+Identity:
+  Scopes are "chat.use"
+  Anonymous has "chat.use"
 
 Content called "messages":
   Each message has a role which is one of: "user", "assistant"
@@ -252,9 +252,9 @@ As an anonymous, I want to chat
   Description: Test
 Id: 00000000-0000-0000-0000-000000000013
 
-Users authenticate with stub
-Scopes are "chat.use"
-An "anonymous" has "chat.use"
+Identity:
+  Scopes are "chat.use"
+  Anonymous has "chat.use"
 
 Content called "chat messages":
   Each chat message has a sender which is text
@@ -279,9 +279,9 @@ As an anonymous, I want to chat
   Description: Test
 Id: 00000000-0000-0000-0000-000000000014
 
-Users authenticate with stub
-Scopes are "chat.use"
-An "anonymous" has "chat.use"
+Identity:
+  Scopes are "chat.use"
+  Anonymous has "chat.use"
 
 Content called "messages":
   Each message has a role which is one of: "user", "assistant"
@@ -307,9 +307,9 @@ As an anonymous, I want to chat
   Description: Test
 Id: 00000000-0000-0000-0000-000000000015
 
-Users authenticate with stub
-Scopes are "chat.use"
-An "anonymous" has "chat.use"
+Identity:
+  Scopes are "chat.use"
+  Anonymous has "chat.use"
 
 Content called "messages":
   Each message has a role which is one of: "user", "assistant"
@@ -565,9 +565,9 @@ class TestChatIRSerialization:
   Description: Test
 Id: 00000000-0000-0000-0000-000000000020
 
-Users authenticate with stub
-Scopes are "chat.use"
-An "anonymous" has "chat.use"
+Identity:
+  Scopes are "chat.use"
+  Anonymous has "chat.use"
 
 Content called "messages":
   Each message has a role which is one of: "user", "assistant"

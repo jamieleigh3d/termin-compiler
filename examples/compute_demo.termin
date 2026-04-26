@@ -2,15 +2,10 @@ Application: Order Processing Demo
   Description: Demonstrates Compute, Channel, and Boundary primitives
 Id: 7bc65103-25fd-43c1-a8b0-7a5905bcc38b
 
---- Identity ---
-
-Users authenticate with stub
-Scopes are "orders.read", "orders.write", and "orders.admin"
-
---- Roles ---
-
-An "order clerk" has "orders.read" and "orders.write"
-An "order manager" has "orders.read", "orders.write", and "orders.admin"
+Identity:
+  Scopes are "orders.read", "orders.write", and "orders.admin"
+  An "order clerk" has "orders.read" and "orders.write"
+  An "order manager" has "orders.read", "orders.write", and "orders.admin"
 
 --- Content ---
 

@@ -36,9 +36,9 @@ def _compile_story_with_behavior(behavior_clause: str):
     unavailable behavior clause is `behavior_clause` (e.g. ", hide
     otherwise", ", disable otherwise", or "")."""
     src = f'''Application: Test
-Users authenticate with stub
-Scopes are "read" and "write"
-A "user" has "read" and "write"
+Identity:
+  Scopes are "read" and "write"
+  A "user" has "read" and "write"
 
 Content called "tickets":
   Each ticket has a title which is text, required

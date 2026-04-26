@@ -55,9 +55,9 @@ class TestParseEditAction:
 
     def _minimal_program_with_edit(self, edit_line: str) -> str:
         return f'''Application: Test
-Users authenticate with stub
-Scopes are "read", "write", and "admin"
-A "manager" has "read", "write", and "admin"
+Identity:
+  Scopes are "read", "write", and "admin"
+  A "manager" has "read", "write", and "admin"
 
 Content called "products":
   Each product has a name which is text, required
@@ -114,9 +114,9 @@ class TestAnalyzeEditAction:
     """Semantic checks around the Edit action."""
 
     VALID = '''Application: Test
-Users authenticate with stub
-Scopes are "read", "write", and "admin"
-A "manager" has "read", "write", and "admin"
+Identity:
+  Scopes are "read", "write", and "admin"
+  A "manager" has "read", "write", and "admin"
 
 Content called "products":
   Each product has a name which is text, required
@@ -131,9 +131,9 @@ As a manager, I want to manage products:
 '''
 
     NO_UPDATE_RULE = '''Application: Test
-Users authenticate with stub
-Scopes are "read"
-A "viewer" has "read"
+Identity:
+  Scopes are "read"
+  A "viewer" has "read"
 
 Content called "products":
   Each product has a name which is text, required
@@ -172,9 +172,9 @@ class TestLowerEditAction:
     with a form containing all non-system fields."""
 
     SRC = '''Application: Test
-Users authenticate with stub
-Scopes are "read", "write", and "admin"
-A "manager" has "read", "write", and "admin"
+Identity:
+  Scopes are "read", "write", and "admin"
+  A "manager" has "read", "write", and "admin"
 
 Content called "products":
   Each product has a SKU which is unique text, required

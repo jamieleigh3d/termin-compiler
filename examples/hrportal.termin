@@ -2,17 +2,12 @@ Application: HR Portal
   Description: Human Resources management with field-level confidentiality
 Id: f98a6e5e-a535-4212-adc4-a6f0e2707e5b
 
---- Identity ---
-
-Users authenticate with stub
-Scopes are "employees.view", "employees.manage", "salary.access", "pii.access", "team_metrics.view", and "hr.manage"
-
---- Roles ---
-
-An "employee" has "employees.view"
-A "manager" has "employees.view" and "team_metrics.view"
-An "hr business partner" has "employees.view", "employees.manage", "salary.access", "pii.access", "team_metrics.view", and "hr.manage"
-An "executive" has "employees.view" and "team_metrics.view"
+Identity:
+  Scopes are "employees.view", "employees.manage", "salary.access", "pii.access", "team_metrics.view", and "hr.manage"
+  An "employee" has "employees.view"
+  A "manager" has "employees.view" and "team_metrics.view"
+  An "hr business partner" has "employees.view", "employees.manage", "salary.access", "pii.access", "team_metrics.view", and "hr.manage"
+  An "executive" has "employees.view" and "team_metrics.view"
 
 --- Content ---
 

@@ -52,9 +52,9 @@ class TestParseInlineEdit:
 
     def _minimal_program(self, inline_line: str) -> str:
         return f'''Application: Test
-Users authenticate with stub
-Scopes are "read" and "write"
-A "user" has "read" and "write"
+Identity:
+  Scopes are "read" and "write"
+  A "user" has "read" and "write"
 
 Content called "products":
   Each product has a name which is text, required
@@ -101,9 +101,9 @@ class TestAnalyzeInlineEdit:
         return analyze(program)
 
     VALID = '''Application: Test
-Users authenticate with stub
-Scopes are "read" and "write"
-A "user" has "read" and "write"
+Identity:
+  Scopes are "read" and "write"
+  A "user" has "read" and "write"
 
 Content called "products":
   Each product has a name which is text, required
@@ -117,9 +117,9 @@ As a user, I want to manage products:
 '''
 
     NO_UPDATE_RULE = '''Application: Test
-Users authenticate with stub
-Scopes are "read"
-A "viewer" has "read"
+Identity:
+  Scopes are "read"
+  A "viewer" has "read"
 
 Content called "products":
   Each product has a name which is text
@@ -132,9 +132,9 @@ As a viewer, I want to browse products:
 '''
 
     UNKNOWN_FIELD = '''Application: Test
-Users authenticate with stub
-Scopes are "read" and "write"
-A "user" has "read" and "write"
+Identity:
+  Scopes are "read" and "write"
+  A "user" has "read" and "write"
 
 Content called "products":
   Each product has a name which is text
@@ -148,9 +148,9 @@ As a user, I want to manage products:
 '''
 
     STATE_FIELD_ATTEMPTED = '''Application: Test
-Users authenticate with stub
-Scopes are "read" and "write"
-A "user" has "read" and "write"
+Identity:
+  Scopes are "read" and "write"
+  A "user" has "read" and "write"
 
 Content called "products":
   Each product has a name which is text
@@ -199,9 +199,9 @@ class TestLowerInlineEdit:
     """data_table props gain `inline_editable_fields` and `update_scope`."""
 
     SRC = '''Application: Test
-Users authenticate with stub
-Scopes are "read", "write", and "admin"
-A "user" has "read", "write", and "admin"
+Identity:
+  Scopes are "read", "write", and "admin"
+  A "user" has "read", "write", and "admin"
 
 Content called "products":
   Each product has a name which is text, required

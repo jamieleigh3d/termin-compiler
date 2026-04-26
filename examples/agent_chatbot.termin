@@ -2,10 +2,9 @@ Application: Agent Chatbot
   Description: Conversational AI chatbot with message history
 Id: 0d0e2358-ffc7-4f3f-bc89-1af5ca363b1f
 
-Users authenticate with stub
-Scopes are "chat.use"
-
-An "anonymous" has "chat.use"
+Identity:
+  Scopes are "chat.use"
+  Anonymous has "chat.use"
 
 Content called "messages":
   Each message has a role which is one of: "user", "assistant", defaults to "user"

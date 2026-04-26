@@ -17,9 +17,9 @@ def _analyze(source: str):
     return analyze(program)
 
 
-VALID_BASE = '''Users authenticate with stub
-Scopes are "read" and "write"
-A "user" has "read" and "write"
+VALID_BASE = '''Identity:
+  Scopes are "read" and "write"
+  A "user" has "read" and "write"
 '''
 
 
@@ -43,9 +43,9 @@ Content called "items":
 
 
 def test_undefined_scope_in_role():
-    result = _analyze('''Users authenticate with stub
-Scopes are "read"
-A "user" has "read" and "nonexistent"
+    result = _analyze('''Identity:
+  Scopes are "read"
+  A "user" has "read" and "nonexistent"
 
 Content called "items":
   Each item has a name which is text
@@ -66,9 +66,9 @@ Content called "items":
 
 
 def test_undefined_scope_in_access_rule():
-    result = _analyze('''Users authenticate with stub
-Scopes are "read"
-A "user" has "read"
+    result = _analyze('''Identity:
+  Scopes are "read"
+  A "user" has "read"
 
 Content called "items":
   Each item has a name which is text
@@ -467,9 +467,9 @@ def test_compute_demo_passes():
 
 def test_audit_level_valid_values():
     """Valid audit levels should pass analysis."""
-    preamble = '''Users authenticate with stub
-Scopes are "read"
-A "user" has "read"
+    preamble = '''Identity:
+  Scopes are "read"
+  A "user" has "read"
 '''
     for level in ("actions", "debug", "none"):
         src = preamble + f'''Content called "events":
@@ -496,9 +496,9 @@ def test_audit_level_invalid_detected():
 
 def test_error_codes_present():
     """All errors should have error codes."""
-    src = '''Users authenticate with stub
-Scopes are "read"
-A "admin" has "reed"'''
+    src = '''Identity:
+  Scopes are "read"
+  A "admin" has "reed"'''
     result = _analyze(src)
     assert not result.ok
     for e in result.errors:
@@ -508,9 +508,9 @@ A "admin" has "reed"'''
 
 def test_fuzzy_match_scope_suggestion():
     """Fuzzy matching should suggest similar scope names."""
-    src = '''Users authenticate with stub
-Scopes are "orders.read", "orders.write"
-A "clerk" has "orders.reed"'''
+    src = '''Identity:
+  Scopes are "orders.read", "orders.write"
+  A "clerk" has "orders.reed"'''
     result = _analyze(src)
     assert not result.ok
     err = result.errors[0]
@@ -521,9 +521,9 @@ A "clerk" has "orders.reed"'''
 
 def test_fuzzy_match_role_suggestion():
     """Fuzzy matching should suggest similar role names."""
-    src = '''Users authenticate with stub
-Scopes are "read"
-A "admin" has "read"
+    src = '''Identity:
+  Scopes are "read"
+  A "admin" has "read"
 As admni, I want to see a page "Dashboard" so that I can manage:
   Show a page called "Dashboard"
   Display text "hello"'''
@@ -561,9 +561,9 @@ def test_fuzzy_match_content_suggestion():
 
 def test_error_to_dict():
     """Errors should serialize to JSON dicts."""
-    src = '''Users authenticate with stub
-Scopes are "read"
-A "admin" has "reed"'''
+    src = '''Identity:
+  Scopes are "read"
+  A "admin" has "reed"'''
     result = _analyze(src)
     assert not result.ok
     json_list = result.to_json_list()
@@ -624,9 +624,9 @@ def test_fuzzy_match_no_suggestion_for_distant():
 # v0.9 multi-state-machine analyzer tests ---------------------------------
 
 
-_SM_BASE = '''Users authenticate with stub
-Scopes are "manage" and "approve"
-A "editor" has "manage" and "approve"
+_SM_BASE = '''Identity:
+  Scopes are "manage" and "approve"
+  A "editor" has "manage" and "approve"
 '''
 
 

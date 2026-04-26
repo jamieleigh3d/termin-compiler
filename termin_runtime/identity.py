@@ -22,7 +22,11 @@ def _build_user_object(role: str, scopes: list, display_name: str) -> dict:
     object with these fields. CEL expressions use PascalCase: User.Name,
     User.Username, User.Role.
     """
-    authenticated = role != "anonymous"
+    # v0.9: canonical Anonymous role is the built-in keyword "Anonymous"
+    # (capitalized, no quotes in source). Pre-v0.9 sources had `An "anonymous"
+    # has "..."` which produced lowercase. Compare case-insensitively so
+    # any historical source still maps cleanly.
+    authenticated = role.lower() != "anonymous"
     return {
         "Username": display_name.lower().replace(" ", "_") if authenticated else "anonymous",
         "Name": display_name if authenticated else "Anonymous",
@@ -33,17 +37,35 @@ def _build_user_object(role: str, scopes: list, display_name: str) -> dict:
     }
 
 
+def _resolve_role(roles: dict, cookie_value: str | None) -> str:
+    """Resolve a role-cookie value to a canonical role name.
+
+    Tries exact match first, then case-insensitive. Falls back to the
+    first role in the dict (the source-declared first role, typically
+    Anonymous if present). The case-insensitive path lets historical
+    cookies like `termin_role=anonymous` continue to work after v0.9
+    canonicalized the role to `Anonymous` (capitalized).
+    """
+    if cookie_value is None:
+        return list(roles.keys())[0]
+    if cookie_value in roles:
+        return cookie_value
+    cv_lower = cookie_value.lower()
+    for r in roles:
+        if r.lower() == cv_lower:
+            return r
+    return list(roles.keys())[0]
+
+
 def make_get_current_user(roles: dict):
     """Create a get_current_user dependency bound to a specific ROLES dict."""
     def get_current_user(request: Request) -> dict:
         """Get current user from cookie or default to first role."""
-        role = request.cookies.get("termin_role", list(roles.keys())[0])
-        if role not in roles:
-            role = list(roles.keys())[0]
+        role = _resolve_role(roles, request.cookies.get("termin_role"))
         display_name = request.cookies.get("termin_user_name", "User")
         scopes = roles[role]
         profile = {"FirstName": display_name, "DisplayName": display_name}
-        if role == "anonymous":
+        if role.lower() == "anonymous":
             profile = {"FirstName": "Anonymous", "DisplayName": "Anonymous"}
         user_obj = _build_user_object(role, scopes, display_name)
         return {"role": role, "scopes": scopes, "profile": profile, "User": user_obj}
@@ -61,13 +83,11 @@ def make_get_user_from_websocket(roles: dict):
             pass
 
         # Fall back to cookie auth (dev mode)
-        role = ws.cookies.get("termin_role", list(roles.keys())[0])
-        if role not in roles:
-            role = list(roles.keys())[0]
+        role = _resolve_role(roles, ws.cookies.get("termin_role"))
         display_name = ws.cookies.get("termin_user_name", "User")
         scopes = roles[role]
         profile = {"FirstName": display_name, "DisplayName": display_name}
-        if role == "anonymous":
+        if role.lower() == "anonymous":
             profile = {"FirstName": "Anonymous", "DisplayName": "Anonymous"}
         user_obj = _build_user_object(role, scopes, display_name)
         return {"role": role, "scopes": scopes, "profile": profile, "User": user_obj}

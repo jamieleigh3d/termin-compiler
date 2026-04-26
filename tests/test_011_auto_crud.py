@@ -62,9 +62,9 @@ MINIMAL_CONTENT = """\
 Application: Minimal
   Description: Minimal app with one Content
 
-Users authenticate with stub
-Scopes are "items.read" and "items.write"
-A "user" has "items.read" and "items.write"
+Identity:
+  Scopes are "items.read" and "items.write"
+  A "user" has "items.read" and "items.write"
 
 Content called "items":
   Each item has a name which is text, required
@@ -76,9 +76,9 @@ HEADLESS_SERVICE = """\
 Application: Order Service
   Description: A headless order processing service
 
-Users authenticate with stub
-Scopes are "orders.read", "orders.write", and "orders.admin"
-A "writer" has "orders.read" and "orders.write"
+Identity:
+  Scopes are "orders.read", "orders.write", and "orders.admin"
+  A "writer" has "orders.read" and "orders.write"
 
 Content called "orders":
   Each order has a customer which is text, required
@@ -98,9 +98,9 @@ MULTI_CONTENT = """\
 Application: Multi Content
   Description: Multiple content types
 
-Users authenticate with stub
-Scopes are "read", "write", and "admin"
-A "user" has "read" and "write"
+Identity:
+  Scopes are "read", "write", and "admin"
+  A "user" has "read" and "write"
 
 Content called "projects":
   Each project has a name which is text, required
@@ -119,9 +119,9 @@ API_SLUG_CONFLICT = """\
 Application: Bad Slug
   Description: App with api slug conflict
 
-Users authenticate with stub
-Scopes are "read"
-A "user" has "read"
+Identity:
+  Scopes are "read"
+  A "user" has "read"
 
 Content called "widgets":
   Each widget has a name which is text

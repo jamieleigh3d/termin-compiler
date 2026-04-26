@@ -379,7 +379,7 @@ class TestBackwardCompatibility:
         assert len(spec.pages) == 1
         page = spec.pages[0]
         assert page.name == "Hello"
-        assert page.role == "anonymous"
+        assert page.role == "Anonymous"
         text_nodes = _find_children(page, "text")
         assert any("Hello, World" == t.props.get("content") for t in text_nodes)
 
@@ -855,9 +855,9 @@ As anonymous, I want to see a page "Board" so that I can see tasks:
 # ── D-18: Audit on ContentSchema ──
 
 class TestContentSchemaAudit:
-    _AUTH_PREAMBLE = '''Users authenticate with stub
-Scopes are "read"
-A "user" has "read"
+    _AUTH_PREAMBLE = '''Identity:
+  Scopes are "read"
+  A "user" has "read"
 '''
 
     def _parse_and_lower(self, source):
@@ -899,9 +899,9 @@ A "user" has "read"
 # ============================================================
 
 
-_SM_BASE_IR = '''Users authenticate with stub
-Scopes are "manage" and "approve"
-A "editor" has "manage" and "approve"
+_SM_BASE_IR = '''Identity:
+  Scopes are "manage" and "approve"
+  A "editor" has "manage" and "approve"
 '''
 
 _SINGLE_SM_SRC = _SM_BASE_IR + '''
