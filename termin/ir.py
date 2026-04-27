@@ -281,6 +281,13 @@ class ComponentNode:
     lowering, serialized to JSON, never mutated after construction.
     """
     type: str                                      # "text", "data_table", "form", etc.
+    # v0.9 Phase 5a.1: fully-qualified presentation contract this node
+    # renders to (BRD #2 §5.1, design §3.10). Populated during
+    # lowering from a verb→contract map. Default empty string for
+    # backward compat — pre-Phase-5 code paths that construct
+    # ComponentNode directly without setting `contract` continue to
+    # work; the runtime falls back to the existing dispatch table.
+    contract: str = ""
     props: dict = field(default_factory=dict)       # key → value or PropValue
     style: dict = field(default_factory=dict)       # CSS-like visual properties
     layout: dict = field(default_factory=dict)      # visual editor canvas state
@@ -507,3 +514,10 @@ class AppSpec:
     boundaries: tuple[BoundarySpec, ...] = ()
     error_handlers: tuple[ErrorHandlerSpec, ...] = ()
     reclassification_points: tuple[ReclassificationPoint, ...] = ()
+    # v0.9 Phase 5a.1: required_contracts manifest (BRD #2 §8.5).
+    # List of fully-qualified `<namespace>.<contract>` strings,
+    # alphabetically sorted, deduplicated. Populated from verb→contract
+    # mapping during lowering plus any explicit `Using` references
+    # (Phase 5b's grammar). Empty for service-shaped apps that have no
+    # presentation verbs.
+    required_contracts: tuple[str, ...] = ()

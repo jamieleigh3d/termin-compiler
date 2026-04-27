@@ -37,6 +37,30 @@ from .ir import (
     FieldDependency, ReclassificationPoint, DependentValueSpec,
     OwnershipSpec, RowFilterSpec,
 )
+
+
+# v0.9 Phase 5a.1: ComponentNode.type → presentation-base contract
+# (BRD #2 §5.1 mapping per design doc §3.10). Types not listed here
+# are either modifiers (filter, search, highlight, subscribe,
+# action_button, edit_modal, semantic_mark, field_input) or internal
+# layout (section, related) and have no contract — they're rendered
+# inside their parent contract's render call.
+#
+# Special handling:
+#   - chart: deferred per BRD §5.1; no contract. Source verb
+#     `Show a chart of` still parses and lowers to ComponentNode
+#     type="chart" but contract stays "". Runtime renders as a
+#     deferred-placeholder until the contract is added (post-v0.9).
+#   - page contract: emitted at the PageEntry level, not per node.
+COMPONENT_TYPE_TO_CONTRACT: dict[str, str] = {
+    "text":          "presentation-base.text",
+    "markdown_view": "presentation-base.markdown",
+    "data_table":    "presentation-base.data-table",
+    "form":          "presentation-base.form",
+    "chat":          "presentation-base.chat",
+    "aggregation":   "presentation-base.metric",
+    "stat_breakdown": "presentation-base.metric",
+}
 from .lower_pages import lower_pages
 
 
@@ -963,6 +987,41 @@ def lower(program: Program) -> AppSpec:
                 output_scope=cs.output_confidentiality_scope,
             ))
 
+    # v0.9 Phase 5a.1: tag every ComponentNode with its
+    # presentation-base contract and aggregate the required_contracts
+    # manifest (BRD #2 §8.5). Walks the lowered pages mutating
+    # ComponentNode.contract in place; ComponentNode is mutable by
+    # design (not frozen), so this is well-defined.
+    required_contracts: set[str] = set()
+    if pages:
+        # Every page implies presentation-base.page.
+        required_contracts.add("presentation-base.page")
+    if nav_items:
+        # Navigation bar implies presentation-base.nav-bar.
+        required_contracts.add("presentation-base.nav-bar")
+    # Toast / banner from transition feedback specs.
+    for sm in state_machines:
+        for tr in sm.transitions:
+            for fb in tr.feedback:
+                if getattr(fb, "style", None) == "toast":
+                    required_contracts.add("presentation-base.toast")
+                elif getattr(fb, "style", None) == "banner":
+                    required_contracts.add("presentation-base.banner")
+
+    def _walk_node(node: ComponentNode) -> None:
+        contract = COMPONENT_TYPE_TO_CONTRACT.get(node.type, "")
+        if contract:
+            node.contract = contract
+            required_contracts.add(contract)
+        for child in node.children:
+            if isinstance(child, ComponentNode):
+                _walk_node(child)
+
+    for page in pages:
+        for node in page.children:
+            if isinstance(node, ComponentNode):
+                _walk_node(node)
+
     return AppSpec(
         reflection_enabled=True,
         app_id=program.application.app_id if program.application else None,
@@ -982,4 +1041,5 @@ def lower(program: Program) -> AppSpec:
         boundaries=tuple(boundaries),
         error_handlers=tuple(error_handlers),
         reclassification_points=tuple(reclass_points),
+        required_contracts=tuple(sorted(required_contracts)),
     )
