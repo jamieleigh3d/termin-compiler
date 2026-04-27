@@ -1009,10 +1009,19 @@ def lower(program: Program) -> AppSpec:
                     required_contracts.add("presentation-base.banner")
 
     def _walk_node(node: ComponentNode) -> None:
-        contract = COMPONENT_TYPE_TO_CONTRACT.get(node.type, "")
-        if contract:
-            node.contract = contract
-            required_contracts.add(contract)
+        # v0.9 Phase 5b.1: a `Using` sub-clause may have already
+        # set node.contract to an override target (e.g., a
+        # third-party namespace `acme-ui.premium-table`). When
+        # present, honor it and aggregate the override into
+        # required_contracts. Otherwise default to the type→
+        # contract map.
+        if node.contract:
+            required_contracts.add(node.contract)
+        else:
+            contract = COMPONENT_TYPE_TO_CONTRACT.get(node.type, "")
+            if contract:
+                node.contract = contract
+                required_contracts.add(contract)
         for child in node.children:
             if isinstance(child, ComponentNode):
                 _walk_node(child)

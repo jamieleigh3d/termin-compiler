@@ -430,6 +430,18 @@ link_column_line
     = 'Link' col:quoted_string 'to' template:quoted_string $
     ;
 
+# v0.9 Phase 5b.1: `Using "<namespace>.<contract>"` sub-clause.
+# Per BRD #2 §4.3, this overrides the implicit `presentation-base.<X>`
+# contract for the immediately preceding rendering directive (Display
+# a table of, Show a chat for, Display text, Display markdown from,
+# Display total/count/sum, Show a page called, Navigation bar:, toast
+# / banner emissions). Grammar accepts any `<ns>.<contract>` shape;
+# semantic validation against the contract registry happens in the
+# analyzer.
+using_line
+    = 'Using' target:quoted_string $
+    ;
+
 subscribes_to_line
     = 'This' 'table' 'subscribes' 'to' content:words_before_changes 'changes' $
     ;

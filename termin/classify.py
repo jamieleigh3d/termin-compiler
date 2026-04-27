@@ -31,6 +31,8 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Allow filtering by", "allow_filtering_line"), ("Allow searching by", "allow_searching_line"),
     ("Allow inline editing of", "allow_inline_editing_line"),
     ("Link ", "link_column_line"),
+    # v0.9 Phase 5b.1: presentation contract override sub-clause.
+    ("Using ", "using_line"),
     ("This table subscribes to", "subscribes_to_line"), ("Accept input for", "accept_input_line"),
     ("Validate that", "validate_unique_line"), ("Create the ", "create_as_line"),
     ("After saving,", "after_saving_line"), ("Show a chart of", "show_chart_line"),

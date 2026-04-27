@@ -228,6 +228,22 @@ class MarkAs(Directive):
 
 
 @dataclass
+class UsingOverride(Directive):
+    """v0.9 Phase 5b.1: presentation contract override sub-clause.
+
+    `Using "<namespace>.<contract>"` overrides the implicit
+    `presentation-base.<X>` contract for the immediately preceding
+    rendering directive. Per BRD #2 §4.3 this is the sole source-
+    level construct that names contracts outside `presentation-base`.
+
+    `target` carries the literal `<namespace>.<contract>` string;
+    the analyzer parses it apart for validation and the lowerer
+    attaches it to the parent ComponentNode's `contract` field.
+    """
+    target: str = ""
+
+
+@dataclass
 class AllowFilter(Directive):
     fields: list[str] = field(default_factory=list)
 

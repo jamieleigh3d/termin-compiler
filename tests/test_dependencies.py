@@ -24,7 +24,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 STDLIB = {
     "abc", "argparse", "ast", "asyncio", "base64", "builtins", "collections",
     "concurrent", "contextlib", "copy", "csv", "dataclasses", "datetime",
-    "decimal", "enum", "fnmatch", "functools", "glob", "hashlib", "html",
+    "decimal", "difflib", "enum", "fnmatch", "functools", "glob", "hashlib", "html",
     "http", "importlib", "inspect", "io", "itertools", "json", "logging",
     "math", "multiprocessing", "operator", "os", "pathlib", "pickle", "zipfile",
     "platform", "pprint", "queue", "random", "re", "shutil", "signal",

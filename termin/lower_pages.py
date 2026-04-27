@@ -14,7 +14,7 @@ import re
 
 from .ast_nodes import (
     Content, AccessRule, StateMachine, UserStory,
-    ShowPage, DisplayTable, ShowRelated, HighlightRows, MarkAs,
+    ShowPage, DisplayTable, ShowRelated, HighlightRows, MarkAs, UsingOverride,
     AllowFilter, AllowSearch, AllowInlineEdit, SubscribeTo, AcceptInput, ValidateUnique,
     CreateAs, AfterSave, ShowChart, DisplayAggregation, DisplayText,
     StructuredAggregation, SectionStart, ActionHeader, ActionButtonDef,
@@ -170,6 +170,13 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
         cur_data_table = None
         cur_form = None
         form_target_name = None
+        # v0.9 Phase 5b.1: track most recently appended rendering
+        # ComponentNode so a following UsingOverride directive
+        # can attach its contract to it. Reset across pages /
+        # stories. Includes both top-level renderables and the
+        # special-case data_table whose modifiers are appended as
+        # children rather than siblings.
+        cur_renderable = None
 
         for d in story.directives:
             if isinstance(d, ShowPage):
@@ -189,6 +196,7 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
                     ),
                 )
                 children.append(chat_node)
+                cur_renderable = chat_node
 
             elif isinstance(d, DisplayTable):
                 dt_content = content_by_name.get(d.content_name)
@@ -199,6 +207,16 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
                         props={"source": _snake(d.content_name), "columns": cols},
                         children=(),
                     )
+                    cur_renderable = cur_data_table
+
+            elif isinstance(d, UsingOverride):
+                # v0.9 Phase 5b.1: attach the contract override to
+                # the immediately preceding rendering ComponentNode.
+                # If no renderable is in scope (Using on its own
+                # before any directive), silently ignore — the
+                # analyzer surfaces this as a structural error.
+                if cur_renderable is not None and d.target:
+                    cur_renderable.contract = d.target
 
             elif isinstance(d, LinkColumn):
                 if cur_data_table:
@@ -405,19 +423,23 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
 
             elif isinstance(d, DisplayText):
                 if d.is_expression:
-                    children.append(ComponentNode(
-                        type="text", props={"content": PropValue(value=d.text, is_expr=True)}))
+                    text_node = ComponentNode(
+                        type="text", props={"content": PropValue(value=d.text, is_expr=True)})
                 else:
-                    children.append(ComponentNode(type="text", props={"content": d.text}))
+                    text_node = ComponentNode(type="text", props={"content": d.text})
+                children.append(text_node)
+                cur_renderable = text_node
 
             elif isinstance(d, ShowChart):
-                children.append(ComponentNode(
+                chart_node = ComponentNode(
                     type="chart",
                     props={
                         "source": _snake(d.content_name), "chart_type": "line",
                         "period_days": d.days, "label": f"{d.content_name} ({d.days} days)",
                     },
-                ))
+                )
+                children.append(chart_node)
+                cur_renderable = chart_node
 
             elif isinstance(d, StructuredAggregation):
                 source = _snake(d.source_content)

@@ -16,7 +16,7 @@ from .ast_nodes import (
     Application, Identity, Role, RoleAlias, Content, Field, TypeExpr,
     AccessRule, StateMachine, EventRule, EventAction, EventCondition,
     ErrorHandler, ErrorAction, UserStory, ShowPage, DisplayTable, ShowRelated,
-    HighlightRows, MarkAs, AllowFilter, AllowSearch, AllowInlineEdit, SubscribeTo, AcceptInput,
+    HighlightRows, MarkAs, UsingOverride, AllowFilter, AllowSearch, AllowInlineEdit, SubscribeTo, AcceptInput,
     ValidateUnique, CreateAs, AfterSave, ShowChart, DisplayAggregation,
     StructuredAggregation, SectionStart, ActionHeader, ActionButtonDef,
     Stream, ChatDirective, DisplayText, LinkColumn,
@@ -448,6 +448,19 @@ def _parse_line(text: str, rule: str, ln: int):
         fs = _cl(r.get("fields")) if r else _scal(
             text[len("Allow inline editing of "):])
         return ("directive", AllowInlineEdit(fields=fs, line=ln))
+    if rule == "using_line":
+        # v0.9 Phase 5b.1. Strip the surrounding double quotes from
+        # the target. PEG already validated the shape; the analyzer
+        # parses `<ns>.<contract>` apart for validation, and the
+        # lowerer attaches it to the parent ComponentNode.
+        r = P(text, rule)
+        target = _qs(r["target"]) if r and r.get("target") else ""
+        if not target:
+            # Fallback for the rare case where TatSu disagrees with
+            # the literal — extract whatever's in quotes.
+            m = _eqs(text)
+            target = m[0] if m else ""
+        return ("directive", UsingOverride(target=target, line=ln))
     if rule == "link_column_line":
         r = P(text, rule)
         if r:

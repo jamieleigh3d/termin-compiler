@@ -171,6 +171,94 @@ class Analyzer:
         self._check_row_action_access_rules()
         self._check_inline_editing()
         self._check_ownership()  # v0.9 Phase 6a.2
+        self._check_using_overrides()  # v0.9 Phase 5b.1
+
+    # v0.9 Phase 5b.1: closed list of presentation-base contract
+    # names. Mirrors termin_runtime.providers.presentation_contract.
+    # PRESENTATION_BASE_CONTRACTS — kept local so the compiler does
+    # not import from the runtime package (one-way dependency rule).
+    _PRESENTATION_BASE_CONTRACTS: frozenset[str] = frozenset({
+        "page", "text", "markdown", "data-table", "form", "chat",
+        "metric", "nav-bar", "toast", "banner",
+    })
+
+    def _check_using_overrides(self) -> None:
+        """v0.9 Phase 5b.1: validate `Using "<ns>.<contract>"`
+        sub-clauses across user-story rendering directives.
+
+        Per BRD #2 §4.3 / §8.2:
+          - Format must be `<namespace>.<contract>` (one dot exactly).
+          - For namespace `presentation-base`, contract must be one
+            of the closed ten (BRD §5.1).
+          - For other namespaces, validation is deferred to slice
+            5c (contract package loading) — accepted at parse time.
+
+        Codes:
+          TERMIN-S054 — `presentation-base.<X>` references unknown
+                         contract name.
+          TERMIN-S055 — Using target is malformed (missing `.` or
+                         empty namespace/contract part).
+        """
+        from .ast_nodes import UsingOverride
+        for story in self.program.stories:
+            for d in story.directives:
+                if not isinstance(d, UsingOverride):
+                    continue
+                target = (d.target or "").strip()
+                if "." not in target:
+                    self.errors.add(SemanticError(
+                        message=(
+                            f"Using target {target!r} is malformed. "
+                            f"Expected '<namespace>.<contract>', e.g., "
+                            f"'presentation-base.data-table'."
+                        ),
+                        line=d.line,
+                        code="TERMIN-S055",
+                    ))
+                    continue
+                ns, _, contract = target.partition(".")
+                if not ns or not contract:
+                    self.errors.add(SemanticError(
+                        message=(
+                            f"Using target {target!r} has empty namespace "
+                            f"or contract part."
+                        ),
+                        line=d.line,
+                        code="TERMIN-S055",
+                    ))
+                    continue
+                if ns == "presentation-base":
+                    if contract not in self._PRESENTATION_BASE_CONTRACTS:
+                        suggestion = self._closest_match(
+                            contract, self._PRESENTATION_BASE_CONTRACTS,
+                        )
+                        msg = (
+                            f"Unknown presentation-base contract "
+                            f"{contract!r} (target: {target!r}). "
+                        )
+                        if suggestion:
+                            msg += (
+                                f"Did you mean "
+                                f"'presentation-base.{suggestion}'? "
+                            )
+                        msg += (
+                            f"Valid contracts: "
+                            f"{sorted(self._PRESENTATION_BASE_CONTRACTS)!r}."
+                        )
+                        self.errors.add(SemanticError(
+                            message=msg,
+                            line=d.line,
+                            code="TERMIN-S054",
+                        ))
+                # Other namespaces: deferred to 5c.
+
+    @staticmethod
+    def _closest_match(name: str, candidates) -> str | None:
+        """Tiny edit-distance helper for `Did you mean...?` hints.
+        Returns None when no candidate is close enough."""
+        import difflib
+        matches = difflib.get_close_matches(name, list(candidates), n=1, cutoff=0.6)
+        return matches[0] if matches else None
 
     def _check_ownership(self) -> None:
         """v0.9 Phase 6a.2 + 6a.3: validate ownership declarations and the
