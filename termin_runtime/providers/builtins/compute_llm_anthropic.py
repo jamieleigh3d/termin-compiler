@@ -62,6 +62,47 @@ class AnthropicLlmProvider:
         )
         self._config_hash = hash_provider_config(self._config)
         self._client = None  # lazy
+        self._legacy = None  # lazy AIProvider (slice b interim)
+
+    @property
+    def legacy(self):
+        """Slice (b) interim accessor: returns an AIProvider instance
+        configured against this provider's config. Used by
+        compute_runner.execute_compute during the cut-over so the
+        existing prompt-building, tool-use forcing, and streaming
+        paths keep working unchanged. Slice (d) deletes this and
+        ports the legacy logic into the contract methods."""
+        if self._legacy is not None:
+            return self._legacy
+        from ...ai_provider import AIProvider
+        synthetic = {
+            "ai_provider": {
+                "service": "anthropic",
+                "model": self._model,
+                "api_key": self._api_key,
+            }
+        }
+        self._legacy = AIProvider(synthetic)
+        self._legacy.startup()
+        return self._legacy
+
+    @property
+    def is_configured(self) -> bool:
+        """Slice (b) interim. Mirrors AIProvider.is_configured shape."""
+        return bool(
+            self._api_key and not str(self._api_key).startswith("${")
+        )
+
+    @property
+    def service(self) -> str:
+        """Slice (b) interim. The product name doubles as the
+        service-name token for legacy log strings."""
+        return "anthropic"
+
+    @property
+    def model(self) -> str:
+        """Slice (b) interim accessor."""
+        return self._model
 
     def _get_client(self):
         if self._client is not None:
@@ -90,12 +131,11 @@ class AnthropicLlmProvider:
         directive: str,
         objective: str,
         input_value: Any,
+        output_schema: Optional[Mapping[str, Any]] = None,
         sampling_params: Optional[Mapping[str, Any]] = None,
     ) -> CompletionResult:
         # Assemble user prompt: objective with input value appended in
-        # a stable structured form. Slice (b) will move the IR-driven
-        # prompt construction here; for now the simple shape lets the
-        # provider work standalone for tests.
+        # a stable structured form.
         user_message = self._build_user_message(objective, input_value)
         sampling = dict(self._default_sampling)
         if sampling_params:
@@ -106,23 +146,48 @@ class AnthropicLlmProvider:
 
         try:
             client = self._get_client()
-            response = client.messages.create(
-                model=self._model,
-                max_tokens=self._max_tokens,
-                system=directive,
-                messages=[{"role": "user", "content": user_message}],
+            create_kwargs = {
+                "model": self._model,
+                "max_tokens": self._max_tokens,
+                "system": directive,
+                "messages": [{"role": "user", "content": user_message}],
                 **sampling,
-            )
+            }
+            # When output_schema is supplied, force tool_use by
+            # presenting the schema as a single tool that the model
+            # must call. This gives us a structured dict result that
+            # matches the schema rather than free-form text. Per
+            # Anthropic API: tools=[<schema>] + tool_choice forces
+            # the named tool.
+            if output_schema:
+                create_kwargs["tools"] = [output_schema]
+                create_kwargs["tool_choice"] = {
+                    "type": "tool",
+                    "name": output_schema.get("name", "set_output"),
+                }
+            response = client.messages.create(**create_kwargs)
         except Exception as e:
             return self._build_error_result(prompt_as_sent, sampling, started, e)
 
         latency_ms = int((time.monotonic() - started) * 1000)
-
-        # Extract text from response.content (Anthropic returns a list
-        # of content blocks; we concatenate text-block content).
-        output_text = self._extract_text(response)
         cost = self._extract_cost(response)
         model_id = getattr(response, "model", self._model)
+
+        if output_schema:
+            # Extract the forced tool call's input dict.
+            tool_name = output_schema.get("name", "set_output")
+            output_value = self._extract_tool_input(response, tool_name)
+            if output_value is None:
+                return self._build_error_result(
+                    prompt_as_sent, sampling, started,
+                    RuntimeError(
+                        f"Anthropic response did not include the "
+                        f"forced tool_use for {tool_name!r}"
+                    ),
+                )
+        else:
+            # Free-form text completion.
+            output_value = self._extract_text(response)
 
         audit = AuditRecord(
             provider_product="anthropic",
@@ -136,9 +201,18 @@ class AnthropicLlmProvider:
         )
         return CompletionResult(
             outcome="success",
-            output_value=output_text,
+            output_value=output_value,
             audit_record=audit,
         )
+
+    def _extract_tool_input(self, response, tool_name: str):
+        for block in getattr(response, "content", []) or []:
+            if (
+                getattr(block, "type", None) == "tool_use"
+                and getattr(block, "name", None) == tool_name
+            ):
+                return getattr(block, "input", None)
+        return None
 
     def _build_user_message(self, objective: str, input_value: Any) -> str:
         if input_value is None:

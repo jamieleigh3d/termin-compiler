@@ -42,7 +42,6 @@ from .providers.builtins import register_builtins as register_builtin_providers
 from .storage import get_db, init_db, create_record, insert_raw, count_records
 from .reflection import ReflectionEngine, register_reflection_with_expr_eval
 from .channels import ChannelDispatcher, load_deploy_config, check_deploy_config_warnings
-from .ai_provider import AIProvider
 from .scheduler import Scheduler, parse_schedule_interval
 
 # Subsystem modules
@@ -55,6 +54,29 @@ from .routes import (
 )
 from .pages import register_page_routes
 from .compute_runner import execute_compute, register_compute_endpoint
+
+
+import re
+
+_ENV_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _interpolate_env_vars(value):
+    """Recursively replace ${VAR} placeholders with env var values.
+
+    Strings are scanned for ${VAR} patterns; each is replaced with
+    `os.environ.get(VAR, "")`. Nested dicts and lists recurse. Other
+    types pass through. Used by the compute provider resolver in
+    create_termin_app to substitute deploy-config secrets at
+    construction time per BRD §5.1 (source must not name product
+    internals; deploy config carries the env-shaped placeholders)."""
+    if isinstance(value, str):
+        return _ENV_VAR_RE.sub(lambda m: os.environ.get(m.group(1), ""), value)
+    if isinstance(value, dict):
+        return {k: _interpolate_env_vars(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_interpolate_env_vars(v) for v in value]
+    return value
 
 
 def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
@@ -126,7 +148,6 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     elif deploy_config is None:
         deploy_config = {}
     ctx.channel_dispatcher = ChannelDispatcher(ir, deploy_config)
-    ctx.ai_provider = AIProvider(deploy_config)
 
     # Compute indexes
     for comp in ir.get("computes", []):
@@ -223,6 +244,59 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
             f"bindings.storage.provider to a registered product."
         )
     ctx.storage = storage_record.factory(storage_config)
+
+    # v0.9 Phase 3: pre-resolve compute providers per the source's
+    # ComputeSpec list. Each LLM/agent compute looks up its binding
+    # in deploy_config.bindings.compute["<compute-snake>"] and
+    # constructs the provider via the registry. default-CEL computes
+    # are NOT resolved here — those route through ctx.expr_eval for
+    # trigger filters / postconditions / route-handler CEL.
+    #
+    # Per BRD §5.1 leak-free: source declares `Provider is "llm"`;
+    # deploy config picks the product (`anthropic` / `stub` / etc.).
+    # An LLM/agent compute with no binding in deploy config is a
+    # configuration error — fail-closed at deploy time, not at first
+    # event-trigger.
+    compute_bindings = (deploy_config or {}).get(
+        "bindings", {}
+    ).get("compute", {}) or {}
+    for comp in ir.get("computes", []):
+        contract = comp.get("provider")
+        if contract not in ("llm", "ai-agent"):
+            continue
+        comp_snake = comp["name"]["snake"]
+        binding = compute_bindings.get(comp_snake)
+        if binding is None:
+            # Skip silently when ANTHROPIC_API_KEY is unset / no
+            # deploy config — matches the v0.8 "AI provider not
+            # configured, skipped" behavior. The runtime logs this
+            # at lifespan startup.
+            continue
+        product = (binding or {}).get("provider")
+        if not product:
+            raise RuntimeError(
+                f"Compute {comp['name']['display']!r} has Provider is "
+                f"{contract!r} but bindings.compute[{comp_snake!r}] "
+                f"has no 'provider' key."
+            )
+        cfg = dict((binding or {}).get("config") or {})
+        # Env-var interpolation for ${...} placeholders so providers
+        # see resolved values at construction time. Mirrors the
+        # ChannelDispatcher's interpolation behavior.
+        cfg = _interpolate_env_vars(cfg)
+        record = ctx.provider_registry.get(Category.COMPUTE, contract, product)
+        if record is None:
+            available = ctx.provider_registry.list_products(
+                Category.COMPUTE, contract
+            )
+            raise RuntimeError(
+                f"Compute provider {product!r} is not registered for "
+                f"contract {contract!r}. Available: "
+                f"{sorted(available) or '<none>'}. Either register the "
+                f"provider before calling create_termin_app(), or "
+                f"update bindings.compute[{comp_snake!r}].provider."
+            )
+        ctx.compute_providers[comp_snake] = record.factory(cfg)
 
     app_id = ir.get("app_id", "") or ir.get("name", "") or ""
     ctx.get_current_user = make_get_current_user(
@@ -483,12 +557,28 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         ctx.channel_dispatcher.on_ws_message(_handle_inbound_ws)
         await ctx.channel_dispatcher.startup(strict=strict_channels)
 
-        # AI provider
-        ctx.ai_provider.startup()
-        if ctx.ai_provider.is_configured:
-            print(f"[Termin] Phase 4b: AI provider ready ({ctx.ai_provider.service}/{ctx.ai_provider.model})")
+        # v0.9 Phase 3: compute provider summary. Providers were
+        # constructed at create_termin_app time; here we just log
+        # what's bound for ops visibility.
+        if ctx.compute_providers:
+            print(
+                f"[Termin] Phase 4b: {len(ctx.compute_providers)} "
+                f"compute provider(s) bound: "
+                f"{', '.join(sorted(ctx.compute_providers))}"
+            )
         elif ctx.trigger_computes:
-            print(f"[Termin] Phase 4b: AI provider not configured — {len(ctx.trigger_computes)} LLM Compute(s) will be skipped")
+            unbound = [
+                c["name"]["display"]
+                for c in ctx.trigger_computes
+                if c.get("provider") in ("llm", "ai-agent")
+                and c["name"]["snake"] not in ctx.compute_providers
+            ]
+            if unbound:
+                print(
+                    f"[Termin] Phase 4b: {len(unbound)} LLM/agent "
+                    f"Compute(s) have no deploy binding and will be "
+                    f"skipped: {', '.join(unbound)}"
+                )
 
         config_warnings = check_deploy_config_warnings(deploy_config, ir)
         for w in config_warnings:

@@ -31,7 +31,6 @@ class RuntimeContext:
     event_bus: Any = None          # EventBus
     reflection: Any = None         # ReflectionEngine
     channel_dispatcher: Any = None # ChannelDispatcher
-    ai_provider: Any = None        # AIProvider
     conn_manager: Any = None       # ConnectionManager (set after creation)
 
     # v0.9 Phase 2: storage provider (StorageProvider Protocol).
@@ -40,6 +39,20 @@ class RuntimeContext:
     # direct storage.py imports. Per-app instance (no globals);
     # see providers/builtins/storage_sqlite.py for the SQLite impl.
     storage: Any = None            # StorageProvider
+
+    # v0.9 Phase 3: compute provider registry + per-compute provider
+    # cache. The registry holds factories (one per registered product);
+    # `compute_providers` holds constructed instances keyed by compute
+    # snake-name, pre-built at app startup from `bindings.compute`.
+    # default-CEL providers are NOT in the cache — those route through
+    # `expr_eval` for trigger filters / postconditions / route-handler
+    # CEL. The cache is just the LLM/agent dispatch table for
+    # compute_runner.execute_compute.
+    provider_registry: Any = None        # ProviderRegistry
+    contract_registry: Any = None        # ContractRegistry
+    compute_providers: dict = field(default_factory=dict)
+    # snake compute name -> provider instance (LlmComputeProvider |
+    # AiAgentComputeProvider). default-CEL computes are absent.
 
     # Identity functions
     get_current_user: Callable = None

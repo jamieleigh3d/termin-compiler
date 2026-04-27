@@ -2,6 +2,169 @@
 
 ## Unreleased — v0.9 in progress (feature/v0.9)
 
+### Phase 3 slice (b): runtime cut-over to compute provider registry (2026-04-26)
+
+The "great cut-over" for v0.9 Phase 3 per
+`docs/compute-provider-design.md` §6 slice (b). Routes compute
+dispatch through the per-compute provider registry instead of
+the singleton `ctx.ai_provider`; retires the v0.8-shape
+top-level `ai_provider` deploy block in favor of the v0.9
+`bindings.compute` keying layer.
+
+#### `RuntimeContext` reshape
+
+- **Removed:** `ai_provider: Any = None`. The single global
+  AIProvider attached at app construction is gone.
+- **Added:** `provider_registry`, `contract_registry`,
+  `compute_providers: dict`. Per-compute provider instances live
+  in `compute_providers` keyed by snake-name; only LLM/agent
+  computes get an entry (default-CEL routes through
+  `expr_eval`).
+
+#### `app.py` provider resolution at startup
+
+After identity and storage providers are constructed, the app
+factory walks `ir.computes` and resolves any LLM/agent compute's
+`bindings.compute["<snake>"]` entry through the registry:
+
+```python
+record = ctx.provider_registry.get(Category.COMPUTE, contract, product)
+ctx.compute_providers[comp_snake] = record.factory(cfg)
+```
+
+Env-var interpolation of `${VAR}` placeholders happens at
+factory-call time so providers see resolved secrets.
+
+Fail-closed: an LLM/agent compute that source-declares
+`Provider is "llm"` but has no `bindings.compute` entry is
+silently skipped at runtime (matches v0.8 "AI provider not
+configured" behavior). A binding pointing at an unregistered
+product raises at startup with a clear error listing available
+products.
+
+The lifespan log at Phase 4b now reports per-compute provider
+counts instead of a singleton service/model identifier:
+
+```
+[Termin] Phase 4b: 2 compute provider(s) bound: reply, summarize
+```
+
+or, when bindings are missing:
+
+```
+[Termin] Phase 4b: 1 LLM/agent Compute(s) have no deploy
+binding and will be skipped: complete
+```
+
+#### `compute_runner.execute_compute` cut-over
+
+The dispatch in `_execute_llm_compute` and
+`_execute_agent_compute` now looks up `provider =
+ctx.compute_providers.get(comp_snake)` instead of using
+`ctx.ai_provider`. SDK calls flow through `provider.legacy`
+— a transitional accessor on the Anthropic providers that
+returns an embedded `AIProvider` instance configured for that
+specific compute. Slice (d) ports the legacy logic into the
+contract methods proper and deletes `.legacy`.
+
+This keeps slice (b)'s diff small: prompt building, audit
+writing, output write-back, and streaming-event publication
+are byte-identical with v0.8. Only the *who-calls-the-SDK*
+indirection layer changed.
+
+#### Deploy config: hard-cut to v0.9 shape
+
+Per design Q1 (resolved JL 2026-04-26: hard-cut, no
+back-compat shim), the deploy template generator emits the v0.9
+shape exclusively:
+
+```json
+{
+  "version": "0.1.0",
+  "bindings": {
+    "identity":      { "provider": "stub",   "config": {} },
+    "storage":       { "provider": "sqlite", "config": {} },
+    "presentation":  { "provider": "default","config": {} },
+    "compute": {
+      "<compute-snake>": {
+        "provider": "anthropic",
+        "config": { "model": "...", "api_key": "${ANTHROPIC_API_KEY}" }
+      }
+    },
+    "channels": { "<name>": { ... } }
+  },
+  "runtime": {}
+}
+```
+
+The legacy top-level `ai_provider`, `channels`, `identity` keys
+are no longer emitted. The deploy_config.py *parser* still
+supports both shapes; only the generator changed. All six
+example deploy configs in the repo regenerated to the v0.9
+shape.
+
+`ChannelDispatcher` reads from `bindings.channels` first,
+falling back to top-level `channels` for one phase as a quiet
+back-compat for unmigrated test fixtures.
+
+#### CLI deploy template
+
+`termin/cli.py:_generate_deploy_template` now constructs the
+v0.9 `bindings.{identity,storage,presentation,compute,channels}`
+nested shape. One entry per LLM/agent compute (CEL computes are
+absent — implicit default-CEL contract).
+
+#### Anthropic provider transitional accessors
+
+Both `AnthropicLlmProvider` and `AnthropicAgentProvider` gain a
+`.legacy` property that lazily constructs an internal
+`AIProvider` from the per-compute config. Plus passthrough
+properties (`is_configured`, `service`, `model`) so
+compute_runner's ops-style log lines work unchanged.
+
+This is documented as slice (b) interim. The proper port —
+moving prompt building, tool schema construction, and SDK
+calls *into* the contract methods (`complete`, `invoke`,
+`invoke_streaming`) — happens in slice (d) alongside the
+audit-record reshape.
+
+#### Tests
+
+- `tests/test_cli.py::test_compile_deploy_template_for_llm`
+  rewritten to assert the v0.9 shape: no top-level
+  `ai_provider`, `bindings.compute["<snake>"].provider ==
+  "anthropic"`, `config.api_key` carries env-var placeholder.
+- `tests/test_cli.py::test_generate_deploy_template` rewritten
+  to assert the new `bindings.{identity,storage,presentation,
+  compute,channels}` nesting.
+- New `test_generate_deploy_template_compute_entries` confirming
+  one entry per LLM/agent compute and that CEL computes are
+  excluded.
+- `tests/test_websocket_integration.py::test_ws_push_from_
+  background_compute` mock deploy config rewritten to v0.9
+  shape so the agent_simple compute resolves through the
+  registry.
+
+All other LLM/agent/streaming/manual-trigger tests pass
+unchanged — the cut-over preserves call-shape end-to-end.
+
+#### Tests: 1988 pass / 0 fail / 0 skip / 0 xfail.
+
+#### What slice (b) deliberately defers
+
+- **Source-level access grants** (Reads, Sends to, Emits,
+  Invokes grammar) — slice (c). Tool-surface authorization in
+  the agent loop still uses the existing `comp["accesses"]`
+  field; ToolSurface remains empty until slice (c) populates it.
+- **Audit record reshape to BRD §6.3.4** — slice (d).
+  `write_audit_trace` keeps its v0.8 column shape.
+- **Refusal / Acts as / AgentEvent translation in compute_runner
+  streaming events** — slice (e). The `compute.stream.<inv_id>.*`
+  events keep their v0.8 shape.
+- **Deletion of `ai_provider.py` and `.legacy` accessors** —
+  slice (d) port consolidates the SDK code into the contract
+  methods, then this file goes away.
+
 ### Phase 3 slice (a): compute contract surface + provider modules (2026-04-26)
 
 Lands the contract layer for v0.9 Phase 3 per

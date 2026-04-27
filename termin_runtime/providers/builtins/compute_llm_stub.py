@@ -70,6 +70,7 @@ class StubLlmProvider:
         directive: str,
         objective: str,
         input_value: Any,
+        output_schema: Optional[Mapping[str, Any]] = None,
         sampling_params: Optional[Mapping[str, Any]] = None,
     ) -> CompletionResult:
         prompt = f"{directive}\n{objective}"

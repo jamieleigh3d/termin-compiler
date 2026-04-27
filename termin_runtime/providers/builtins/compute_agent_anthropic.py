@@ -80,6 +80,41 @@ class AnthropicAgentProvider:
         )
         self._config_hash = hash_provider_config(self._config)
         self._client = None
+        self._legacy = None  # lazy AIProvider (slice b interim)
+
+    @property
+    def legacy(self):
+        """Slice (b) interim accessor — see compute_llm_anthropic for
+        the rationale. The same internal AIProvider serves both LLM
+        and agent code paths."""
+        if self._legacy is not None:
+            return self._legacy
+        from ...ai_provider import AIProvider
+        synthetic = {
+            "ai_provider": {
+                "service": "anthropic",
+                "model": self._model,
+                "api_key": self._api_key,
+            }
+        }
+        self._legacy = AIProvider(synthetic)
+        self._legacy.startup()
+        return self._legacy
+
+    @property
+    def is_configured(self) -> bool:
+        """Slice (b) interim."""
+        return bool(
+            self._api_key and not str(self._api_key).startswith("${")
+        )
+
+    @property
+    def service(self) -> str:
+        return "anthropic"
+
+    @property
+    def model(self) -> str:
+        return self._model
 
     def _get_client(self):
         if self._client is not None:

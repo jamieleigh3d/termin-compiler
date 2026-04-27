@@ -65,8 +65,16 @@ class ChannelDispatcher:
                 "last_active": None, "state": "disconnected",
             }
 
-            # Load config from deploy
-            channel_configs = self._deploy.get("channels", {})
+            # Load config from deploy. v0.9 stores channel bindings
+            # under bindings.channels; v0.8 used top-level channels.
+            # The hard-cut to v0.9 leaves the top-level path retired
+            # after slice (b); keep it for one phase only as a quiet
+            # fallback so unmigrated test fixtures don't crash before
+            # they get updated.
+            channel_configs = (
+                self._deploy.get("bindings", {}).get("channels")
+                or self._deploy.get("channels", {})
+            )
             if display in channel_configs:
                 self._channel_configs[display] = ChannelConfig.from_dict(channel_configs[display])
             elif snake in channel_configs:

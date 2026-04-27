@@ -170,11 +170,18 @@ async def _execute_llm_compute(ctx: RuntimeContext, comp: dict, record: dict,
                                 content_name: str, main_loop=None):
     """Execute a Level 1 LLM Compute — field-to-field completion."""
     comp_name = comp["name"]["display"]
+    comp_snake = comp["name"]["snake"]
     _llm_started = _dt.datetime.utcnow()
     _llm_invocation_id = str(uuid.uuid4())
 
-    if not ctx.ai_provider.is_configured:
-        print(f"[Termin] Compute '{comp_name}': AI provider not configured, skipped")
+    # v0.9 Phase 3: per-compute provider lookup. Slice (b) routes
+    # through `provider.legacy` (the embedded AIProvider) for SDK
+    # calls so prompt building, tool_use forcing, and streaming
+    # behavior are byte-identical with v0.8. Slice (d) ports the
+    # legacy methods into the contract surface and deletes .legacy.
+    provider = ctx.compute_providers.get(comp_snake)
+    if provider is None or not getattr(provider, "is_configured", False):
+        print(f"[Termin] Compute '{comp_name}': no provider bound, skipped")
         return
 
     # Build prompts (Fix 009.1 + 009.2)
@@ -184,7 +191,7 @@ async def _execute_llm_compute(ctx: RuntimeContext, comp: dict, record: dict,
     output_fields = comp.get("output_fields", [])
     output_tool = build_output_tool(output_fields, ctx.content_lookup)
 
-    print(f"[Termin] Compute '{comp_name}': calling {ctx.ai_provider.service} (record {record.get('id', '?')})")
+    print(f"[Termin] Compute '{comp_name}': calling {provider.service} (record {record.get('id', '?')})")
 
     # v0.8.1: LLM-path streaming. When the provider supports
     # stream_agent_response, route the call through it and publish
@@ -197,7 +204,6 @@ async def _execute_llm_compute(ctx: RuntimeContext, comp: dict, record: dict,
     # Events carry content_name + record_id so the general client
     # hydrator can target `[data-termin-row-id=<id>]
     # [data-termin-field=<field>]` without knowing the component type.
-    comp_snake = comp["name"]["snake"]
     _llm_stream_base = f"compute.stream.{_llm_invocation_id}"
     _llm_record_id = record.get("id")
 
@@ -253,24 +259,23 @@ async def _execute_llm_compute(ctx: RuntimeContext, comp: dict, record: dict,
             })
 
     try:
+        # Slice (b): legacy methods on `provider.legacy` (an internal
+        # AIProvider). Same call shape as v0.8 — no behavior change.
+        legacy = provider.legacy
         use_streaming = (
             ctx.event_bus is not None
-            and hasattr(ctx.ai_provider, "stream_agent_response")
-            and ctx.ai_provider.service == "anthropic"
+            and hasattr(legacy, "stream_agent_response")
+            and provider.service == "anthropic"
         )
         if use_streaming:
-            # Consume the stream generator, collect the final output dict,
-            # and route events through the event bus publisher. Matches
-            # the contract of complete() — returns a dict of output
-            # field values (plus optional "thinking").
             result = {}
-            async for event in ctx.ai_provider.stream_agent_response(
+            async for event in legacy.stream_agent_response(
                     system_msg, user_msg, output_tool):
                 if event.get("type") == "done":
                     result = event.get("output") or {}
                 await _on_llm_stream_event(event)
         else:
-            result = await ctx.ai_provider.complete(system_msg, user_msg, output_tool)
+            result = await legacy.complete(system_msg, user_msg, output_tool)
         thinking = result.pop("thinking", "")
         if thinking:
             print(f"[Termin] Compute '{comp_name}' thinking: {thinking[:100]}")
@@ -333,11 +338,15 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
                                   content_name: str, main_loop=None):
     """Execute a Level 3 Agent Compute — autonomous with tool calls."""
     comp_name = comp["name"]["display"]
+    comp_snake = comp["name"]["snake"]
     _agent_started = _dt.datetime.utcnow()
     _agent_invocation_id = str(uuid.uuid4())
 
-    if not ctx.ai_provider.is_configured:
-        print(f"[Termin] Compute '{comp_name}': AI provider not configured, skipped")
+    # v0.9 Phase 3: per-compute provider lookup (slice b interim
+    # via provider.legacy — see _execute_llm_compute for rationale).
+    provider = ctx.compute_providers.get(comp_snake)
+    if provider is None or not getattr(provider, "is_configured", False):
+        print(f"[Termin] Compute '{comp_name}': no provider bound, skipped")
         return
 
     accesses = comp.get("accesses", [])
@@ -349,9 +358,6 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
     agent_tools = build_agent_tools(accesses, ctx.content_lookup)
     set_output = _build_agent_set_output(comp, ctx.content_lookup)
     all_tools = agent_tools + [set_output]
-
-    # Tool execution function
-    comp_snake = comp["name"]["snake"]
 
     async def _execute_tool(tool_name: str, tool_input: dict) -> dict:
         db = await get_db(ctx.db_path)
@@ -439,7 +445,7 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
         finally:
             await db.close()
 
-    print(f"[Termin] Compute '{comp_name}': starting agent loop ({ctx.ai_provider.service})")
+    print(f"[Termin] Compute '{comp_name}': starting agent loop ({provider.service})")
 
     # v0.8 #7: stream set_output field deltas to the compute.stream.*
     # channel family so connected clients (chat UI) can render
@@ -512,13 +518,14 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
             })
 
     try:
+        legacy = provider.legacy
         if ctx.event_bus is not None and hasattr(
-                ctx.ai_provider, "agent_loop_streaming"):
-            result = await ctx.ai_provider.agent_loop_streaming(
+                legacy, "agent_loop_streaming"):
+            result = await legacy.agent_loop_streaming(
                 system_msg, user_msg, all_tools, _execute_tool,
                 on_event=_on_stream_event)
         else:
-            result = await ctx.ai_provider.agent_loop(
+            result = await legacy.agent_loop(
                 system_msg, user_msg, all_tools, _execute_tool)
         thinking = result.get("thinking", "")
         if thinking:

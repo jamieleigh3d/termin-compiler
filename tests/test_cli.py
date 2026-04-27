@@ -112,13 +112,27 @@ class TestCompileCommand:
         assert len(deploy_files) == 1, f"Expected deploy config, found: {deploy_files}"
 
     def test_compile_deploy_template_for_llm(self, runner, tmp_workdir):
-        """App with LLM Computes should auto-generate deploy config with ai_provider."""
+        """App with LLM/agent Computes should auto-generate deploy
+        config with v0.9 bindings.compute entries — one per LLM/agent
+        compute. The legacy top-level `ai_provider` block was retired
+        in Phase 3 slice (b)."""
         r = runner.invoke(main, ["compile", str(AGENT_SIMPLE)])
         assert r.exit_code == 0, r.output
         deploy_files = list(tmp_workdir.glob("*.deploy.json"))
         assert len(deploy_files) == 1
         config = json.loads(deploy_files[0].read_text())
-        assert "ai_provider" in config
+        # No more top-level ai_provider — v0.9 hard-cut.
+        assert "ai_provider" not in config
+        # Per-compute bindings live at bindings.compute.
+        compute_bindings = config["bindings"]["compute"]
+        assert compute_bindings, (
+            "deploy config for app with LLM/agent computes must "
+            "populate bindings.compute"
+        )
+        for snake, binding in compute_bindings.items():
+            assert binding["provider"] == "anthropic"
+            assert binding["config"]["model"]
+            assert binding["config"]["api_key"].startswith("${")
 
     # The stale-companion-seed cleanup tests are obsolete in v0.9
     # — the legacy `.py + .json + _seed.json` codegen path was
@@ -164,6 +178,8 @@ class TestCLIUtils:
         assert len(result) == 71  # "sha256:" + 64 hex chars
 
     def test_generate_deploy_template(self):
+        """v0.9 deploy template shape: {version, bindings: {identity,
+        storage, presentation, compute, channels}, runtime}."""
         ir_dict = {"auth": {"provider": "stub"}}
         channels = [{
             "name": {"display": "test channel", "snake": "test_channel"},
@@ -172,9 +188,34 @@ class TestCLIUtils:
             "actions": [],
         }]
         result = _generate_deploy_template(ir_dict, channels)
-        assert "channels" in result
-        assert "test channel" in result["channels"]
-        assert result["channels"]["test channel"]["protocol"] == "http"
+        assert result["version"] == "0.1.0"
+        bindings = result["bindings"]
+        assert "identity" in bindings
+        assert "storage" in bindings
+        assert "presentation" in bindings
+        assert "compute" in bindings
+        assert "channels" in bindings
+        assert bindings["identity"]["provider"] == "stub"
+        assert "test channel" in bindings["channels"]
+        assert bindings["channels"]["test channel"]["protocol"] == "http"
+
+    def test_generate_deploy_template_compute_entries(self):
+        """LLM/agent computes get a bindings.compute entry each;
+        CEL computes do not (implicit default-CEL binding)."""
+        ir_dict = {
+            "auth": {"provider": "stub"},
+            "computes": [
+                {"name": {"display": "Reply", "snake": "reply"}, "provider": "ai-agent"},
+                {"name": {"display": "Sum", "snake": "sum"}, "provider": None},
+                {"name": {"display": "Summarize", "snake": "summarize"}, "provider": "llm"},
+            ],
+        }
+        result = _generate_deploy_template(ir_dict, [])
+        compute = result["bindings"]["compute"]
+        assert "reply" in compute
+        assert "summarize" in compute
+        assert "sum" not in compute, "CEL computes must not appear in bindings.compute"
+        assert compute["reply"]["provider"] == "anthropic"
 
 
 # ── IR serialization (post Phase 2.x retirement of RuntimeBackend) ──

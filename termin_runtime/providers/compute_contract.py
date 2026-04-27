@@ -426,6 +426,7 @@ class LlmComputeProvider(Protocol):
         directive: str,
         objective: str,
         input_value: Any,
+        output_schema: Optional[Mapping[str, Any]] = None,
         sampling_params: Optional[Mapping[str, Any]] = None,
     ) -> CompletionResult:
         """Run a single-shot completion.
@@ -435,13 +436,20 @@ class LlmComputeProvider(Protocol):
             objective: user-prompt-shaped objective from source.
             input_value: the input bound from `Input from field <X>`,
                 already resolved against the triggering record.
+            output_schema: optional JSON-schema-shaped dict describing
+                the expected output structure. When supplied, the
+                provider should constrain the model to produce output
+                matching the schema (Anthropic uses tool_use forcing;
+                OpenAI uses structured-output JSON schema). When None,
+                the provider returns free-form text.
             sampling_params: temperature/top_p/seed if supplied;
                 provider may pass through to its SDK or ignore.
 
         Returns: CompletionResult with outcome, output_value (on
-        success) or refusal_reason (on refused) or error_detail (on
-        error), and an AuditRecord stamped with the provider's
-        reproducibility fields.
+        success — a dict matching output_schema if one was supplied,
+        else free-form text) or refusal_reason (on refused) or
+        error_detail (on error), and an AuditRecord stamped with the
+        provider's reproducibility fields.
         """
         ...
 

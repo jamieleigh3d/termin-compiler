@@ -32,7 +32,19 @@ def _sha256(data: bytes) -> str:
 
 
 def _generate_deploy_template(ir_dict: dict, external_channels: list) -> dict:
-    """Generate a deploy config template with placeholder env vars."""
+    """Generate a deploy config template with placeholder env vars.
+
+    v0.9 Phase 3: emits the v0.9-shape `{version, bindings, runtime}`
+    config. `bindings.compute` is populated with one entry per
+    LLM/agent compute, each binding to the `anthropic` product by
+    default. Operators edit the model/api_key after generation.
+
+    The legacy v0.8-shape `{version, channels, identity, runtime,
+    ai_provider}` is retired in v0.9 (Q1 of compute-provider-design.md
+    resolved hard-cut). The deploy_config.py parser supports both
+    shapes today; the *generator* now only emits the v0.9 shape so
+    fresh compiles produce the right thing.
+    """
     channels = {}
     for ch in external_channels:
         display = ch["name"]["display"]
@@ -40,7 +52,6 @@ def _generate_deploy_template(ir_dict: dict, external_channels: list) -> dict:
         env_prefix = snake.upper().replace("-", "_")
         direction = str(ch.get("direction", "OUTBOUND"))
         delivery = str(ch.get("delivery", "RELIABLE"))
-        has_actions = bool(ch.get("actions", []))
 
         # Choose protocol from delivery intent
         protocol = "websocket" if "REALTIME" in delivery else "http"
@@ -67,12 +78,39 @@ def _generate_deploy_template(ir_dict: dict, external_channels: list) -> dict:
     auth = ir_dict.get("auth", {})
     auth_provider = auth.get("provider", "stub")
 
+    # v0.9 Phase 3: per-compute bindings. One entry per LLM/agent
+    # compute; CEL computes use the implicit default-CEL contract
+    # (no deploy entry needed).
+    compute_bindings = {}
+    for c in ir_dict.get("computes", []):
+        contract = c.get("provider")
+        if contract not in ("llm", "ai-agent"):
+            continue
+        compute_bindings[c["name"]["snake"]] = {
+            "provider": "anthropic",
+            "config": {
+                "model": "claude-haiku-4-5-20251001",
+                "api_key": "${ANTHROPIC_API_KEY}",
+            },
+        }
+
     return {
         "version": "0.1.0",
-        "channels": channels,
-        "identity": {
-            "provider": auth_provider,
-            "config": {},
+        "bindings": {
+            "identity": {
+                "provider": auth_provider,
+                "config": {},
+            },
+            "storage": {
+                "provider": "sqlite",
+                "config": {},
+            },
+            "presentation": {
+                "provider": "default",
+                "config": {},
+            },
+            "compute": compute_bindings,
+            "channels": channels,
         },
         "runtime": {},
     }
@@ -284,14 +322,9 @@ def compile(source: str, output: str | None, seed_path: str | None,
     ]
     needs_deploy = bool(external_channels or llm_computes)
     if needs_deploy and not deploy_path.exists():
+        # _generate_deploy_template emits the v0.9 shape with
+        # bindings.compute populated for LLM/agent computes.
         deploy_template = _generate_deploy_template(ir_dict, external_channels)
-        # Add ai_provider section if there are LLM/agent computes
-        if llm_computes:
-            deploy_template["ai_provider"] = {
-                "service": "anthropic",
-                "model": "claude-haiku-4-5-20251001",
-                "api_key": "${ANTHROPIC_API_KEY}",
-            }
         deploy_path.write_text(
             json.dumps(deploy_template, indent=2),
             encoding="utf-8",

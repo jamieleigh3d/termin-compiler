@@ -327,13 +327,29 @@ class TestRealWebSocketPush:
 
         ir_json = _ir_json(compiled_packages["agent_simple"])
 
-        # Mock deploy config with a fake AI provider
+        # v0.9 deploy config shape: bindings.compute keyed by compute
+        # snake-name. agent_simple has one ai-agent compute called
+        # "complete". Bind it to the anthropic product so the runtime
+        # constructs the provider; we patch the provider's legacy
+        # AIProvider methods below to short-circuit the actual API call.
         mock_deploy = {
-            "ai_provider": {
-                "service": "anthropic",
-                "model": "mock",
-                "api_key": "mock-key",
-            }
+            "version": "0.1.0",
+            "bindings": {
+                "identity": {"provider": "stub", "config": {}},
+                "storage": {"provider": "sqlite", "config": {}},
+                "presentation": {"provider": "default", "config": {}},
+                "compute": {
+                    "complete": {
+                        "provider": "anthropic",
+                        "config": {
+                            "model": "mock",
+                            "api_key": "mock-key",
+                        },
+                    }
+                },
+                "channels": {},
+            },
+            "runtime": {},
         }
 
         app = create_termin_app(ir_json, strict_channels=False, deploy_config=mock_deploy)
