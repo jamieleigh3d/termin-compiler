@@ -67,6 +67,9 @@ class SqliteStorageProvider:
     def __init__(self, config: Mapping[str, Any] | None = None) -> None:
         cfg = dict(config or {})
         self._db_path: str = cfg.get("db_path") or _storage.DEFAULT_DB_PATH
+        # Fault-injection state (test-only, see storage_contract.py
+        # _inject_fault_at). One-shot: cleared on the next migrate().
+        self._fault_stage: Optional[str] = None
         # Future: connection pool, prepared-statement cache, etc.
 
     # ── Internal helpers ──
@@ -76,6 +79,19 @@ class SqliteStorageProvider:
         opens-per-request (a pattern carried from the v0.8 storage
         helpers); a connection pool is a Phase 2 follow-on item."""
         return await _storage.get_db(self._db_path)
+
+    # ── Fault injection (test hook) ──
+
+    def _inject_fault_at(self, stage: Optional[str]) -> None:
+        """Per migration-contract.md §6.2 + §9.4. Arms the next
+        migrate() call to raise ProviderInjectedFault at the named
+        stage. Pass None to disarm. One-shot: cleared after the next
+        migrate() observes it."""
+        if stage is not None and stage not in ("pre_apply", "mid_apply", "pre_commit"):
+            raise ValueError(
+                f"unknown fault-injection stage: {stage!r}; "
+                f"expected 'pre_apply' | 'mid_apply' | 'pre_commit' | None")
+        self._fault_stage = stage
 
     # ── Lifecycle ──
 
@@ -110,8 +126,20 @@ class SqliteStorageProvider:
                 "before invoking the provider."
             )
 
+        # One-shot fault injection (test-only; see _inject_fault_at).
+        # Read-and-clear so a subsequent migrate() runs unfaulted.
+        fault_stage = self._fault_stage
+        self._fault_stage = None
+
+        if fault_stage == "pre_apply":
+            # No DB work has happened yet; just raise.
+            raise sc.ProviderInjectedFault("pre_apply")
+
         # Fast path for the all-added initial-deploy case (Phase 2
         # behavior preserved): batch-init via init_db.
+        # Fault stages mid_apply / pre_commit don't apply here — the
+        # initial deploy is a single batch operation. Tests inject
+        # against modified-shape diffs.
         if all(c.kind == "added" for c in diff.changes):
             schemas = [c.schema for c in diff.changes if c.schema is not None]
             if schemas:
@@ -129,8 +157,23 @@ class SqliteStorageProvider:
             # Snapshot pre-migration row counts for rebuilt tables.
             pre_counts = await self._snapshot_row_counts(db, diff)
 
-            for change in diff.changes:
+            for i, change in enumerate(diff.changes):
                 await self._apply_one_change(db, change)
+                # mid_apply fires after the FIRST change has been
+                # applied (and only when there's more than one
+                # change to differentiate from pre_commit). Multi-
+                # change diffs let us assert that the first change
+                # rolls back atomically.
+                if fault_stage == "mid_apply" and i == 0 and len(diff.changes) > 1:
+                    await db.rollback()
+                    raise sc.ProviderInjectedFault("mid_apply")
+
+            # pre_commit fires after the apply loop but before
+            # validation/commit. Atomicity here means everything
+            # we just applied unwinds.
+            if fault_stage == "pre_commit":
+                await db.rollback()
+                raise sc.ProviderInjectedFault("pre_commit")
 
             # Validation step BEFORE commit.
             failures = await self._validate(db, diff, pre_counts)

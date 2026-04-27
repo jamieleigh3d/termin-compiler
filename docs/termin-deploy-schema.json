@@ -174,10 +174,15 @@
       "description": "v0.9+ schema migration policy. See docs/migration-classifier-design.md for the 5-tier risk model and ack workflow.",
       "additionalProperties": false,
       "properties": {
-        "accept_any_risky": {
+        "dev_mode": {
           "type": "boolean",
           "default": false,
-          "description": "Blanket-accept any low/medium/high-risk migration. Convenient for dev; in prod, prefer per-change fingerprint ack via accepted_changes for audit trail. Cannot bypass blocked classifications — those always refuse."
+          "description": "Opt into developer conveniences for migration ack. When false (default — production-strict), only per-change fingerprint ack via accepted_changes is honored. When true, the accept_any_low blanket flag is also honored. Set explicitly in dev deploys; do NOT set in production."
+        },
+        "accept_any_low": {
+          "type": "boolean",
+          "default": false,
+          "description": "Blanket-accept any low-tier migration. Honored only when dev_mode is true; ignored otherwise. Does NOT cover medium, high, or blocked changes — those always require per-change ack regardless. Convenient for local dev where the operator doesn't want to fingerprint every rename."
         },
         "accepted_changes": {
           "type": "array",

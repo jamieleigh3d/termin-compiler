@@ -327,6 +327,27 @@ class MigrationValidationError(RuntimeError):
         super().__init__(msg)
 
 
+class ProviderInjectedFault(RuntimeError):
+    """Test-only exception raised by a provider's fault injection
+    hook (`StorageProvider._inject_fault_at`). Conformance hook per
+    migration-contract.md §6.2 + §9.4.
+
+    Carries the canonical stage name. The conformance pack uses this
+    to verify atomicity: a fault injected at any stage during
+    migrate() must leave the database observably identical to its
+    pre-call state.
+
+    Stages:
+      - "pre_apply"  — before any change has been applied
+      - "mid_apply"  — after applying the first change but before all
+      - "pre_commit" — after all changes are applied but before
+                       the transaction commits
+    """
+    def __init__(self, stage: str) -> None:
+        super().__init__(f"injected fault at stage: {stage}")
+        self.stage = stage
+
+
 # ── Schema migration ──
 #
 # Phase 2 ships the contract surface; the runtime's diff classifier
@@ -588,6 +609,32 @@ class StorageProvider(Protocol):
         backends, an item in a control-plane partition for
         DynamoDB, etc.); read_schema_metadata returns it on the
         next boot.
+        """
+        ...
+
+    def _inject_fault_at(self, stage: Optional[str]) -> None:
+        """Test-only: arm the provider to raise ProviderInjectedFault
+        at the named stage on the NEXT migrate() call.
+
+        Conformance hook per migration-contract.md §6.2 + §9.4.
+        Conforming providers honor this to support the conformance
+        test pack's atomicity / fault-injection tests. Production
+        providers may treat this as a no-op when the runtime is not
+        in a test mode.
+
+        Stages (canonical, language-level):
+          - "pre_apply"  — raise before any change has been applied;
+            DB must be observably identical to its pre-call state.
+          - "mid_apply"  — raise after applying the first change but
+            before applying all; the partial work must be rolled back.
+          - "pre_commit" — raise after all changes are applied but
+            before the transaction commits; the apply must be rolled
+            back atomically.
+
+        Pass None to disarm (clear any previously-armed stage). The
+        flag is one-shot: it is cleared automatically when migrate()
+        observes it, so a subsequent migrate() runs unfaulted unless
+        re-armed.
         """
         ...
 

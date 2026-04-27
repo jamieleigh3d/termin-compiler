@@ -145,25 +145,44 @@ def collect_required_fingerprints(diff: MigrationDiff) -> tuple:
     return tuple(out)
 
 
+def _blanket_low_active(migrations_config: Mapping[str, Any]) -> bool:
+    """The dev-only blanket flag is in force iff BOTH dev_mode and
+    accept_any_low are set. Either alone is inert. The combined gate
+    is the production-strict default — operators must explicitly opt
+    into developer conveniences."""
+    if not migrations_config:
+        return False
+    return (
+        bool(migrations_config.get("dev_mode"))
+        and bool(migrations_config.get("accept_any_low"))
+    )
+
+
 def ack_covers(diff: MigrationDiff, migrations_config: Mapping[str, Any]) -> bool:
     """Return True iff the deploy config's `migrations` block covers
-    every fingerprint that needs ack for this diff.
+    every change that needs ack for this diff.
+
+    A change is "covered" when:
+      - Its fingerprint is in `accepted_changes` (per-change ack —
+        always honored, any tier, any environment), OR
+      - It is low-tier AND both `dev_mode: true` and
+        `accept_any_low: true` are set (the blanket flag — dev-only,
+        low-tier-only).
+
+    Medium and high changes are never covered by the blanket flag,
+    regardless of dev_mode. Blocked changes are never covered by
+    anything (separately rejected before this is consulted).
 
     `migrations_config` shape:
         {
-            "accept_any_risky": bool,         # default False
+            "dev_mode": bool,                 # default False
+            "accept_any_low": bool,           # default False
             "accepted_changes": [str, ...],   # default []
             "rename_fields": [...],           # consumed by classifier
             "rename_contents": [...],
         }
     """
-    if migrations_config is None:
-        migrations_config = {}
-    if migrations_config.get("accept_any_risky"):
-        return True
-    accepted = set(migrations_config.get("accepted_changes") or ())
-    required = set(collect_required_fingerprints(diff))
-    return required.issubset(accepted)
+    return not missing_acks(diff, migrations_config)
 
 
 def missing_acks(
@@ -171,12 +190,38 @@ def missing_acks(
 ) -> tuple:
     """Return the fingerprints required by the diff that are NOT
     covered by the deploy config. Empty tuple if everything's acked
-    OR if accept_any_risky is true."""
-    if migrations_config and migrations_config.get("accept_any_risky"):
-        return ()
-    accepted = set((migrations_config or {}).get("accepted_changes") or ())
-    required = set(collect_required_fingerprints(diff))
-    return tuple(sorted(required - accepted))
+    or covered by the dev-mode blanket-low flag."""
+    if migrations_config is None:
+        migrations_config = {}
+    accepted = set(migrations_config.get("accepted_changes") or ())
+    blanket_low = _blanket_low_active(migrations_config)
+
+    missing: list[str] = []
+    for cc in diff.changes:
+        if cc.classification in ("safe", "blocked"):
+            # Safe doesn't need ack; blocked is rejected separately.
+            continue
+        if cc.kind == "modified":
+            for fc in cc.field_changes:
+                fp = fingerprint_change(fc, content_name=cc.content_name)
+                if fp in accepted:
+                    continue
+                tier = _classification_for_field_change(fc, cc)
+                if tier == "low" and blanket_low:
+                    continue
+                if tier in ("safe", "blocked"):
+                    # Field-level safe/blocked don't need ack at this
+                    # level (blocked already failed; safe never did).
+                    continue
+                missing.append(fp)
+        else:
+            fp = fingerprint_change(cc)
+            if fp in accepted:
+                continue
+            if cc.classification == "low" and blanket_low:
+                continue
+            missing.append(fp)
+    return tuple(sorted(missing))
 
 
 # ── Error formatters ────────────────────────────────────────────────
@@ -232,10 +277,19 @@ def format_unacked_error(
     for fp in missing:
         lines.append(f"      - \"{fp}\"")
     lines.append("")
-    lines.append(
-        "Or set migrations.accept_any_risky: true to accept any "
-        "(dev only — bypasses audit trail)."
+    # If any of the missing changes are low-tier, mention the
+    # dev-mode blanket as an option. Medium/high tiers always require
+    # per-change ack regardless of dev_mode, so we do not advertise
+    # the flag for those.
+    has_low = any(
+        _tier_for_fingerprint(diff, fp) == "low" for fp in missing
     )
+    if has_low:
+        lines.append(
+            "For low-tier changes only, you may instead set both "
+            "migrations.dev_mode: true and migrations.accept_any_low: "
+            "true (developer-convenience; refused in production)."
+        )
     return "\n".join(lines)
 
 

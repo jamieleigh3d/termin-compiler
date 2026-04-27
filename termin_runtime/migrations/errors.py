@@ -35,8 +35,10 @@ class MigrationBlockedError(_MigrationError):
 class MigrationAckRequiredError(_MigrationError):
     """The diff has at least one low/medium/high risk change that
     the deploy config has not acknowledged. The operator must add
-    the missing fingerprint(s) to migrations.accepted_changes (or
-    set migrations.accept_any_risky=true) and redeploy."""
+    the missing fingerprint(s) to migrations.accepted_changes. For
+    low-tier changes only, setting both migrations.dev_mode=true and
+    migrations.accept_any_low=true is also accepted (developer
+    convenience; refused in production)."""
     code = "TERMIN-M002"
 
 

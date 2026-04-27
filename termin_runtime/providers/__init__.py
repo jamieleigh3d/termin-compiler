@@ -43,7 +43,7 @@ from .storage_contract import (
     And, Or, Not, OrderBy, QueryOptions, Page, CascadeMode,
     FieldChange, ContentChange, MigrationDiff, initial_deploy_diff,
     CLASSIFICATIONS, worst_classification,
-    BackupFailedError, MigrationValidationError,
+    BackupFailedError, MigrationValidationError, ProviderInjectedFault,
     UpdateResult,
 )
 from .compute_contract import (
@@ -67,7 +67,7 @@ __all__ = [
     "And", "Or", "Not", "OrderBy", "QueryOptions", "Page", "CascadeMode",
     "FieldChange", "ContentChange", "MigrationDiff", "initial_deploy_diff",
     "CLASSIFICATIONS", "worst_classification",
-    "BackupFailedError", "MigrationValidationError",
+    "BackupFailedError", "MigrationValidationError", "ProviderInjectedFault",
     "UpdateResult",
     "DefaultCelComputeProvider", "LlmComputeProvider", "AiAgentComputeProvider",
     "CompletionResult", "AgentResult", "AgentContext", "AuditableAction",

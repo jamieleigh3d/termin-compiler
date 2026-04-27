@@ -472,8 +472,27 @@ class TestFingerprinting:
 
 
 class TestAckCovers:
-    def test_blanket_ack_covers_everything(self):
-        diff = MigrationDiff(changes=(
+    """ack_covers honors per-change fingerprints in any environment,
+    and the dev-mode blanket-low flag only when both dev_mode AND
+    accept_any_low are set. Medium/high tiers always require per-change
+    ack regardless of dev_mode."""
+
+    def _low_diff(self):
+        """A diff with a single low-tier change (a renamed field, same type)."""
+        return MigrationDiff(changes=(
+            ContentChange(kind="modified", content_name="tickets",
+                          classification="low",
+                          field_changes=(
+                              FieldChange(kind="renamed",
+                                          field_name="severity",
+                                          detail={"from": "priority",
+                                                  "to": "severity"}),
+                          )),
+        ))
+
+    def _high_diff(self):
+        """A diff with a single high-tier change."""
+        return MigrationDiff(changes=(
             ContentChange(kind="modified", content_name="x",
                           classification="high",
                           field_changes=(
@@ -481,7 +500,26 @@ class TestAckCovers:
                                           field_name="y"),
                           )),
         ))
-        assert ack_covers(diff, {"accept_any_risky": True})
+
+    def test_blanket_low_covers_low_in_dev_mode(self):
+        diff = self._low_diff()
+        assert ack_covers(diff, {"dev_mode": True, "accept_any_low": True})
+
+    def test_blanket_low_does_not_cover_high(self):
+        """The blanket-low flag is low-tier-only, even in dev_mode."""
+        diff = self._high_diff()
+        assert not ack_covers(diff, {"dev_mode": True, "accept_any_low": True})
+
+    def test_blanket_low_inert_without_dev_mode(self):
+        """accept_any_low alone (without dev_mode) is ignored —
+        production-strict default."""
+        diff = self._low_diff()
+        assert not ack_covers(diff, {"accept_any_low": True})
+
+    def test_dev_mode_inert_without_accept_any_low(self):
+        """dev_mode alone (without accept_any_low) does not unlock anything."""
+        diff = self._low_diff()
+        assert not ack_covers(diff, {"dev_mode": True})
 
     def test_per_change_ack_covers_when_complete(self):
         cc = ContentChange(kind="modified", content_name="x",
@@ -495,15 +533,15 @@ class TestAckCovers:
         assert ack_covers(diff, {"accepted_changes": list(required)})
 
     def test_per_change_ack_misses_when_incomplete(self):
-        diff = MigrationDiff(changes=(
-            ContentChange(kind="modified", content_name="x",
-                          classification="high",
-                          field_changes=(
-                              FieldChange(kind="required_added",
-                                          field_name="y"),
-                          )),
-        ))
+        diff = self._high_diff()
         assert not ack_covers(diff, {"accepted_changes": []})
+
+    def test_per_change_ack_works_in_any_environment(self):
+        """Per-change fingerprints are always honored, dev_mode or not."""
+        diff = self._high_diff()
+        required = collect_required_fingerprints(diff)
+        # No dev_mode set; per-change still works.
+        assert ack_covers(diff, {"accepted_changes": list(required)})
 
     def test_safe_diff_doesnt_need_ack(self):
         diff = MigrationDiff(changes=(
