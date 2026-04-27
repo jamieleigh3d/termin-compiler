@@ -456,6 +456,76 @@ Items deferred to v1.0 or later. Not prioritized, not scheduled.
 
 ---
 
+## Technical Debt
+
+Items left intentionally on the floor by recent versions. Compiled from
+the changelog and the session journal — distinct from feature backlog
+items because they're known-deferred *transitional* code, fallback paths,
+or test/conformance gaps that exist because earlier work shipped on a
+deliberate cut. Keep this section honest: when an item is paid down,
+move the entry to the Completed Work Log with the commit that retired it.
+
+### Provider model — v0.9 Phase 3 transitional code
+
+| Item | Source | Notes |
+|------|--------|-------|
+| **`.legacy` accessor on Anthropic compute providers** | CHANGELOG v0.9 slice (b); journal 2026-04-26 evening §What I want the next Claude to know #2 | `AnthropicLlmProvider` and `AnthropicAgentProvider` expose a `.legacy` property that returns an embedded `AIProvider` for SDK calls; `compute_runner` calls through `provider.legacy.complete()` / `.agent_loop()`. The proper port — moving prompt building, tool-schema construction, and SDK calls *into* the contract methods (`complete`, `invoke`, `invoke_streaming`) — was deferred to keep slice (b)'s diff small. When this lands, `ai_provider.py` gets deleted and the `is_configured`/`service`/`model` passthrough properties on the new providers go away. |
+| **Halt-on-refuse loop semantics** | CHANGELOG v0.9 slice (e) §What slice (e) deliberately defers; journal 2026-04-26 evening §3 | The legacy `AIProvider.agent_loop` keeps calling tools after `system_refuse` is invoked (until `set_output` or `max_turns`). Post-loop refusal-state check overrides the outcome correctly, so audit + sidecar + event are correct end-to-end — but the agent does more work than a clean refusal would imply. True halt-on-refuse needs the SDK port above. |
+| **`Acts as service` runtime auth** | CHANGELOG v0.9 slice (e); journal 2026-04-26 evening §4 | Source-side declaration lands in v0.9; the runtime path that constructs the agent's service principal from `role_mappings` is a v1.0 item. Apps declaring `Acts as service` compile and lower with `identity_mode=service` on `ComputeSpec` but authorize through the delegate-mode codepath at runtime until v1.0. |
+| **`AgentEvent` runtime translation absent** | CHANGELOG v0.9 slices (a)/(e); journal 2026-04-26 evening §5 | The dataclass union (`TokenEmitted | ToolCalled | ToolResult | Completed | Failed`) is declared on the contract module since slice (a) but unused. Existing `compute.stream.<inv_id>.*` event-bus translation keeps publishing the v0.8 dict shape. Typed events get used when the SDK port retires `.legacy`. |
+| **`ChannelDispatcher` back-compat read** | CHANGELOG v0.9 slice (b) §Deploy config | Reads from `bindings.channels` first, falls back to top-level `channels` for one phase as a quiet back-compat for unmigrated test fixtures. Drop the fallback once all fixtures are on the v0.9 shape. |
+| **`duration_ms=` kwarg back-compat in `write_audit_trace`** | CHANGELOG v0.9 slice (d) | The legacy keyword is accepted alongside `latency_ms=` for one phase to keep internal call sites working during the transition. Drop after a sweep confirms no remaining call-sites use the old name. |
+
+### Forward-looking but unwired
+
+| Item | Source | Notes |
+|------|--------|-------|
+| **CEL → Predicate AST compiler has no runtime call-site** | CHANGELOG v0.9 Phase 2.x (f); journal 2026-04-26 late §What I want the next Claude to know #7 | `termin_runtime/cel_predicate.py` shipped in 2.x (f) but no .termin construct produces CEL filter expressions on stored rows yet — URL filter params still build `Eq` predicates directly. Future work (filter-by-CEL UIs, agent-tool query strings, view definitions) plumbs this in. Forward-looking on purpose; flagged here so it isn't forgotten. |
+| **Tailwind-default CSR mode** | `docs/presentation-provider-design.md` §3.2, Q7 resolution (2026-04-27); BRD #2 §9.1 | BRD #2 §9.1 specifies `tailwind-default` ships both SSR and CSR render modes. Phase 5a deliberately defers CSR — the existing pipeline is SSR-only via Jinja2 + client-side hydration, and Carbon (Phase 5b) brings the CSR machinery (`Termin.registerRenderer(...)` API in termin.js). Once that machinery lands, Tailwind-default's CSR mode is a straightforward port of the existing renderers to client-side render functions. No forcing function; pure feature parity with the BRD. |
+
+### Parser / grammar fidelity
+
+| Item | Source | Notes |
+|------|--------|-------|
+| **TatSu PEG context state leak (platform-dependent)** | MEMORY.md standing context; CLAUDE.md sub-agent rule #9 | First parse succeeds, subsequent calls return `None` on WSL/Linux. Python fallback paths in `_parse_line` are NOT removable until the upstream TatSu issue is resolved or replaced. Fidelity tests (`test_compiler_fidelity.py`) are the safety net for fallback correctness. Reporter (compiler#1) observed 857 fallbacks on Python 3.10; can't reproduce on 3.11. |
+| **Fail-loud parser fallbacks (14 paths)** | v0.7.0 backlog (deferred to v0.8) | 14 fallback paths in the parser silently return defaults. The grammar gaps that originally drove them are closed, but the fallback code still exists. Replace silent-default with raise-on-unhandled. |
+| **Round-trip DSL → IR fidelity sweep** | v0.7.0 backlog (deferred to v0.8) | Parse → compile → verify every declared feature appears in IR. Originally cut from v0.7. The `test_compiler_fidelity.py` suite covers per-example IR property assertions; round-trip "every feature present" is the missing complement. |
+
+### Test infrastructure / build
+
+| Item | Source | Notes |
+|------|--------|-------|
+| **uvicorn `ws="websockets-legacy"` deprecation warnings** | v0.8.2 backlog | ~3 deprecation warnings per WS test from uvicorn's websockets-legacy path. `ws="websockets-sansio"` was evaluated during v0.8 but caused full-suite WS hangs (cumulative event-loop state intolerance). Revisit once uvicorn upgrades sansio reliability. Not blocking — just noise. |
+| **Runtime module coverage gaps** | v0.7.0 backlog (deferred) | ai_provider 69%, channel_ws 32%, channels 64%, confidentiality 64%, transitions 67%, websocket_mgr 73%. Overall runtime: 82%. Push the laggards toward the 95% target for new code. Some of these modules are slated for v0.9 Phase 3/4 rewrite, so wait-and-see may be the right call for ai_provider in particular. |
+
+### Conformance suite gaps
+
+| Item | Source | Notes |
+|------|--------|-------|
+| **Phase 3 conformance pack** | journal 2026-04-26 evening §What's left for v0.9 #4; design doc §4.10 | ~60 tests in a new `test_v09_compute_provider.py` planned per the compute-provider design doc. Per resolved Q8, lands as one commit after all slices merge. Hasn't shipped — compiler-side coverage is in `test_v09_compute_*.py` files in the compiler repo. |
+| **Phase 2.x conformance pack** | journal 2026-04-26 late §What's left for v0.9 #4 | The 2.x compiler-side test packs (cascade, classifier, idempotency, update_if, keyset cursors, CEL → Predicate, db-path) all live in the compiler repo. The conformance suite has the cascade-grammar pack and the cross-version migration pack (landed by parallel agent on 2026-04-26 night, ~73 tests) but not the full 2.x set across providers. |
+| **`one_of_values` runtime enforcement** | v0.7 backlog (deferred to v0.8 if needed) | POST invalid enum → 422. Runtime has it; conformance suite doesn't test it. |
+| **`dependent_values` runtime enforcement** | v0.7 backlog (deferred to v0.8 if needed) | `when` clause CEL eval on create/update → 422. Runtime has it; conformance suite doesn't. |
+| **Structured 422 error format** | v0.7 backlog (deferred to v0.8 if needed) | Standardize `{"detail", "field", "constraint", "allowed"}`. |
+| **Conformance button assertion coupling** | v0.7 backlog (deferred to v0.8 if needed) | Tests assert rendering strategy not behavioral contract. Decouple — test for `data-termin-*` markers (canonical affordance) rather than literal label text. The conformance#2 fix already softened one assertion (accept marker, label, OR aria-label); same pattern needs to apply to the other action-button tests. |
+
+### Operational / runtime gaps
+
+| Item | Source | Notes |
+|------|--------|-------|
+| **ALTER TABLE ADD COLUMN with NOT NULL + default** | journal 2026-04-26 night §Spec-first paid off #3 | Runtime gap surfaced by the migration conformance pack: the SQL builder doesn't thread `default_expr` for ADD COLUMN when the column is NOT NULL with a default. Documented in the migration conformance test, deferred. Spec stays correct; runtime catches up. |
+| **Backup retention auto-clean** | CHANGELOG v0.9 Phase 2.x (b) §Backup retention | When a high-risk migration commits, the runtime emits a startup-log line naming the backup identifier; cleanup is the operator's responsibility. Different providers have different primitives (filesystem path for SQLite, snapshot ARN for cloud DBs) so v0.9 doesn't auto-clean. Future versions may add a TTL/auto-clean policy per provider. |
+| **`examples-dev/agent_chatbot2.termin` not yet promoted** | CHANGELOG v0.8.1; MEMORY.md standing context | The original blocker (multi-content `Accesses` PEG gap) was paid down in `9e3aaeb` (v0.8.2 fix). Example still lives in `examples-dev/`. JL has flagged renaming it before promotion (intent: "agent data streams"); promote + rename in a future pass. |
+
+### Refactor-deferred
+
+| Item | Source | Notes |
+|------|--------|-------|
+| **`termin/analyzer.py` (780 lines)** | v0.7 backlog (deferred to v0.8 if needed) | Single class, flat methods, acceptable at current size — but trending toward "split this." Re-evaluate when it crosses 1000 lines or grows a second responsibility. |
+| **`termin_runtime/presentation.py` (599 lines)** | v0.7 backlog (deferred to v0.8 if needed) | Renderers + templates, acceptable at current size. Same trigger as analyzer.py. |
+
+---
+
 ## Completed Work Log
 
 | Date | Item | Commit(s) |
