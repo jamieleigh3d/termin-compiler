@@ -119,6 +119,7 @@ base_type
     | 'whole' 'number'            #TypeWholeNumber
     | 'a' 'number'                 #TypeNumber
     | 'number'                     #TypeNumber
+    | 'principal'                  #TypePrincipal
     | 'one' 'of:' vals:enum_vals  #TypeEnum
     | 'list' 'of' inner:word      #TypeList
     ;

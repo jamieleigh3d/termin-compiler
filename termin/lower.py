@@ -56,7 +56,11 @@ def _qname(display: str) -> QualifiedName:
 # ── Type mapping ──
 
 def _field_type(te: TypeExpr) -> FieldType:
-    if te.base_type in ("text", "enum"):
+    if te.base_type in ("text", "enum", "principal"):
+        # v0.9 Phase 6a: principal-typed fields store as opaque text
+        # (the principal id as issued by the bound Identity provider).
+        # Storage layer is unchanged; type discrimination happens at the
+        # business layer per BRD #3 §3.2.
         return FieldType.TEXT
     if te.base_type in ("whole_number", "reference"):
         return FieldType.INTEGER
