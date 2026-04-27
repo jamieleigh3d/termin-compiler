@@ -123,6 +123,7 @@ Items deferred to v1.0 or later. Not prioritized, not scheduled. Captured here s
 | Agent prompt versioning and rollback | product-strategy.md | Treat prompts as deployable artifacts |
 | Delegate identity mode for agents | confidentiality-spec.md | Agent acts on behalf of caller (vs service identity) |
 | Operator-supplied custom migration validators | migration-classifier-design.md §3.12.3 | v0.9 ships only auto validation (FK check, row counts, schema metadata, smoke read). Custom validators would let operators express domain invariants (e.g., "every order has a non-null customer post-migration"); reserve a Protocol method later if/when needed. |
+| Sub-language escape mechanism for host-language interpolation | termin-source-refinements-brd-v0.9.md (BRD #3) Appendix B | Unified syntax for interpolating host-language values (Principal fields, content references) into sub-language strings — Directive bodies, Objective bodies, opaque CEL contexts, future provider-defined sub-languages. Each sub-language provider declares its escape form. v0.9 sidesteps this via the field-reference form (BRD #3 §6) plus a session-prep compute. Forcing function: more agent-shaped applications with parameterized prompts in production use. |
 
 ---
 
