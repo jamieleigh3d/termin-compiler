@@ -182,6 +182,9 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     )
     ctx.theme_default = presentation_defaults.get("theme_default")
     ctx.theme_locked = presentation_defaults.get("theme_locked")
+    # v0.9 Phase 5b.4 platform: stash deploy_config on ctx so the
+    # bundle-discovery endpoint can read per-binding overrides.
+    ctx.deploy_config = deploy_config or {}
     # v0.9 Phase 4: pass provider_registry so the dispatcher can wire
     # channel providers at startup (channels with provider_contract).
     # The registry is built earlier in this function (Phase 1 identity).

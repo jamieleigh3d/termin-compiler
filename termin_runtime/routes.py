@@ -40,6 +40,7 @@ from .preferences import (
     get_theme_preference,
     set_theme_preference,
 )
+from .presentation_bundles import register_presentation_bundle_endpoint
 
 
 # v0.9 Phase 2: cross-cutting helpers that wrap ctx.storage with the
@@ -1022,3 +1023,8 @@ def register_runtime_endpoints(app, ctx: RuntimeContext):
                             headers={"Cache-Control": "no-cache"})
         return Response(content="/* termin.css not found */",
                         media_type="text/css", status_code=404)
+
+    # v0.9 Phase 5b.4 platform: CSR bundle discovery for presentation
+    # providers. termin.js fetches this at boot to load registered
+    # provider bundles and bind their per-contract render functions.
+    register_presentation_bundle_endpoint(app, ctx)

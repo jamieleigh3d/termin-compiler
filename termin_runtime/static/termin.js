@@ -103,6 +103,11 @@ async function init() {
     // Hydrate DOM
     hydrateAll();
 
+    // v0.9 Phase 5b.4 platform: load CSR presentation provider
+    // bundles. Fire-and-forget — SSR rendering is unaffected by
+    // CSR bundle availability; bundles enhance later as they load.
+    loadCsrBundles();
+
     console.log(`[Termin] Client runtime ${TERMIN_VERSION} initialized`);
   } catch (err) {
     console.warn("[Termin] Bootstrap failed, SSR-only mode:", err.message);
@@ -842,8 +847,54 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
+// ── v0.9 Phase 5b.4 platform: Presentation provider extension API ──
+//
+// Per BRD #2 §7.4 + JL-resolved option (d) from the briefings:
+// CSR bundles register their per-contract render functions through
+// `Termin.registerRenderer(contract, fn)`. Loaded at boot via
+// `loadCsrBundles()` from the discovery endpoint.
+
+const _renderers = Object.create(null);
+
+function registerRenderer(contract, fn) {
+  if (typeof contract !== "string" || typeof fn !== "function") {
+    console.warn("[Termin] registerRenderer: contract must be string, fn must be function");
+    return;
+  }
+  _renderers[contract] = fn;
+}
+
+function getRenderer(contract) {
+  return _renderers[contract] || null;
+}
+
+async function loadCsrBundles() {
+  try {
+    const resp = await fetch("/_termin/presentation/bundles", { credentials: "same-origin" });
+    if (!resp.ok) return;
+    const body = await resp.json();
+    const bundles = (body && body.bundles) || [];
+    // Dedupe on URL — one bundle file may serve multiple contracts.
+    const seen = new Set();
+    for (const entry of bundles) {
+      if (!entry || !entry.url || seen.has(entry.url)) continue;
+      seen.add(entry.url);
+      const script = document.createElement("script");
+      script.src = entry.url;
+      script.async = true;
+      script.dataset.terminCsrBundle = entry.contract;
+      script.dataset.terminCsrProvider = entry.provider || "";
+      document.head.appendChild(script);
+    }
+  } catch (err) {
+    // Bundle load failures are non-fatal — SSR remains in effect.
+    console.warn("[Termin] CSR bundle load failed:", err.message);
+  }
+}
+
 // ── Public API ──
 
+window.Termin = { registerRenderer, getRenderer };
 window.__termin = { state, subscribe, getCachedRecords, TERMIN_VERSION };
 
 // ── Initialize on DOM ready ──

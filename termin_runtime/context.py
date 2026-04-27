@@ -98,6 +98,16 @@ class RuntimeContext:
     theme_default: str | None = None
     theme_locked: str | None = None
 
+    # v0.9 Phase 5b.4 platform: bound presentation providers + the
+    # active deploy config. Consumed by the bundle-discovery endpoint
+    # (`/_termin/presentation/bundles`) so termin.js can load CSR
+    # provider bundles at page boot. Each entry is
+    # (qualified_contract, product_name, provider_instance).
+    # Today this list is empty until 5b.3 cut-over lands; Carbon
+    # (5b.4 full) and GOV.UK (5b.5) populate it when they ship.
+    presentation_providers: list = field(default_factory=list)
+    deploy_config: dict = field(default_factory=dict)
+
     # Callbacks set during init (avoid circular deps)
     run_event_handlers: Callable = None   # async (db, content_name, trigger, record)
     execute_compute: Callable = None      # async (comp, record, content_name, main_loop)
