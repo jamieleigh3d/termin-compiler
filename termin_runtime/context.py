@@ -86,6 +86,18 @@ class RuntimeContext:
     # Transition feedback (D-06)
     transition_feedback: dict = field(default_factory=dict)  # (content, from, to) -> [specs]
 
+    # v0.9 Phase 5a.3: presentation theme defaults sourced from
+    # deploy_config["presentation"]["defaults"] per BRD #2 §6.2.
+    # `theme_default` is the value returned from
+    # GET /_termin/preferences/theme when a principal has no stored
+    # value (None → falls back to "auto" at the runtime layer).
+    # `theme_locked` pins the effective value regardless of stored
+    # preference; writes still succeed so the user's choice survives
+    # lock removal. Both values flow through PrincipalContext to
+    # every Presentation provider render call.
+    theme_default: str | None = None
+    theme_locked: str | None = None
+
     # Callbacks set during init (avoid circular deps)
     run_event_handlers: Callable = None   # async (db, content_name, trigger, record)
     execute_compute: Callable = None      # async (comp, record, content_name, main_loop)

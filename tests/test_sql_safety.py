@@ -113,8 +113,16 @@ class TestNoRawSQL:
     """Runtime modules outside storage.py should not contain raw SQL strings."""
 
     RUNTIME_DIR = Path(__file__).parent.parent / "termin_runtime"
-    # Files that are allowed to have SQL (storage.py is the only one)
-    ALLOWED_SQL_FILES = {"storage.py"}
+    # Files that are allowed to have SQL.
+    # - storage.py — the legacy generic CRUD layer.
+    # - preferences.py — runtime-managed `_termin_principal_preferences`
+    #   table (v0.9 Phase 5a.3). The table name is a hard-coded module
+    #   constant (PREFERENCES_TABLE); only values are dynamic and use
+    #   `?` parameterization. Same risk profile as the
+    #   `_termin_idempotency` and `_termin_schema` tables in
+    #   storage_sqlite.py (which lives in a subdirectory and so is not
+    #   reached by this test's top-level glob).
+    ALLOWED_SQL_FILES = {"storage.py", "preferences.py"}
     # SQL patterns that indicate raw query construction (not plain English)
     # Matches: f"SELECT * FROM", f"INSERT INTO", f"UPDATE {", f"DELETE FROM", f"CREATE TABLE"
     SQL_PATTERNS = re.compile(

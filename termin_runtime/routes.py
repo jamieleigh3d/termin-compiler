@@ -33,6 +33,13 @@ from .validation import (
     validate_min_max_constraints, evaluate_field_defaults, strip_unknown_fields,
 )
 from .compute_runner import redact_audit_traces
+from .preferences import (
+    InvalidThemeValueError,
+    VALID_THEMES,
+    ensure_preferences_table,
+    get_theme_preference,
+    set_theme_preference,
+)
 
 
 # v0.9 Phase 2: cross-cutting helpers that wrap ctx.storage with the
@@ -910,6 +917,101 @@ def register_runtime_endpoints(app, ctx: RuntimeContext):
                             headers={"Cache-Control": "no-cache"})
         return Response(content="// termin.js not found",
                         media_type="application/javascript", status_code=404)
+
+    # v0.9 Phase 5a.3: theme preference endpoints. BRD #2 §6.2 +
+    # presentation-provider-design.md §3.4. Authenticated principals
+    # get a row in `_termin_principal_preferences`; anonymous
+    # principals get a session-scoped cookie. Both paths apply
+    # `theme_locked` resolution at read time.
+    _ANON_THEME_COOKIE = "termin_theme_pref"
+
+    def _resolve_theme_for_request(request: Request) -> str:
+        user = ctx.get_current_user(request)
+        principal = user.get("Principal")
+        theme_default = ctx.theme_default
+        theme_locked = ctx.theme_locked
+        if principal is not None and not principal.is_anonymous:
+            conn = sqlite3.connect(ctx.db_path)
+            try:
+                return get_theme_preference(
+                    conn,
+                    principal.id,
+                    theme_default=theme_default,
+                    theme_locked=theme_locked,
+                )
+            finally:
+                conn.close()
+        # Anonymous: cookie-scoped storage, with theme_locked still
+        # winning. Cookie cleared on session end (no Max-Age).
+        if theme_locked is not None:
+            return theme_locked
+        cookie_val = request.cookies.get(_ANON_THEME_COOKIE)
+        if cookie_val and cookie_val in VALID_THEMES:
+            return cookie_val
+        return theme_default or "auto"
+
+    @app.get("/_termin/preferences/theme")
+    async def get_theme_preference_endpoint(request: Request):
+        return {"value": _resolve_theme_for_request(request)}
+
+    @app.post("/_termin/preferences/theme")
+    async def set_theme_preference_endpoint(request: Request):
+        body = await request.json()
+        if not isinstance(body, dict) or "value" not in body:
+            raise HTTPException(
+                status_code=422,
+                detail="Body must be an object with a 'value' key.",
+            )
+        value = body["value"]
+        if value not in VALID_THEMES:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"value must be one of {list(VALID_THEMES)!r}; "
+                    f"got {value!r}"
+                ),
+            )
+        user = ctx.get_current_user(request)
+        principal = user.get("Principal")
+        # Per BRD §6.2: write succeeds even under theme_locked. The
+        # lock check applies only at read time so the user's stored
+        # preference survives lock removal.
+        if principal is not None and not principal.is_anonymous:
+            conn = sqlite3.connect(ctx.db_path)
+            try:
+                set_theme_preference(conn, principal.id, value)
+                conn.commit()
+            except InvalidThemeValueError as e:
+                # Should not happen — value already validated above —
+                # but kept defensively in case the validator and the
+                # endpoint diverge.
+                raise HTTPException(status_code=422, detail=str(e))
+            finally:
+                conn.close()
+            effective = (
+                ctx.theme_locked
+                if ctx.theme_locked is not None
+                else value
+            )
+            return {"value": effective}
+        # Anonymous: cookie-scoped store. Set-Cookie with no Max-Age
+        # → session cookie, cleared when the browser closes.
+        effective = (
+            ctx.theme_locked
+            if ctx.theme_locked is not None
+            else value
+        )
+        response = Response(
+            content=json.dumps({"value": effective}),
+            media_type="application/json",
+        )
+        response.set_cookie(
+            key=_ANON_THEME_COOKIE,
+            value=value,
+            httponly=True,
+            samesite="lax",
+        )
+        return response
 
     @app.get("/runtime/termin.css")
     async def serve_termin_css():

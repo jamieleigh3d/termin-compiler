@@ -147,6 +147,16 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         deploy_config = load_deploy_config(path=deploy_config_path, app_name=app_snake)
     elif deploy_config is None:
         deploy_config = {}
+    # v0.9 Phase 5a.3: source presentation defaults out of deploy_config
+    # so request handlers (theme preference endpoints, render-time
+    # PrincipalContext construction) can apply them without re-reading
+    # the file. Per BRD #2 §6.2 and design §3.13.
+    presentation_defaults = (
+        deploy_config.get("presentation", {}).get("defaults", {})
+        if isinstance(deploy_config, dict) else {}
+    )
+    ctx.theme_default = presentation_defaults.get("theme_default")
+    ctx.theme_locked = presentation_defaults.get("theme_locked")
     # v0.9 Phase 4: pass provider_registry so the dispatcher can wire
     # channel providers at startup (channels with provider_contract).
     # The registry is built earlier in this function (Phase 1 identity).
@@ -323,10 +333,10 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
 
     app_id = ir.get("app_id", "") or ir.get("name", "") or ""
     ctx.get_current_user = make_get_current_user(
-        ctx.roles, ctx.identity_provider, app_id,
+        ctx.roles, ctx.identity_provider, app_id, ctx=ctx,
     )
     ctx.get_user_from_ws = make_get_user_from_websocket(
-        ctx.roles, ctx.identity_provider, app_id,
+        ctx.roles, ctx.identity_provider, app_id, ctx=ctx,
     )
     ctx.require_scope = make_require_scope(ctx.get_current_user)
 
@@ -533,6 +543,20 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
             print(f"[Termin] Migration committed: "
                   f"{len(diff.changes)} change(s) applied "
                   f"(overall classification: {diff.overall_classification})")
+
+        # v0.9 Phase 5a.3: lazy-create the runtime-managed
+        # `_termin_principal_preferences` table alongside the
+        # other private tables. Endpoints lazy-create on first
+        # write too, but creating up-front avoids a one-shot delay
+        # on the first preference set.
+        import sqlite3 as _sqlite3
+        from .preferences import ensure_preferences_table
+        _conn = _sqlite3.connect(resolved_db_path)
+        try:
+            ensure_preferences_table(_conn)
+            _conn.commit()
+        finally:
+            _conn.close()
 
         # Seed data
         if seed_data:

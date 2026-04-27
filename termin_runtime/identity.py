@@ -25,11 +25,56 @@ also carries the new "Principal" key (the typed Principal object)
 for code that wants to consume the contract directly.
 """
 
+from dataclasses import replace
+import sqlite3
+
 from fastapi import Request, HTTPException, WebSocket
 
 from .providers.identity_contract import (
     ANONYMOUS_PRINCIPAL, Principal, IdentityProvider,
 )
+
+
+def _hydrate_principal_preferences(
+    principal: Principal,
+    db_path: str | None,
+    theme_default: str | None,
+    theme_locked: str | None,
+) -> Principal:
+    """v0.9 Phase 5a.3: enrich Principal.preferences with the
+    runtime-managed `_termin_principal_preferences` table.
+
+    Anonymous principals are not hydrated from the DB (their session-
+    scoped storage is cookie-backed, read in the endpoint handler).
+
+    `theme_locked` wins over the stored value at hydration time so
+    CEL expressions see the same effective theme that the GET endpoint
+    returns. The unlocked stored value still persists in the DB —
+    only the in-memory Principal carries the masked value.
+    """
+    if principal.is_anonymous or not db_path:
+        return principal
+    try:
+        from .preferences import get_all_preferences
+        conn = sqlite3.connect(db_path)
+        try:
+            stored = dict(get_all_preferences(conn, principal.id))
+        finally:
+            conn.close()
+    except Exception:
+        # Hydration is non-critical. Failing closed here would break
+        # every authenticated request whenever the prefs table is
+        # mid-migration; degrade to the default instead.
+        stored = {}
+    # Lock-aware projection: GET endpoint returns theme_locked when
+    # set, so CEL must see the same. theme_default backs absent values.
+    if theme_locked is not None:
+        stored["theme"] = theme_locked
+    elif "theme" not in stored and theme_default is not None:
+        stored["theme"] = theme_default
+    merged = dict(principal.preferences)
+    merged.update(stored)
+    return replace(principal, preferences=merged)
 
 
 def _build_user_object(principal: Principal, role_name: str, scopes: list) -> dict:
@@ -204,9 +249,16 @@ def make_get_current_user(
     roles_to_scopes: dict,
     identity_provider: IdentityProvider,
     app_id: str = "",
+    ctx=None,
 ):
     """Create a get_current_user dependency bound to a specific
-    role-to-scope mapping and IdentityProvider."""
+    role-to-scope mapping and IdentityProvider.
+
+    `ctx` (RuntimeContext) optional — when supplied, Principal.preferences
+    is hydrated from the runtime-managed preferences table on every
+    request. Required for `the_user.preferences.theme` to resolve in
+    CEL (v0.9 Phase 5a.3).
+    """
     def get_current_user(request: Request) -> dict:
         cookie_role = request.cookies.get("termin_role")
         cookie_name = request.cookies.get("termin_user_name")
@@ -214,6 +266,13 @@ def make_get_current_user(
             cookie_role, cookie_name, roles_to_scopes,
             identity_provider, app_id,
         )
+        if ctx is not None:
+            principal = _hydrate_principal_preferences(
+                principal,
+                getattr(ctx, "db_path", None),
+                getattr(ctx, "theme_default", None),
+                getattr(ctx, "theme_locked", None),
+            )
         return _build_user_dict(principal, role_name, scopes)
     return get_current_user
 
@@ -222,8 +281,13 @@ def make_get_user_from_websocket(
     roles_to_scopes: dict,
     identity_provider: IdentityProvider,
     app_id: str = "",
+    ctx=None,
 ):
-    """Create a WebSocket auth function bound to a provider."""
+    """Create a WebSocket auth function bound to a provider.
+
+    `ctx` (RuntimeContext) optional — same hydration story as
+    make_get_current_user.
+    """
     def get_user_from_websocket(ws: WebSocket) -> dict:
         # Token query param reserved for future production auth (JWT,
         # session token); for now fall through to cookie auth.
@@ -237,6 +301,13 @@ def make_get_user_from_websocket(
             cookie_role, cookie_name, roles_to_scopes,
             identity_provider, app_id,
         )
+        if ctx is not None:
+            principal = _hydrate_principal_preferences(
+                principal,
+                getattr(ctx, "db_path", None),
+                getattr(ctx, "theme_default", None),
+                getattr(ctx, "theme_locked", None),
+            )
         return _build_user_dict(principal, role_name, scopes)
     return get_user_from_websocket
 

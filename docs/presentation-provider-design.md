@@ -406,7 +406,7 @@ The big one. Sub-divides naturally:
 
 **5a.2** — `TailwindDefaultProvider` extracted from `presentation.py`. Registers in `register_builtins`. Runtime cut-over: `ctx.presentation_providers` populated at startup; render path goes through provider lookup.
 
-**5a.3** — Theme preference table + endpoints + Principal-context plumbing. Coordinates with Phase 6a's `Principal.preferences`.
+**5a.3** — Theme preference table + endpoints + Principal-context plumbing. Coordinates with Phase 6a's `Principal.preferences`. **Landed.** `termin_runtime/preferences.py` module + `_termin_principal_preferences` table; `GET`/`POST /_termin/preferences/theme` endpoints; `_hydrate_principal_preferences` in `identity.py` enriches `Principal.preferences` on each authenticated request (anonymous bypass; theme-locked masking applied). 29 tests under `tests/test_v09_theme_preference.py`.
 
 **5a.4** — Field-level redaction sentinel wiring (confidentiality system → Redacted instances → renderer).
 
