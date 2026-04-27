@@ -36,6 +36,9 @@ from .compute_agent_anthropic import (
 from .channel_webhook_stub import WebhookChannelStub, register_webhook_stub
 from .channel_email_stub import EmailChannelStub, register_email_stub
 from .channel_messaging_stub import MessagingChannelStub, register_messaging_stub
+from .presentation_tailwind_default import (
+    TailwindDefaultProvider, register_tailwind_default,
+)
 
 
 def register_builtins(provider_registry, contract_registry):
@@ -47,6 +50,9 @@ def register_builtins(provider_registry, contract_registry):
         ai-agent (anthropic + stub products for each named contract).
     Phase 4: channel providers — webhook, email, and messaging stubs.
         event-stream stub deferred (no fixture requires it in Phase 4).
+    Phase 5a (slice 2): tailwind-default presentation provider —
+        SSR-only, covers all ten presentation-base contracts.
+        BRD §9.1: subsumes the stub provider role.
     """
     register_stub_identity(provider_registry, contract_registry)
     register_sqlite_storage(provider_registry, contract_registry)
@@ -58,6 +64,7 @@ def register_builtins(provider_registry, contract_registry):
     register_webhook_stub(provider_registry, contract_registry)
     register_email_stub(provider_registry, contract_registry)
     register_messaging_stub(provider_registry, contract_registry)
+    register_tailwind_default(provider_registry, contract_registry)
 
 
 __all__ = [
