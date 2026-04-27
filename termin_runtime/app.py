@@ -87,11 +87,21 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     # subsequent queries open a different file. Locking the path to
     # absolute here gives stable per-app storage regardless of cwd.
     #
-    # When no explicit db_path is given AND the IR carries an
-    # app_id, derive a per-app default so two apps booted in the
-    # same process don't collide on a shared `app.db`. Per BRD
-    # §6.2, storage is per-app; this aligns the default to that.
-    resolved_db_path = db_path if db_path else DEFAULT_DB_PATH
+    # Resolution precedence (highest first):
+    #   1. Explicit `db_path` argument to create_termin_app.
+    #   2. TERMIN_DB_PATH environment variable. Useful for ops
+    #      pipelines that want to point a deployed app at a
+    #      specific path without editing the compiled app.py.
+    #   3. DEFAULT_DB_PATH ("app.db" in cwd). Test conftest
+    #      monkeypatches this; production users running
+    #      `python app.py` from a deploy dir get the historical
+    #      v0.8 behavior.
+    if db_path:
+        resolved_db_path = db_path
+    elif os.environ.get("TERMIN_DB_PATH"):
+        resolved_db_path = os.environ["TERMIN_DB_PATH"]
+    else:
+        resolved_db_path = DEFAULT_DB_PATH
     if resolved_db_path != ":memory:" and not os.path.isabs(resolved_db_path):
         resolved_db_path = os.path.abspath(resolved_db_path)
     ctx = RuntimeContext(ir=ir, ir_json=ir_json, db_path=resolved_db_path)

@@ -16,13 +16,22 @@ import aiosqlite
 from pathlib import Path
 
 
-# Default database path used when no explicit db_path is provided.
-# This is a constant — historically a mutable module global that
-# init_db() rewrote per-app, which caused cross-app contamination
-# when multiple apps booted in the same process (one app's init_db
-# would steer get_db(None) calls in another app to the wrong file).
-# v0.9 made it a constant: each app's db_path lives in its
-# RuntimeContext and runtime code passes ctx.db_path explicitly.
+# Default database path used when no explicit db_path is provided
+# AND no TERMIN_DB_PATH env var is set. This is a constant —
+# historically a mutable module global that init_db() rewrote
+# per-app, causing cross-app contamination when multiple apps
+# booted in the same process (one app's init_db rewrote the
+# global; another app's get_db(None) read the rewritten value).
+# v0.9 made it a constant.
+#
+# Resolution precedence in app.create_termin_app (highest first):
+#   1. Explicit db_path argument.
+#   2. TERMIN_DB_PATH environment variable (Phase 2.x g).
+#   3. This constant — "app.db" relative to cwd.
+#
+# Production deployments should pass an explicit db_path or set
+# TERMIN_DB_PATH; the cwd-relative fallback exists for the
+# `python app.py` shape historically supported by v0.8.
 DEFAULT_DB_PATH: str = "app.db"
 
 # Safe identifier pattern: lowercase letters, digits, underscores. Must start with a letter.

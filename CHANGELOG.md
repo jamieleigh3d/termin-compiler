@@ -2,6 +2,45 @@
 
 ## Unreleased — v0.9 in progress (feature/v0.9)
 
+### Phase 2.x (g): app.db cwd cleanup finishing pass (2026-04-26)
+
+Closes the v0.9.x autouse-fixture-and-friends storage-isolation
+work item flagged in the journal. Phase 2.x (b) paid down most
+of this with the per-test `_isolated_test_db` fixture; this
+commit lands the production-side ergonomics.
+
+**db_path resolution precedence** (now fully documented and
+tested):
+  1. Explicit `db_path` argument to `create_termin_app()`.
+  2. `TERMIN_DB_PATH` environment variable. Useful for ops
+     pipelines pointing a deployed app at a specific path
+     without editing the compiled app.py.
+  3. `DEFAULT_DB_PATH` ("app.db" in cwd). Test conftest
+     monkeypatches this; `python app.py` from a deploy dir
+     gets the historical v0.8 behavior unchanged.
+
+**Compiled `app.py` template additions:**
+- Honors `TERMIN_DB_PATH` env var at module-import time so the
+  env-driven path applies even when the module is imported by
+  another launcher (e.g., uvicorn via FastAPI ASGI factory).
+- New `--db-path` CLI flag for explicit override.
+- The CLI flag wins over the env var, which wins over the
+  default — same precedence as the runtime resolution.
+
+**Tests:** 2 new in `tests/test_runtime.py::TestDbPathIsolation`:
+  - `test_termin_db_path_env_var_used_when_no_explicit_db_path`:
+    set TERMIN_DB_PATH, boot an app with no db_path, verify the
+    env-pointed file is the one the runtime writes to.
+  - `test_explicit_db_path_overrides_env_var`: with both set,
+    verify only the explicit path is used.
+
+**No breaking change.** Existing deployments running
+`python app.py` from a deploy directory continue to use
+`./app.db` exactly as before; the env var and CLI flag are
+strictly additive.
+
+Compiler: 1927 pass / 0 fail / 0 skip / 0 xfail.
+
 ### Phase 2.x (f): CEL → Predicate AST compiler (2026-04-26)
 
 New module `termin_runtime/cel_predicate.py` compiles a CEL

@@ -87,8 +87,15 @@ _deploy_config = None
 if _deploy_path.exists():
     _deploy_config = json.loads(_deploy_path.read_text(encoding="utf-8"))
 
+# Default db path: the env var TERMIN_DB_PATH wins when set,
+# otherwise the runtime falls back to DEFAULT_DB_PATH ("app.db"
+# relative to cwd). The CLI's --db-path overrides both.
+import os as _os
+_env_db_path = _os.environ.get("TERMIN_DB_PATH") or None
+
 app = create_termin_app(IR_JSON, seed_data=_seed_data,
                         deploy_config=_deploy_config,
+                        db_path=_env_db_path,
                         strict_channels=(_deploy_config is not None))
 
 if __name__ == "__main__":
@@ -99,6 +106,10 @@ if __name__ == "__main__":
                         help="Path to a JSON seed file (dict of content_name -> [records])")
     parser.add_argument("--deploy", type=str, default=None,
                         help="Path to deploy config JSON file")
+    parser.add_argument("--db-path", dest="db_path", type=str, default=None,
+                        help=("Path to the SQLite database file. "
+                              "Overrides TERMIN_DB_PATH and the "
+                              "default app.db (in cwd)."))
     args = parser.parse_args()
     if args.seed:
         seed_path = Path(args.seed)
@@ -106,8 +117,10 @@ if __name__ == "__main__":
             _seed_data = json.loads(seed_path.read_text(encoding="utf-8"))
     if args.deploy:
         _deploy_config = json.loads(Path(args.deploy).read_text(encoding="utf-8"))
+    cli_db_path = args.db_path or _env_db_path
     app = create_termin_app(IR_JSON, seed_data=_seed_data,
                             deploy_config=_deploy_config,
+                            db_path=cli_db_path,
                             strict_channels=(_deploy_config is not None))
     uvicorn.run(app, host="0.0.0.0", port=args.port)
 '''

@@ -11,6 +11,7 @@ compute function registration, page rendering, API routes, etc.
 """
 
 import json
+import os
 import pytest
 from pathlib import Path
 from fastapi.testclient import TestClient
@@ -812,6 +813,42 @@ class TestDbPathIsolation:
         # runtime code" since pytest restores after the test.
         assert isinstance(storage.DEFAULT_DB_PATH, str)
         assert storage.DEFAULT_DB_PATH  # non-empty
+
+    def test_termin_db_path_env_var_used_when_no_explicit_db_path(
+        self, compiled_packages, tmp_path, monkeypatch,
+    ):
+        """v0.9 Phase 2.x (g): TERMIN_DB_PATH env var overrides
+        DEFAULT_DB_PATH when create_termin_app() is called without
+        an explicit db_path."""
+        target = str(tmp_path / "from_env.db")
+        monkeypatch.setenv("TERMIN_DB_PATH", target)
+        ir_json = _ir_json(compiled_packages["hello"])
+        with TestClient(create_termin_app(
+            ir_json, strict_channels=False
+        )) as client:
+            r = client.get("/")
+            assert r.status_code == 200
+        # The env-pointed file should now exist.
+        assert os.path.exists(target), (
+            f"app didn't honor TERMIN_DB_PATH: {target!r} not created")
+
+    def test_explicit_db_path_overrides_env_var(
+        self, compiled_packages, tmp_path, monkeypatch,
+    ):
+        """Explicit db_path argument trumps TERMIN_DB_PATH."""
+        env_path = str(tmp_path / "env.db")
+        explicit_path = str(tmp_path / "explicit.db")
+        monkeypatch.setenv("TERMIN_DB_PATH", env_path)
+        ir_json = _ir_json(compiled_packages["hello"])
+        with TestClient(create_termin_app(
+            ir_json, strict_channels=False, db_path=explicit_path,
+        )) as client:
+            r = client.get("/")
+            assert r.status_code == 200
+        assert os.path.exists(explicit_path), "explicit db not created"
+        assert not os.path.exists(env_path), (
+            f"env-pointed db should NOT have been created when "
+            f"explicit db_path was passed; found: {env_path!r}")
 
     def test_two_apps_keep_separate_dbs(self, compiled_packages, tmp_path):
         """Boot two apps with separate db_paths; rows in one don't appear
