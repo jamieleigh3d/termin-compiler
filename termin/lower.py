@@ -35,7 +35,7 @@ from .ir import (
     ChannelActionSpec, ChannelSpec, BoundarySpec,
     BoundaryPropertySpec, ErrorHandlerSpec, ErrorActionSpec,
     FieldDependency, ReclassificationPoint, DependentValueSpec,
-    OwnershipSpec,
+    OwnershipSpec, RowFilterSpec,
 )
 from .lower_pages import lower_pages
 
@@ -87,6 +87,23 @@ def _scope_for_verb(access_rules: list[AccessRule], verb: str) -> Optional[str]:
         if verb in rule.verbs or "create or update" in rule.verbs and verb in ("create", "update"):
             return rule.scope
     return None
+
+
+def _their_own_for_verb(access_rules: list[AccessRule], verb: str) -> bool:
+    """v0.9 Phase 6a.3: returns True iff the first matching access rule
+    for `verb` carries the `their own` qualifier. Mirrors `_scope_for_verb`
+    semantics so the row_filter follows the same rule that determined the
+    required_scope on the route.
+
+    A non-their_own rule that matches first wins — meaning that if a
+    content declares both `can view their own X` and `can view X` for the
+    same scope, the broader rule (whichever appears first) determines the
+    route shape. This is the simplest source-order policy for v0.9.
+    """
+    for rule in access_rules:
+        if verb in rule.verbs or "create or update" in rule.verbs and verb in ("create", "update"):
+            return rule.their_own
+    return False
 
 
 
@@ -226,6 +243,7 @@ def lower(program: Program) -> AppSpec:
                 content=_snake(c.name),
                 scope=rule.scope,
                 verbs=frozenset(verbs),
+                their_own=rule.their_own,
             ))
 
     # ── Lower state machines ──
@@ -357,6 +375,33 @@ def lower(program: Program) -> AppSpec:
         update_scope = _scope_for_verb(c.access_rules, "update")
         delete_scope = _scope_for_verb(c.access_rules, "delete")
 
+        # v0.9 Phase 6a.3: row-filter resolution. When an access rule
+        # uses `their own <content>` and the content declares ownership,
+        # the corresponding route gets a RowFilterSpec(kind="ownership").
+        # Without ownership the analyzer raises TERMIN-S053; we still
+        # emit the filter here defensively so downstream code sees a
+        # consistent shape.
+        ownership_field = (
+            _snake(c.owned_by_declarations[0])
+            if c.owned_by_declarations else None
+        )
+
+        def _row_filter_if(verb: str) -> Optional[RowFilterSpec]:
+            if not ownership_field:
+                return None
+            return (
+                RowFilterSpec(kind="ownership", field=ownership_field)
+                if _their_own_for_verb(c.access_rules, verb)
+                else None
+            )
+
+        view_filter = _row_filter_if("view")
+        update_filter = _row_filter_if("update")
+        delete_filter = _row_filter_if("delete")
+        # CREATE never gets a row_filter — there's no row to filter
+        # against at create time. The runtime stamps `<owning_field> =
+        # the user.id` on creates instead (Phase 6a.5 wires this).
+
         # GET list
         routes.append(RouteSpec(
             method=HttpMethod.GET,
@@ -364,6 +409,7 @@ def lower(program: Program) -> AppSpec:
             kind=RouteKind.LIST,
             content_ref=content_ref,
             required_scope=view_scope,
+            row_filter=view_filter,
         ))
         # POST create
         routes.append(RouteSpec(
@@ -380,6 +426,7 @@ def lower(program: Program) -> AppSpec:
             kind=RouteKind.GET_ONE,
             content_ref=content_ref,
             required_scope=view_scope,
+            row_filter=view_filter,
         ))
         # PUT update
         routes.append(RouteSpec(
@@ -388,6 +435,7 @@ def lower(program: Program) -> AppSpec:
             kind=RouteKind.UPDATE,
             content_ref=content_ref,
             required_scope=update_scope,
+            row_filter=update_filter,
         ))
         # DELETE
         routes.append(RouteSpec(
@@ -396,6 +444,7 @@ def lower(program: Program) -> AppSpec:
             kind=RouteKind.DELETE,
             content_ref=content_ref,
             required_scope=delete_scope,
+            row_filter=delete_filter,
         ))
 
         # State transition routes (D-11.2).

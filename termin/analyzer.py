@@ -173,14 +173,16 @@ class Analyzer:
         self._check_ownership()  # v0.9 Phase 6a.2
 
     def _check_ownership(self) -> None:
-        """v0.9 Phase 6a.2: validate `Each X is owned by <field>` declarations.
+        """v0.9 Phase 6a.2 + 6a.3: validate ownership declarations and the
+        `their own <content>` permission verb.
 
-        Per BRD #3 §3.3:
+        Per BRD #3 §3.3 / §3.4:
           - The named field must exist on the content type.
           - Must be `principal`-typed.
           - Must be `unique`.
           - Must be `required`.
           - At most one ownership declaration per content.
+          - `their own <content>` access lines require ownership block.
 
         Codes:
           TERMIN-S048 — ownership field doesn't exist on content
@@ -188,8 +190,31 @@ class Analyzer:
           TERMIN-S050 — ownership field is not `unique`
           TERMIN-S051 — ownership field is not `required`
           TERMIN-S052 — multiple ownership declarations on the same content
+          TERMIN-S053 — `their own X` access without X declaring ownership
         """
         for content in self.program.contents:
+            # v0.9 Phase 6a.3 first: TERMIN-S053. Validate `their own`
+            # access rules against the content's ownership declaration
+            # before we walk the ownership-only checks below — a content
+            # may have `their own` rules without declaring ownership at
+            # all (which is the error). The ownership-side checks below
+            # only run when an ownership decl exists.
+            for rule in content.access_rules:
+                if rule.their_own and not content.owned_by_declarations:
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'Access rule "Anyone with \\"{rule.scope}\\" can '
+                            f'... their own {content.name}" requires '
+                            f'"{content.name}" to declare ownership. Add a '
+                            f'line "Each {content.singular or content.name} is owned by '
+                            f'<principal-field>" to the content body, where '
+                            f'<principal-field> is a `principal`-typed, '
+                            f'required, unique field on the content. Per '
+                            f'BRD #3 §3.4.'
+                        ),
+                        line=rule.line,
+                        code="TERMIN-S053",
+                    ))
             decls = list(getattr(content, "owned_by_declarations", []))
             if not decls:
                 continue

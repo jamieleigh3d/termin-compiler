@@ -128,6 +128,24 @@ class AccessGrant:
     content: str              # snake_case table name
     scope: str              # scope string
     verbs: frozenset[Verb]
+    # v0.9 Phase 6a.3: row-filter qualifier from `their own <content>`
+    # access lines (BRD #3 §3.4). When True, routes built from this
+    # grant carry a RowFilterSpec(kind="ownership", field=<owning-field>)
+    # so the runtime restricts the result set to rows the invoking
+    # principal owns.
+    their_own: bool = False
+
+
+@dataclass(frozen=True)
+class RowFilterSpec:
+    """Per-route row-filter declaration (BRD #3 §3.7).
+
+    `kind="ownership"` filters rows where `<field> == invoking principal id`.
+    Future kinds may include "scope" or richer predicates; v0.9 ships
+    only the ownership shape.
+    """
+    kind: str           # "ownership" (v0.9; extensible)
+    field: Optional[str] = None   # snake_case ownership field for kind="ownership"
 
 
 # ── Auth ──
@@ -236,6 +254,11 @@ class RouteSpec:
                                         # target_state across machines, so
                                         # the runtime needs both fields to
                                         # disambiguate.
+    # v0.9 Phase 6a.3: row-filter declaration for ownership-restricted
+    # routes (BRD #3 §3.4 / §3.7). None = no row filter; runtime
+    # sees all rows the principal's scope grants. Populated when an
+    # access rule uses `their own <content>`.
+    row_filter: Optional[RowFilterSpec] = None
 
 
 # ── Pages / UI ──

@@ -45,7 +45,18 @@ def _build_access(r, ln) -> AccessRule:
             vs = [vr.strip()]
         else:
             vs = ["view"]
-    return AccessRule(scope=scope, verbs=vs, line=ln)
+    # v0.9 Phase 6a.3: detect `their own <content>` row-filter qualifier.
+    # The grammar's rest_of_line captures everything after the verb phrase
+    # as content_name. When source uses `their own sessions`, content_name
+    # ends up as "their own sessions"; we strip the qualifier and flag the
+    # AccessRule so lowering can attach a row_filter to the resulting
+    # routes. Per BRD #3 §3.4.
+    cn = str(r.get("content_name", "")).strip()
+    their_own = False
+    cn_lower = cn.lower()
+    if cn_lower.startswith("their own "):
+        their_own = True
+    return AccessRule(scope=scope, verbs=vs, their_own=their_own, line=ln)
 
 
 def _build_story(text, ln) -> UserStory:

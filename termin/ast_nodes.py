@@ -54,6 +54,10 @@ class Field:
 class AccessRule:
     scope: str
     verbs: list[str]  # "view", "create", "update", "delete", "create or update"
+    # v0.9 Phase 6a.3: `their own <content>` row-filter qualifier per
+    # BRD #3 §3.4. When true, the access rule applies only to rows the
+    # invoking principal owns (per the content's `is owned by` declaration).
+    their_own: bool = False
     line: int = 0
 
 
