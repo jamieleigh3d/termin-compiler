@@ -425,8 +425,11 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
                         return {"error": (
                             f"machine_name is required for state_transition on "
                             f"'{cname}' (has {len(sm_list)} state machines)")}
+                # Phase 2.x (d): transitions go through ctx.storage
+                # for atomic CAS — same path as the human transition
+                # endpoint.
                 result = await do_state_transition(
-                    db, cname, rid, machine, target,
+                    ctx.storage, cname, rid, machine, target,
                     {"role": "service", "scopes": list(ctx.scope_for_content_verb(cname, "update") or [])},
                     ctx.sm_lookup, ctx.terminator, ctx.event_bus)
                 return result

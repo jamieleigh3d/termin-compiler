@@ -727,6 +727,102 @@ class SqliteStorageProvider:
         finally:
             await db.close()
 
+    async def update_if(
+        self,
+        content_type: str,
+        id: Any,
+        condition: sc.Predicate,
+        patch: Mapping[str, Any],
+    ) -> sc.UpdateResult:
+        """Conditional update with predicate pushdown.
+
+        Compiles `condition` to a parameterized SQL WHERE fragment
+        (reusing the same predicate compiler that `query()` uses),
+        emits a single
+            `UPDATE <table> SET <patch> WHERE id = ? AND <cond>`
+        statement, then disambiguates the `rowcount==0` case with a
+        follow-up SELECT by id:
+          - row absent → not_found
+          - row present → condition_failed (with current record)
+
+        SQL pushdown keeps the read-and-write atomic in one
+        statement, avoiding TOCTOU even on backends with weaker
+        isolation. See storage_contract.update_if for the contract
+        the runtime expects.
+        """
+        # Empty patch is a no-op semantically, but we still need to
+        # check the condition. Treat as: read row, check cond, return
+        # appropriate UpdateResult without any UPDATE.
+        cleaned = {k: v for k, v in patch.items()
+                   if v is not None and v != ""}
+
+        db = await self._connect()
+        try:
+            cond_sql, cond_params = _compile_predicate(condition)
+
+            if not cleaned:
+                # No-op update, but condition still gates the result.
+                # SELECT WHERE id=? AND <cond>. If row matches both,
+                # condition holds → "applied" with no actual change.
+                # If id not present → not_found. If id present but
+                # cond doesn't match → condition_failed (need a 2nd
+                # query to fetch current state for the result).
+                _storage._assert_safe(content_type, "table name")
+                cursor = await db.execute(
+                    f"SELECT * FROM {_storage._q(content_type)} "
+                    f"WHERE id = ? AND ({cond_sql})",
+                    [id, *cond_params])
+                row = await cursor.fetchone()
+                if row is not None:
+                    return sc.UpdateResult(
+                        applied=True, record=dict(row), reason="applied")
+                # Disambiguate: did the row exist at all?
+                existing = await _storage.get_record_by_id(
+                    db, content_type, id)
+                if existing is None:
+                    return sc.UpdateResult(
+                        applied=False, record=None, reason="not_found")
+                return sc.UpdateResult(
+                    applied=False, record=existing,
+                    reason="condition_failed")
+
+            # Validate field names in patch via the same safety
+            # check init_db / update_fields use.
+            for col in cleaned:
+                _storage._assert_safe(col, "patch column")
+            _storage._assert_safe(content_type, "table name")
+
+            set_clauses = ", ".join(
+                f"{_storage._q(c)} = ?" for c in cleaned)
+            set_params = list(cleaned.values())
+
+            sql = (
+                f"UPDATE {_storage._q(content_type)} "
+                f"SET {set_clauses} "
+                f"WHERE id = ? AND ({cond_sql})"
+            )
+            cursor = await db.execute(
+                sql, [*set_params, id, *cond_params])
+            await db.commit()
+
+            if cursor.rowcount > 0:
+                updated = await _storage.get_record_by_id(
+                    db, content_type, id)
+                return sc.UpdateResult(
+                    applied=True, record=updated, reason="applied")
+
+            # rowcount == 0: disambiguate not_found vs condition_failed.
+            existing = await _storage.get_record_by_id(
+                db, content_type, id)
+            if existing is None:
+                return sc.UpdateResult(
+                    applied=False, record=None, reason="not_found")
+            return sc.UpdateResult(
+                applied=False, record=existing,
+                reason="condition_failed")
+        finally:
+            await db.close()
+
     async def delete(
         self,
         content_type: str,
@@ -792,9 +888,17 @@ def _compile_predicate(p: sc.Predicate) -> tuple[str, list]:
     """
     if isinstance(p, sc.Eq):
         _storage._assert_safe(p.field, "predicate field")
+        # SQL `= NULL` is always false (per ANSI). Use IS NULL when
+        # the value is None — needed for "claim if unclaimed" /
+        # "transition only when field is null" predicates that v0.9
+        # update_if relies on.
+        if p.value is None:
+            return f"{_storage._q(p.field)} IS NULL", []
         return f"{_storage._q(p.field)} = ?", [p.value]
     if isinstance(p, sc.Ne):
         _storage._assert_safe(p.field, "predicate field")
+        if p.value is None:
+            return f"{_storage._q(p.field)} IS NOT NULL", []
         return f"{_storage._q(p.field)} != ?", [p.value]
     if isinstance(p, sc.Gt):
         _storage._assert_safe(p.field, "predicate field")

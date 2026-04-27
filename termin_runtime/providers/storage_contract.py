@@ -263,6 +263,41 @@ class CascadeMode(str, Enum):
     RESTRICT = "restrict"
 
 
+# ── Conditional-update result ──
+
+
+@dataclass(frozen=True)
+class UpdateResult:
+    """Outcome of a conditional update (StorageProvider.update_if).
+
+    Three terminal states distinguish the cases that callers route
+    differently:
+
+      - applied=True, record=<post-update> — update went through.
+      - applied=False, record=None, reason="not_found" — id didn't
+        match any row. Runtime translates to HTTP 404.
+      - applied=False, record=<current>, reason="condition_failed" —
+        row exists but the predicate didn't match the current state.
+        Runtime translates to HTTP 409 and surfaces the current
+        record so the UI can show "someone else already changed it".
+
+    Attributes:
+      applied: True iff the update was applied.
+      record:  The post-update record if applied; the pre-update
+               record if condition_failed; None if not_found.
+      reason:  "applied" | "not_found" | "condition_failed".
+    """
+    applied: bool
+    record: Optional[Mapping[str, Any]]
+    reason: str
+
+    def __post_init__(self) -> None:
+        if self.reason not in ("applied", "not_found", "condition_failed"):
+            raise ValueError(
+                f"UpdateResult.reason must be 'applied' | 'not_found' | "
+                f"'condition_failed', got {self.reason!r}")
+
+
 # ── Migration errors ──
 
 
@@ -637,6 +672,44 @@ class StorageProvider(Protocol):
         Patch semantics: keys present in `patch` overwrite; absent
         keys are unchanged. To clear a field, pass an explicit None
         (not omitted).
+        """
+        ...
+
+    async def update_if(
+        self,
+        content_type: str,
+        id: Any,
+        condition: "Predicate",
+        patch: Mapping[str, Any],
+    ) -> UpdateResult:
+        """Conditional ("compare-and-set") update.
+
+        Applies `patch` to the record at `id` ONLY IF the record's
+        current state matches `condition` (any Predicate AST node —
+        Eq, Ne, Gt, And, Or, Not, etc.). Atomic per-call: providers
+        MUST ensure the read-and-write is serializable, either by
+        pushing the predicate down to a single SQL UPDATE WHERE
+        statement (the SqliteStorageProvider strategy) or by
+        wrapping in a transaction with appropriate locking.
+
+        Returns UpdateResult with three terminal states:
+          - applied=True with the post-update record
+          - applied=False, reason="not_found" (id didn't match)
+          - applied=False, reason="condition_failed" with the
+            current record so the caller can show what blocked it
+
+        Use cases (BRD §6.2):
+          - State-machine transitions: condition = Eq("status", "draft"),
+            patch = {"status": "in_review"}.
+          - Optimistic concurrency: condition = Eq("version", 5),
+            patch = {"version": 6, ...changes...}.
+          - Claim-only-if-unclaimed: condition = Eq("assignee", None),
+            patch = {"assignee": user_id}.
+
+        v0.9 Phase 2.x (c) ships idempotency_key on create() only;
+        update_if's predicate provides the equivalent
+        optimistic-concurrency guarantee for updates without needing
+        a separate idempotency surface.
         """
         ...
 

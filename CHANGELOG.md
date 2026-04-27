@@ -2,6 +2,71 @@
 
 ## Unreleased — v0.9 in progress (feature/v0.9)
 
+### Phase 2.x (d): conditional update + state-machine routing (2026-04-26)
+
+The Storage contract gains a CAS-style conditional update,
+`update_if(content_type, id, condition: Predicate, patch)`, and
+the runtime's state-machine engine now routes through it.
+Concurrent transitions on the same record from the same source
+state are no longer racy — exactly one CAS wins, the loser sees
+HTTP 409 with the post-winner state.
+
+**Naming and shape (JL review):** `update_if` (not
+`compare_and_set` / `transition`). Reuses the existing Predicate
+AST as the condition, so providers that already implement
+`query()` get CAS for free. Returns a three-state `UpdateResult`:
+
+```python
+@dataclass(frozen=True)
+class UpdateResult:
+    applied: bool
+    record: Optional[Mapping[str, Any]]  # post-update | current | None
+    reason: str  # "applied" | "not_found" | "condition_failed"
+```
+
+The three-state result lets route handlers distinguish 404
+("record not found") from 409 ("someone else already changed it"
+— with the current record so the UI can show the actual state).
+
+**SqliteStorageProvider implementation.** SQL pushdown via the
+existing predicate compiler, single-statement
+`UPDATE <table> SET <patch> WHERE id = ? AND <cond>`. `rowcount==0`
+disambiguates `not_found` vs `condition_failed` via a follow-up
+SELECT by id. Atomic per-call without needing a transaction.
+
+**Predicate compiler enhancement.** `Eq(field, None)` now compiles
+to `field IS NULL` (not `field = NULL`, which is always false in
+SQL). Same for `Ne(field, None)` → `field IS NOT NULL`. This is
+what enables the canonical claim-only-if-unclaimed shape:
+`Eq("assignee", None)`. Also benefits `query()` callers.
+
+**State machine routing.** `do_state_transition` now takes a
+StorageProvider instead of a raw db connection. The function:
+  1. Reads the current record (via `storage.read`)
+  2. Validates the transition is declared and the user has scope
+  3. Issues `storage.update_if(condition=Eq(column, current),
+     patch={column: target})` — atomic CAS
+  4. On `condition_failed`, surfaces "concurrent transition; record
+     is now '<post-race-state>'" with HTTP 409
+
+**Runtime call-site migration:**
+- `routes.py` POST-transition route: passes `ctx.storage` instead
+  of opening a raw db connection.
+- `routes.py` PUT-with-state route: same.
+- `transitions.py` user-facing transition endpoint: same; raw db
+  connection removed from this path entirely.
+- `compute_runner.py` agent-tool `state_transition`: same; service
+  identity transitions go through the same atomic CAS.
+
+**Tests:** 21 new tests in `tests/test_v09_update_if.py`:
+applied/not_found/condition_failed paths; compound predicates
+(And/Or/Not/Gt); state-machine canonical shape; double-transition
+race detection; optimistic-concurrency-via-version; claim-only-if-
+unclaimed (Eq with None); empty-patch-with-condition-gate; result
+shape validation. Plus existing state-machine tests confirm the
+migration is behavior-preserving (1893 pass / 0 fail / 0 skip on
+the full suite).
+
 ### Phase 2.x (c): idempotency-key dedup for create() (2026-04-26)
 
 The Storage contract's `create(content_type, record, *,

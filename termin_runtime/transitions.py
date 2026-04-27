@@ -16,7 +16,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from .context import RuntimeContext
-from .storage import get_db, get_record_by_id
+from .storage import get_record_by_id
 from .state import do_state_transition
 
 
@@ -115,14 +115,17 @@ def register_transition_routes(app, ctx: RuntimeContext):
             raise HTTPException(status_code=404, detail=f"Unknown content: {content}")
         target = target_state.replace("_", " ")
         user = ctx.get_current_user(request)
-        db = await get_db(ctx.db_path)
+        # Phase 2.x (d): transition routes through ctx.storage so
+        # the read-and-write inside do_state_transition is an atomic
+        # CAS. Feedback-evaluation reads also go through the
+        # provider — no raw db handle needed in this path anymore.
         try:
             # Get full record before transition for feedback CEL evaluation
-            record = await get_record_by_id(db, content, record_id) or {}
+            record = await ctx.storage.read(content, record_id) or {}
             from_state = record.get(machine_name)   # read this machine's column
 
             result = await do_state_transition(
-                db, content, record_id, machine_name, target, user,
+                ctx.storage, content, record_id, machine_name, target, user,
                 ctx.sm_lookup, ctx.terminator, ctx.event_bus)
             is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
@@ -197,5 +200,3 @@ def register_transition_routes(app, ctx: RuntimeContext):
             else:
                 # API client — return the actual error status
                 raise
-        finally:
-            await db.close()

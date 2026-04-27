@@ -44,6 +44,7 @@ from .storage_contract import (
     FieldChange, ContentChange, MigrationDiff, initial_deploy_diff,
     CLASSIFICATIONS, worst_classification,
     BackupFailedError, MigrationValidationError,
+    UpdateResult,
 )
 
 __all__ = [
@@ -60,4 +61,5 @@ __all__ = [
     "FieldChange", "ContentChange", "MigrationDiff", "initial_deploy_diff",
     "CLASSIFICATIONS", "worst_classification",
     "BackupFailedError", "MigrationValidationError",
+    "UpdateResult",
 ]
