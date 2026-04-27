@@ -2,6 +2,53 @@
 
 ## Unreleased — v0.9 in progress (feature/v0.9)
 
+### Phase 2.x (e): keyset cursors (2026-04-26)
+
+The SqliteStorageProvider's `query()` now uses keyset (seek-style)
+cursors instead of the v0.9 stop-gap base64-of-offset shape.
+
+**Cursor format** (opaque to callers — tests assert only that
+`decode(encode(x)) == x` and that pagination round-trips produce
+correct records):
+
+  cursor = base64(JSON([sort_field_value..., id]))
+
+The next-page query reconstructs an SQL row-comparison filter
+that picks up records strictly after the cursor in the declared
+ORDER BY direction. Mixed asc/desc directions are supported via
+an OR-of-AND chain:
+
+  (f1 > v1) OR
+  (f1 = v1 AND f2 < v2) OR
+  (f1 = v1 AND f2 = v2 AND id > id_val)
+
+**Why keyset:**
+- O(1) skip-ahead vs O(n) for OFFSET.
+- Stable under concurrent inserts earlier in the result set:
+  offset cursors duplicate or skip records when rows are inserted
+  before the cursor; keyset cursors don't.
+- `id` is automatically appended as the final sort key (also
+  enforced for default order) so cursor uniqueness is guaranteed.
+
+**Predicate compiler enhancement** (carried over from Phase 2.x d):
+`Eq(field, None)` compiles to `IS NULL`; `Ne(field, None)` to
+`IS NOT NULL`. The keyset filter benefits from this — NULL sort-
+key values now pack into the cursor and roundtrip correctly.
+
+**Legacy URL `?offset=N` preserved** in the auto-CRUD route
+handler via fetch-and-slice. Callers using `?offset=` see no
+behavior change. Callers can also pass `?cursor=` directly to
+get the keyset-native path (mutual-exclusive with `?offset=`).
+
+**Tests:** 7 new tests in `tests/test_v09_keyset_cursors.py`:
+default-order pagination, custom-sort pagination, no-duplicates
+across pages, empty-table → no cursor, exact-page-size → no
+cursor, insert-during-pagination stability, mixed asc/desc
+order. Cursor codec roundtrip + opacity in
+`test_v09_storage_contract.py::TestCursorEncoding`.
+
+Compiler: 1901 pass / 0 fail / 0 skip / 0 xfail.
+
 ### Phase 2.x (d): conditional update + state-machine routing (2026-04-26)
 
 The Storage contract gains a CAS-style conditional update,

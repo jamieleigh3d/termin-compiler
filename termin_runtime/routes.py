@@ -124,7 +124,7 @@ def _make_list_route(app, ctx, path, cr, sc):
     deps = [Depends(ctx.require_scope(sc))] if sc else []
 
     # Reserved query-param names — not treated as field filters.
-    _reserved_params = {"limit", "offset", "sort"}
+    _reserved_params = {"limit", "offset", "sort", "cursor"}
 
     @app.get(path, dependencies=deps)
     async def list_route(request: Request, _cr=cr):
@@ -219,19 +219,45 @@ def _make_list_route(app, ctx, path, cr, sc):
         # 1000 matches QueryOptions' upper bound and the v0.8 list
         # endpoint's protective cap.
         effective_limit = limit_from_url if limit_from_url is not None else 1000
-        cursor = None
+
+        # Phase 2.x (e): the provider now uses keyset cursors. The
+        # legacy `?offset=N` URL parameter is translated by fetching
+        # `offset + limit` records and slicing — fine for small
+        # offsets which is all the legacy callers ever do. For
+        # cursor-based callers the URL exposes `?cursor=` directly.
+        url_cursor = qp.get("cursor")
+        if url_cursor and offset:
+            raise HTTPException(
+                status_code=400,
+                detail="cannot combine ?cursor= with ?offset=")
+
         if offset:
-            from .providers.builtins.storage_sqlite import _encode_cursor
-            cursor = _encode_cursor(offset)
-        options = QueryOptions(
-            limit=effective_limit,
-            cursor=cursor,
-            order_by=tuple(order_by_list),
-        )
-        try:
-            page = await ctx.storage.query(_cr, predicate, options)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            # Fetch one extra so we know if there's "more" past offset+limit.
+            options = QueryOptions(
+                limit=min(offset + effective_limit, 1000),
+                order_by=tuple(order_by_list),
+            )
+            try:
+                page = await ctx.storage.query(_cr, predicate, options)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            # Slice off the offset; the page returned to the caller
+            # is records[offset:offset+limit].
+            sliced = list(page.records)[offset:offset + effective_limit]
+            from termin_runtime.providers.storage_contract import Page
+            page = Page(records=tuple(sliced),
+                        next_cursor=None,  # legacy offset path
+                        estimated_total=None)
+        else:
+            options = QueryOptions(
+                limit=effective_limit,
+                cursor=url_cursor,
+                order_by=tuple(order_by_list),
+            )
+            try:
+                page = await ctx.storage.query(_cr, predicate, options)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
         records = [dict(r) for r in page.records]
         records = redact_records(records, schema, set(user_scopes))
         if _cr.startswith("compute_audit_log_"):

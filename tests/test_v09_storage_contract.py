@@ -334,19 +334,43 @@ class TestPredicateCompilation:
 
 
 class TestCursorEncoding:
-    def test_encode_decode_roundtrip(self):
-        for offset in (0, 1, 50, 999):
-            assert _decode_cursor(_encode_cursor(offset)) == offset
+    """v0.9 Phase 2.x (e): keyset cursor encoding.
 
-    def test_decode_none_returns_zero(self):
-        assert _decode_cursor(None) == 0
+    Cursor is opaque per the contract — these tests verify the
+    codec roundtrip and that None/empty inputs decode to "no
+    cursor" (page 1). They MUST NOT assert specific cursor
+    contents (only decode(encode(x)) == x); end-to-end pagination
+    behavior is exercised by TestSqliteProviderQuery.
+    """
 
-    def test_decode_empty_returns_zero(self):
-        assert _decode_cursor("") == 0
+    def test_encode_decode_roundtrip_keyset_values(self):
+        # Keyset cursor: (sort_field_value..., id) tuple.
+        for values in (
+            [42],                       # default order: just id
+            ["alpha", 1],               # name asc, id asc
+            ["zeta", 99999],
+            [None, 1],                  # NULL sort key
+            [3.14, "label", 7],         # mixed-type sort
+        ):
+            assert _decode_cursor(_encode_cursor(values)) == values
+
+    def test_decode_none_returns_no_cursor(self):
+        assert _decode_cursor(None) is None
+
+    def test_decode_empty_returns_no_cursor(self):
+        assert _decode_cursor("") is None
 
     def test_decode_garbage_raises(self):
         with pytest.raises(ValueError, match="Invalid cursor"):
-            _decode_cursor("not-base64-not-an-int")
+            _decode_cursor("not-base64-not-json")
+
+    def test_decode_non_list_raises(self):
+        # A JSON object inside the base64 should fail (cursor must
+        # be a list of values).
+        import base64
+        bad = base64.urlsafe_b64encode(b'{"foo":"bar"}').decode("ascii")
+        with pytest.raises(ValueError, match="Invalid cursor"):
+            _decode_cursor(bad)
 
 
 class TestSqliteProviderCRUD:

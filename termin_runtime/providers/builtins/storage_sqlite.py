@@ -648,40 +648,58 @@ class SqliteStorageProvider:
         residual. CEL→AST compilation is a separate runtime layer
         (BRD §6.2: "One CEL evaluator lives in the runtime").
 
-        Cursor encoding (v0.9): the cursor is the last record's id
-        plus a tiebreaker hash, base64-encoded. v0.9 ships an
-        offset-derived cursor for compatibility with the legacy
-        list_records() shape; a true keyset cursor is a Phase 2.x
-        follow-on. Callers must treat the cursor as opaque.
+        Cursor encoding (Phase 2.x e): keyset cursor encoding the
+        last record's sort-key values plus its id. The next-page
+        query uses lexicographic SQL row comparison to skip
+        directly to records after the cursor. Stable under
+        concurrent inserts / deletes earlier in the result set
+        (offset cursors shift; keyset cursors don't).
         """
         opts = options or sc.QueryOptions()
 
         # Compile predicate to (where_sql, params). None → no WHERE.
-        where_sql, params = _compile_predicate(predicate) if predicate else ("", [])
+        pred_sql, pred_params = _compile_predicate(predicate) if predicate else ("", [])
 
-        # Compose ORDER BY. If the caller didn't include `id` we
-        # append it for sort stability per BRD §6.2.
-        order_clauses: list[str] = []
-        order_fields_seen: set = set()
+        # Compose ORDER BY — also drives the keyset cursor shape. If
+        # the caller didn't include `id` we append it for sort
+        # stability (BRD §6.2 + keyset-cursor uniqueness requirement).
+        sort_fields: list = []
+        sort_dirs: list = []
         for ob in opts.order_by:
             _storage._assert_safe(ob.field, "order_by field")
-            order_clauses.append(f"{_storage._q(ob.field)} {ob.direction.upper()}")
-            order_fields_seen.add(ob.field)
-        if "id" not in order_fields_seen:
-            order_clauses.append('"id" ASC')
+            sort_fields.append(ob.field)
+            sort_dirs.append(ob.direction.lower())
+        if "id" not in sort_fields:
+            sort_fields.append("id")
+            sort_dirs.append("asc")
+
+        order_clauses = [
+            f"{_storage._q(f)} {d.upper()}"
+            for f, d in zip(sort_fields, sort_dirs)
+        ]
+
+        # Decode the cursor. None → page 1 (no keyset filter).
+        cursor_values = _decode_cursor(opts.cursor) if opts.cursor else None
+
+        where_parts: list = []
+        where_params: list = []
+        if pred_sql:
+            where_parts.append(pred_sql)
+            where_params.extend(pred_params)
+        if cursor_values is not None:
+            keyset_sql, keyset_params = _build_keyset_filter(
+                sort_fields, sort_dirs, cursor_values)
+            where_parts.append(keyset_sql)
+            where_params.extend(keyset_params)
 
         sql = f"SELECT * FROM {_storage._q(content_type)}"
-        if where_sql:
-            sql += f" WHERE {where_sql}"
+        if where_parts:
+            sql += " WHERE " + " AND ".join(where_parts)
         sql += " ORDER BY " + ", ".join(order_clauses)
 
-        # Cursor: v0.9 cursor is the offset, base64-encoded. Treated
-        # as opaque by the caller.
-        offset = _decode_cursor(opts.cursor)
-
-        # Fetch limit+1 rows so we can tell whether there's a next page.
-        sql += " LIMIT ? OFFSET ?"
-        sql_params = list(params) + [opts.limit + 1, offset]
+        # Fetch limit+1 rows to detect whether there's a next page.
+        sql += " LIMIT ?"
+        sql_params = list(where_params) + [opts.limit + 1]
 
         db = await self._connect()
         try:
@@ -689,9 +707,14 @@ class SqliteStorageProvider:
             rows = await cursor.fetchall()
             records = tuple(dict(r) for r in rows[:opts.limit])
             has_more = len(rows) > opts.limit
-            next_cursor = (
-                _encode_cursor(offset + opts.limit) if has_more else None
-            )
+            next_cursor = None
+            if has_more and records:
+                # Keyset cursor: the LAST record's sort-key values
+                # form the boundary. Pack them in the same order
+                # the ORDER BY clause walks.
+                last = records[-1]
+                cursor_payload = [last.get(f) for f in sort_fields]
+                next_cursor = _encode_cursor(cursor_payload)
             return sc.Page(
                 records=records,
                 next_cursor=next_cursor,
@@ -960,27 +983,92 @@ def _compile_predicate(p: sc.Predicate) -> tuple[str, list]:
     )
 
 
-def _encode_cursor(offset: int) -> str:
-    """Encode an offset as an opaque cursor.
+def _encode_cursor(values: list) -> str:
+    """Encode a keyset cursor as an opaque token.
 
-    v0.9 ships an offset-based cursor as a stop-gap. A keyset
-    cursor (last-id + tiebreaker) lands in Phase 2.x once we have
-    test coverage proving the offset shape works end-to-end.
+    `values` is the list of sort-key values from the LAST record on
+    the current page, terminated by the record's `id`. The next-page
+    query uses lexicographic-greater-than against these values plus
+    the per-field ORDER BY directions.
+
+    Phase 2.x (e): replaces the v0.9-stop-gap base64-of-offset shape.
+    Keyset cursors give O(1) skip-ahead, are stable under inserts /
+    deletes earlier in the result set (offset cursors shift), and
+    map cleanly onto SQL row-comparison.
     """
     import base64
-    return base64.urlsafe_b64encode(str(offset).encode("ascii")).decode("ascii")
+    import json
+    return base64.urlsafe_b64encode(
+        json.dumps(values, separators=(",", ":")).encode("ascii")
+    ).decode("ascii")
 
 
-def _decode_cursor(cursor: Optional[str]) -> int:
-    """Inverse of _encode_cursor. None or empty → offset 0."""
+def _decode_cursor(cursor: Optional[str]) -> Optional[list]:
+    """Inverse of _encode_cursor. None / empty → no cursor (page 1).
+
+    Returns the decoded values list, or None when no cursor is in
+    play. Raises ValueError on garbage / non-JSON / non-list input.
+    """
     if not cursor:
-        return 0
+        return None
     import base64
+    import json
     try:
-        decoded = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("ascii")
-        return int(decoded)
+        decoded = base64.urlsafe_b64decode(
+            cursor.encode("ascii")).decode("ascii")
+        values = json.loads(decoded)
     except (ValueError, UnicodeDecodeError) as e:
         raise ValueError(f"Invalid cursor: {cursor!r}") from e
+    if not isinstance(values, list):
+        raise ValueError(
+            f"Invalid cursor (expected JSON list): {cursor!r}")
+    return values
+
+
+def _build_keyset_filter(
+    sort_fields: list,
+    sort_directions: list,
+    cursor_values: list,
+) -> tuple[str, list]:
+    """Build a SQL WHERE fragment that selects rows AFTER the cursor.
+
+    `sort_fields` and `sort_directions` are parallel lists describing
+    the ORDER BY (id is always appended as the final tiebreaker).
+    `cursor_values` matches them in length and order.
+
+    Strategy: emit an OR-of-AND chain that handles arbitrary mixes
+    of ASC/DESC directions. For ORDER BY f1 ASC, f2 DESC, id ASC,
+    the chain is:
+
+        (f1 > v1) OR
+        (f1 = v1 AND f2 < v2) OR
+        (f1 = v1 AND f2 = v2 AND id > id_val)
+
+    This lexicographic-comparison shape generalizes to any number
+    of fields with any direction.
+    """
+    if len(cursor_values) != len(sort_fields):
+        raise ValueError(
+            f"cursor has {len(cursor_values)} values but ORDER BY "
+            f"has {len(sort_fields)} fields"
+        )
+
+    or_clauses: list = []
+    params: list = []
+
+    for i in range(len(sort_fields)):
+        and_parts: list = []
+        # All earlier fields are equal.
+        for j in range(i):
+            and_parts.append(f"{_storage._q(sort_fields[j])} = ?")
+            params.append(cursor_values[j])
+        # Current field strictly differs in the sort direction.
+        op = ">" if sort_directions[i].lower() == "asc" else "<"
+        and_parts.append(f"{_storage._q(sort_fields[i])} {op} ?")
+        params.append(cursor_values[i])
+        or_clauses.append("(" + " AND ".join(and_parts) + ")")
+
+    return "(" + " OR ".join(or_clauses) + ")", params
 
 
 # ── Registration ──
