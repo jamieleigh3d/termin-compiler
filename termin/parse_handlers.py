@@ -692,6 +692,33 @@ def _parse_line(text: str, rule: str, ln: int):
         if rest.startswith("```") and rest.endswith("```"):
             rest = rest[3:-3].strip()
         return ("compute_objective", rest)
+    # v0.9 Phase 6c (BRD #3 §6.3): non-inline Objective sourcing forms.
+    if rule == "compute_objective_deploy_line":
+        r = P(text, rule)
+        key = _qs(r["key"]) if r and r.get("key") else ""
+        if not key:
+            m = _eqs(text)
+            key = m[0] if m else ""
+        return ("compute_objective_source",
+                {"kind": "deploy_config", "key": key})
+    if rule == "compute_objective_field_line":
+        r = P(text, rule)
+        if r and r.get("content") and r.get("field"):
+            return ("compute_objective_source", {
+                "kind": "field",
+                "content": str(r["content"]),
+                "field": str(r["field"]),
+            })
+        rest = text[len("Objective from "):].strip()
+        if "." in rest:
+            content, field = rest.split(".", 1)
+            return ("compute_objective_source", {
+                "kind": "field",
+                "content": content.strip(),
+                "field": field.strip(),
+            })
+        return ("compute_objective_source",
+                {"kind": "field", "content": "", "field": ""})
     if rule == "compute_strategy_line":
         rest = text[len("Strategy is "):].strip()
         if rest.startswith("```") and rest.endswith("```"):
@@ -702,6 +729,34 @@ def _parse_line(text: str, rule: str, ln: int):
         if rest.startswith("```") and rest.endswith("```"):
             rest = rest[3:-3].strip()
         return ("compute_directive", rest)
+    # v0.9 Phase 6c (BRD #3 §6.2): non-inline Directive sourcing forms.
+    if rule == "compute_directive_deploy_line":
+        r = P(text, rule)
+        key = _qs(r["key"]) if r and r.get("key") else ""
+        if not key:
+            m = _eqs(text)
+            key = m[0] if m else ""
+        return ("compute_directive_source",
+                {"kind": "deploy_config", "key": key})
+    if rule == "compute_directive_field_line":
+        r = P(text, rule)
+        if r and r.get("content") and r.get("field"):
+            return ("compute_directive_source", {
+                "kind": "field",
+                "content": str(r["content"]),
+                "field": str(r["field"]),
+            })
+        # Fallback: tokenize "Directive from <content>.<field>".
+        rest = text[len("Directive from "):].strip()
+        if "." in rest:
+            content, field = rest.split(".", 1)
+            return ("compute_directive_source", {
+                "kind": "field",
+                "content": content.strip(),
+                "field": field.strip(),
+            })
+        return ("compute_directive_source",
+                {"kind": "field", "content": "", "field": ""})
     if rule == "compute_accesses_line":
         r = P(text, rule)
         if r is not None:

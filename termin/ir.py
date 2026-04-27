@@ -378,6 +378,14 @@ class ComputeSpec:
     directive: Optional[str] = None                        # system prompt (strong prior)
     objective: Optional[str] = None                        # task prompt (what to accomplish)
     strategy: Optional[str] = None                         # legacy: execution plan (folded into objective)
+    # v0.9 Phase 6c (BRD #3 §6): non-inline directive/objective sourcing.
+    # When set, the inline string is empty and the runtime resolves text
+    # from deploy config (kind="deploy_config", key=<str>) at startup or
+    # from the triggering record (kind="field", content=<str>,
+    # field=<str>) at each invocation. Carried as plain dicts for
+    # backward-compatible IR-JSON wire shape.
+    directive_source: Optional[dict] = None
+    objective_source: Optional[dict] = None
     trigger: Optional[str] = None                          # "schedule <interval>" or "event <name>"
     trigger_where: Optional[str] = None                    # CEL expression for trigger filtering
     accesses: tuple[str, ...] = ()                         # content types this Compute can touch

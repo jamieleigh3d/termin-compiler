@@ -420,6 +420,14 @@ class ComputeNode:
     directive: Optional[str] = None               # system prompt (strong prior)
     objective: Optional[str] = None               # task prompt (what to accomplish)
     strategy: Optional[str] = None                # execution plan (legacy, folded into objective)
+    # v0.9 Phase 6c (BRD #3 §6): non-inline Directive/Objective sourcing.
+    # When set, the inline `directive`/`objective` field is empty and
+    # the runtime resolves text from the source — deploy_config at app
+    # startup, or the triggering record at each invocation.
+    # Shape: {"kind": "deploy_config", "key": <str>}
+    #     or {"kind": "field", "content": <str>, "field": <str>}.
+    directive_source: Optional[dict] = None
+    objective_source: Optional[dict] = None
     trigger: Optional[str] = None                 # "schedule <interval>" or "event <name>"
     trigger_where: Optional[str] = None           # CEL expression for trigger filtering
     accesses: list[str] = field(default_factory=list)        # content types this Compute can touch

@@ -79,6 +79,31 @@ def _interpolate_env_vars(value):
     return value
 
 
+def _resolve_directive_sources(computes: list, deploy_config: dict) -> None:
+    """v0.9 Phase 6c (BRD #3 §6.2): resolve deploy-config-sourced
+    Directive and Objective text at application startup.
+
+    Mutates each compute dict in place. For computes with
+    `directive_source.kind == "deploy_config"`, reads the value from
+    `deploy_config[<key>]` and assigns it into `comp["directive"]`.
+    Same for `objective_source`. Inline-literal directives (where
+    `directive_source` is None) are left unchanged. Field-ref
+    directives (`kind == "field"`) are deferred to invocation time
+    and resolved by `compute_runner._resolve_directive_at_invocation`.
+
+    Missing keys resolve to empty strings so the prompt-build path
+    skips them gracefully — same forgiving stance the rest of the
+    runtime takes for absent inline directives.
+    """
+    for comp in computes:
+        d_src = comp.get("directive_source")
+        if isinstance(d_src, dict) and d_src.get("kind") == "deploy_config":
+            comp["directive"] = str(deploy_config.get(d_src.get("key", ""), ""))
+        o_src = comp.get("objective_source")
+        if isinstance(o_src, dict) and o_src.get("kind") == "deploy_config":
+            comp["objective"] = str(deploy_config.get(o_src.get("key", ""), ""))
+
+
 def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
                       deploy_config: dict = None, deploy_config_path: str = None,
                       strict_channels: bool = True) -> FastAPI:
@@ -161,6 +186,12 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     # channel providers at startup (channels with provider_contract).
     # The registry is built earlier in this function (Phase 1 identity).
     ctx.channel_dispatcher = ChannelDispatcher(ir, deploy_config, ctx.provider_registry)
+
+    # v0.9 Phase 6c (BRD #3 §6.2): resolve `Directive from deploy
+    # config "<key>"` and `Objective from deploy config "<key>"` at
+    # application startup. Deploy-config-sourced prompts are reused
+    # for all invocations until the application restarts.
+    _resolve_directive_sources(ir.get("computes", []), deploy_config or {})
 
     # Compute indexes
     for comp in ir.get("computes", []):

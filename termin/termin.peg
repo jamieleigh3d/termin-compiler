@@ -611,6 +611,15 @@ compute_objective_line
     = 'Objective' 'is' rest:rest_of_text $
     ;
 
+# v0.9 Phase 6c (BRD #3 §6.3): same three-form sourcing as Directive.
+compute_objective_deploy_line
+    = 'Objective' 'from' 'deploy' 'config' key:quoted_string $
+    ;
+
+compute_objective_field_line
+    = 'Objective' 'from' content:word '.' field:word $
+    ;
+
 compute_strategy_line
     = 'Strategy' 'is' rest:rest_of_text $
     ;
@@ -687,6 +696,18 @@ compute_output_creates_line
 
 compute_directive_line
     = 'Directive' 'is' rest:rest_of_text $
+    ;
+
+# v0.9 Phase 6c (BRD #3 §6.2): two additional sourcing forms for
+# Directive that are mutually exclusive with the inline `Directive
+# is` form. Classifier dispatches by prefix; PEG separates the two
+# via the `deploy config` token presence.
+compute_directive_deploy_line
+    = 'Directive' 'from' 'deploy' 'config' key:quoted_string $
+    ;
+
+compute_directive_field_line
+    = 'Directive' 'from' content:word '.' field:word $
     ;
 
 field_ref

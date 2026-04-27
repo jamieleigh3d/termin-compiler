@@ -610,6 +610,8 @@ def lower(program: Program) -> AppSpec:
             postconditions=tuple(comp.postconditions),
             directive=comp.directive,
             objective=comp.objective,
+            directive_source=dict(comp.directive_source) if comp.directive_source else None,
+            objective_source=dict(comp.objective_source) if comp.objective_source else None,
             strategy=comp.strategy,
             trigger=comp.trigger,
             trigger_where=comp.trigger_where,

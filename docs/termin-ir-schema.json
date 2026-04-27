@@ -887,6 +887,42 @@
           "default": null,
           "description": "Task prompt for LLM/agent providers. What to accomplish in this invocation. For agents, includes the strategy (tool usage plan). May contain inline CEL expressions."
         },
+        "directive_source": {
+          "type": ["object", "null"],
+          "default": null,
+          "description": "v0.9 Phase 6c (BRD #3 §6.2): non-inline Directive sourcing. When set, `directive` is empty until resolved. Two shapes — `{kind: \"deploy_config\", key: <string>}` (resolved at app startup from deploy_config[<key>]) or `{kind: \"field\", content: <string>, field: <string>}` (resolved from the triggering record at each invocation).",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "properties": {
+                "kind": { "type": "string", "enum": ["deploy_config", "field"] },
+                "key": { "type": "string" },
+                "content": { "type": "string" },
+                "field": { "type": "string" }
+              },
+              "required": ["kind"]
+            }
+          ]
+        },
+        "objective_source": {
+          "type": ["object", "null"],
+          "default": null,
+          "description": "v0.9 Phase 6c (BRD #3 §6.3): non-inline Objective sourcing. Same two shapes as directive_source.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "properties": {
+                "kind": { "type": "string", "enum": ["deploy_config", "field"] },
+                "key": { "type": "string" },
+                "content": { "type": "string" },
+                "field": { "type": "string" }
+              },
+              "required": ["kind"]
+            }
+          ]
+        },
         "strategy": {
           "type": ["string", "null"],
           "default": null,

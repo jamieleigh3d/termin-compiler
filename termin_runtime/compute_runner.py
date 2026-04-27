@@ -36,6 +36,36 @@ from .boundaries import check_boundary_access
 
 # ── Prompt building (testable, pure functions) ──
 
+def _resolve_directive_at_invocation(comp: dict, record: dict) -> tuple[str, str]:
+    """v0.9 Phase 6c (BRD #3 §6.2-§6.3): resolve field-ref Directive
+    and Objective text from the triggering record at each invocation.
+
+    For computes with `directive_source.kind == "field"`, returns
+    `record[<field>]` as the directive text. Same for objective.
+    Deploy-config-sourced directives have already been resolved at
+    app startup (see `app._resolve_directive_sources`); for those
+    forms the resolved text already lives in `comp["directive"]`.
+
+    A record missing the named field resolves to empty rather than
+    raising — keeps the prompt-build path forgiving for partial
+    data, same as inline-empty behavior.
+
+    Returns: (directive_text, objective_text). Either may be empty.
+    """
+    directive = comp.get("directive", "") or ""
+    objective = comp.get("objective", "") or ""
+
+    d_src = comp.get("directive_source")
+    if isinstance(d_src, dict) and d_src.get("kind") == "field":
+        directive = str(record.get(d_src.get("field", ""), "") or "")
+
+    o_src = comp.get("objective_source")
+    if isinstance(o_src, dict) and o_src.get("kind") == "field":
+        objective = str(record.get(o_src.get("field", ""), "") or "")
+
+    return directive, objective
+
+
 def _build_llm_prompts(comp: dict, record: dict, content_name: str,
                        singular_lookup: dict) -> tuple[str, str]:
     """Build system and user messages for Level 1 LLM compute.
@@ -45,8 +75,9 @@ def _build_llm_prompts(comp: dict, record: dict, content_name: str,
 
     Returns: (system_message, user_message)
     """
-    directive = comp.get("directive", "")
-    objective = comp.get("objective", "")
+    # v0.9 Phase 6c: field-ref Directive/Objective resolve from the
+    # triggering record. No-op for inline / deploy-config forms.
+    directive, objective = _resolve_directive_at_invocation(comp, record)
 
     # Read input fields from record
     input_values = {}
@@ -86,8 +117,9 @@ def _build_agent_prompts(comp: dict, record: dict) -> tuple[str, str]:
 
     Returns: (system_message, user_message)
     """
-    directive = comp.get("directive", "")
-    objective = comp.get("objective", "")
+    # v0.9 Phase 6c: field-ref Directive/Objective resolve from the
+    # triggering record. No-op for inline / deploy-config forms.
+    directive, objective = _resolve_directive_at_invocation(comp, record)
 
     # System message: directive + objective
     system_parts = []

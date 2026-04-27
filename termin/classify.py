@@ -68,10 +68,18 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Output into field", "compute_output_field_line"),
     ("Output creates", "compute_output_creates_line"),
     ("Output confidentiality:", "compute_output_conf_line"),
+    # Phase 6c (BRD #3 §6.2): three Directive sourcing forms. The
+    # `from deploy config` prefix must be checked before the bare
+    # `from` prefix; the `is` form stays as the legacy fallback.
+    ("Directive from deploy config", "compute_directive_deploy_line"),
+    ("Directive from", "compute_directive_field_line"),
     ("Directive is", "compute_directive_line"),
     ("Trigger on", "compute_trigger_line"),
     ("Preconditions are:", "compute_preconditions_line"),
     ("Postconditions are:", "compute_postconditions_line"),
+    # Phase 6c (BRD #3 §6.3): same three Objective sourcing forms.
+    ("Objective from deploy config", "compute_objective_deploy_line"),
+    ("Objective from", "compute_objective_field_line"),
     ("Objective is", "compute_objective_line"),
     ("Strategy is", "compute_strategy_line"),
     ("Exposes property", "boundary_exposes_line"),

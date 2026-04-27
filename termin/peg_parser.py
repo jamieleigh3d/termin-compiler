@@ -272,6 +272,7 @@ def _assemble(parsed: list) -> Program:
                 "compute_output_conf","compute_provider","compute_trigger",
                 "compute_preconditions_header","compute_postconditions_header",
                 "compute_objective","compute_strategy","compute_directive",
+                "compute_directive_source","compute_objective_source",
                 "compute_accesses","compute_reads","compute_sends_to",
                 "compute_emits","compute_invokes","compute_acts_as",
                 "compute_input_field","compute_output_field",
@@ -306,6 +307,8 @@ def _assemble(parsed: list) -> Program:
                 elif ch[0] == "compute_objective": nd.objective = ch[1]
                 elif ch[0] == "compute_strategy": nd.strategy = ch[1]
                 elif ch[0] == "compute_directive": nd.directive = ch[1]
+                elif ch[0] == "compute_directive_source": nd.directive_source = ch[1]
+                elif ch[0] == "compute_objective_source": nd.objective_source = ch[1]
                 elif ch[0] == "compute_accesses": nd.accesses.extend(ch[1])
                 elif ch[0] == "compute_reads": nd.reads.extend(ch[1])
                 elif ch[0] == "compute_sends_to": nd.sends_to.extend(ch[1])
