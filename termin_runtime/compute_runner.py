@@ -350,6 +350,14 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
         return
 
     accesses = comp.get("accesses", [])
+    # v0.9 Phase 3 slice (c): Reads grants read-only content access.
+    # The agent's tool surface includes content_query / content_get
+    # for these types but not content_create / update / delete.
+    # State tools (state_transition) come from accesses only.
+    reads = comp.get("reads", [])
+    # readable = anything in Accesses or Reads; writable = Accesses only.
+    readable_set = set(accesses) | set(reads)
+    writable_set = set(accesses)
 
     # Build prompts (Fix 009.1 + 009.2)
     system_msg, user_msg = _build_agent_prompts(comp, record)
@@ -364,8 +372,13 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
         try:
             if tool_name == "content_query":
                 cname = tool_input.get("content_name", "")
-                if cname not in accesses:
-                    return {"error": f"Access denied: {cname} not in Accesses"}
+                # v0.9 Phase 3 slice (c): read tools accept either
+                # Accesses or Reads as the source-side grant.
+                if cname not in readable_set:
+                    return {"error": (
+                        f"Access denied: {cname} not in Accesses or "
+                        f"Reads"
+                    )}
                 bnd_err = check_boundary_access(
                     ctx.boundary_for_compute, ctx.boundary_for_content,
                     comp_snake, cname)
@@ -376,7 +389,7 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
 
             elif tool_name == "content_create":
                 cname = tool_input.get("content_name", "")
-                if cname not in accesses:
+                if cname not in writable_set:
                     return {"error": f"Access denied: {cname} not in Accesses"}
                 bnd_err = check_boundary_access(
                     ctx.boundary_for_compute, ctx.boundary_for_content,
@@ -395,7 +408,7 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
 
             elif tool_name == "content_update":
                 cname = tool_input.get("content_name", "")
-                if cname not in accesses:
+                if cname not in writable_set:
                     return {"error": f"Access denied: {cname} not in Accesses"}
                 bnd_err = check_boundary_access(
                     ctx.boundary_for_compute, ctx.boundary_for_content,
@@ -410,7 +423,9 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
 
             elif tool_name == "state_transition":
                 cname = tool_input.get("content_name", "")
-                if cname not in accesses:
+                # State tools come from Accesses only — Reads grants
+                # do not include state.transition. BRD §6.3.3 explicit.
+                if cname not in writable_set:
                     return {"error": f"Access denied: {cname} not in Accesses"}
                 bnd_err = check_boundary_access(
                     ctx.boundary_for_compute, ctx.boundary_for_content,

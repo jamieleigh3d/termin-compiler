@@ -55,6 +55,11 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Identity:", "compute_identity_line"),
     ("Provider is", "compute_provider_line"),
     ("Accesses ", "compute_accesses_line"),
+    # v0.9 Phase 3 slice (c): full access-grant grammar.
+    ("Reads ", "compute_reads_line"),
+    ("Sends to ", "compute_sends_to_line"),
+    ("Emits ", "compute_emits_line"),
+    ("Invokes ", "compute_invokes_line"),
     ("Input from field", "compute_input_field_line"),
     ("Output into field", "compute_output_field_line"),
     ("Output creates", "compute_output_creates_line"),

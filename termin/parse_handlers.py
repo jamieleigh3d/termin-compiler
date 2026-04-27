@@ -35,6 +35,40 @@ from .parse_builders import (
 )
 
 
+def _quoted_or_word(item) -> str:
+    """Normalize one element from a quoted_or_word_list TatSu match.
+
+    The PEG `quoted_or_word_item` alternates between `quoted_string`
+    (which TatSu returns as a dict like `{"content": "value"}` per
+    the named-capture syntax) and a bare word/phrase (returned as a
+    plain string). Normalizes both shapes to a stripped string."""
+    if item is None:
+        return ""
+    if isinstance(item, dict):
+        return str(item.get("content", "")).strip()
+    return str(item).strip().strip('"')
+
+
+def _cl_qw(r) -> list[str]:
+    """Extract a comma-separated quoted-or-word list from a TatSu
+    result, preserving the dict shape of quoted-string items so
+    `_quoted_or_word` can extract the inner content key.
+
+    Mirrors `_cl` from parse_helpers but skips the str() coercion
+    that would stringify quoted-string dicts."""
+    if r is None:
+        return []
+    if isinstance(r, dict) and "item" in r:
+        items = r["item"]
+    elif isinstance(r, list):
+        items = r
+    else:
+        items = [r]
+    if not isinstance(items, list):
+        items = [items]
+    return [_quoted_or_word(i) for i in items if i is not None]
+
+
 _KNOWN_VERBS = {"view", "create", "update", "delete"}
 _VERB_HELP = (
     "Termin verbs are: view, create, update, delete. "
@@ -664,6 +698,44 @@ def _parse_line(text: str, rule: str, ln: int):
         rest = text[len("Accesses "):].strip()
         items = [w.strip().strip('"') for w in rest.replace(" and ", ",").split(",") if w.strip()]
         return ("compute_accesses", items)
+    # v0.9 Phase 3 slice (c) — Reads / Sends to / Emits / Invokes.
+    # Same comma-or-and split as compute_accesses with a leading-prefix
+    # difference and (for Sends to) a trailing 'channel' keyword that
+    # the fallback strips before splitting items.
+    if rule == "compute_reads_line":
+        r = P(text, rule)
+        if r is not None:
+            items = _cl(r.get("content_list"))
+            return ("compute_reads", [w.strip().strip('"') for w in items if w.strip()])
+        rest = text[len("Reads "):].strip()
+        items = [w.strip().strip('"') for w in rest.replace(" and ", ",").split(",") if w.strip()]
+        return ("compute_reads", items)
+    if rule == "compute_sends_to_line":
+        r = P(text, rule)
+        if r is not None:
+            return ("compute_sends_to", [w for w in _cl_qw(r.get("channel_list")) if w])
+        # Fallback: strip leading 'Sends to ' and trailing ' channel'.
+        rest = text[len("Sends to "):].strip()
+        if rest.endswith(" channel"):
+            rest = rest[: -len(" channel")].strip()
+        elif rest.endswith(" channels"):
+            rest = rest[: -len(" channels")].strip()
+        items = [w.strip().strip('"') for w in rest.replace(" and ", ",").split(",") if w.strip()]
+        return ("compute_sends_to", items)
+    if rule == "compute_emits_line":
+        r = P(text, rule)
+        if r is not None:
+            return ("compute_emits", [w for w in _cl_qw(r.get("event_list")) if w])
+        rest = text[len("Emits "):].strip()
+        items = [w.strip().strip('"') for w in rest.replace(" and ", ",").split(",") if w.strip()]
+        return ("compute_emits", items)
+    if rule == "compute_invokes_line":
+        r = P(text, rule)
+        if r is not None:
+            return ("compute_invokes", [w for w in _cl_qw(r.get("compute_list")) if w])
+        rest = text[len("Invokes "):].strip()
+        items = [w.strip().strip('"') for w in rest.replace(" and ", ",").split(",") if w.strip()]
+        return ("compute_invokes", items)
     if rule == "compute_input_field_line":
         rest = text[len("Input from field "):].strip()
         if "." in rest:

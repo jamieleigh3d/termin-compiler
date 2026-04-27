@@ -606,6 +606,42 @@ accesses_item
     = /\w+(?:\s+(?!and\b)(?!,)\w+)*/
     ;
 
+# v0.9 Phase 3 slice (c): the four sibling access-grant lines —
+# Reads, Sends to, Emits, Invokes. Each has its own list shape:
+#   Reads <type1>, <type2>, ...                        # bare words
+#   Sends to "<channel1>", "<channel2>" channel        # quoted, with trailing 'channel' keyword
+#   Emits "<event1>", "<event2>"                       # quoted strings
+#   Invokes "<compute1>", "<compute2>"                 # quoted strings
+# All four share the same comma-or-and list separator. Reads is the
+# only one that takes bare words (mirrors Accesses); the other three
+# name external referents and use quoted strings to match their host
+# block conventions (Channels, events, computes are all quoted in
+# source by convention).
+
+compute_reads_line
+    = 'Reads' content_list:accesses_list $
+    ;
+
+compute_sends_to_line
+    = 'Sends' 'to' channel_list:quoted_or_word_list 'channel' $
+    ;
+
+compute_emits_line
+    = 'Emits' event_list:quoted_or_word_list $
+    ;
+
+compute_invokes_line
+    = 'Invokes' compute_list:quoted_or_word_list $
+    ;
+
+quoted_or_word_list
+    = item+:quoted_or_word_item { (',' ['and'] | 'and') item+:quoted_or_word_item }*
+    ;
+
+quoted_or_word_item
+    = quoted_string | /\w+(?:\s+(?!and\b)(?!,)(?!channel\b)\w+)*/
+    ;
+
 compute_input_field_line
     = 'Input' 'from' 'field' ref:field_ref $
     ;

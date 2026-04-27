@@ -54,6 +54,13 @@ class RuntimeContext:
     # snake compute name -> provider instance (LlmComputeProvider |
     # AiAgentComputeProvider). default-CEL computes are absent.
 
+    # v0.9 Phase 3 slice (c): per-compute closed tool surface,
+    # computed at app startup from the ComputeSpec's Accesses /
+    # Reads / Sends to / Emits / Invokes declarations. Frozen
+    # ToolSurface dataclass; the agent's gate function reads it at
+    # tool-dispatch time. snake compute name -> ToolSurface.
+    compute_tool_surfaces: dict = field(default_factory=dict)
+
     # Identity functions
     get_current_user: Callable = None
     get_user_from_ws: Callable = None

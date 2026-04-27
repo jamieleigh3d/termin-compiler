@@ -338,6 +338,15 @@ class ComputeSpec:
     trigger: Optional[str] = None                          # "schedule <interval>" or "event <name>"
     trigger_where: Optional[str] = None                    # CEL expression for trigger filtering
     accesses: tuple[str, ...] = ()                         # content types this Compute can touch
+    # v0.9 Phase 3 slice (c): full source-level access grant grammar.
+    # Together with accesses, these populate the agent's ToolSurface
+    # at runtime. Reads grants read-only access (no state, no writes);
+    # sends_to grants channel send/invoke; emits grants event.emit;
+    # invokes grants compute.invoke.
+    reads: tuple[str, ...] = ()                            # content types this Compute can read but not write
+    sends_to: tuple[str, ...] = ()                         # channel names this Compute can send to
+    emits: tuple[str, ...] = ()                            # event names this Compute can emit
+    invokes: tuple[str, ...] = ()                          # compute names this Compute can invoke
     input_fields: tuple[tuple[str, str], ...] = ()         # (content_ref, field_name) pairs
     output_fields: tuple[tuple[str, str], ...] = ()        # (content_ref, field_name) pairs
     output_creates: Optional[str] = None                   # content type for "Output creates X"

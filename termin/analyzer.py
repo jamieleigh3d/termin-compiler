@@ -963,6 +963,66 @@ class Analyzer:
                         suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
                     ))
 
+            # v0.9 Phase 3 slice (c): validate Reads / Sends to / Emits
+            # / Invokes references and the Accesses ∩ Reads = ∅
+            # invariant (TERMIN-S044). The four grant kinds resolve
+            # against different name catalogs:
+            #   Reads    → content names (same as Accesses)
+            #   Sends to → channel names
+            #   Emits    → event names (open — anything declared
+            #              elsewhere, or fresh)
+            #   Invokes  → compute names
+            # Per BRD §6.3.3: a content type cannot appear in both
+            # Accesses and Reads — the grant is contradictory.
+            # Canonicalize each content name (lowercase, trim) so a
+            # content appearing on both lines with case-different
+            # spellings still triggers S044 — typo-detection is the
+            # whole point of the rule.
+            accesses_resolved = {a.strip().lower() for a in compute.accesses}
+            reads_resolved = {r.strip().lower() for r in compute.reads}
+            for r in compute.reads:
+                if not self._resolve_content_name(r):
+                    suggestion = _fuzzy_match(r, self.content_names)
+                    self.errors.add(SemanticError(
+                        message=f'Compute "{compute.name}" declares Reads on '
+                                f'undefined content "{r}"',
+                        line=compute.line,
+                        code="TERMIN-S045",
+                        suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
+                    ))
+            dual = accesses_resolved & reads_resolved
+            for c in sorted(dual):
+                if c is None:
+                    continue
+                self.errors.add(SemanticError(
+                    message=f'Compute "{compute.name}" declares both Accesses '
+                            f'and Reads on "{c}". The grant is contradictory '
+                            f'— Accesses already includes read access. '
+                            f'Remove the duplicate from one of the lines.',
+                    line=compute.line,
+                    code="TERMIN-S044",
+                ))
+            for ch in compute.sends_to:
+                if ch not in self.channel_names:
+                    suggestion = _fuzzy_match(ch, self.channel_names)
+                    self.errors.add(SemanticError(
+                        message=f'Compute "{compute.name}" declares Sends to '
+                                f'undefined channel "{ch}"',
+                        line=compute.line,
+                        code="TERMIN-S046",
+                        suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
+                    ))
+            for inv in compute.invokes:
+                if inv not in self.compute_names:
+                    suggestion = _fuzzy_match(inv, self.compute_names)
+                    self.errors.add(SemanticError(
+                        message=f'Compute "{compute.name}" declares Invokes on '
+                                f'undefined compute "{inv}"',
+                        line=compute.line,
+                        code="TERMIN-S047",
+                        suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
+                    ))
+
             # Validate input/output field references against Accesses
             for content_ref, field_name in compute.input_fields:
                 if has_accesses and not self._resolve_content_name_in_accesses(content_ref, compute):

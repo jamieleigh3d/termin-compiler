@@ -298,6 +298,26 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
             )
         ctx.compute_providers[comp_snake] = record.factory(cfg)
 
+    # v0.9 Phase 3 slice (c): build a ToolSurface for every
+    # ai-agent compute from its source-declared grants. This is the
+    # closed tool surface the agent provider sees at runtime;
+    # downstream gate functions (slice d's tool-dispatch rewrite)
+    # consult it to authorize each tool call. Stashed on ctx keyed
+    # by compute snake-name. Skipped for llm and default-CEL
+    # computes — those don't have a tool surface.
+    from .providers.compute_contract import ToolSurface as _ToolSurface
+    for comp in ir.get("computes", []):
+        if comp.get("provider") != "ai-agent":
+            continue
+        comp_snake = comp["name"]["snake"]
+        ctx.compute_tool_surfaces[comp_snake] = _ToolSurface(
+            content_rw=tuple(comp.get("accesses") or ()),
+            content_ro=tuple(comp.get("reads") or ()),
+            channels=tuple(comp.get("sends_to") or ()),
+            events=tuple(comp.get("emits") or ()),
+            computes=tuple(comp.get("invokes") or ()),
+        )
+
     app_id = ir.get("app_id", "") or ir.get("name", "") or ""
     ctx.get_current_user = make_get_current_user(
         ctx.roles, ctx.identity_provider, app_id,

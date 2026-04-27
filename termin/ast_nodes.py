@@ -397,6 +397,15 @@ class ComputeNode:
     trigger: Optional[str] = None                 # "schedule <interval>" or "event <name>"
     trigger_where: Optional[str] = None           # CEL expression for trigger filtering
     accesses: list[str] = field(default_factory=list)        # content types this Compute can touch
+    # v0.9 Phase 3 slice (c): full access-grant grammar.
+    # Reads grants content.{query,read} only — no writes, no state.
+    # Sends to grants channel.{send,invoke_action} for the named channels.
+    # Emits grants event.emit for the named events only.
+    # Invokes grants compute.invoke for the named computes only.
+    reads: list[str] = field(default_factory=list)           # content types this Compute can read but not write
+    sends_to: list[str] = field(default_factory=list)        # channel names this Compute can send to
+    emits: list[str] = field(default_factory=list)           # event names this Compute can emit
+    invokes: list[str] = field(default_factory=list)         # compute names this Compute can invoke
     input_fields: list[tuple[str, str]] = field(default_factory=list)   # (content_ref, field_name)
     output_fields: list[tuple[str, str]] = field(default_factory=list)  # (content_ref, field_name)
     output_creates: Optional[str] = None          # content type for "Output creates X"

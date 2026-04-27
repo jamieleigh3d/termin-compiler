@@ -2,6 +2,109 @@
 
 ## Unreleased — v0.9 in progress (feature/v0.9)
 
+### Phase 3 slice (c): full access-grant grammar (2026-04-26)
+
+Per resolved Q2 (JL pushed to ship the whole tool surface in
+Phase 3 rather than splitting across phases),
+docs/compute-provider-design.md §3.4 + §6 slice (c) lands the
+four sibling access-grant lines on the Compute block:
+
+```
+Compute called "moderator":
+  Provider is "ai-agent"
+  Accesses messages
+  Reads users, organizations
+  Sends to "supplier alerts" channel
+  Emits "moderation.flagged"
+  Invokes "audit"
+  Directive is ```...```
+  Objective is ```...```
+  Anyone with "x.write" can execute this
+```
+
+#### Grammar
+
+`Reads`, `Sends to`, `Emits`, `Invokes` join `Accesses` as
+sibling lines on Compute. PEG additions plus a shared
+`quoted_or_word_list` rule for the three quoted-name lists
+(channels, events, computes). Reads uses bare-word `accesses_list`
+to mirror Accesses.
+
+The `Sends to "<name>" channel` shape carries a trailing
+`channel` keyword for disambiguation with other `to`
+constructs.
+
+#### AST + IR
+
+`ComputeNode.{reads, sends_to, emits, invokes}: list[str]`
+populated by the parser child-collector in `peg_parser.py`.
+Lowering threads each through to the IR `ComputeSpec` as a
+frozen tuple.
+
+#### Analyzer rules
+
+- **TERMIN-S044** — `Accesses ∩ Reads = ∅`. A content type
+  appearing on both lines is a parse error: the grant is
+  contradictory (Accesses already includes read access).
+  Canonicalizes via lowercased-trim so case-different spellings
+  still trigger.
+- **TERMIN-S045** — `Reads <T>` where `<T>` is undefined Content.
+  Fuzzy-match suggestion when applicable.
+- **TERMIN-S046** — `Sends to "<C>"` where `<C>` is undeclared
+  Channel.
+- **TERMIN-S047** — `Invokes "<X>"` where `<X>` is undeclared
+  Compute.
+- `Emits` does not have a resolution rule — events are open in
+  v0.9 (anything declared elsewhere or emitted ad-hoc).
+
+#### ToolSurface construction
+
+Per ai-agent compute, app startup builds a frozen
+`ToolSurface(content_rw, content_ro, channels, events,
+computes)` from the source-declared grants and stashes it on
+`ctx.compute_tool_surfaces[<snake>]`. Slice (d)'s tool-dispatch
+rewrite consumes this; slice (c) just builds it so the data is
+ready.
+
+The `_execute_tool` helper inside compute_runner's agent path
+gains immediate use of `Reads` — read tools (`content_query`)
+accept either Accesses or Reads as the source-side grant; write
+tools (`content_create`, `content_update`) and state tools
+(`state_transition`) require Accesses only. Per BRD §6.3.3
+explicit: state tools come from Accesses, never from Reads.
+
+#### Phase 4 split
+
+Phase 3 ships the source-side grant grammar and the analyzer
+rules. The runtime implementations of `channel.send`,
+`channel.invoke_action`, `event.emit`, and `compute.invoke`
+tools are Phase 4's territory — those need the channel contract
+runtime which lands separately. Until Phase 4 lands, an agent
+that source-declares `Sends to "X" channel` lowers correctly
+and gates correctly; calling `channel.send` returns a
+"contract not yet implemented" runtime error. The audit story
+still works because the gate's denial path is structurally
+identical.
+
+#### Tests
+
+`tests/test_v09_compute_grants.py` — 14 new tests across:
+- Grammar / AST: each of the four grant kinds parses and lands
+  on `ComputeNode`.
+- Analyzer rules: S044 dual-grant, S045 reads-undefined-content,
+  S046 sends-to-undefined-channel, S047 invokes-undefined-compute,
+  plus disjoint-passes regression.
+- IR lowering: ComputeSpec carries `reads`, `sends_to`, `emits`,
+  `invokes`; computes without grants lower to empty tuples.
+- ToolSurface construction: end-to-end create_termin_app builds
+  ctx.compute_tool_surfaces entries with content_rw + content_ro
+  + channels + events + computes split correctly per source
+  declarations.
+
+#### Tests: 2006 pass / 0 fail / 0 skip / 0 xfail.
+
+All 14 examples compile clean.
+
 ### Phase 3 slice (b): runtime cut-over to compute provider registry (2026-04-26)
 
 The "great cut-over" for v0.9 Phase 3 per
