@@ -739,13 +739,26 @@ class TestComponentTree:
         filters = _find_children(dt, "filter")
         assert len(filters) >= 2
 
-    def test_chart_component(self):
-        """ShowChart should produce a chart component."""
+    def test_chart_component_migrated_to_metric(self):
+        """v0.9 Phase 5 Q5 resolution (2026-04-27): warehouse.termin's
+        single `Show a chart of` use migrated to `Display count of X
+        grouped by <field>` (field-grouped metric form). Per BRD #2
+        §5.1, the `chart` contract is intentionally not in v0.9 — chart
+        rendering varies wildly across design systems. Field-grouped
+        metric covers the count-over-time case adequately for the
+        warehouse executive dashboard.
+        """
         spec = _load_and_lower("warehouse.termin")
         overview = next(p for p in spec.pages if p.slug == "inventory_overview")
-        chart = _find_child(overview, "chart")
-        assert chart is not None
-        assert chart.props["source"] == "reorder_alerts"
+        # No chart component on the page anymore.
+        assert _find_child(overview, "chart") is None
+        # The replacement is a stat_breakdown / aggregation grouped by
+        # warehouse (data shape: one breakdown entry per distinct
+        # warehouse value).
+        aggs = _find_children(overview, "aggregation") + _find_children(overview, "stat_breakdown")
+        # Three things on the page: product breakdown, stock value,
+        # reorder alerts grouped by warehouse. All metric-shaped.
+        assert len(aggs) >= 2
 
     def test_aggregation_component(self):
         """DisplayAggregation should produce aggregation/stat_breakdown components."""

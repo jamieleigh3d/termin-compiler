@@ -97,7 +97,7 @@ As an executive, I want to see an overview of inventory health
     Show a page called "Inventory Overview"
     Display total product count with active vs discontinued breakdown
     Display total stock value `sum(quantity * unit_cost)`
-    Show a chart of reorder alerts over the past 30 days
+    Display count of reorder alerts grouped by warehouse
 
 --- Navigation ---
 
