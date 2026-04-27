@@ -517,26 +517,104 @@ class SqliteStorageProvider:
     ) -> Mapping[str, Any]:
         """Insert a record. Pure SQL — no events, no error routing.
 
-        v0.9 idempotency_key is accepted for forward-compat but not
-        yet honored. The contract surface is stable; the dedup
-        implementation lands in a Phase 2.x follow-on.
+        idempotency_key (BRD §6.2): if supplied, second call with
+        same (content_type, key) is a silent no-op returning the
+        original record. v0.9 Phase 2.x (c) implements this via a
+        `_termin_idempotency` table mapping (content_type, key) to
+        the record id of the first create. Stale entries (whose
+        underlying record has since been deleted) are cleaned up
+        on lookup so a replay-after-delete starts a fresh request
+        rather than returning a record that doesn't exist.
         """
         # Strip empty strings on optional fields (legacy convention
         # callers depend on). State-machine column defaults are the
         # caller's responsibility — the provider does not know about
         # state machines, that's a runtime concern.
         cleaned = {k: v for k, v in record.items() if v != ""}
-        if not cleaned:
+        if not cleaned and idempotency_key is None:
             return {"id": None}
 
         db = await self._connect()
         try:
+            if idempotency_key is not None:
+                await self._ensure_idempotency_table(db)
+                existing = await self._lookup_idempotency_record(
+                    db, content_type, idempotency_key)
+                if existing is not None:
+                    return existing
+                # Either no entry, or entry was stale and cleaned up;
+                # fall through to insert.
+
             new_id = await _storage.insert_raw(db, content_type, cleaned)
+
+            if idempotency_key is not None:
+                await db.execute(
+                    f'INSERT INTO {_storage._q(self._IDEMPOTENCY_TABLE)} '
+                    f'(content_type, key, record_id) VALUES (?, ?, ?)',
+                    (content_type, idempotency_key, new_id),
+                )
+                await db.commit()
+
             persisted = dict(cleaned)
             persisted["id"] = new_id
             return persisted
         finally:
             await db.close()
+
+    _IDEMPOTENCY_TABLE = "_termin_idempotency"
+
+    async def _ensure_idempotency_table(self, db) -> None:
+        """Lazy-create the idempotency dedup table.
+
+        Schema:
+          (content_type, key) is the composite unique key.
+          record_id is the id of the record returned on replay.
+          created_at is operational metadata.
+
+        v0.9 retains entries forever; future versions may add a TTL
+        + cleanup job. Stale entries (record deleted) are detected
+        and cleaned at lookup time (see _lookup_idempotency_record).
+        """
+        await db.execute(
+            f'CREATE TABLE IF NOT EXISTS '
+            f'{_storage._q(self._IDEMPOTENCY_TABLE)} ('
+            f'    content_type TEXT NOT NULL,'
+            f'    key TEXT NOT NULL,'
+            f'    record_id INTEGER NOT NULL,'
+            f'    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            f'    PRIMARY KEY (content_type, key)'
+            f')'
+        )
+
+    async def _lookup_idempotency_record(
+        self, db, content_type: str, key: str,
+    ) -> Optional[Mapping[str, Any]]:
+        """Look up an idempotency entry. If the underlying record
+        still exists, return it. If the entry exists but the record
+        was deleted (stale), clean up the entry and return None so
+        the caller proceeds with a fresh insert."""
+        cursor = await db.execute(
+            f'SELECT record_id FROM {_storage._q(self._IDEMPOTENCY_TABLE)} '
+            f'WHERE content_type = ? AND key = ?',
+            (content_type, key),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        record_id = row[0]
+        existing = await _storage.get_record_by_id(
+            db, content_type, record_id)
+        if existing is not None:
+            return existing
+        # Stale entry — record deleted. Clean up so the replay
+        # produces a fresh insert.
+        await db.execute(
+            f'DELETE FROM {_storage._q(self._IDEMPOTENCY_TABLE)} '
+            f'WHERE content_type = ? AND key = ?',
+            (content_type, key),
+        )
+        await db.commit()
+        return None
 
     async def read(
         self, content_type: str, id: Any

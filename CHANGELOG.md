@@ -2,6 +2,42 @@
 
 ## Unreleased — v0.9 in progress (feature/v0.9)
 
+### Phase 2.x (c): idempotency-key dedup for create() (2026-04-26)
+
+The Storage contract's `create(content_type, record, *,
+idempotency_key=None)` now actually honors the kwarg per BRD §6.2:
+
+> "if supplied, second call with same key is a silent no-op
+> returning the original record."
+
+Phase 2 shipped the contract surface; Phase 2.x (c) lands the
+SqliteStorageProvider implementation.
+
+**Implementation** — a `_termin_idempotency` table mapping
+`(content_type, key)` to the record id of the first successful
+create. On replay, the provider fetches the underlying record by
+id and returns it; the replay's payload is ignored. Entries are
+lazy-created (no table until the first keyed create) and
+isolated per content type (same key in two content types =
+two separate idempotency contexts).
+
+**Stale-entry cleanup at lookup time.** If a replay finds an
+idempotency entry whose underlying record has since been deleted,
+the entry is cleaned up and the call proceeds as a fresh insert.
+This avoids returning a stale record id pointing at a deleted
+row. Documented as the v0.9 retention policy (no TTL; future
+versions may add one).
+
+**No retroactive enforcement.** Existing v0.8 → v0.9 deployments
+that never used the kwarg behave identically; the table
+materializes on first use.
+
+**Tests:** 9 new tests in `tests/test_v09_idempotency.py`
+covering: no-key passthrough, first-call insert, replay returns
+original (with payload-ignored verification), no duplicate row
+in storage, distinct keys → distinct records, replay-after-delete
+creates fresh, per-content-type isolation, lazy table creation.
+
 ### Phase 2.x (b): migration diff classifier (2026-04-26)
 
 **The runtime now reads, diffs, classifies, gates, and applies
