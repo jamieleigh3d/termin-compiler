@@ -103,12 +103,31 @@ def _render_data_table(node: dict) -> str:
             return f'{guards} and ({jinja_expr})'
         return jinja_expr
 
-    # Semantic mark label-to-CSS mapping
+    # Semantic mark label-to-CSS mapping.
+    #
+    # v0.9 Phase 5a.5 / BRD #2 §6.4: every information-carrying
+    # severity must communicate the same information through a
+    # non-color signal in addition to hue. Earlier palette had
+    # `warning` and `success` carry hue alone, which collapses
+    # under deuteranopia/protanopia simulation and provides no
+    # signal to colorblind users. Updated to add a left-border
+    # shape signal plus stronger background luminance:
+    #
+    #   - urgent      → bg-red-50 + bold font weight
+    #   - critical    → bg-red-100 + bolder font weight + left border
+    #   - warning     → bg-amber-100 + amber left border (luminance
+    #                   gap from success preserves CVD distinction)
+    #   - success     → bg-green-100 + green left border + medium weight
+    #   - highlighted → bg-red-50 + bold font weight (legacy)
+    #
+    # See tests/test_v09_colorblind_safety.py for the conformance
+    # gates these classes have to pass under deuteranopia,
+    # protanopia, and tritanopia simulation.
     MARK_STYLES = {
         "urgent": "bg-red-50 font-semibold",
-        "critical": "bg-red-100 font-bold",
-        "warning": "bg-amber-50",
-        "success": "bg-green-50",
+        "critical": "bg-red-100 font-bold border-l-4 border-red-600",
+        "warning": "bg-amber-100 border-l-4 border-amber-500",
+        "success": "bg-green-100 border-l-4 border-green-600 font-medium",
         "highlighted": "bg-red-50 font-semibold",  # legacy highlight compat
     }
 
@@ -1012,7 +1031,7 @@ def build_base_template(app_name: str, nav_html: str) -> object:
         </div>
         {{% else %}}
         <div data-termin-toast role="status" data-level="{{{{ flash_level }}}}"
-             class="fixed bottom-4 right-4 z-50 p-4 rounded-lg shadow-lg {{% if flash_level == 'error' %}}bg-red-600 text-white{{% else %}}bg-green-600 text-white{{% endif %}}"
+             class="fixed bottom-4 right-4 z-50 p-4 rounded-lg shadow-lg {{% if flash_level == 'error' %}}bg-red-700 text-white{{% else %}}bg-green-700 text-white{{% endif %}}"
              data-dismiss="{{{{ flash_dismiss or 5 }}}}">
             {{{{ flash_msg }}}}
         </div>

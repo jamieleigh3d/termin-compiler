@@ -31,7 +31,9 @@ function showFlashNotification(message, style, level, dismissSeconds) {
     // Toast: fixed position bottom-right
     el.setAttribute("data-termin-toast", "");
     el.setAttribute("data-level", level);
-    el.className = `fixed bottom-4 right-4 z-50 p-4 rounded-lg shadow-lg ${isError ? "bg-red-600 text-white" : "bg-green-600 text-white"}`;
+    // v0.9 Phase 5a.5: bg-{red,green}-700 brings white-on-color
+    // contrast ≥4.5:1 (WCAG AA). Pre-5a.5 used -600 which was 3.3:1.
+    el.className = `fixed bottom-4 right-4 z-50 p-4 rounded-lg shadow-lg ${isError ? "bg-red-700 text-white" : "bg-green-700 text-white"}`;
     el.textContent = message;
     document.body.appendChild(el);
   }
