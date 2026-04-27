@@ -94,6 +94,16 @@ def _seed_state_columns(body: dict, sm_info, *, strip_existing: bool = False) ->
 def register_crud_routes(app, ctx: RuntimeContext):
     """Register all CRUD routes from the IR route specs."""
 
+    # Build a per-content ownership-field lookup so CREATE routes can
+    # stamp the ownership field with `the user.id` before insert
+    # (Phase 6a.5 / BRD #3 §3.5). The IR's ContentSchema.ownership.field
+    # is the snake-case column name; None when no ownership declared.
+    ownership_field_for_content: dict[str, str | None] = {}
+    for cs in ctx.ir.get("content", []):
+        own = cs.get("ownership")
+        if own and own.get("field"):
+            ownership_field_for_content[cs.get("name", {}).get("snake", "")] = own["field"]
+
     for route in ctx.ir.get("routes", []):
         content_ref = route.get("content_ref", "")
         method = route.get("method", "GET")
@@ -103,24 +113,30 @@ def register_crud_routes(app, ctx: RuntimeContext):
         lookup_col = route.get("lookup_column", "id")
         target_state = route.get("target_state")
         machine_name = route.get("machine_name")
+        # v0.9 Phase 6a.5: row_filter from RouteSpec drives ownership-
+        # restricted routes. Shape: {"kind": "ownership", "field":
+        # "<snake>"} or None.
+        row_filter = route.get("row_filter")
+        owner_field_for_create = ownership_field_for_content.get(content_ref)
 
         if kind == "LIST":
-            _make_list_route(app, ctx, path, content_ref, scope)
+            _make_list_route(app, ctx, path, content_ref, scope, row_filter)
         elif kind == "CREATE":
             _make_create_route(app, ctx, path, content_ref, scope,
-                               ctx.sm_lookup.get(content_ref, []))
+                               ctx.sm_lookup.get(content_ref, []),
+                               owner_field_for_create)
         elif kind == "GET_ONE":
-            _make_get_route(app, ctx, path, content_ref, scope, lookup_col)
+            _make_get_route(app, ctx, path, content_ref, scope, lookup_col, row_filter)
         elif kind == "UPDATE":
-            _make_update_route(app, ctx, path, content_ref, scope, lookup_col)
+            _make_update_route(app, ctx, path, content_ref, scope, lookup_col, row_filter)
         elif kind == "DELETE":
-            _make_delete_route(app, ctx, path, content_ref, scope, lookup_col)
+            _make_delete_route(app, ctx, path, content_ref, scope, lookup_col, row_filter)
         elif kind == "TRANSITION":
             _make_transition_route(app, ctx, path, content_ref, scope,
                                    lookup_col, target_state, machine_name)
 
 
-def _make_list_route(app, ctx, path, cr, sc):
+def _make_list_route(app, ctx, path, cr, sc, row_filter=None):
     deps = [Depends(ctx.require_scope(sc))] if sc else []
 
     # Reserved query-param names — not treated as field filters.
@@ -211,6 +227,19 @@ def _make_list_route(app, ctx, path, cr, sc):
                     status_code=400,
                     detail=f"unknown filter field '{k}' for {_cr}")
             filter_eqs.append(Eq(field=k, value=v))
+
+        # v0.9 Phase 6a.5: ownership row_filter (BRD #3 §3.4 / §3.5).
+        # When the route carries row_filter={"kind":"ownership","field":F},
+        # restrict the result set to rows where F equals the principal's
+        # id (on_behalf_of per BRD §3.5; for direct user actions this is
+        # the same as the request principal — agent invocations split in
+        # Phase 6a.6+).
+        if row_filter and row_filter.get("kind") == "ownership":
+            owner_field = row_filter.get("field")
+            owner_id = (user.get("the_user") or {}).get("id", "")
+            if owner_field and owner_id:
+                filter_eqs.append(Eq(field=owner_field, value=owner_id))
+
         predicate = None
         if len(filter_eqs) == 1:
             predicate = filter_eqs[0]
@@ -242,11 +271,11 @@ def _make_list_route(app, ctx, path, cr, sc):
         return records
 
 
-def _make_create_route(app, ctx, path, cr, sc, sm_info):
+def _make_create_route(app, ctx, path, cr, sc, sm_info, owner_field=None):
     deps = [Depends(ctx.require_scope(sc))] if sc else []
 
     @app.post(path, status_code=201, dependencies=deps)
-    async def create_route(request: Request, _cr=cr, _sm=sm_info):
+    async def create_route(request: Request, _cr=cr, _sm=sm_info, _owner=owner_field):
         user = ctx.get_current_user(request)
         user_scopes = list(user.get("scopes", []))
         bnd_id_err = check_boundary_identity(
@@ -271,6 +300,17 @@ def _make_create_route(app, ctx, path, cr, sc, sm_info):
         # past its initial state — bypassing the transition rules that
         # would otherwise gate that move.
         body = _seed_state_columns(body, _sm, strip_existing=True)
+
+        # v0.9 Phase 6a.5: stamp the ownership field with the_user.id
+        # at create time (BRD #3 §3.5 — "the new row's owner is set to
+        # on_behalf_of.id, not invoked_by.id"). Overwrites any client-
+        # supplied value so apps cannot create rows owned by other
+        # principals. Anonymous principals can still own records (id =
+        # "anonymous"); apps that don't want anonymous ownership gate
+        # CREATE with a non-anonymous scope.
+        if _owner:
+            owner_id = (user.get("the_user") or {}).get("id", "")
+            body[_owner] = owner_id
 
         schema = ctx.content_lookup.get(_cr, {})
         evaluate_field_defaults(body, schema, ctx.expr_eval, user)
@@ -319,7 +359,7 @@ def _make_create_route(app, ctx, path, cr, sc, sm_info):
         return redact_record(record, schema, set(user.get("scopes", [])))
 
 
-def _make_get_route(app, ctx, path, cr, sc, lc):
+def _make_get_route(app, ctx, path, cr, sc, lc, row_filter=None):
     deps = [Depends(ctx.require_scope(sc))] if sc else []
 
     @app.get(path, dependencies=deps)
@@ -343,6 +383,16 @@ def _make_get_route(app, ctx, path, cr, sc, lc):
         schema = ctx.content_lookup.get(_cr, {})
         user = ctx.get_current_user(request)
         user_scopes = set(user.get("scopes", []))
+        # v0.9 Phase 6a.5: ownership row_filter on GET_ONE. Reject the
+        # read with a 404 when the principal doesn't own the record.
+        # 404 (not 403) by design — per BRD §3.4, the row "doesn't
+        # exist" from the principal's perspective; existence shouldn't
+        # leak through the auth shape.
+        if row_filter and row_filter.get("kind") == "ownership":
+            owner_field = row_filter.get("field")
+            owner_id = (user.get("the_user") or {}).get("id", "")
+            if owner_field and record.get(owner_field) != owner_id:
+                raise HTTPException(status_code=404, detail="Not found")
         record = redact_record(record, schema, user_scopes)
         if _cr.startswith("compute_audit_log_"):
             records = await redact_audit_traces(
@@ -351,7 +401,7 @@ def _make_get_route(app, ctx, path, cr, sc, lc):
         return record
 
 
-def _make_update_route(app, ctx, path, cr, sc, lc):
+def _make_update_route(app, ctx, path, cr, sc, lc, row_filter=None):
     deps = [Depends(ctx.require_scope(sc))] if sc else []
 
     @app.put(path, dependencies=deps)
@@ -381,6 +431,25 @@ def _make_update_route(app, ctx, path, cr, sc, lc):
             )
             existing = dict(page.records[0]) if page.records else None
             target_id = existing["id"] if existing else None
+
+        # v0.9 Phase 6a.5: ownership row_filter on UPDATE. Reject with
+        # 404 when the principal doesn't own the row, matching GET_ONE
+        # semantics — the row "doesn't exist" from this principal's
+        # perspective. Also rejects attempts to overwrite the
+        # ownership field itself: principal X cannot transfer their
+        # row to principal Y by setting <owner_field>=Y, even with
+        # the right scope.
+        if row_filter and row_filter.get("kind") == "ownership":
+            owner_field = row_filter.get("field")
+            owner_id = (user.get("the_user") or {}).get("id", "")
+            if existing and owner_field and existing.get(owner_field) != owner_id:
+                raise HTTPException(status_code=404, detail="Not found")
+            if owner_field in body:
+                # Strip the ownership field from the body; preserves
+                # the original owner. (Alternative: 403. The strip is
+                # less informative but lets benign updates with the
+                # same owner_id pass through cleanly.)
+                body = {k: v for k, v in body.items() if k != owner_field}
 
         # ── State-machine PUT-route gate ──
         #
@@ -446,7 +515,7 @@ def _make_update_route(app, ctx, path, cr, sc, lc):
         return redact_record(record, schema, user_scopes)
 
 
-def _make_delete_route(app, ctx, path, cr, sc, lc):
+def _make_delete_route(app, ctx, path, cr, sc, lc, row_filter=None):
     deps = [Depends(ctx.require_scope(sc))] if sc else []
 
     @app.delete(path, dependencies=deps)
@@ -473,6 +542,18 @@ def _make_delete_route(app, ctx, path, cr, sc, lc):
                 if not page.records:
                     raise HTTPException(status_code=404, detail="Record not found")
                 target_id = page.records[0].get("id")
+
+            # v0.9 Phase 6a.5: ownership row_filter on DELETE. Reject
+            # with 404 when the principal doesn't own the row, matching
+            # GET_ONE / UPDATE semantics.
+            if row_filter and row_filter.get("kind") == "ownership":
+                user = ctx.get_current_user(request)
+                owner_field = row_filter.get("field")
+                owner_id = (user.get("the_user") or {}).get("id", "")
+                if owner_field:
+                    rec = await ctx.storage.read(_cr, target_id)
+                    if rec is None or rec.get(owner_field) != owner_id:
+                        raise HTTPException(status_code=404, detail="Record not found")
             deleted = await ctx.storage.delete(
                 _cr, target_id, cascade_mode=CascadeMode.RESTRICT,
             )
