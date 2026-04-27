@@ -20,6 +20,9 @@ setup(
         "python-multipart>=0.0.6",
         "cel-python>=0.5.0",
         "httpx>=0.25.0",
+        # v0.9 Step Zero: markdown sanitizer for the
+        # presentation-base.markdown contract envelope (BRD #2 §7.3).
+        "markdown-it-py>=3.0.0",
     ],
     extras_require={
         # Test dependencies. Install with: pip install -e .[test]

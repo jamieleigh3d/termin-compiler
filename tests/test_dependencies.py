@@ -45,6 +45,7 @@ IMPORT_TO_PACKAGE = {
     "websockets": "websockets",
     "starlette": "fastapi",  # starlette comes with fastapi
     "multipart": "python-multipart",
+    "markdown_it": "markdown-it-py",  # v0.9 Step Zero: markdown sanitizer
 }
 
 
