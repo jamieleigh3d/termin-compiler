@@ -2,6 +2,63 @@
 
 ## Unreleased — v0.9 in progress (feature/v0.9)
 
+### Phase 2.x (f): CEL → Predicate AST compiler (2026-04-26)
+
+New module `termin_runtime/cel_predicate.py` compiles a CEL
+expression string to a Predicate AST node — the runtime can hand
+the result to any storage provider for SQL pushdown via the
+existing predicate compiler. Per BRD §6.2:
+
+> "the runtime compiles source-level CEL down to the AST and
+>  evaluates the residual in-process."
+
+This module is the source-level CEL → Predicate AST half. The
+runtime catches `NotCompilable` to fall back to in-process
+cel-python evaluation against fetched records (the contract's
+"residual" half).
+
+**Compilable CEL subset:**
+- `<field> == <literal>` → Eq (literal: string, int, float, bool, null)
+- `<field> != <literal>` → Ne
+- `<field> > / < / >= / <= <numeric>` → Gt / Lt / Gte / Lte
+- `<field> in [<lit>, ...]` → In
+- `<field>.contains(<string>)` → Contains
+- `<field> == null` → Eq(field, None) (compiles to SQL `IS NULL`
+  via the Phase 2.x (d) predicate compiler enhancement)
+- `<expr> && <expr>` → And
+- `<expr> || <expr>` → Or
+- `!<expr>` → Not
+
+**NotCompilable cases** (runtime falls back to cel-python):
+- arithmetic, ternaries, macros (`has`, `all`, `exists`)
+- function calls beyond `.contains()`
+- identifier references that aren't fields
+- LHS of comparison must be a field; RHS must be a literal
+
+**Optional `field_names` arg** to `compile_cel_to_predicate()` —
+when supplied (typically the content's field set), identifiers
+outside that set raise NotCompilable rather than producing a
+predicate the storage provider would reject.
+
+**End-to-end pushdown test**: a CEL filter `'status == "draft"
+&& priority > 2'` compiled and handed to the SQLite provider
+correctly filters records via the same SQL the Phase 2 query
+contract emits.
+
+**No runtime call-sites yet.** The compiler is forward-looking:
+v0.9 has no .termin construct that produces CEL filter
+expressions on stored rows — URL filter params still construct
+Eq predicates directly. Future work (filter-by-CEL UIs,
+agent-tool query strings, view definitions) will plumb this
+in. Shipping it now means the contract layer is complete and
+the runtime's fallback path is testable independently.
+
+**Tests:** 24 in `tests/test_v09_cel_predicate.py`: every
+compilable shape, NotCompilable fallback cases, field-name
+validation, end-to-end pushdown via SqliteStorageProvider.
+
+Compiler: 1925 pass / 0 fail / 0 skip / 0 xfail.
+
 ### Phase 2.x (e): keyset cursors (2026-04-26)
 
 The SqliteStorageProvider's `query()` now uses keyset (seek-style)
