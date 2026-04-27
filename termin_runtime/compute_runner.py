@@ -152,6 +152,84 @@ def _build_agent_set_output(comp: dict, content_lookup: dict) -> dict:
     }
 
 
+def _build_llm_audit_metadata(
+    ctx: RuntimeContext, comp_snake: str,
+    system_msg: str, user_msg: str, result: dict | None,
+    *, error_str: str | None = None,
+) -> dict:
+    """Build the BRD §6.3.4 audit metadata dict for an LLM call.
+
+    Slice (d) reads the deploy binding for provider_product, the
+    provider instance for provider_config_hash + model_identifier,
+    and the result dict for cost. The output dict shape matches what
+    write_audit_trace expects under audit_metadata.
+
+    Slice (e) extends this for refusal and structured tool_calls.
+    """
+    provider_inst = ctx.compute_providers.get(comp_snake)
+    # Resolve provider_product from the deploy binding if available.
+    bindings = (
+        getattr(ctx, "_deploy_bindings", None)
+        or {}
+    )
+    provider_product = ""
+    if hasattr(ctx, "compute_providers") and provider_inst is not None:
+        provider_product = getattr(provider_inst, "service", "") or ""
+    config_hash = getattr(provider_inst, "_config_hash", "") if provider_inst else ""
+    model_id = getattr(provider_inst, "model", "") or ""
+    prompt_as_sent = f"<system>\n{system_msg}\n</system>\n{user_msg}"
+    cost_units = 0
+    if result and isinstance(result, dict):
+        usage = result.get("_termin_usage") or {}
+        if isinstance(usage, dict):
+            cost_units = int(usage.get("total_tokens") or 0)
+    return {
+        "provider_product": provider_product,
+        "model_identifier": model_id,
+        "provider_config_hash": config_hash,
+        "prompt_as_sent": prompt_as_sent,
+        "sampling_params_json": "{}",
+        "tool_calls_json": "[]",
+        "refusal_reason": None,
+        "cost_units": cost_units,
+        "cost_unit_type": "tokens" if cost_units else "",
+        "cost_currency_amount": "",
+    }
+
+
+def _build_agent_audit_metadata(
+    ctx: RuntimeContext, comp_snake: str,
+    system_msg: str, user_msg: str, tool_calls_log: list,
+    *, refusal_reason: str | None = None,
+) -> dict:
+    """Build the BRD §6.3.4 audit metadata dict for an ai-agent call.
+
+    tool_calls_log is a list of {tool, args, result, is_error,
+    latency_ms} dicts capturing every tool call the agent made
+    during the invocation. Persisted as JSON in the audit
+    `tool_calls` column.
+    """
+    provider_inst = ctx.compute_providers.get(comp_snake)
+    provider_product = ""
+    if provider_inst is not None:
+        provider_product = getattr(provider_inst, "service", "") or ""
+    config_hash = getattr(provider_inst, "_config_hash", "") if provider_inst else ""
+    model_id = getattr(provider_inst, "model", "") or ""
+    prompt_as_sent = f"<system>\n{system_msg}\n</system>\n{user_msg}"
+    return {
+        "provider_product": provider_product,
+        "model_identifier": model_id,
+        "provider_config_hash": config_hash,
+        "prompt_as_sent": prompt_as_sent,
+        "sampling_params_json": "{}",
+        "tool_calls_json": json.dumps(tool_calls_log) if tool_calls_log else "[]",
+        "refusal_reason": refusal_reason,
+        "cost_units": 0,
+        "cost_unit_type": "",
+        "cost_currency_amount": "",
+    }
+
+
 async def execute_compute(ctx: RuntimeContext, comp: dict, record: dict,
                           content_name: str, main_loop=None):
     """Execute a Compute triggered by an event."""
@@ -313,24 +391,33 @@ async def _execute_llm_compute(ctx: RuntimeContext, comp: dict, record: dict,
         if audit_level == "debug":
             trace_data["calls"][0]["system_prompt"] = system_msg
             trace_data["calls"][0]["thinking"] = thinking
+        # v0.9 Phase 3 slice (d): BRD §6.3.4 audit_metadata.
+        audit_metadata = _build_llm_audit_metadata(
+            ctx, comp_snake, system_msg, user_msg, result,
+        )
         await write_audit_trace(
             ctx, comp, invocation_id=_llm_invocation_id, trigger="event",
             started_at=_llm_started.isoformat() + "Z",
             completed_at=_llm_completed.isoformat() + "Z",
-            duration_ms=_llm_duration, outcome="success",
+            latency_ms=_llm_duration, outcome="success",
             trace_data=trace_data,
+            audit_metadata=audit_metadata,
         )
     except AIProviderError as e:
         print(f"[Termin] [ERROR] Compute '{comp_name}': {e}")
         _llm_err_completed = _dt.datetime.utcnow()
         _llm_err_duration = (_llm_err_completed - _llm_started).total_seconds() * 1000
+        audit_metadata = _build_llm_audit_metadata(
+            ctx, comp_snake, system_msg, user_msg, None, error_str=str(e),
+        )
         await write_audit_trace(
             ctx, comp, invocation_id=_llm_invocation_id, trigger="event",
             started_at=_llm_started.isoformat() + "Z",
             completed_at=_llm_err_completed.isoformat() + "Z",
-            duration_ms=_llm_err_duration, outcome="error",
+            latency_ms=_llm_err_duration, outcome="error",
             error_message=str(e),
             trace_data={"compute_type": "agent", "error": str(e)},
+            audit_metadata=audit_metadata,
         )
 
 
@@ -553,24 +640,38 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
         if audit_level == "debug":
             trace_data["calls"][0]["system_prompt"] = system_msg
             trace_data["calls"][0]["thinking"] = thinking
+        # v0.9 Phase 3 slice (d): BRD §6.3.4 audit_metadata. The
+        # legacy AIProvider doesn't yet expose a structured tool-calls
+        # list back to the runner, so we pass the empty list here.
+        # Slice (e) wires the streaming-event tap that captures each
+        # tool call as the agent loop runs; for now, audit's tool_calls
+        # column is empty for ai-agent invocations.
+        agent_audit_metadata = _build_agent_audit_metadata(
+            ctx, comp_snake, system_msg, user_msg, tool_calls_log=[],
+        )
         await write_audit_trace(
             ctx, comp, invocation_id=_agent_invocation_id, trigger="event",
             started_at=_agent_started.isoformat() + "Z",
             completed_at=_agent_completed.isoformat() + "Z",
-            duration_ms=_agent_duration, outcome="success",
+            latency_ms=_agent_duration, outcome="success",
             trace_data=trace_data,
+            audit_metadata=agent_audit_metadata,
         )
     except AIProviderError as e:
         print(f"[Termin] [ERROR] Compute '{comp_name}': {e}")
         _agent_err_completed = _dt.datetime.utcnow()
         _agent_err_duration = (_agent_err_completed - _agent_started).total_seconds() * 1000
+        agent_audit_metadata = _build_agent_audit_metadata(
+            ctx, comp_snake, system_msg, user_msg, tool_calls_log=[],
+        )
         await write_audit_trace(
             ctx, comp, invocation_id=_agent_invocation_id, trigger="event",
             started_at=_agent_started.isoformat() + "Z",
             completed_at=_agent_err_completed.isoformat() + "Z",
-            duration_ms=_agent_err_duration, outcome="error",
+            latency_ms=_agent_err_duration, outcome="error",
             error_message=str(e),
             trace_data={"compute_type": "agent", "error": str(e)},
+            audit_metadata=agent_audit_metadata,
         )
 
 
@@ -578,14 +679,29 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
 
 async def write_audit_trace(ctx: RuntimeContext, comp: dict, invocation_id: str,
                             trigger: str, started_at: str, completed_at: str,
-                            duration_ms: float, outcome: str,
+                            latency_ms: float = None, outcome: str = "success",
                             trace_data: dict = None, error_message: str = None,
                             total_input_tokens: int = 0, total_output_tokens: int = 0,
-                            invoked_by=None):
+                            invoked_by=None,
+                            audit_metadata: dict = None,
+                            duration_ms: float = None):
     """Write a trace record to the compute's audit log Content table.
 
-    invoked_by: optional Principal who triggered the compute (BRD §6.3.4).
-        For event-triggered computes this is the principal who caused
+    Per BRD §6.3.4 (v0.9 Phase 3 slice (d)):
+      - `latency_ms` is the canonical name (was `duration_ms` in
+        v0.8). The legacy keyword is accepted for back-compat with
+        any internal call sites still passing it; one or the other
+        must be supplied.
+      - `audit_metadata` carries the BRD §6.3.4 reproducibility-grade
+        fields for LLM/agent invocations: provider_product,
+        model_identifier, provider_config_hash, prompt_as_sent,
+        sampling_params (JSON), tool_calls (JSON), refusal_reason,
+        cost_{units,unit_type,currency_amount}. Missing keys default
+        to safe values (empty strings / 0 / null). CEL computes pass
+        None.
+
+    invoked_by: optional Principal who triggered the compute. For
+        event-triggered computes this is the principal who caused
         the upstream event; for system-triggered computes (scheduler,
         startup hooks) it's None and the audit fields are empty.
         For delegate-mode agent principals, on_behalf_of is also
@@ -596,6 +712,11 @@ async def write_audit_trace(ctx: RuntimeContext, comp: dict, invocation_id: str,
     audit_ref = comp.get("audit_content_ref")
     if audit_level == "none" or not audit_ref:
         return
+
+    # Accept either kwarg name during the v0.9 transition. Internal
+    # callers should use latency_ms.
+    if latency_ms is None:
+        latency_ms = duration_ms if duration_ms is not None else 0.0
 
     # Per BRD §6.3.4, principal info on the audit record.
     invoked_by_id = ""
@@ -615,7 +736,7 @@ async def write_audit_trace(ctx: RuntimeContext, comp: dict, invocation_id: str,
         "trigger": trigger,
         "started_at": started_at,
         "completed_at": completed_at,
-        "duration_ms": duration_ms,
+        "latency_ms": latency_ms,
         "outcome": outcome,
         "total_input_tokens": total_input_tokens,
         "total_output_tokens": total_output_tokens,
@@ -625,6 +746,26 @@ async def write_audit_trace(ctx: RuntimeContext, comp: dict, invocation_id: str,
         "invoked_by_display_name": invoked_by_name,
         "on_behalf_of_principal_id": on_behalf_of_id,
     }
+
+    # v0.9 Phase 3 slice (d): LLM/agent invocations carry the
+    # reproducibility-grade audit columns from BRD §6.3.4. CEL
+    # computes don't get these columns in their audit table — the
+    # writer only populates them when the schema includes them
+    # (provider in {"llm", "ai-agent"}).
+    if comp.get("provider") in ("llm", "ai-agent"):
+        m = audit_metadata or {}
+        record_data.update({
+            "provider_product": m.get("provider_product", ""),
+            "model_identifier": m.get("model_identifier", ""),
+            "provider_config_hash": m.get("provider_config_hash", ""),
+            "prompt_as_sent": m.get("prompt_as_sent", ""),
+            "sampling_params": m.get("sampling_params_json", "{}"),
+            "tool_calls": m.get("tool_calls_json", "[]"),
+            "refusal_reason": m.get("refusal_reason") or "",
+            "cost_units": m.get("cost_units") or 0,
+            "cost_unit_type": m.get("cost_unit_type", "") or "",
+            "cost_currency_amount": m.get("cost_currency_amount", "") or "",
+        })
 
     try:
         db = await get_db(ctx.db_path)

@@ -2,6 +2,119 @@
 
 ## Unreleased — v0.9 in progress (feature/v0.9)
 
+### Phase 3 slice (d): audit record reshape to BRD §6.3.4 (2026-04-26)
+
+Per docs/compute-provider-design.md §3.5 + §6 slice (d). Audit
+log Content schemas now match BRD §6.3.4 reproducibility-grade
+shape for LLM and ai-agent computes; CEL computes keep the base
+shape. The `outcome` enum gains `"refused"` (slice (e) wires
+the actual refusal flow); `duration_ms` is renamed to
+`latency_ms` per BRD field naming.
+
+#### Audit-Content schema reshape (lower.py)
+
+The auto-generated `compute_audit_log_<snake>` Content per
+audited Compute is now contract-aware. The base shape is
+unchanged (compute_name, invocation_id, trigger, started_at,
+completed_at, latency_ms, outcome, total_input_tokens,
+total_output_tokens, trace, error_message, plus the v0.9
+Phase 1 step 4 invoking-Principal columns). LLM and ai-agent
+computes additionally get ten reproducibility-grade columns
+per BRD §6.3.4:
+
+  - `provider_product` — e.g., "anthropic", "stub"
+  - `model_identifier` — e.g., "claude-haiku-4-5-20251001"
+  - `provider_config_hash` — sha256 of the resolved config
+    with secret values redacted (per the slice (a)
+    secret-redacted-then-hashed strategy — API key rotations
+    do not change the hash)
+  - `prompt_as_sent` — full assembled prompt
+  - `sampling_params` — JSON dict (temperature/top_p/seed/...)
+  - `tool_calls` — JSON list of {tool, args, result, is_error,
+    latency_ms} for ai-agent invocations; "[]" for llm
+  - `refusal_reason` — populated only when outcome="refused"
+    (slice (e) wires this end-to-end)
+  - `cost_units` / `cost_unit_type` /
+    `cost_currency_amount` — provider-reported cost when
+    available
+
+CEL computes do NOT get these columns — there's no provider
+call to reproduce, the whole expression lives in source.
+
+#### `duration_ms` → `latency_ms` rename
+
+BRD §6.3.4 names the timing column `latency_ms`. Per resolved
+Q4 (rename via Phase 2.x rename-mapping path), this is the
+first production use of the operator-supplied rename mapping:
+operators upgrading v0.8 audit tables add a one-time entry to
+their deploy config's `bindings.storage.config.migrations`
+section pointing the v0.8 column name at the v0.9 column name.
+Fresh installs see only the new shape. The migration
+classifier flags the unmapped removal as low-risk-rename + safe
+nullable adds.
+
+#### `outcome` enum widened with `"refused"`
+
+The contract-level outcome value `"refused"` (BRD §6.3) now
+appears in the audit Content's enum constraint:
+`{success, refused, error, timeout, cancelled}`. Slice (e)
+implements the runtime path that produces the value via the
+`system.refuse` always-available agent tool.
+
+#### `write_audit_trace` extended
+
+New optional `audit_metadata: dict` kwarg. When present and
+the compute's provider is `llm`/`ai-agent`, the writer
+populates the new BRD §6.3.4 columns from the metadata dict.
+The kwarg is None for CEL invocations (the new columns aren't
+in the CEL audit schema). The legacy `duration_ms=` keyword is
+accepted alongside `latency_ms=` for one phase to keep
+internal call sites working during the transition.
+
+#### Audit metadata builders
+
+`_build_llm_audit_metadata(ctx, comp_snake, system_msg,
+user_msg, result)` and `_build_agent_audit_metadata(ctx,
+comp_snake, system_msg, user_msg, tool_calls_log,
+refusal_reason)` in compute_runner.py construct the
+audit_metadata dict from the per-compute provider instance
+(provider_product, model_identifier, provider_config_hash) and
+the call's prompt + result.
+
+For ai-agent invocations in slice (d), the `tool_calls_log`
+list is empty — the legacy AIProvider doesn't yet expose a
+structured tool-calls list back to the runner. Slice (e)'s
+streaming-event tap captures each tool call as the agent loop
+runs and threads it into the audit record.
+
+#### Existing tests migrated
+
+- `tests/test_020_audit.py::test_audit_log_standard_fields`
+  asserts `latency_ms` instead of `duration_ms`.
+- `tests/test_020_audit.py::test_audit_log_outcome_is_enum`
+  asserts the widened enum.
+- `tests/test_020_audit.py::test_trace_has_duration` reads the
+  new `latency_ms` column.
+- `tests/test_v09_identity_contract.py` schema-dict helpers use
+  the new column name + enum.
+
+#### New tests
+
+`tests/test_v09_compute_audit.py` — 8 tests across:
+- Schema-shape: `latency_ms` replaces `duration_ms` for both
+  CEL and LLM; outcome includes `refused`.
+- LLM/agent extras: each of the 10 new columns is present on
+  llm and ai-agent audit Content, absent on CEL.
+- write_audit_trace: audit_metadata populates the new columns
+  end-to-end (insert + read-back asserts every field).
+- Legacy `duration_ms=` kwarg back-compat: internal callers
+  passing the v0.8 keyword still work; the value lands in the
+  new `latency_ms` column.
+
+#### Tests: 2014 pass / 0 fail / 0 skip / 0 xfail.
+
+All 14 examples compile clean.
+
 ### Phase 3 slice (c): full access-grant grammar (2026-04-26)
 
 Per resolved Q2 (JL pushed to ship the whole tool surface in

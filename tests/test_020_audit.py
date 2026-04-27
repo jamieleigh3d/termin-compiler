@@ -300,7 +300,13 @@ class TestAuditLogGeneration:
         assert audit_log is not None, "Expected compute_audit_log_calculate_total Content"
 
     def test_audit_log_standard_fields(self):
-        """The auto-generated audit log should have all D-20 standard fields."""
+        """The auto-generated audit log should have all D-20 standard fields.
+
+        v0.9 Phase 3 slice (d): `duration_ms` was renamed to
+        `latency_ms` per BRD §6.3.4. Operators upgrading existing
+        v0.8 audit tables apply the rename via the Phase 2.x
+        deploy-config rename-mapping path.
+        """
         spec = _compile(COMPUTE_WITH_AUDIT)
         audit_log = _find_content(spec, "compute_audit_log_calculate_total")
         assert audit_log is not None
@@ -308,7 +314,7 @@ class TestAuditLogGeneration:
         # Note: 'id' is auto-added by the runtime storage module, not in fields
         expected_fields = {
             "compute_name", "invocation_id", "trigger",
-            "started_at", "completed_at", "duration_ms",
+            "started_at", "completed_at", "latency_ms",
             "outcome", "total_input_tokens", "total_output_tokens",
             "trace", "error_message",
         }
@@ -326,7 +332,12 @@ class TestAuditLogGeneration:
                 outcome_field = f
                 break
         assert outcome_field is not None
-        assert set(outcome_field.enum_values) == {"success", "error", "timeout", "cancelled"}
+        # v0.9 Phase 3 slice (d): "refused" added per BRD §6.3 contract
+        # outcome values for ai-agent / llm computes; the column is the
+        # same shape across all compute types.
+        assert set(outcome_field.enum_values) == {
+            "success", "refused", "error", "timeout", "cancelled",
+        }
 
     def test_audit_log_id_auto_added_by_runtime(self):
         """The id column is auto-added by the runtime storage module (not in schema fields)."""
@@ -480,7 +491,11 @@ class TestRuntimeTraceRecording:
             assert rec["outcome"] in ("success", "error")
 
     def test_trace_has_duration(self):
-        """Trace records should include timing information."""
+        """Trace records should include timing information.
+
+        v0.9 Phase 3 slice (d): the column is `latency_ms` per
+        BRD §6.3.4 (renamed from `duration_ms`).
+        """
         with _make_client(self.pkgs["compute_demo"]) as client:
             client.cookies.set("termin_role", "order manager")
             client.post("/api/v1/compute/calculate_order_total", json={"input": {}})
@@ -488,7 +503,7 @@ class TestRuntimeTraceRecording:
             records = r.json()
             assert len(records) >= 1
             rec = records[0]
-            assert rec["duration_ms"] is not None
+            assert rec["latency_ms"] is not None
             assert rec["started_at"] is not None
             assert rec["completed_at"] is not None
 

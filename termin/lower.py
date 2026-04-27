@@ -675,7 +675,20 @@ def lower(program: Program) -> AppSpec:
         # Stored as text Principal.id values rather than typed
         # references — Principal-as-typed-reference is a v0.10
         # design item (see roadmap).
-        audit_fields = (
+        #
+        # v0.9 Phase 3 slice (d): audit-Content schema is now
+        # contract-aware. CEL computes get the base shape; LLM and
+        # ai-agent computes get an additional reproducibility-grade
+        # field set per BRD §6.3.4 (provider_product, model_identifier,
+        # provider_config_hash, prompt_as_sent, sampling_params,
+        # tool_calls, refusal_reason, cost_*).
+        #
+        # Renames in v0.9 Phase 3 slice (d):
+        #   duration_ms → latency_ms (BRD §6.3.4 names it latency_ms).
+        #     Operators upgrading v0.8 audit tables apply via the
+        #     Phase 2.x rename-mapping path in deploy config.
+        # Outcome enum widened with "refused" (BRD §6.3 contract value).
+        base_audit_fields = (
             FieldSpec(name="compute_name", display_name="compute name",
                       business_type="text", column_type=FieldType.TEXT),
             FieldSpec(name="invocation_id", display_name="invocation id",
@@ -686,11 +699,11 @@ def lower(program: Program) -> AppSpec:
                       business_type="datetime", column_type=FieldType.TIMESTAMP),
             FieldSpec(name="completed_at", display_name="completed at",
                       business_type="datetime", column_type=FieldType.TIMESTAMP),
-            FieldSpec(name="duration_ms", display_name="duration ms",
+            FieldSpec(name="latency_ms", display_name="latency ms",
                       business_type="number", column_type=FieldType.REAL),
             FieldSpec(name="outcome", display_name="outcome",
                       business_type="enum", column_type=FieldType.TEXT,
-                      enum_values=("success", "error", "timeout", "cancelled")),
+                      enum_values=("success", "refused", "error", "timeout", "cancelled")),
             FieldSpec(name="total_input_tokens", display_name="total input tokens",
                       business_type="number", column_type=FieldType.INTEGER),
             FieldSpec(name="total_output_tokens", display_name="total output tokens",
@@ -710,6 +723,54 @@ def lower(program: Program) -> AppSpec:
                       display_name="on behalf of principal id",
                       business_type="text", column_type=FieldType.TEXT),
         )
+
+        # Per BRD §6.3.4: LLM and ai-agent invocations capture
+        # reproducibility-grade fields. CEL computes don't have a
+        # provider call to reproduce (the whole expression is in
+        # source), so these don't apply.
+        if cs.provider in ("llm", "ai-agent"):
+            llm_audit_fields = (
+                FieldSpec(name="provider_product", display_name="provider product",
+                          business_type="text", column_type=FieldType.TEXT),
+                FieldSpec(name="model_identifier", display_name="model identifier",
+                          business_type="text", column_type=FieldType.TEXT),
+                # Hash is the canonical-JSON hash of the provider's
+                # config dict with secret values redacted to their key
+                # paths. Same operational config across API-key
+                # rotations hashes equal; surrounding-config changes
+                # do not. See providers/builtins/_provider_hash.py.
+                FieldSpec(name="provider_config_hash",
+                          display_name="provider config hash",
+                          business_type="text", column_type=FieldType.TEXT),
+                # The fully assembled prompt the provider sent.
+                # Large for chat-style apps; readers paginate.
+                FieldSpec(name="prompt_as_sent", display_name="prompt as sent",
+                          business_type="text", column_type=FieldType.TEXT),
+                # JSON: temperature / top_p / seed / etc.
+                FieldSpec(name="sampling_params", display_name="sampling params",
+                          business_type="text", column_type=FieldType.TEXT),
+                # JSON list of {tool, args, result, is_error, latency_ms}
+                # for ai-agent invocations. Empty list for llm.
+                FieldSpec(name="tool_calls", display_name="tool calls",
+                          business_type="text", column_type=FieldType.TEXT),
+                # Populated only when outcome="refused".
+                FieldSpec(name="refusal_reason", display_name="refusal reason",
+                          business_type="text", column_type=FieldType.TEXT),
+                # Provider-reported cost. cost_units is the count
+                # (tokens, requests); cost_unit_type names the unit;
+                # cost_currency_amount carries the numeric currency
+                # value as a text string when the provider supplies it.
+                FieldSpec(name="cost_units", display_name="cost units",
+                          business_type="number", column_type=FieldType.INTEGER),
+                FieldSpec(name="cost_unit_type", display_name="cost unit type",
+                          business_type="text", column_type=FieldType.TEXT),
+                FieldSpec(name="cost_currency_amount",
+                          display_name="cost currency amount",
+                          business_type="text", column_type=FieldType.TEXT),
+            )
+            audit_fields = base_audit_fields + llm_audit_fields
+        else:
+            audit_fields = base_audit_fields
 
         audit_log_schemas.append(ContentSchema(
             name=audit_qname,
