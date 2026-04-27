@@ -24,6 +24,15 @@ To register all built-in providers in one call, use
 
 from .identity_stub import StubIdentityProvider, register_stub_identity
 from .storage_sqlite import SqliteStorageProvider, register_sqlite_storage
+from .compute_default_cel import DefaultCelProvider, register_default_cel
+from .compute_llm_stub import StubLlmProvider, register_stub_llm
+from .compute_agent_stub import StubAgentProvider, register_stub_agent
+from .compute_llm_anthropic import (
+    AnthropicLlmProvider, register_anthropic_llm,
+)
+from .compute_agent_anthropic import (
+    AnthropicAgentProvider, register_anthropic_agent,
+)
 
 
 def register_builtins(provider_registry, contract_registry):
@@ -31,11 +40,17 @@ def register_builtins(provider_registry, contract_registry):
 
     Phase 1: stub identity provider.
     Phase 2: SQLite storage provider.
-    Phase 3+ adds compute (default-CEL, llm via anthropic) and
-    channels (webhook, email, messaging).
+    Phase 3 (slice a): compute providers — default-CEL plus llm and
+        ai-agent (anthropic + stub products for each named contract).
+        Channels still in Phase 4.
     """
     register_stub_identity(provider_registry, contract_registry)
     register_sqlite_storage(provider_registry, contract_registry)
+    register_default_cel(provider_registry, contract_registry)
+    register_stub_llm(provider_registry, contract_registry)
+    register_stub_agent(provider_registry, contract_registry)
+    register_anthropic_llm(provider_registry, contract_registry)
+    register_anthropic_agent(provider_registry, contract_registry)
 
 
 __all__ = [
@@ -43,5 +58,15 @@ __all__ = [
     "register_stub_identity",
     "SqliteStorageProvider",
     "register_sqlite_storage",
+    "DefaultCelProvider",
+    "register_default_cel",
+    "StubLlmProvider",
+    "register_stub_llm",
+    "StubAgentProvider",
+    "register_stub_agent",
+    "AnthropicLlmProvider",
+    "register_anthropic_llm",
+    "AnthropicAgentProvider",
+    "register_anthropic_agent",
     "register_builtins",
 ]

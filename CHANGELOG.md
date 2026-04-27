@@ -2,6 +2,100 @@
 
 ## Unreleased — v0.9 in progress (feature/v0.9)
 
+### Phase 3 slice (a): compute contract surface + provider modules (2026-04-26)
+
+Lands the contract layer for v0.9 Phase 3 per
+`docs/compute-provider-design.md`. **No behavior change yet** —
+the runtime still uses `ctx.ai_provider`; this slice adds the
+contract surface and registers the providers so slice (b)'s
+cut-over has somewhere to land.
+
+#### New: `termin_runtime/providers/compute_contract.py`
+
+Three runtime-checkable Protocols matching BRD §6.3:
+  - `DefaultCelComputeProvider` — pure CEL evaluation (synchronous,
+    deterministic). Implicit contract.
+  - `LlmComputeProvider` — single-shot prompt → completion. Async.
+  - `AiAgentComputeProvider` — multi-action agent loop with closed
+    tool surface. Async + `invoke_streaming` yielding `AgentEvent`
+    variants.
+
+Plus contract data shapes: `CompletionResult`, `AgentResult`,
+`AgentContext`, `ToolSurface`, `AuditRecord` (BRD §6.3.4 shape),
+`ToolCall`, `Cost`, `AuditableAction`, and the `AgentEvent` union
+(`TokenEmitted | ToolCalled | ToolResult | Completed | Failed`).
+Gate exceptions: `ToolNotDeclared` (TERMIN-A001), `NotAuthorized`
+(TERMIN-A002).
+
+`AuditRecord` validates outcome ∈ {success, refused, error} and
+requires `refusal_reason` when refused, `error_detail` when error.
+
+`ToolSurface` carries five tuples (`content_rw`, `content_ro`,
+`channels`, `events`, `computes`) plus always-available tools
+(`identity.self`, `system.refuse`). Slice (c) populates these
+from source declarations; slice (a) just defines the shape.
+
+#### New: five first-party provider modules
+
+  - `compute_default_cel.py` — wraps the existing
+    `ExpressionEvaluator`; registers as
+    `(compute, "default-CEL", "default-cel")`.
+  - `compute_llm_stub.py` — scripted-response stub for tests;
+    matches directive+objective substrings against a configured
+    response map. Registers as `(compute, "llm", "stub")`.
+  - `compute_agent_stub.py` — scripted stub replaying tool call
+    sequences through `context.tool_callback` (so the gate is
+    exercised even with the stub). Registers as
+    `(compute, "ai-agent", "stub")`.
+  - `compute_llm_anthropic.py` — Anthropic Messages API
+    single-shot completion. Lazy SDK client construction; clear
+    error if `api_key` is unresolved (env-var interpolation
+    must run before factory invocation). Registers as
+    `(compute, "llm", "anthropic")`.
+  - `compute_agent_anthropic.py` — Anthropic agent loop with
+    `system.refuse` tool always available. Slice (a) ships
+    minimal tool schemas (always-available tools only); slice
+    (c) widens to source-declared tool surface. Registers as
+    `(compute, "ai-agent", "anthropic")`.
+
+Plus a shared `_provider_hash.py` helper implementing the
+secret-redacted-then-hashed config-hash strategy (Q3 resolved):
+canonical-JSON hash of the config dict with secret-shaped key
+values replaced by their key paths. API-key rotation does not
+change the hash; surrounding-config changes do.
+
+#### Wired into `register_builtins`
+
+`termin_runtime.providers.builtins.register_builtins(registry,
+contracts)` now registers all five compute products in addition
+to identity-stub and storage-sqlite. Slice (b) adds the
+runtime dispatch through the registry.
+
+#### New tests: 67 in two files
+
+`tests/test_v09_compute_contract.py` — 33 tests covering
+ToolSurface semantics, AuditRecord validation, outcome
+constraints on CompletionResult / AgentResult, AgentEvent
+variants, gate exceptions, AgentContext, and structural Protocol
+conformance for all five built-in providers.
+
+`tests/test_v09_compute_providers.py` — 34 tests covering
+registry registration, factory output type, default-CEL
+evaluation, stub-LLM scripted matches / refusals / errors,
+stub-agent tool-callback wiring + scripted refusals + streaming
+event emission, Anthropic construction-time behavior (without
+hitting the SDK), and provider-config-hash redaction (10 tests
+including nested-secret cases).
+
+#### Tests: 1987 pass / 0 fail / 0 skip / 0 xfail.
+
+#### Why this lands as its own commit
+
+Slice (b)'s cut-over rewrites `compute_runner.execute_compute`
+and deletes `ctx.ai_provider`; reviewing it as one diff would
+mix "new contract layer" with "delete old path." Splitting
+keeps each side reviewable on its own.
+
 ### Phase 2.x cleanup: retire legacy codegen + `?offset=` URL (2026-04-26)
 
 **Two pre-v1.0 cleanups** flagged by JL after the (c)–(g) sweep:

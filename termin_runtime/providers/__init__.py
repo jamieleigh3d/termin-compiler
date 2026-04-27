@@ -46,6 +46,13 @@ from .storage_contract import (
     BackupFailedError, MigrationValidationError,
     UpdateResult,
 )
+from .compute_contract import (
+    DefaultCelComputeProvider, LlmComputeProvider, AiAgentComputeProvider,
+    CompletionResult, AgentResult, AgentContext, AuditableAction,
+    ToolSurface, AuditRecord, ToolCall, Cost,
+    AgentEvent, TokenEmitted, ToolCalled, ToolResult, Completed, Failed,
+    ToolNotDeclared, NotAuthorized,
+)
 
 __all__ = [
     "Category", "Tier", "ContractDefinition", "ContractRegistry",
@@ -62,4 +69,10 @@ __all__ = [
     "CLASSIFICATIONS", "worst_classification",
     "BackupFailedError", "MigrationValidationError",
     "UpdateResult",
+    "DefaultCelComputeProvider", "LlmComputeProvider", "AiAgentComputeProvider",
+    "CompletionResult", "AgentResult", "AgentContext", "AuditableAction",
+    "ToolSurface", "AuditRecord", "ToolCall", "Cost",
+    "AgentEvent", "TokenEmitted", "ToolCalled", "ToolResult", "Completed",
+    "Failed",
+    "ToolNotDeclared", "NotAuthorized",
 ]
