@@ -46,6 +46,7 @@ IMPORT_TO_PACKAGE = {
     "starlette": "fastapi",  # starlette comes with fastapi
     "multipart": "python-multipart",
     "markdown_it": "markdown-it-py",  # v0.9 Step Zero: markdown sanitizer
+    "yaml": "pyyaml",                  # v0.9 Phase 5c.1: contract package format
 }
 
 

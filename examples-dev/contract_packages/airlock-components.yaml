@@ -1,0 +1,89 @@
+# v0.9 Phase 5c.1 fixture: the Airlock contract package.
+# Per BRD #2 §10.5, this is the canonical worked example for
+# new-vocabulary contracts. The three contracts here introduce
+# wholly-new component types (no `extends`) — `cosmic-orb` for
+# scenario-state visualization, `airlock-terminal` for player
+# command input, and `scenario-narrative` for story-beat reveal.
+# See `docs/airlock-termin-sketch.md` §6 for how a real Airlock
+# app would consume them via `Using "airlock-components.<name>"`.
+
+namespace: airlock-components
+version: 0.1.0
+description: Airlock escape-room presentation components
+
+contracts:
+
+  - name: cosmic-orb
+    source-verb: "Show a cosmic orb of <state-ref>"
+    modifiers:
+      - "Pulse on event <event-name>"
+      - "Color by <state-field>"
+      - "Size by <numeric-field>"
+    data-shape:
+      state-record:
+        type: content-record
+        confidentiality-filtered: true
+      pulse-events:
+        type: event-stream
+        bound-via: "Pulse on event"
+    actions:
+      - name: orb-clicked
+        payload:
+          state-id: id
+      - name: orb-focused
+        payload:
+          state-id: id
+    principal-context:
+      - role-set
+      - theme-preference
+
+  - name: airlock-terminal
+    source-verb: "Show an airlock terminal for <command-set>"
+    modifiers:
+      - "History limit <number>"
+      - "Accept commands <command-list>"
+    data-shape:
+      command-history:
+        type: record-stream
+        confidentiality-filtered: true
+      available-commands:
+        type: list
+        scoped-by-principal: true
+    actions:
+      - name: command-submitted
+        payload:
+          command: string
+          args: object
+      - name: command-cancelled
+        payload: {}
+    principal-context:
+      - role-set
+      - scope-membership
+      - theme-preference
+
+  - name: scenario-narrative
+    source-verb: "Show scenario narrative from <content-ref>"
+    modifiers:
+      - "Reveal on event <event-name>"
+      - "Gate by scope <scope-name>"
+      - "Voice <voice-id>"
+    data-shape:
+      narrative-record:
+        type: content-record
+        markdown-fields:
+          - body
+        confidentiality-filtered: true
+      reveal-events:
+        type: event-stream
+        bound-via: "Reveal on event"
+    actions:
+      - name: beat-completed
+        payload:
+          beat-id: id
+      - name: beat-skipped
+        payload:
+          beat-id: id
+    principal-context:
+      - role-set
+      - scope-membership
+      - theme-preference

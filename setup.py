@@ -23,6 +23,9 @@ setup(
         # v0.9 Step Zero: markdown sanitizer for the
         # presentation-base.markdown contract envelope (BRD #2 §7.3).
         "markdown-it-py>=3.0.0",
+        # v0.9 Phase 5c.1: contract package format. Loader for
+        # YAML-shaped contract packages per BRD #2 §10 / Appendix C.
+        "pyyaml>=6.0",
     ],
     extras_require={
         # Test dependencies. Install with: pip install -e .[test]
