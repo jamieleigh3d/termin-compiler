@@ -771,6 +771,17 @@ def _parse_line(text: str, rule: str, ln: int):
         return ("content_audit", level)
     if rule == "content_when_line":
         return _parse_content_when(text, ln)
+    if rule == "content_owned_by_line":
+        # `Each <singular> is owned by <field>` — names which field carries
+        # the owning principal's id. Per BRD #3 §3.3.
+        r = P(text, rule)
+        if r:
+            field_name = str(r.get("field", "")).strip()
+        else:
+            # Fallback: split on " is owned by "
+            idx = text.find(" is owned by ")
+            field_name = text[idx + len(" is owned by "):].strip().rstrip(".")
+        return ("content_owned_by", field_name)
     if rule == "unconditional_constraint_line":
         return _parse_unconditional_constraint(text, ln)
     if rule == "channel_header":

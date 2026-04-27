@@ -81,6 +81,17 @@ class DependentValueSpec:
 
 
 @dataclass(frozen=True)
+class OwnershipSpec:
+    """v0.9 Phase 6a.2: per-content ownership declaration (BRD #3 §3.3).
+
+    Names the snake-case field on the content type that carries the owning
+    principal's id. The named field must be `principal`-typed, `required`,
+    and `unique` — analyzer enforces (TERMIN-S048..S052).
+    """
+    field: str  # snake_case field name
+
+
+@dataclass(frozen=True)
 class ContentSchema:
     name: QualifiedName
     fields: tuple[FieldSpec, ...]
@@ -94,6 +105,8 @@ class ContentSchema:
     confidentiality_scopes: tuple[str, ...] = ()  # content-level scopes (inherited by fields)
     audit: str = "actions"                          # "actions" (default), "debug", or "none"
     dependent_values: tuple['DependentValueSpec', ...] = ()  # D-19: conditional field constraints
+    # v0.9 Phase 6a.2: ownership block. None when no ownership declared.
+    ownership: Optional[OwnershipSpec] = None
 
 
 # Backward-compatible alias

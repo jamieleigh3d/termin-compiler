@@ -183,6 +183,7 @@ def _assemble(parsed: list) -> Program:
                 "field", "access", "content_scoped", "content_audit", "dependent_value",
                 "state_field", "sm_starts_as", "sm_also", "sm_transition",
                 "transition_feedback",
+                "content_owned_by",  # v0.9 Phase 6a.2
             )
             for ch in _collect(lambda x: x in content_kinds):
                 if ch[0] == "field":
@@ -234,6 +235,12 @@ def _assemble(parsed: list) -> Program:
                     ct.audit = ch[1]
                 elif ch[0] == "dependent_value":
                     ct.dependent_values.append(ch[1])
+                elif ch[0] == "content_owned_by":
+                    # v0.9 Phase 6a.2: multiple declarations are a
+                    # TERMIN-S051 analyzer error per BRD #3 §3.3. Track all
+                    # so the analyzer can flag the duplication; lowering
+                    # picks the first entry when one exists.
+                    ct.owned_by_declarations.append(ch[1])
             prog.contents.append(ct)
         elif k == "event_header":
             ev = item[1]; i += 1

@@ -170,6 +170,113 @@ class Analyzer:
         self._check_dependent_values()
         self._check_row_action_access_rules()
         self._check_inline_editing()
+        self._check_ownership()  # v0.9 Phase 6a.2
+
+    def _check_ownership(self) -> None:
+        """v0.9 Phase 6a.2: validate `Each X is owned by <field>` declarations.
+
+        Per BRD #3 §3.3:
+          - The named field must exist on the content type.
+          - Must be `principal`-typed.
+          - Must be `unique`.
+          - Must be `required`.
+          - At most one ownership declaration per content.
+
+        Codes:
+          TERMIN-S048 — ownership field doesn't exist on content
+          TERMIN-S049 — ownership field is not `principal`-typed
+          TERMIN-S050 — ownership field is not `unique`
+          TERMIN-S051 — ownership field is not `required`
+          TERMIN-S052 — multiple ownership declarations on the same content
+        """
+        for content in self.program.contents:
+            decls = list(getattr(content, "owned_by_declarations", []))
+            if not decls:
+                continue
+
+            # TERMIN-S052: multiple ownership declarations
+            if len(decls) > 1:
+                self.errors.add(SemanticError(
+                    message=(
+                        f'Content "{content.name}" has multiple "is owned by" '
+                        f'declarations ({", ".join(repr(d) for d in decls)}). '
+                        f'Per BRD #3 §3.3, at most one ownership field is '
+                        f'allowed per content type. Multi-field (composite) '
+                        f'ownership is out of scope for v0.9.'
+                    ),
+                    line=content.line,
+                    code="TERMIN-S052",
+                ))
+
+            # Validate the first-named field (lowering uses this one too).
+            field_name = decls[0]
+            target = next(
+                (f for f in content.fields if f.name.strip() == field_name.strip()),
+                None,
+            )
+
+            if target is None:
+                # TERMIN-S048: ownership names a non-existent field
+                field_names = {f.name for f in content.fields}
+                suggestion = _fuzzy_match(field_name, field_names)
+                self.errors.add(SemanticError(
+                    message=(
+                        f'Content "{content.name}" declares ownership by '
+                        f'"{field_name}", but that field is not defined on '
+                        f'the content. Add the field as "Each {content.singular or content.name} '
+                        f'has a {field_name} which is principal, required, unique" '
+                        f'or use a different existing field name.'
+                    ),
+                    line=content.line,
+                    code="TERMIN-S048",
+                    suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
+                ))
+                continue
+
+            te = target.type_expr
+
+            # TERMIN-S049: must be principal-typed
+            if te.base_type != "principal":
+                self.errors.add(SemanticError(
+                    message=(
+                        f'Ownership field "{field_name}" on content '
+                        f'"{content.name}" must be of type `principal`. '
+                        f'Found `{te.base_type}`. Per BRD #3 §3.2, ownership '
+                        f'fields must carry a typed Principal reference, not '
+                        f'bare text — change the type to `principal`.'
+                    ),
+                    line=target.line,
+                    code="TERMIN-S049",
+                ))
+
+            # TERMIN-S050: must be unique
+            if not te.unique:
+                self.errors.add(SemanticError(
+                    message=(
+                        f'Ownership field "{field_name}" on content '
+                        f'"{content.name}" must be `unique`. Per BRD #3 §3.3, '
+                        f'this guarantees at most one row per principal — '
+                        f'the multiple-row case for "the user\'s {content.singular or content.name}" '
+                        f'is prevented at the storage layer. Add the `unique` '
+                        f'modifier to the field declaration.'
+                    ),
+                    line=target.line,
+                    code="TERMIN-S050",
+                ))
+
+            # TERMIN-S051: must be required
+            if not te.required:
+                self.errors.add(SemanticError(
+                    message=(
+                        f'Ownership field "{field_name}" on content '
+                        f'"{content.name}" must be `required`. Per BRD #3 §3.3, '
+                        f'a row with no owning principal cannot exist on an '
+                        f'owned content type. Add the `required` modifier to '
+                        f'the field declaration.'
+                    ),
+                    line=target.line,
+                    code="TERMIN-S051",
+                ))
 
     def _check_row_action_access_rules(self) -> None:
         """Row action buttons of kind=delete/edit require the governing

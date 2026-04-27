@@ -35,6 +35,7 @@ from .ir import (
     ChannelActionSpec, ChannelSpec, BoundarySpec,
     BoundaryPropertySpec, ErrorHandlerSpec, ErrorActionSpec,
     FieldDependency, ReclassificationPoint, DependentValueSpec,
+    OwnershipSpec,
 )
 from .lower_pages import lower_pages
 
@@ -176,6 +177,13 @@ def lower(program: Program) -> AppSpec:
             {"machine_name": _snake(sm.machine_name), "initial": sm.initial_state}
             for sm in content_sms
         )
+        # v0.9 Phase 6a.2: ownership block. Empty list → None. Multiple
+        # entries → first one wins at lowering (analyzer raises
+        # TERMIN-S051 separately so the user sees the structural error).
+        ownership = None
+        if c.owned_by_declarations:
+            ownership = OwnershipSpec(field=_snake(c.owned_by_declarations[0]))
+
         content_schemas.append(ContentSchema(
             name=_qname(c.name),
             singular=_snake(c.singular) if c.singular else "",
@@ -184,6 +192,7 @@ def lower(program: Program) -> AppSpec:
             confidentiality_scopes=tuple(c.confidentiality_scopes),
             audit=c.audit,
             dependent_values=tuple(dep_vals),
+            ownership=ownership,
         ))
 
     # ── Lower auth ──

@@ -101,6 +101,11 @@ def classify_line(text: str) -> str:
     # These are only valid inside `which is state:` sub-blocks; the assembler enforces
     # that they sit under a state-typed field. Classification by structure is safe
     # because no other DSL construct uses these phrasings.
+    # v0.9 Phase 6a.2: content-level ownership declaration. Must be checked
+    # before the prefix loop so the leading "Each " doesn't classify as
+    # field_line. Form: `Each <singular> is owned by <field>`.
+    if text.startswith("Each ") and " is owned by " in text:
+        return "content_owned_by_line"
     if " starts as " in text:
         return "sm_starts_as_line"
     if " can also be " in text:

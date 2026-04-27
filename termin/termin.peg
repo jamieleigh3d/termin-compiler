@@ -153,6 +153,14 @@ content_audit_line
     = 'Audit' 'level:' level:audit_level $
     ;
 
+# v0.9 Phase 6a.2: content-level ownership declaration (BRD #3 §3.3).
+# Names which field on the content carries the owning principal's id.
+# Must reference a `principal`-typed field that is also `required` and
+# `unique`; analyzer enforces these constraints with TERMIN-S048..S052.
+content_owned_by_line
+    = 'Each' singular:words_before_is 'is' 'owned' 'by' field:words $
+    ;
+
 audit_level = 'actions' | 'debug' | 'none' ;
 
 # Dependent field values (D-19)

@@ -76,6 +76,12 @@ class Content:
     dependent_values: list[DependentValue] = field(default_factory=list)
     confidentiality_scopes: list[str] = field(default_factory=list)  # content-level scopes
     audit: str = "actions"  # "actions" (default, safe), "debug" (full values), or "none"
+    # v0.9 Phase 6a.2: ownership declarations. Each entry is the field name
+    # (display form, as it appears in source) named on an `Each X is owned
+    # by <field>` line. Multi-entry case is a TERMIN-S051 analyzer error
+    # per BRD #3 §3.3 ("at most one ownership field per content type");
+    # tracked as a list so the analyzer sees the duplication.
+    owned_by_declarations: list[str] = field(default_factory=list)
     line: int = 0
 
 
