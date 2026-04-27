@@ -11,7 +11,25 @@ Records crossing API boundaries have restricted fields replaced with
 redaction markers. The record itself is never omitted — even if every
 field is redacted, the record remains present with its id and markers.
 
-Redaction marker format: {"__redacted": True, "scope": "scope_name"}
+v0.9 Phase 5a.4 redaction marker format (per BRD #2 §7.6):
+    {
+        "__redacted": True,
+        "field": <field_name>,
+        "expected_type": <business_type>,
+        "scope": <missing_scope>,        # legacy back-compat key
+        "reason": <human-readable>       # provider-displayable
+    }
+
+Type-safety: presentation providers and consuming code can detect a
+redacted value via `__redacted is True`. The `field` and
+`expected_type` fields tell the provider which placeholder shape to
+render (a redacted currency cell looks different from a redacted
+boolean cell). The `scope` key is kept for back-compat with v0.8
+consumers that key off it.
+
+Pre-Phase-5a.4 shape: `{"__redacted": True, "scope": "<scope>"}`. The
+new shape is a strict superset; old consumers checking only for
+__redacted continue to work.
 """
 
 
@@ -33,6 +51,11 @@ def redact_record(record: dict, content_ir: dict, caller_scopes: set[str]) -> di
     System fields (id, status for state machines) pass through unless they
     have explicit confidentiality scopes. Fields not in the schema also
     pass through (e.g., auto-generated id).
+
+    v0.9 Phase 5a.4: marker shape extended to carry `field` and
+    `expected_type` per BRD #2 §7.6. The `scope` key is preserved for
+    back-compat with v0.8 consumers; new consumers should use the
+    expanded shape.
     """
     fields_by_name = {f["name"]: f for f in content_ir.get("fields", [])}
     result = {}
@@ -45,7 +68,14 @@ def redact_record(record: dict, content_ir: dict, caller_scopes: set[str]) -> di
         required = effective_scopes(field_ir, content_ir)
         if required and not required.issubset(caller_scopes):
             missing = sorted(required - caller_scopes)
-            result[key] = {"__redacted": True, "scope": missing[0]}
+            expected_type = field_ir.get("business_type", "text")
+            result[key] = {
+                "__redacted": True,
+                "field": key,
+                "expected_type": expected_type,
+                "scope": missing[0],
+                "reason": f"requires scope '{missing[0]}'",
+            }
         else:
             result[key] = value
     return result
