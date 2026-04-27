@@ -407,6 +407,17 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
 
     # WebSocket connection manager
     ctx.conn_manager = ConnectionManager()
+    # v0.9 Phase 6a.6 (BRD #3 §3.6): cascade ownership filtering onto
+    # WebSocket subscriptions — owned content fans out only to the
+    # owning principal. Build the per-content lookup once at startup;
+    # the manager consults it in broadcast_to_subscribers and on the
+    # subscribe / request initial-data load.
+    _ownership_lookup = {}
+    for cs in ir.get("contents", []):
+        own = cs.get("ownership")
+        if own and own.get("field"):
+            _ownership_lookup[cs.get("name", {}).get("snake", "")] = own["field"]
+    ctx.conn_manager.set_content_ownership(_ownership_lookup)
 
     # ── Event handlers (needs access to ctx for singular_lookup, expr_eval, etc.) ──
     async def run_event_handlers(db, content_name: str, trigger: str, record: dict):
