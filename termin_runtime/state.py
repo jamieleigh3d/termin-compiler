@@ -16,10 +16,41 @@ one wins; the loser sees HTTP 409 with the current (post-winner)
 state.
 """
 
+from datetime import datetime, timezone
+
 from fastapi import HTTPException
 
 from .errors import TerminError
 from .providers.storage_contract import Eq
+
+
+def _principal_dict_for_event(user: dict) -> dict:
+    """v0.9 Phase 6b: project a request `user` dict into the
+    BRD #3 §4.2-shaped principal dict that goes into transition
+    event payloads.
+
+    Mirrors `the_user` from identity.py — id / display_name /
+    is_anonymous / is_system / scopes. Defensive: a malformed
+    user dict (legacy callers, tests) returns an empty-id system
+    principal so payload shape stays stable.
+    """
+    the_user = user.get("the_user") if isinstance(user, dict) else None
+    if isinstance(the_user, dict):
+        return {
+            "id": the_user.get("id", ""),
+            "display_name": the_user.get("display_name", ""),
+            "is_anonymous": the_user.get("is_anonymous", False),
+            "is_system": the_user.get("is_system", False),
+            "scopes": list(the_user.get("scopes", []) or []),
+        }
+    # Fallback for callers that still pass the v0.8-shaped dict.
+    return {
+        "id": "",
+        "display_name": str(user.get("role", "")) if isinstance(user, dict) else "",
+        "is_anonymous": True,
+        "is_system": False,
+        "scopes": list(user.get("scopes", []) if isinstance(user, dict) else ()),
+    }
 
 
 async def do_state_transition(storage, table: str, record_id: int,
@@ -138,6 +169,37 @@ async def do_state_transition(storage, table: str, record_id: int,
     updated_record = result.record or {"id": record_id, column: target_state}
 
     if event_bus:
+        # v0.9 Phase 6b (BRD #3 §5): emit transition events.
+        #   1. <content>.<machine>.<from>.exited (before update_if
+        #      conceptually, but published here since we needed the
+        #      CAS to succeed before knowing the transition was real).
+        #   2. <content>.<machine>.<to>.entered (after update_if).
+        # The legacy `content.<X>.updated` event is preserved for
+        # back-compat with WebSocket subscribers built before 6b.
+        principal = _principal_dict_for_event(user)
+        triggered_at = datetime.now(timezone.utc).isoformat()
+        # Per BRD §5.3, on_behalf_of and invoked_by are equal for
+        # direct user actions (the most common case in v0.9). Agent
+        # actions split them; that's wired in 6c.
+        payload = {
+            "record_id": record_id,
+            "from_state": current,
+            "to_state": target_state,
+            "on_behalf_of": principal,
+            "invoked_by": principal,
+            "triggered_at": triggered_at,
+            "trigger_kind": "user_action",
+        }
+        await event_bus.publish({
+            "channel_id": f"{table}.{machine_name}.{current}.exited",
+            "data": payload,
+        })
+        await event_bus.publish({
+            "channel_id": f"{table}.{machine_name}.{target_state}.entered",
+            "data": payload,
+        })
+        # Legacy event for v0.8 subscribers — record-shaped, not the
+        # new typed payload.
         await event_bus.publish({
             "channel_id": f"content.{table}.updated",
             "data": updated_record,

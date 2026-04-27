@@ -172,6 +172,120 @@ class Analyzer:
         self._check_inline_editing()
         self._check_ownership()  # v0.9 Phase 6a.2
         self._check_using_overrides()  # v0.9 Phase 5b.1
+        self._check_transition_event_triggers()  # v0.9 Phase 6b
+
+    # v0.9 Phase 6b: closed set of transition-event verbs.
+    _TRANSITION_EVENT_VERBS: frozenset[str] = frozenset({"entered", "exited"})
+
+    def _check_transition_event_triggers(self) -> None:
+        """v0.9 Phase 6b: validate `Trigger on event "<name>"` against
+        the declared state machines when the event name has the
+        `<content>.<machine>.<state>.<verb>` shape.
+
+        Per BRD #3 §5.5:
+          - The first dotted segment must name a content type.
+          - The second must name a state-machine on that content.
+          - The third must name a state in that machine.
+          - The fourth must be `entered` or `exited`.
+
+        Events whose names don't match the SM-event shape (custom
+        application events, channel events, etc.) pass — only events
+        clearly intended as state-machine triggers are validated.
+        Code: TERMIN-S056.
+        """
+        # Build content → {machine_name → {state_names}} map.
+        # State names come from declared transitions on each machine.
+        def _snake(name: str) -> str:
+            return (name or "").lower().replace(" ", "_")
+
+        sm_by_content: dict[str, dict[str, set[str]]] = {}
+        # State machines are on the Program (not on Content). Group
+        # them by content_name and collect declared/transition-endpoint
+        # states. machine_name is preserved verbatim — multi-word
+        # state names (e.g., `in progress`) must round-trip through
+        # the event-name validation per BRD §5.2.
+        for sm in getattr(self.program, "state_machines", ()) or ():
+            content_snake = _snake(getattr(sm, "content_name", ""))
+            machine_name = getattr(sm, "machine_name", "")
+            if not content_snake or not machine_name:
+                continue
+            states: set[str] = set()
+            if getattr(sm, "initial_state", None):
+                states.add(sm.initial_state)
+            for s in getattr(sm, "states", ()) or ():
+                states.add(s)
+            for tr in getattr(sm, "transitions", ()) or ():
+                if getattr(tr, "from_state", None):
+                    states.add(tr.from_state)
+                if getattr(tr, "to_state", None):
+                    states.add(tr.to_state)
+            sm_by_content.setdefault(content_snake, {})[machine_name] = states
+
+        for compute in self.program.computes:
+            trigger = getattr(compute, "trigger", "") or ""
+            if not trigger.startswith("event "):
+                continue
+            event_name = trigger[len("event "):].strip().strip('"')
+            # Heuristic: only validate events that LOOK like SM
+            # events. Three slots before the final dot
+            # (content.machine.state) is the marker. Custom
+            # application events with two-or-fewer dots (e.g.,
+            # `message.created`) pass without SM validation.
+            head_parts = event_name.rsplit(".", 3)
+            if len(head_parts) != 4:
+                continue
+            content_snake, machine_name, state_name, verb = head_parts
+            # Once we've decided this *is* an SM event, validate
+            # the verb. An invalid verb on the SM-event shape is
+            # a real error (caller mistyped `started` for `entered`).
+            if verb not in self._TRANSITION_EVENT_VERBS:
+                self.errors.add(SemanticError(
+                    message=(
+                        f"Trigger on event {event_name!r}: invalid "
+                        f"verb {verb!r}. Expected one of "
+                        f"{sorted(self._TRANSITION_EVENT_VERBS)!r}."
+                    ),
+                    line=getattr(compute, "line", 0),
+                    code="TERMIN-S056",
+                ))
+                continue
+            machines = sm_by_content.get(content_snake)
+            if machines is None:
+                self.errors.add(SemanticError(
+                    message=(
+                        f"Trigger on event {event_name!r}: content "
+                        f"{content_snake!r} does not declare a state "
+                        f"machine. Available content with state "
+                        f"machines: {sorted(sm_by_content)!r}."
+                    ),
+                    line=getattr(compute, "line", 0),
+                    code="TERMIN-S056",
+                ))
+                continue
+            if machine_name not in machines:
+                self.errors.add(SemanticError(
+                    message=(
+                        f"Trigger on event {event_name!r}: content "
+                        f"{content_snake!r} has no state machine "
+                        f"{machine_name!r}. Declared machines: "
+                        f"{sorted(machines)!r}."
+                    ),
+                    line=getattr(compute, "line", 0),
+                    code="TERMIN-S056",
+                ))
+                continue
+            states = machines[machine_name]
+            if state_name not in states:
+                self.errors.add(SemanticError(
+                    message=(
+                        f"Trigger on event {event_name!r}: state "
+                        f"{state_name!r} is not declared on "
+                        f"{content_snake}.{machine_name}. Declared "
+                        f"states: {sorted(states)!r}."
+                    ),
+                    line=getattr(compute, "line", 0),
+                    code="TERMIN-S056",
+                ))
 
     # v0.9 Phase 5b.1: closed list of presentation-base contract
     # names. Mirrors termin_runtime.providers.presentation_contract.
