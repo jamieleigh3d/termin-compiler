@@ -2,6 +2,52 @@
 
 ## Unreleased — v0.9 in progress (feature/v0.9)
 
+### Phase 2.x cleanup: retire legacy codegen + `?offset=` URL (2026-04-26)
+
+**Two pre-v1.0 cleanups** flagged by JL after the (c)–(g) sweep:
+ancient codepaths that lingered for backward-compat-with-self
+and now go away cleanly because we have no v1.0 to break.
+
+#### Removed: legacy `.py + .json` codegen path
+
+The historical first-party "runtime" backend
+(`termin.backends.runtime.RuntimeBackend`) emitted a slim `app.py`
+shell that loaded a companion `.json` IR and called
+`create_termin_app()`. Pre-v0.5 that was the only deploy shape;
+since v0.5 `.termin.pkg` has been the canonical output and
+`termin serve <pkg>` the canonical run command. The dual path
+was never reconciled — until now.
+
+  - `termin/backends/runtime.py` deleted.
+  - `termin compile foo.termin -o app.py` now exits with a clear
+    pointer at `.termin.pkg` + `termin serve` rather than silently
+    switching modes.
+  - `--legacy` CLI flag removed.
+  - IR-serialization helpers (`_ir_json_default`, `_simplify_props`)
+    extracted from `cli.py` into a shared `termin/ir_serialize.py`
+    module. CLI and tests use the new `serialize_ir(spec) → str`
+    entry point.
+  - 8 test files migrated from "subprocess `compile -o app.py` +
+    importlib load" to a uniform `make_app_from_pkg(pkg, db_path)`
+    helper backed by the session-scoped `compiled_packages`
+    fixture. Same as the v0.9 conformance pattern; finally one
+    way to set up an app under test.
+
+#### Removed: `?offset=N` URL parameter on auto-CRUD list routes
+
+Phase 2.x (e) shipped keyset cursors and kept `?offset=N` as a
+fetch-and-slice fallback for legacy callers. Pre-v1.0 we don't
+need that fallback. The route now rejects `?offset=` with a 400
+error pointing at `?cursor=`. Cursor-based pagination is the
+single shape; cursors are opaque per the contract.
+
+#### Tests: 1920 pass / 0 fail / 0 skip / 0 xfail
+
+Each migration is a separate logical change so the diff is
+auditable file-by-file. No production behavior change for users
+who already deploy via `.termin.pkg`; users still on the legacy
+`-o app.py` path get a clear migration message at compile time.
+
 ### Phase 2.x (g): app.db cwd cleanup finishing pass (2026-04-26)
 
 Closes the v0.9.x autouse-fixture-and-friends storage-isolation

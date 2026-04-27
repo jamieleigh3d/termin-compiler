@@ -49,16 +49,13 @@ class TestAllExamplesCompile:
                              ids=lambda p: p.stem)
     def test_lower_to_json(self, termin_file):
         """Lowered spec should serialize to valid JSON."""
-        from dataclasses import asdict
-        from termin.cli import _ir_json_default, _simplify_props
+        from termin.ir_serialize import serialize_ir
 
         source = termin_file.read_text(encoding="utf-8")
         program, _ = parse(source)
         analyze(program)
         spec = lower(program)
-        ir_dict = asdict(spec)
-        _simplify_props(ir_dict)
-        ir_json = json.dumps(ir_dict, default=_ir_json_default)
+        ir_json = serialize_ir(spec)
         # Should round-trip
         ir = json.loads(ir_json)
         assert ir["name"] == spec.name

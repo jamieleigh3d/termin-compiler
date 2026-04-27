@@ -13,9 +13,12 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from termin.cli import main, _ir_json_default, _simplify_props, _sha256, _generate_deploy_template
+from termin.cli import main, _sha256, _generate_deploy_template
+from termin.ir_serialize import (
+    ir_json_default as _ir_json_default,
+    simplify_props as _simplify_props,
+)
 from termin.backend import Backend, discover_backends, get_backend
-from termin.backends.runtime import RuntimeBackend
 
 
 # ── Helpers ──
@@ -52,16 +55,13 @@ class TestCompileCommand:
             assert manifest["manifest_version"] == "1.0.0"
             assert manifest["ir"]["version"] is not None
 
-    def test_compile_to_legacy_py(self, runner, tmp_workdir):
-        """Compile with -o app.py triggers legacy mode."""
+    def test_compile_to_py_rejected(self, runner, tmp_workdir):
+        """Phase 2.x: legacy `.py + .json` codegen path retired.
+        `-o foo.py` now exits with a clear pointer at .pkg + serve."""
         out = tmp_workdir / "app.py"
         r = runner.invoke(main, ["compile", str(HELLO_TERMIN), "-o", str(out)])
-        assert r.exit_code == 0, r.output
-        assert out.exists()
-        code = out.read_text()
-        assert "create_termin_app" in code
-        # Should also produce companion .json
-        assert out.with_suffix(".json").exists()
+        assert r.exit_code != 0
+        assert "termin.pkg" in (r.output or "") or "termin.pkg" in str(r.exception or "")
 
     def test_compile_emit_ir(self, runner, tmp_workdir):
         """--emit-ir produces a standalone IR JSON file."""
@@ -120,50 +120,10 @@ class TestCompileCommand:
         config = json.loads(deploy_files[0].read_text())
         assert "ai_provider" in config
 
-    # ── v0.8.2: stale companion seed file cleanup on legacy-py compile ──
-    #
-    # When `termin compile X.termin -o app.py` runs and X.termin has no
-    # companion `_seed.json`, any pre-existing `app_seed.json` left over
-    # from a prior compile (perhaps of a DIFFERENT source, or before the
-    # source's seed was removed) must be deleted. The runtime auto-loads
-    # `<output>_seed.json` if present, so a stale one silently injects
-    # wrong seed data into the new app.
-    #
-    # Five test files in this repo previously worked around this with
-    # `if SEED_PATH.exists(): SEED_PATH.unlink()` before invoking
-    # compile. With the fix, the workaround is unnecessary (kept in
-    # place as defense in depth).
-
-    def test_compile_legacy_py_no_seed_cleans_stale_sidecar(self, runner, tmp_workdir):
-        """A stale app_seed.json must be removed when the new source
-        has no companion _seed.json."""
-        # Plant a stale sidecar.
-        stale = tmp_workdir / "app_seed.json"
-        stale.write_text('{"products": [{"name": "stale data"}]}', encoding="utf-8")
-        assert stale.exists()
-        # Compile a source that has NO companion _seed.json.
-        out = tmp_workdir / "app.py"
-        r = runner.invoke(main, ["compile", str(HELLO_TERMIN), "-o", str(out)])
-        assert r.exit_code == 0, r.output
-        assert not stale.exists(), (
-            "Stale app_seed.json should be removed; runtime would otherwise "
-            "auto-load it and inject wrong seed data."
-        )
-
-    def test_compile_legacy_py_with_seed_overwrites_stale(self, runner, tmp_workdir):
-        """When the source HAS a _seed.json, the existing sidecar is
-        replaced with the new content (regression check)."""
-        # Use projectboard.termin which has a companion seed file.
-        seeded_termin = Path(__file__).parent.parent / "examples" / "projectboard.termin"
-        # Plant a stale (different) sidecar at the output stem.
-        stale = tmp_workdir / "app_seed.json"
-        stale.write_text('{"old": "stale"}', encoding="utf-8")
-        out = tmp_workdir / "app.py"
-        r = runner.invoke(main, ["compile", str(seeded_termin), "-o", str(out)])
-        assert r.exit_code == 0, r.output
-        assert stale.exists(), "Sidecar should still exist (overwritten)"
-        # Content must be the new seed, not the stale 'old' marker.
-        assert "old" not in stale.read_text(encoding="utf-8")
+    # The stale-companion-seed cleanup tests are obsolete in v0.9
+    # — the legacy `.py + .json + _seed.json` codegen path was
+    # retired, and `.termin.pkg` carries seed bytes inside the
+    # archive (no sidecar to go stale).
 
 
 # ── CLI: utility functions ──
@@ -217,40 +177,30 @@ class TestCLIUtils:
         assert result["channels"]["test channel"]["protocol"] == "http"
 
 
-# ── Backend protocol and discovery ──
+# ── IR serialization (post Phase 2.x retirement of RuntimeBackend) ──
 
-class TestBackendProtocol:
-    def test_runtime_backend_is_backend(self):
-        """RuntimeBackend satisfies the Backend protocol."""
-        assert isinstance(RuntimeBackend(), Backend)
-
-    def test_runtime_backend_name(self):
-        assert RuntimeBackend.name == "runtime"
-
-    def test_runtime_backend_generate(self):
-        """Generate produces valid Python with create_termin_app."""
+class TestIRSerialization:
+    def test_serialize_ir_produces_canonical_json(self):
+        """The shared serializer (used by .termin.pkg builder) emits
+        canonical IR JSON: dataclass-asdict, PropValue collapse,
+        Enum-as-name, sorted-frozenset-as-list."""
         from termin.peg_parser import parse_peg as parse
         from termin.analyzer import analyze
         from termin.lower import lower
+        from termin.ir_serialize import serialize_ir
         source = HELLO_TERMIN.read_text()
         program, errors = parse(source)
         assert errors.ok
         result = analyze(program)
         assert result.ok
         spec = lower(program)
-        backend = RuntimeBackend()
-        code = backend.generate(spec, source_file="hello.termin")
-        assert "create_termin_app" in code
-        assert "hello.termin" in code
-        # Should store IR JSON for companion file
-        assert hasattr(backend, '_ir_json')
-        ir = json.loads(backend._ir_json)
+        ir_json = serialize_ir(spec)
+        ir = json.loads(ir_json)
         assert ir["name"] is not None
-
-    def test_runtime_backend_dependencies(self):
-        deps = RuntimeBackend().required_dependencies()
-        assert "fastapi>=0.100.0" in deps
-        assert "termin-runtime" in deps
+        # PropValue collapse: literal text props are bare strings,
+        # not {value, is_expr} dicts.
+        # (This is exercised end-to-end by walking pages but the
+        # round-trip + parse is enough sanity here.)
 
     def test_discover_backends(self):
         """discover_backends() runs without error (may find 0 or more)."""

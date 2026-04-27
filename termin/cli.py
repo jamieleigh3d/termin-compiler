@@ -11,8 +11,6 @@ import json
 import sys
 import uuid
 import zipfile
-from dataclasses import asdict
-from enum import Enum
 from pathlib import Path
 
 import click
@@ -20,40 +18,13 @@ import click
 from .peg_parser import parse_peg as parse
 from .analyzer import analyze
 from .lower import lower
-from .backends.runtime import RuntimeBackend
+from .ir_serialize import serialize_ir
 
 
 @click.group()
 def main():
     """Termin: A secure-by-construction application compiler."""
     pass
-
-
-def _ir_json_default(obj):
-    """JSON serializer for IR dataclasses (Enums, frozensets)."""
-    if isinstance(obj, Enum):
-        return obj.name
-    if isinstance(obj, (frozenset, set)):
-        return sorted((o.name if isinstance(o, Enum) else o) for o in obj)
-    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
-
-
-def _simplify_props(obj):
-    """Simplify PropValue dicts: {value: x, is_expr: false} → bare x."""
-    if isinstance(obj, dict):
-        for k, v in list(obj.items()):
-            if isinstance(v, dict) and set(v.keys()) == {"value", "is_expr"}:
-                if not v["is_expr"]:
-                    obj[k] = v["value"]
-            elif isinstance(v, (dict, list)):
-                _simplify_props(v)
-    elif isinstance(obj, list):
-        for i, item in enumerate(obj):
-            if isinstance(item, dict) and set(item.keys()) == {"value", "is_expr"}:
-                if not item["is_expr"]:
-                    obj[i] = item["value"]
-            elif isinstance(item, (dict, list)):
-                _simplify_props(item)
 
 
 def _sha256(data: bytes) -> str:
@@ -174,20 +145,21 @@ def _compile_source(source_path: Path, format_json: bool = False):
 @click.option("--version", "app_version", default=None, help="Set app version (semver)")
 @click.option("--emit-ir", "ir_output", default=None, type=click.Path(),
               help="Also dump the IR JSON to this file (for debugging)")
-@click.option("--legacy", is_flag=True, help="Output legacy .py + .json instead of .termin.pkg")
 @click.option("--format", "output_format", default=None, type=click.Choice(["json"]),
               help="Error output format: json for machine-readable errors")
 def compile(source: str, output: str | None, seed_path: str | None,
             assets_path: str | None, app_version: str | None,
-            ir_output: str | None, legacy: bool, output_format: str | None):
+            ir_output: str | None, output_format: str | None):
     """Compile a .termin file into a .termin.pkg package."""
     source_path = Path(source)
     program, spec, source_text = _compile_source(source_path, format_json=(output_format == "json"))
 
-    # Build IR JSON
-    ir_dict = asdict(spec)
-    _simplify_props(ir_dict)
-    ir_json = json.dumps(ir_dict, indent=2, default=_ir_json_default)
+    # Build IR JSON via the shared serializer (cli + tests share
+    # this entry point post Phase 2.x retirement of the legacy
+    # backend). `ir_dict` is also used below for deploy-template
+    # generation, so we round-trip the JSON to dict here once.
+    ir_json = serialize_ir(spec)
+    ir_dict = json.loads(ir_json)
 
     # --emit-ir without -o: just dump the IR and exit (no package needed)
     if ir_output and not output:
@@ -202,33 +174,18 @@ def compile(source: str, output: str | None, seed_path: str | None,
         ir_path.write_text(ir_json, encoding="utf-8")
         click.echo(f"IR dumped to {ir_path.name}")
 
-    # Legacy mode: output .py + .json (generates slim runtime app)
-    # Auto-detect: if output path ends in .py, use legacy mode
+    # Phase 2.x cleanup: the legacy `.py + .json` codegen path
+    # (RuntimeBackend) is retired. `.termin.pkg` is the canonical
+    # compile output; deploy with `termin serve <pkg>` or load via
+    # `create_termin_app(ir_json)`. .py output is rejected with
+    # a clear message rather than silently switching modes.
     if output and Path(output).suffix == ".py":
-        legacy = True
-    if legacy:
-        backend = RuntimeBackend()
-        code = backend.generate(spec, source_file=source_path.name)
-        output_path = Path(output or "app.py")
-        output_path.write_text(code, encoding="utf-8")
-        click.echo(f"Compiled {source_path.name} -> {output_path.name}")
-        if hasattr(backend, '_ir_json'):
-            ir_companion = output_path.with_suffix(".json")
-            ir_companion.write_text(backend._ir_json, encoding="utf-8")
-            click.echo(f"IR written to {ir_companion.name}")
-        seed_source = source_path.with_name(source_path.stem + "_seed.json")
-        seed_dest = output_path.with_name(output_path.stem + "_seed.json")
-        if seed_source.exists():
-            seed_dest.write_text(seed_source.read_text(encoding="utf-8"), encoding="utf-8")
-            click.echo(f"Seed data: {seed_dest.name}")
-        elif seed_dest.exists():
-            # No companion seed for the new source — remove any stale
-            # sidecar from a prior compile so the runtime doesn't
-            # silently auto-load it. Without this, the runtime applies
-            # the old seed data to the freshly-compiled app.
-            seed_dest.unlink()
-            click.echo(f"Removed stale seed sidecar: {seed_dest.name}")
-        return
+        raise click.UsageError(
+            "Legacy `.py + .json` output (the compiled-script form) "
+            "was removed in v0.9. Compile to a `.termin.pkg` and "
+            "deploy with `termin serve <pkg>`. If you need the IR "
+            "JSON directly, use `--emit-ir <path>.json`."
+        )
 
     # ── Build .termin.pkg ──
     stem = source_path.stem

@@ -48,30 +48,17 @@ CEL_COMPUTE = "calculate_order_total"
 
 
 @pytest.fixture(scope="module")
-def client():
-    """Compile compute_demo, import, return TestClient."""
-    # Clear stale state from previous test runs.
-    if SEED_PATH.exists():
-        SEED_PATH.unlink()
-    subprocess.run(
-        [sys.executable, "-m", "termin.cli", "compile",
-         "examples/compute_demo.termin", "-o", "app.py"],
-        cwd=str(APP_DIR), check=True,
-    )
-    if DB_PATH.exists():
-        DB_PATH.unlink()
+def client(compiled_packages, tmp_path_factory):
+    """Phase 2.x: legacy `compile -o app.py` + importlib pattern
+    retired; consume the same .termin.pkg artifacts production
+    uses."""
+    from helpers import make_app_from_pkg
 
-    spec = importlib.util.spec_from_file_location("generated_app_mct",
-                                                   str(APP_PY))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-
-    with TestClient(mod.app) as tc:
+    db_path = str(tmp_path_factory.mktemp("compute_mct") / "app.db")
+    app = make_app_from_pkg(compiled_packages["compute_demo"], db_path)
+    with TestClient(app) as tc:
         tc.cookies.set("termin_role", "order manager")
         yield tc
-
-    if DB_PATH.exists():
-        DB_PATH.unlink()
 
 
 # ── Route existence and validation ──

@@ -124,7 +124,10 @@ def _make_list_route(app, ctx, path, cr, sc):
     deps = [Depends(ctx.require_scope(sc))] if sc else []
 
     # Reserved query-param names — not treated as field filters.
-    _reserved_params = {"limit", "offset", "sort", "cursor"}
+    # `offset` was retired in v0.9 along with the keyset-cursor
+    # pagination contract; the runtime rejects it explicitly so
+    # callers can't silently get incorrect behavior.
+    _reserved_params = {"limit", "sort", "cursor"}
 
     @app.get(path, dependencies=deps)
     async def list_route(request: Request, _cr=cr):
@@ -144,17 +147,27 @@ def _make_list_route(app, ctx, path, cr, sc):
         for sm in ctx.sm_lookup.get(_cr, []):
             schema_fields.add(sm["machine_name"])
 
-        # Parse pagination: ?limit=N&offset=N. v0.9 storage contract
-        # uses cursor-based pagination (BRD §6.2); the SQLite provider
-        # encodes offsets as cursors so the legacy ?offset URL param
-        # still works without a contract change.
+        # Parse pagination: ?limit=N&cursor=<token>. The v0.9
+        # storage contract is keyset-cursor only (BRD §6.2); the
+        # legacy ?offset= URL parameter was retired in Phase 2.x
+        # and is now rejected with a 400 so callers don't silently
+        # get incorrect behavior.
         qp = request.query_params
-        # Default: no limit (return everything) — preserves the v0.8
-        # callers' expectation. Provider's QueryOptions.limit defaults
-        # to 50, which is the contract default; the route opts out by
-        # passing a large value when the caller didn't ask for one.
+        if "offset" in qp:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "?offset= was removed in v0.9. Use ?cursor= "
+                    "with the next_cursor token from a prior "
+                    "response. Cursors are opaque; do not parse."
+                )
+            )
+        # Default: no limit (return everything) — preserves the
+        # v0.8 callers' expectation. Provider's QueryOptions.limit
+        # defaults to 50, which is the contract default; the route
+        # opts out by passing a large value when the caller didn't
+        # ask for one.
         limit_from_url = None
-        offset = 0
         if "limit" in qp:
             try:
                 limit_from_url = int(qp["limit"])
@@ -168,16 +181,6 @@ def _make_list_route(app, ctx, path, cr, sc):
             if limit_from_url > 1000:
                 raise HTTPException(
                     status_code=400, detail="limit must not exceed 1000")
-        if "offset" in qp:
-            try:
-                offset = int(qp["offset"])
-            except ValueError:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"offset must be an integer, got {qp['offset']!r}")
-            if offset < 0:
-                raise HTTPException(
-                    status_code=400, detail="offset must be non-negative")
 
         # Parse sort: ?sort=field or ?sort=field:asc or ?sort=field:desc.
         order_by_list: list[OrderBy] = []
@@ -220,44 +223,17 @@ def _make_list_route(app, ctx, path, cr, sc):
         # endpoint's protective cap.
         effective_limit = limit_from_url if limit_from_url is not None else 1000
 
-        # Phase 2.x (e): the provider now uses keyset cursors. The
-        # legacy `?offset=N` URL parameter is translated by fetching
-        # `offset + limit` records and slicing — fine for small
-        # offsets which is all the legacy callers ever do. For
-        # cursor-based callers the URL exposes `?cursor=` directly.
+        # Phase 2.x (e): keyset cursors only.
         url_cursor = qp.get("cursor")
-        if url_cursor and offset:
-            raise HTTPException(
-                status_code=400,
-                detail="cannot combine ?cursor= with ?offset=")
-
-        if offset:
-            # Fetch one extra so we know if there's "more" past offset+limit.
-            options = QueryOptions(
-                limit=min(offset + effective_limit, 1000),
-                order_by=tuple(order_by_list),
-            )
-            try:
-                page = await ctx.storage.query(_cr, predicate, options)
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
-            # Slice off the offset; the page returned to the caller
-            # is records[offset:offset+limit].
-            sliced = list(page.records)[offset:offset + effective_limit]
-            from termin_runtime.providers.storage_contract import Page
-            page = Page(records=tuple(sliced),
-                        next_cursor=None,  # legacy offset path
-                        estimated_total=None)
-        else:
-            options = QueryOptions(
-                limit=effective_limit,
-                cursor=url_cursor,
-                order_by=tuple(order_by_list),
-            )
-            try:
-                page = await ctx.storage.query(_cr, predicate, options)
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
+        options = QueryOptions(
+            limit=effective_limit,
+            cursor=url_cursor,
+            order_by=tuple(order_by_list),
+        )
+        try:
+            page = await ctx.storage.query(_cr, predicate, options)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         records = [dict(r) for r in page.records]
         records = redact_records(records, schema, set(user_scopes))
         if _cr.startswith("compute_audit_log_"):

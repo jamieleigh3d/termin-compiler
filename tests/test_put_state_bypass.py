@@ -35,44 +35,44 @@ changes in PUT take the same path as POST /_transition, so the two
 endpoints have the same security posture.
 """
 
-import importlib
-import subprocess
-import sys
+import json
 import uuid
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-
-APP_DIR = Path(__file__).parent.parent
-APP_PY = APP_DIR / "app.py"
-DB_PATH = APP_DIR / "app.db"
-SEED_PATH = APP_DIR / "app_seed.json"
+from helpers import extract_ir_from_pkg
+from termin_runtime import create_termin_app
 
 
 @pytest.fixture(scope="module")
-def client():
-    """Compile warehouse.termin, import, return TestClient."""
-    if SEED_PATH.exists():
-        SEED_PATH.unlink()
-    subprocess.run(
-        [sys.executable, "-m", "termin.cli", "compile",
-         "examples/warehouse.termin", "-o", "app.py"],
-        cwd=str(APP_DIR), check=True,
+def client(compiled_packages, tmp_path_factory):
+    """Compile warehouse via the session-scoped compiled_packages
+    fixture, then load IR + seed and serve via TestClient. Phase
+    2.x retired the legacy `.py + .json` codegen path; tests now
+    consume the same `.termin.pkg` artifacts that production
+    uses."""
+    import zipfile
+    pkg = compiled_packages["warehouse"]
+    ir_json = json.dumps(extract_ir_from_pkg(pkg))
+    # Seed data lives in the .pkg too.
+    seed_data = None
+    with zipfile.ZipFile(pkg) as zf:
+        manifest = json.loads(zf.read("manifest.json"))
+        if manifest.get("seed"):
+            try:
+                seed_data = json.loads(
+                    zf.read(manifest["seed"]).decode("utf-8"))
+            except (KeyError, json.JSONDecodeError):
+                pass
+    db_path = str(tmp_path_factory.mktemp("warehouse_put") / "app.db")
+    app = create_termin_app(
+        ir_json, seed_data=seed_data, db_path=db_path,
+        strict_channels=False,
     )
-    if DB_PATH.exists():
-        DB_PATH.unlink()
-
-    spec = importlib.util.spec_from_file_location("generated_app_put", str(APP_PY))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-
-    with TestClient(mod.app) as tc:
+    with TestClient(app) as tc:
         yield tc
-
-    if DB_PATH.exists():
-        DB_PATH.unlink()
 
 
 def _create_draft_product(client):

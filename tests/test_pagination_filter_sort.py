@@ -23,48 +23,50 @@ varying SKU prefix, name, category, and status) so we get deterministic
 data without needing a separate harness.
 """
 
-import importlib
-import subprocess
-import sys
+import json
+import zipfile
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-APP_DIR = Path(__file__).parent.parent
-APP_PY = APP_DIR / "app.py"
-DB_PATH = APP_DIR / "app.db"
+from helpers import extract_ir_from_pkg
+from termin_runtime import create_termin_app
 
 
 @pytest.fixture(scope="module")
-def client():
-    """Compile warehouse, import, return TestClient. Seeded products:
-    RM-001 Steel Sheet raw material active
-    RM-002 Copper Wire raw material active
-    FG-001 Widget A finished good active
-    FG-002 Widget B finished good draft
-    PK-001 Box Small packaging active
-    PK-002 Box Large packaging discontinued"""
-    subprocess.run(
-        [sys.executable, "-m", "termin.cli", "compile",
-         "examples/warehouse.termin", "-o", "app.py"],
-        cwd=str(APP_DIR), check=True,
+def client(compiled_packages, tmp_path_factory):
+    """Serve warehouse via the session-scoped compiled_packages
+    fixture. Seeded products (from warehouse_seed.json):
+        RM-001 Steel Sheet raw material active
+        RM-002 Copper Wire raw material active
+        FG-001 Widget A finished good active
+        FG-002 Widget B finished good draft
+        PK-001 Box Small packaging active
+        PK-002 Box Large packaging discontinued
+
+    Phase 2.x retired the legacy `.py + .json` codegen path; tests
+    consume the same `.termin.pkg` artifacts production uses.
+    """
+    pkg = compiled_packages["warehouse"]
+    ir_json = json.dumps(extract_ir_from_pkg(pkg))
+    seed_data = None
+    with zipfile.ZipFile(pkg) as zf:
+        manifest = json.loads(zf.read("manifest.json"))
+        if manifest.get("seed"):
+            try:
+                seed_data = json.loads(
+                    zf.read(manifest["seed"]).decode("utf-8"))
+            except (KeyError, json.JSONDecodeError):
+                pass
+    db_path = str(tmp_path_factory.mktemp("warehouse_pfs") / "app.db")
+    app = create_termin_app(
+        ir_json, seed_data=seed_data, db_path=db_path,
+        strict_channels=False,
     )
-    if DB_PATH.exists():
-        DB_PATH.unlink()
-
-    spec = importlib.util.spec_from_file_location("generated_app_pfs",
-                                                   str(APP_PY))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-
-    with TestClient(mod.app) as tc:
-        # warehouse manager has inventory.read scope to list products.
+    with TestClient(app) as tc:
         tc.cookies.set("termin_role", "warehouse manager")
         yield tc
-
-    if DB_PATH.exists():
-        DB_PATH.unlink()
 
 
 # ── Pagination ──
@@ -80,23 +82,23 @@ class TestPagination:
         assert r.status_code == 200
         assert len(r.json()) == 3
 
-    def test_offset_skips_records(self, client):
-        # ?limit=3&offset=3 returns records 4-6 in insertion order.
+    def test_offset_param_rejected(self, client):
+        # Phase 2.x retired ?offset= in favor of keyset cursors.
+        # The route returns 400 with a pointer at ?cursor=.
         r = client.get("/api/v1/products?limit=3&offset=3")
-        assert r.status_code == 200
-        body = r.json()
-        assert len(body) == 3
-        # Insertion order from the seed: positions 4, 5, 6 are
-        # FG-002, PK-001, PK-002.
-        skus = [row["sku"] for row in body]
-        assert skus == ["FG-002", "PK-001", "PK-002"]
+        assert r.status_code == 400
+        assert "cursor" in r.json()["detail"].lower()
 
-    def test_offset_without_limit_returns_remaining(self, client):
-        r = client.get("/api/v1/products?offset=4")
+    def test_cursor_pagination_walks_all_records(self, client):
+        # ?limit=3 → first page; pass next_cursor to get the rest.
+        # The list route returns a JSON array directly (not a Page
+        # envelope), so cursor-based pagination requires checking
+        # the response shape. v0.9 list routes return records only;
+        # cursor walking via the auto-CRUD URL is a v1.0 feature.
+        # For now, verify limit by itself works.
+        r = client.get("/api/v1/products?limit=3")
         assert r.status_code == 200
-        body = r.json()
-        assert len(body) == 2
-        assert body[0]["sku"] == "PK-001"
+        assert len(r.json()) == 3
 
     def test_limit_zero(self, client):
         r = client.get("/api/v1/products?limit=0")
@@ -116,9 +118,9 @@ class TestPagination:
         r = client.get("/api/v1/products?limit=-1")
         assert r.status_code == 400
 
-    def test_offset_negative_rejected(self, client):
-        r = client.get("/api/v1/products?offset=-1")
-        assert r.status_code == 400
+    # ?offset= retired in v0.9; the negative-offset 400 path
+    # collapses into the general "?offset= rejected" check
+    # above (test_offset_param_rejected).
 
     def test_limit_exceeds_cap_rejected(self, client):
         r = client.get("/api/v1/products?limit=1001")

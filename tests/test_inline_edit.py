@@ -239,25 +239,16 @@ SEED_PATH = APP_DIR / "app_seed.json"
 
 
 @pytest.fixture(scope="module")
-def client():
-    """Compile warehouse.termin (which will declare inline editing),
-    import, return TestClient."""
-    if SEED_PATH.exists():
-        SEED_PATH.unlink()
-    subprocess.run(
-        [sys.executable, "-m", "termin.cli", "compile",
-         "examples/warehouse.termin", "-o", "app.py"],
-        cwd=str(APP_DIR), check=True,
-    )
-    if DB_PATH.exists():
-        DB_PATH.unlink()
-    spec = importlib.util.spec_from_file_location("generated_app_inline", str(APP_PY))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    with TestClient(mod.app) as tc:
+def client(compiled_packages, tmp_path_factory):
+    """Phase 2.x: legacy `compile -o app.py` + importlib pattern
+    retired; consume the same .termin.pkg artifacts production
+    uses."""
+    from helpers import make_app_from_pkg
+
+    db_path = str(tmp_path_factory.mktemp("warehouse_inline") / "app.db")
+    app = make_app_from_pkg(compiled_packages["warehouse"], db_path)
+    with TestClient(app) as tc:
         yield tc
-    if DB_PATH.exists():
-        DB_PATH.unlink()
 
 
 def _create_product(client):

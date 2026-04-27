@@ -6,12 +6,20 @@
 
 """Backend protocol and plugin discovery for the Termin compiler.
 
-Backends implement the Backend protocol and register via entry points:
+The compiler's first-party output is `.termin.pkg` (built directly
+from the AppSpec IR by `termin.cli.compile`). Third-party backends
+that emit foreign-language outputs (e.g., a Go-runtime emitter, a
+Postgres-DDL emitter, etc.) implement the Backend protocol and
+register via entry points:
 
     [project.entry-points."termin.backends"]
-    runtime = "termin.backends.runtime:RuntimeBackend"
+    my_backend = "my_pkg.backend:MyBackend"
 
 The CLI discovers backends at runtime via importlib.metadata.
+
+The historical first-party "runtime" backend that emitted a slim
+`app.py` shell was retired in v0.9 — `.termin.pkg` is the canonical
+output and `termin serve <pkg>` is the canonical run command.
 """
 
 from typing import Protocol, runtime_checkable

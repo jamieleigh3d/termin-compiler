@@ -30,31 +30,21 @@ DB_PATH = APP_DIR / "app.db"
 
 
 @pytest.fixture(scope="module")
-def client():
-    """Compile the app, import it, and return a TestClient."""
+def client(compiled_packages, tmp_path_factory):
+    """Build a TestClient from the warehouse .termin.pkg fixture.
+
+    Phase 2.x retired the `compile -o app.py` + importlib pattern;
+    tests now consume the same .termin.pkg artifacts production
+    uses. db_path is per-fixture-tmpdir so this fixture's storage
+    stays isolated from other module-scoped server fixtures.
+    """
     from fastapi.testclient import TestClient
+    from helpers import make_app_from_pkg
 
-    # Compile fresh
-    subprocess.run(
-        [sys.executable, "-m", "termin.cli", "compile",
-         "examples/warehouse.termin", "-o", "app.py"],
-        cwd=str(APP_DIR), check=True,
-    )
-
-    # Clean DB
-    if DB_PATH.exists():
-        DB_PATH.unlink()
-
-    # Import the generated app module
-    spec = importlib.util.spec_from_file_location("generated_app", str(APP_PY))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-
-    with TestClient(mod.app) as tc:
+    db_path = str(tmp_path_factory.mktemp("warehouse_e2e") / "app.db")
+    app = make_app_from_pkg(compiled_packages["warehouse"], db_path)
+    with TestClient(app) as tc:
         yield tc
-
-    if DB_PATH.exists():
-        DB_PATH.unlink()
 
 
 # ── Helper: create a product and return its ID ──
@@ -425,15 +415,15 @@ class TestDefinitionOfDone:
     def test_app_is_running(self, client):
         assert client.get("/api/v1/products").status_code == 200
 
-    def test_compile_under_60s(self):
+    def test_compile_under_60s(self, tmp_path):
         start = time.time()
+        out = tmp_path / "warehouse_timing.termin.pkg"
         subprocess.run(
             [sys.executable, "-m", "termin.cli", "compile",
-             "examples/warehouse.termin", "-o", "app_timing.py"],
+             "examples/warehouse.termin", "-o", str(out)],
             cwd=str(APP_DIR), check=True,
         )
         elapsed = time.time() - start
-        (APP_DIR / "app_timing.py").unlink(missing_ok=True)
         assert elapsed < 60, f"Took {elapsed:.1f}s"
 
     def test_termin_file_readable(self):

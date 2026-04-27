@@ -580,11 +580,10 @@ As an anonymous, I want to chat
     Show a chat for messages
 '''
         spec = _compile(source)
-        # Serialize to JSON using the RuntimeBackend
-        from termin.backends.runtime import RuntimeBackend
-        backend = RuntimeBackend()
-        backend.generate(spec)
-        ir_json = backend._ir_json
+        # Serialize to JSON via the shared serializer (post Phase
+        # 2.x retirement of RuntimeBackend).
+        from termin.ir_serialize import serialize_ir
+        ir_json = serialize_ir(spec)
         ir_data = json.loads(ir_json)
         # Find the chat page
         chat_page = next(p for p in ir_data["pages"] if p["slug"] == "chat")

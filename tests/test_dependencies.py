@@ -136,24 +136,8 @@ class TestRuntimeDependencies:
         )
 
 
-class TestRuntimeBackendDependencies:
-    """The runtime backend's required_dependencies() must match setup.py."""
-
-    def test_runtime_backend_deps_subset_of_setup(self):
-        """Every dep listed by RuntimeBackend should be in setup.py."""
-        from termin.backends.runtime import RuntimeBackend
-        backend = RuntimeBackend()
-        backend_deps = set()
-        for dep in backend.required_dependencies():
-            name = re.match(r"[a-zA-Z0-9_-]+", dep).group(0)
-            backend_deps.add(name.lower().replace("-", "_"))
-
-        declared = _get_setup_requires()
-        # termin-runtime is a self-reference, skip it
-        backend_deps.discard("termin_runtime")
-
-        missing = backend_deps - declared
-        assert not missing, (
-            f"RuntimeBackend.required_dependencies() lists these but setup.py doesn't:\n"
-            + "\n".join(f"  - {m}" for m in sorted(missing))
-        )
+# RuntimeBackend was retired in v0.9 — `.termin.pkg` is the
+# canonical compile output and the runtime is consumed via the
+# `termin_runtime` package install, not via codegen-emitted
+# dependency lists. The old TestRuntimeBackendDependencies class
+# is gone with it.
