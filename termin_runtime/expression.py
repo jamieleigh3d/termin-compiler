@@ -174,7 +174,14 @@ class ExpressionEvaluator:
 
         Context values can be plain Python dicts/lists/strings/numbers —
         json_to_cel() handles the conversion to CEL types.
+
+        v0.9 Phase 6a.4: source-level `the user` is rewritten to the
+        CEL identifier `the_user` (CEL doesn't allow spaces in
+        identifiers). The `the_user` binding in the context provides
+        the BRD #3 §4.2-shaped Principal record (id, display_name,
+        is_anonymous, is_system, scopes, preferences).
         """
+        expression = _rewrite_the_user(expression)
         ctx_dict = _make_dynamic_context()
         if context:
             ctx_dict.update(context)
@@ -184,6 +191,23 @@ class ExpressionEvaluator:
         result = prog.evaluate(cel_ctx)
         # Convert CEL types back to Python for downstream consumers
         return _cel_to_python(result)
+
+
+# v0.9 Phase 6a.4: source uses `the user.X` per BRD #3 §4.2 but CEL
+# doesn't allow spaces in identifiers, so we rewrite `the user` →
+# `the_user` before compile. The CEL context binds `the_user` to the
+# BRD-shaped Principal record. Word-boundary regex prevents stomping
+# on identifiers that happen to contain "the user" as a substring
+# (e.g., a content named "weather user" — vanishingly unlikely but
+# the bound is cheap insurance).
+import re as _re
+_THE_USER_PATTERN = _re.compile(r"\bthe user\b")
+
+
+def _rewrite_the_user(expression: str) -> str:
+    if not isinstance(expression, str) or "the user" not in expression:
+        return expression
+    return _THE_USER_PATTERN.sub("the_user", expression)
 
 
 def _cel_to_python(value):

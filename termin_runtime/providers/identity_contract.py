@@ -79,12 +79,24 @@ class Principal:
       on_behalf_of: for delegate-mode agents, the human Principal the
           agent acts on behalf of. None for human, service, or
           service-mode agent principals.
+      preferences: per-principal extensible key-value store (BRD #3
+          §4.2). Theme preference lives here as `preferences["theme"]`
+          (supersedes BRD #2 §6.2's top-level theme_preference field).
+          Identity providers populate when known; runtime read/writes
+          in Phase 5a's theme-preference plumbing.
+      is_system: True for synthetic system principals (scheduled jobs,
+          etc.). v0.9 has no source path that creates a system
+          principal — the field exists for forward compatibility with
+          v0.10+'s Trigger on schedule (Phase 6a). Per BRD #3 §4.4.
     """
     id: str
     type: str  # "human" | "agent" | "service"
     display_name: str = ""
     claims: Mapping[str, Any] = field(default_factory=dict)
     on_behalf_of: Optional["Principal"] = None
+    # v0.9 Phase 6a.4 (BRD #3 §4.2):
+    preferences: Mapping[str, Any] = field(default_factory=dict)
+    is_system: bool = False
 
     def __post_init__(self) -> None:
         if self.type not in ("human", "agent", "service"):

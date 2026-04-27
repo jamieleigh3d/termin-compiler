@@ -76,6 +76,35 @@ def _resolve_role_key(roles_to_scopes: dict, candidate: str | None) -> str:
     return keys[0]
 
 
+def _build_the_user_object(
+    principal: Principal,
+    scopes: list,
+) -> dict:
+    """v0.9 Phase 6a.4: Build the BRD #3 §4.2-shaped `the user` object.
+
+    Distinct from the legacy `User` object (PascalCase fields) — this
+    is the structure CEL expressions referencing `the user.X` will see.
+    Fields per BRD §4.2:
+
+      id            : principal id (text storage; principal-typed at the
+                      business layer)
+      display_name  : human-readable name or empty string for anonymous
+      is_anonymous  : True iff Anonymous principal
+      is_system     : True iff synthetic system principal
+      scopes        : list of scope strings the principal holds in this
+                      request (mirrors `User.Scopes` for now)
+      preferences   : per-principal key-value store (e.g., `theme`)
+    """
+    return {
+        "id": principal.id,
+        "display_name": principal.display_name or "",
+        "is_anonymous": principal.is_anonymous,
+        "is_system": principal.is_system,
+        "scopes": list(scopes),
+        "preferences": dict(principal.preferences),
+    }
+
+
 def _build_user_dict(
     principal: Principal,
     role_name: str,
@@ -84,8 +113,10 @@ def _build_user_dict(
     """Build the runtime's user dict that gets passed to handlers.
 
     Shape preserved from v0.8: keys role, scopes, profile, User. The
-    new v0.9 key 'Principal' carries the typed Principal so code that
-    wants to consume the contract directly can.
+    new v0.9 key 'Principal' carries the typed Principal. v0.9 Phase
+    6a.4 adds 'the_user' — the BRD #3 §4.2-shaped dict that CEL sees
+    when source uses the `the user.X` symbol (rewritten by
+    expression.py to `the_user.X` before compile).
     """
     authenticated = not principal.is_anonymous
     display_name = principal.display_name or ("Anonymous" if not authenticated else "User")
@@ -94,12 +125,14 @@ def _build_user_dict(
         "DisplayName": display_name if authenticated else "Anonymous",
     }
     user_obj = _build_user_object(principal, role_name, scopes)
+    the_user = _build_the_user_object(principal, scopes)
     return {
         "role": role_name,
         "scopes": scopes,
         "profile": profile,
         "User": user_obj,
         "Principal": principal,
+        "the_user": the_user,
     }
 
 
