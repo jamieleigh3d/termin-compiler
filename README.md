@@ -147,6 +147,9 @@ Highlight rows where [priority == "critical" || priority == "high"]
 ## Development
 
 ```bash
+# Install runtime + test deps (adds pytest, pytest-asyncio, pytest-cov)
+pip install -e ".[test]"
+
 # Run tests
 python -m pytest tests/ -v
 
@@ -154,6 +157,13 @@ python -m pytest tests/ -v
 python -m termin.cli compile examples/warehouse.termin
 python -m termin.cli serve warehouse.termin.pkg
 ```
+
+`requirements.txt` carries runtime dependencies only — sufficient to
+compile and serve apps. The test suite needs additional packages
+(notably `pytest-asyncio` for the async runtime / WebSocket tests),
+which live in the `[test]` extras of `setup.py`. The editable install
+above pulls them in along with the package itself. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the full developer setup.
 
 ## Learn more
 

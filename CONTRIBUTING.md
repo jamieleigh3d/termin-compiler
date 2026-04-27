@@ -8,6 +8,27 @@ Thanks for your interest in contributing. This document covers how to propose ch
 2. **Open an issue before writing code** for anything non-trivial. A short problem description is much easier to review than a large PR built on a misunderstanding.
 3. **Fork, branch, and develop.** Standard GitHub flow.
 
+### Local development setup
+
+The project uses two dependency lists:
+
+- **`requirements.txt`** — runtime dependencies only. Sufficient to compile `.termin` files and serve compiled packages (`python -m termin.cli compile|serve`). Use this for production deployments where you only need the compiler/runtime.
+- **`setup.py` `[test]` extras** — adds `pytest`, `pytest-asyncio`, and `pytest-cov`. Required to run the test suite, which exercises async paths (runtime, WebSocket, agent, migration tests).
+
+The recommended dev setup pulls in both via an editable install:
+
+```bash
+python -m venv venv
+source venv/bin/activate           # Linux/macOS
+# or: venv\Scripts\activate         # Windows
+
+pip install -e ".[test]"
+```
+
+This installs the package itself in editable mode (`-e`) so changes to source take effect without reinstall, and adds the `[test]` extras for the test suite.
+
+If you skip the `[test]` extras and run pytest, you'll see `async def functions are not natively supported` on every async test, plus a `PytestConfigWarning: Unknown config option: asyncio_mode`. That's the missing `pytest-asyncio` plugin — fix it with the editable install above.
+
 ## Developer Certificate of Origin (DCO)
 
 Every commit must be signed off to certify you have the right to contribute it under the project's license. This is the [Developer Certificate of Origin](https://developercertificate.org), the same mechanism used by the Linux kernel, Docker, and many other open-source projects. We do not use a CLA.
