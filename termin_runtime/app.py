@@ -147,7 +147,10 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         deploy_config = load_deploy_config(path=deploy_config_path, app_name=app_snake)
     elif deploy_config is None:
         deploy_config = {}
-    ctx.channel_dispatcher = ChannelDispatcher(ir, deploy_config)
+    # v0.9 Phase 4: pass provider_registry so the dispatcher can wire
+    # channel providers at startup (channels with provider_contract).
+    # The registry is built earlier in this function (Phase 1 identity).
+    ctx.channel_dispatcher = ChannelDispatcher(ir, deploy_config, ctx.provider_registry)
 
     # Compute indexes
     for comp in ir.get("computes", []):

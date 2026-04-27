@@ -286,6 +286,7 @@ Content called "items":
   Anyone with "read" can view items
 
 Channel called "tools":
+  Provider is "webhook"
   Direction: outbound
   Delivery: reliable
   Action called "do-thing":
@@ -337,6 +338,7 @@ Content called "items":
   Anyone with "read" can view items
 
 Channel called "tools":
+  Provider is "webhook"
   Direction: outbound
   Delivery: reliable
   Action called "do-thing":

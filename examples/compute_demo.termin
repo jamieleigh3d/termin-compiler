@@ -86,12 +86,14 @@ Channel called "order webhook":
   Requires "orders.write" to send
 
 Channel called "order updates stream":
+  Provider is "webhook"
   Carries orders
   Direction: outbound
   Delivery: realtime
   Requires "orders.read" to receive
 
 Channel called "order notifications":
+  Provider is "messaging"
   Carries orders
   Direction: bidirectional
   Delivery: realtime

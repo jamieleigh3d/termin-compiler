@@ -39,33 +39,25 @@ def _load_seed(name: str) -> dict:
     return {}
 
 
+# v0.9 Phase 4: bindings.channels shape with provider + config.
+# pagerduty and cloud-provider use webhook stubs; slack uses messaging stub.
+# github-webhooks and monitoring-feed are inbound — exempt from provider requirement.
 MOCK_DEPLOY_CONFIG = {
-    "version": "0.1.0",
-    "channels": {
-        "pagerduty": {
-            "url": "https://mock-pagerduty.test/api",
-            "protocol": "http",
-            "auth": {"type": "bearer", "token": "test-token"},
-        },
-        "cloud-provider": {
-            "url": "https://mock-cloud.test/api/v1",
-            "protocol": "http",
-            "auth": {"type": "api_key", "token": "cloud-key", "header": "X-API-Key"},
-        },
-        "slack": {
-            "url": "https://mock-slack.test/api",
-            "protocol": "http",
-            "auth": {"type": "bearer", "token": "slack-token"},
-        },
-        "github-webhooks": {
-            "url": "https://mock-github.test/webhooks",
-            "protocol": "http",
-            "auth": {"type": "hmac", "secret": "github-secret"},
-        },
-        "monitoring-feed": {
-            "url": "https://mock-monitoring.test/feed",
-            "protocol": "http",
-            "auth": {"type": "bearer", "token": "monitor-token"},
+    "version": "0.9.0",
+    "bindings": {
+        "channels": {
+            "pagerduty": {
+                "provider": "stub",
+                "config": {"target": "pagerduty-oncall"},
+            },
+            "cloud-provider": {
+                "provider": "stub",
+                "config": {},
+            },
+            "slack": {
+                "provider": "stub",
+                "config": {"target": "incidents"},
+            },
         },
     },
 }
@@ -77,7 +69,9 @@ def _make_channel_client(pkg_path, deploy_config=None, strict=None):
     seed = _load_seed("channel_demo")
     config = deploy_config or MOCK_DEPLOY_CONFIG
     # If deploy_config is explicitly empty, also disable strict mode
-    strict_channels = strict if strict is not None else (deploy_config is None or bool(deploy_config.get("channels")))
+    # v0.9: channel bindings live under bindings.channels
+    has_bindings = bool((config or {}).get("bindings", {}).get("channels"))
+    strict_channels = strict if strict is not None else (deploy_config is None or has_bindings)
     app = create_termin_app(ir_json, seed_data=seed, deploy_config=config, strict_channels=strict_channels)
     return TestClient(app)
 
@@ -118,12 +112,21 @@ class TestStrictChannelValidation:
         # incident-bus is internal — should not appear in errors
         assert not any("incident-bus" in e for e in errors)
 
-    def test_validation_catches_missing_url(self):
+    def test_validation_catches_missing_provider(self):
+        """v0.9: validate_channel_config catches channels with a binding but no provider key."""
         from termin_runtime.channels import validate_channel_config
         ir = extract_ir_from_pkg(self.pkgs["channel_demo"])
-        bad_config = {"channels": {"pagerduty": {"protocol": "http"}}}  # no url
+        # Binding present but no 'provider' key
+        bad_config = {"bindings": {"channels": {"pagerduty": {"config": {}}}}}
         errors = validate_channel_config(ir, bad_config)
-        assert any("pagerduty" in e and "url" in e.lower() for e in errors)
+        assert any("pagerduty" in e and "provider" in e.lower() for e in errors)
+
+    def test_validation_catches_missing_binding(self):
+        """v0.9: validate_channel_config catches channels with no binding at all."""
+        from termin_runtime.channels import validate_channel_config
+        ir = extract_ir_from_pkg(self.pkgs["channel_demo"])
+        errors = validate_channel_config(ir, {})  # no bindings
+        assert any("pagerduty" in e for e in errors)
 
 
 class TestDeployConfigLoading:
@@ -149,8 +152,13 @@ class TestDeployConfigLoading:
 class TestChannelDispatcher:
     @pytest.fixture(autouse=True)
     def _pkgs(self, compiled_packages):
+        from termin_runtime.providers import ProviderRegistry, ContractRegistry
+        from termin_runtime.providers.builtins import register_builtins
         self.ir = extract_ir_from_pkg(compiled_packages["channel_demo"])
-        self.dispatcher = ChannelDispatcher(self.ir, MOCK_DEPLOY_CONFIG)
+        reg = ProviderRegistry()
+        creg = ContractRegistry.default()
+        register_builtins(reg, creg)
+        self.dispatcher = ChannelDispatcher(self.ir, MOCK_DEPLOY_CONFIG, reg)
 
     def test_get_spec_by_display_name(self):
         spec = self.dispatcher.get_spec("pagerduty")
@@ -162,21 +170,22 @@ class TestChannelDispatcher:
         assert spec is not None
         assert spec["name"]["snake"] == "cloud_provider"
 
-    def test_get_config_returns_configured(self):
+    def test_get_config_returns_none_for_provider_contract_channel(self):
+        # v0.9: pagerduty uses provider_contract="webhook", no ChannelConfig
         config = self.dispatcher.get_config("pagerduty")
-        assert config is not None
-        assert config.url == "https://mock-pagerduty.test/api"
-        assert config.auth.auth_type == "bearer"
-        assert config.auth.token == "test-token"
+        assert config is None
 
     def test_get_config_returns_none_for_unconfigured(self):
         config = self.dispatcher.get_config("incident-bus")
         assert config is None
 
     def test_is_configured(self):
+        # pagerduty and cloud-provider have provider bindings in MOCK_DEPLOY_CONFIG
         assert self.dispatcher.is_configured("pagerduty")
         assert self.dispatcher.is_configured("cloud-provider")
-        assert self.dispatcher.is_configured("github-webhooks")
+        # github-webhooks is inbound with no provider — not "configured" in v0.9
+        assert not self.dispatcher.is_configured("github-webhooks")
+        # incident-bus is internal — always not_configured
         assert not self.dispatcher.is_configured("incident-bus")
 
     def test_get_action_spec(self):
@@ -211,7 +220,7 @@ class TestChannelActionEndpoint:
 
     def test_action_invoke_returns_not_configured_without_mock(self):
         """Without a real external service, configured channels return mock response."""
-        with _make_channel_client(self.pkgs["channel_demo"], deploy_config={"channels": {}}) as client:
+        with _make_channel_client(self.pkgs["channel_demo"], deploy_config={}) as client:
             client.cookies.set("termin_role", "operator")
             r = client.post(
                 "/api/v1/channels/cloud_provider/actions/restart_service",
@@ -256,7 +265,7 @@ class TestChannelSendEndpoint:
         self.pkgs = compiled_packages
 
     def test_send_not_configured(self):
-        with _make_channel_client(self.pkgs["channel_demo"], deploy_config={"channels": {}}) as client:
+        with _make_channel_client(self.pkgs["channel_demo"], deploy_config={}) as client:
             client.cookies.set("termin_role", "responder")
             r = client.post(
                 "/api/v1/channels/pagerduty/send",
@@ -431,9 +440,9 @@ class TestChannelReflection:
             assert pagerduty["direction"] == "OUTBOUND"
             assert pagerduty["metrics"]["sent"] == 0
 
-            # Inbound channels — configured
+            # Inbound channels — NOT configured in v0.9 (no explicit binding)
             github = next(ch for ch in channels if ch["name"] == "github-webhooks")
-            assert github["configured"] is True
+            assert github["configured"] is False
             assert github["direction"] == "INBOUND"
 
             # Internal channels — never need config
@@ -478,19 +487,26 @@ class TestWebSocketDispatcher:
         assert ws.state == "disconnected"
 
     def test_dispatcher_routes_ws_protocol(self):
-        """Channels with protocol=websocket should use WS connections, not HTTP."""
+        """Channels with protocol=websocket should use WS connections, not HTTP.
+
+        Uses github-webhooks (inbound, no provider_contract) so the URL path
+        applies. Provider-contract channels (slack, pagerduty) go through the
+        ProviderRegistry instead and don't build a ChannelConfig.
+        """
         ir = extract_ir_from_pkg(self.pkgs["channel_demo"])
         ws_config = {
-            "channels": {
-                "slack": {
-                    "url": "wss://mock-slack.test/ws",
-                    "protocol": "websocket",
-                    "auth": {"type": "bearer", "token": "test"},
+            "bindings": {
+                "channels": {
+                    "github-webhooks": {
+                        "url": "wss://mock-gh.test/ws",
+                        "protocol": "websocket",
+                        "auth": {"type": "bearer", "token": "test"},
+                    },
                 },
             },
         }
         dispatcher = ChannelDispatcher(ir, ws_config)
-        config = dispatcher.get_config("slack")
+        config = dispatcher.get_config("github-webhooks")
         assert config.protocol == "websocket"
 
     def test_get_full_status_includes_protocol(self):

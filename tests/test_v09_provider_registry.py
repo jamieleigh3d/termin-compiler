@@ -231,9 +231,8 @@ class TestProviderRegistry:
         assert "thread_reply" not in rec.features
 
     def test_unwired_runtime_modules_do_not_import_providers(self):
-        """Phase 2 invariant: identity + app + routes + pages are
-        wired through the provider registry. compute_runner and
-        channels are not yet (Phase 3 / Phase 4).
+        """Phase 4 invariant: channels is now wired (Phase 4 landed).
+        compute_runner is not yet wired (Phase 5+).
 
         The legacy storage.py module remains as the SQL implementation
         layer behind the SQLite provider — it is intentionally not
@@ -248,7 +247,6 @@ class TestProviderRegistry:
         unwired = [
             "termin_runtime.storage",
             "termin_runtime.compute_runner",
-            "termin_runtime.channels",
         ]
         for module_name in unwired:
             m = importlib.import_module(module_name)
@@ -269,15 +267,16 @@ class TestProviderRegistry:
             )
 
     def test_wired_modules_do_import_providers(self):
-        """Positive control: Phases 1 and 2 wire identity, app,
-        routes, and pages through the provider registry. If any of
-        these stop importing providers, the wire-up was reverted."""
+        """Positive control: Phases 1, 2, and 4 wire identity, app,
+        routes, pages, and channels through the provider registry.
+        If any of these stop importing providers, the wire-up was reverted."""
         import importlib
         for module_name in (
             "termin_runtime.identity",
             "termin_runtime.app",
             "termin_runtime.routes",
             "termin_runtime.pages",
+            "termin_runtime.channels",  # Phase 4: channels wired in v0.9
         ):
             m = importlib.import_module(module_name)
             with open(m.__file__, encoding="utf-8") as f:

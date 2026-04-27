@@ -400,6 +400,8 @@ class ChannelSpec:
     endpoint: Optional[str] = None
     requirements: tuple[ChannelRequirementSpec, ...] = ()
     actions: tuple[ChannelActionSpec, ...] = ()        # typed RPC verbs (action Channels)
+    provider_contract: Optional[str] = None            # v0.9 Phase 4: "webhook"|"email"|"messaging"|"event-stream"
+    failure_mode: str = "log-and-drop"                 # v0.9 Phase 4: "log-and-drop"|"surface-as-error"|"queue-and-retry-forever"
 
 
 # ── Boundaries ──

@@ -314,7 +314,15 @@ def _assemble(parsed: list) -> Program:
         elif k == "channel_header":
             ch_ = item[1]; i += 1
             current_action = None
-            for child in _collect(lambda x: x in ("channel_prop", "action_header", "action_prop")):
+            # v0.9 Phase 4: also collect "compute_provider" tokens — the
+            # "Provider is X" line classifies as compute_provider_line in any
+            # block context (classify.py has no block awareness). We reuse the
+            # same result tuple here so the channel assembler picks it up as
+            # the channel's provider_contract.
+            for child in _collect(lambda x: x in ("channel_prop", "action_header", "action_prop", "compute_provider")):
+                if child[0] == "compute_provider":
+                    ch_.provider_contract = child[1]
+                    continue
                 if child[0] == "action_header":
                     current_action = child[1]
                     ch_.actions.append(current_action)
@@ -336,6 +344,7 @@ def _assemble(parsed: list) -> Program:
                     elif p == "delivery": ch_.delivery = v
                     elif p == "endpoint": ch_.endpoint = v
                     elif p == "requires": ch_.requirements.append(v)
+                    elif p == "failure_mode": ch_.failure_mode = v
             prog.channels.append(ch_)
         elif k == "boundary_header":
             bnd = item[1]; i += 1

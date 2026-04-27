@@ -33,6 +33,9 @@ from .compute_llm_anthropic import (
 from .compute_agent_anthropic import (
     AnthropicAgentProvider, register_anthropic_agent,
 )
+from .channel_webhook_stub import WebhookChannelStub, register_webhook_stub
+from .channel_email_stub import EmailChannelStub, register_email_stub
+from .channel_messaging_stub import MessagingChannelStub, register_messaging_stub
 
 
 def register_builtins(provider_registry, contract_registry):
@@ -42,7 +45,8 @@ def register_builtins(provider_registry, contract_registry):
     Phase 2: SQLite storage provider.
     Phase 3 (slice a): compute providers — default-CEL plus llm and
         ai-agent (anthropic + stub products for each named contract).
-        Channels still in Phase 4.
+    Phase 4: channel providers — webhook, email, and messaging stubs.
+        event-stream stub deferred (no fixture requires it in Phase 4).
     """
     register_stub_identity(provider_registry, contract_registry)
     register_sqlite_storage(provider_registry, contract_registry)
@@ -51,6 +55,9 @@ def register_builtins(provider_registry, contract_registry):
     register_stub_agent(provider_registry, contract_registry)
     register_anthropic_llm(provider_registry, contract_registry)
     register_anthropic_agent(provider_registry, contract_registry)
+    register_webhook_stub(provider_registry, contract_registry)
+    register_email_stub(provider_registry, contract_registry)
+    register_messaging_stub(provider_registry, contract_registry)
 
 
 __all__ = [
@@ -68,5 +75,11 @@ __all__ = [
     "register_anthropic_llm",
     "AnthropicAgentProvider",
     "register_anthropic_agent",
+    "WebhookChannelStub",
+    "register_webhook_stub",
+    "EmailChannelStub",
+    "register_email_stub",
+    "MessagingChannelStub",
+    "register_messaging_stub",
     "register_builtins",
 ]

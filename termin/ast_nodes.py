@@ -448,6 +448,8 @@ class ChannelDecl:
     endpoint: Optional[str] = None
     requirements: list[ChannelRequirement] = field(default_factory=list)
     actions: list[ActionDecl] = field(default_factory=list)
+    provider_contract: Optional[str] = None  # v0.9 Phase 4: "webhook"|"email"|"messaging"|"event-stream"
+    failure_mode: str = "log-and-drop"       # v0.9 Phase 4: runtime failure handling
     line: int = 0
 
 

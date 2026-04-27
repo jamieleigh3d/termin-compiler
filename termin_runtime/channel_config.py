@@ -93,7 +93,8 @@ def check_deploy_config_warnings(deploy_config: dict, ir: dict) -> list[str]:
     Returns a list of warning messages.
     """
     warnings = []
-    channels_config = deploy_config.get("channels", {})
+    # v0.9: bindings live under bindings.channels
+    channels_config = deploy_config.get("bindings", {}).get("channels", {})
 
     for ch in ir.get("channels", []):
         direction = ch.get("direction", "")
@@ -101,32 +102,27 @@ def check_deploy_config_warnings(deploy_config: dict, ir: dict) -> list[str]:
             continue
         display = ch["name"]["display"]
         snake = ch["name"]["snake"]
-        ch_config = channels_config.get(display) or channels_config.get(snake, {})
-        if not ch_config:
+        ch_binding = channels_config.get(display) or channels_config.get(snake, {})
+        if not ch_binding:
             continue
 
-        # Check for unresolved ${ENV_VAR} patterns (env var not set)
-        _check_unresolved_vars(ch_config, f"channels.{display}", warnings)
-
-        # Check for placeholder URLs that weren't customized
-        url = ch_config.get("url", "")
-        if url and ("example.com" in url or "placeholder" in url.lower()
-                     or url.startswith("https://TODO") or url.startswith("http://TODO")):
-            warnings.append(
-                f"Channel '{display}': URL looks like a placeholder ({url}). "
-                f"Update the deploy config with the actual service URL."
-            )
+        # Check for unresolved ${ENV_VAR} patterns in the config subdict
+        config_section = ch_binding.get("config", ch_binding)
+        _check_unresolved_vars(config_section, f"bindings.channels.{display}", warnings)
 
     return warnings
 
 
 def _check_unresolved_vars(obj, path: str, warnings: list):
-    """Recursively check for unresolved ${VAR} in config values."""
+    """Recursively check for unresolved ${VAR} and TODO-placeholder values."""
     import re
     if isinstance(obj, str):
         unresolved = re.findall(r'\$\{(\w+)\}', obj)
         for var in unresolved:
             warnings.append(f"Unresolved env var ${{{var}}} at {path}")
+        # Detect TODO-style placeholder URLs/values (e.g., "https://TODO-...")
+        if re.search(r'\bTODO\b', obj, re.IGNORECASE):
+            warnings.append(f"Placeholder value at {path} still contains TODO — configure before deploying")
     elif isinstance(obj, dict):
         for k, v in obj.items():
             _check_unresolved_vars(v, f"{path}.{k}" if path else k, warnings)
@@ -136,34 +132,43 @@ def _check_unresolved_vars(obj, path: str, warnings: list):
 
 
 def validate_channel_config(ir: dict, deploy_config: dict) -> list[str]:
-    """Validate that all non-internal channels have deploy config.
+    """Validate that all external channels with a provider_contract have a binding.
 
-    Returns list of error messages. Empty list = all OK.
+    v0.9 Phase 4: checks bindings.channels for channels with provider_contract.
+    Channels without provider_contract (inbound without contract, internal) are
+    exempt. Returns list of error messages; empty = all OK.
     """
     errors = []
-    channels_config = deploy_config.get("channels", {})
+    # v0.9: bindings live under bindings.channels
+    channels_config = deploy_config.get("bindings", {}).get("channels", {})
 
     for ch in ir.get("channels", []):
         direction = ch.get("direction", "")
         if direction == "INTERNAL":
             continue
 
+        # Only validate channels that declare a provider_contract.
+        # Inbound channels without a contract are exempt from the provider
+        # requirement (analyzer TERMIN-S026 only fires for outbound/bidirectional).
+        contract = ch.get("provider_contract")
+        if not contract:
+            continue
+
         display = ch["name"]["display"]
         snake = ch["name"]["snake"]
 
-        if display not in channels_config and snake not in channels_config:
+        binding = channels_config.get(display) or channels_config.get(snake)
+        if not binding:
             errors.append(
-                f"Channel '{display}' (direction: {direction}) has no deploy configuration. "
-                f"Add an entry to the deploy config file or change direction to 'internal'."
+                f"Channel '{display}' (contract: {contract}) has no deploy binding. "
+                f"Add an entry under bindings.channels in the deploy config."
             )
             continue
 
-        # Validate config has a URL
-        config = channels_config.get(display) or channels_config.get(snake, {})
-        if not config.get("url"):
+        if not binding.get("provider"):
             errors.append(
-                f"Channel '{display}' has a deploy config entry but no 'url'. "
-                f"Every external channel must have a URL."
+                f"Channel '{display}' has a binding but no 'provider' key. "
+                f"Specify the provider product (e.g. \"provider\": \"stub\")."
             )
 
     return errors

@@ -790,6 +790,11 @@ def _parse_line(text: str, rule: str, ln: int):
         return ("channel_prop", "requires", ChannelRequirement(scope=_fq(text), direction=direction, line=ln))
     if rule == "channel_endpoint_line":
         r = P(text, rule); return ("channel_prop", "endpoint", str(r.get("path","")).strip() if r else text.split(":",1)[1].strip())
+    if rule == "channel_failure_mode_line":
+        # "Failure mode is surface-as-error" / "Failure mode is queue-and-retry-forever" / "Failure mode is log-and-drop"
+        # Grammar placeholder in Phase 4 — runtime always uses log-and-drop.
+        mode = text[len("Failure mode is"):].strip().strip('"').strip("'").lower()
+        return ("channel_prop", "failure_mode", mode)
     if rule == "action_header":
         r = P(text, rule); return ("action_header", ActionDecl(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "action_takes_line":

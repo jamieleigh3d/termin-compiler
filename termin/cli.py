@@ -45,34 +45,67 @@ def _generate_deploy_template(ir_dict: dict, external_channels: list) -> dict:
     shapes today; the *generator* now only emits the v0.9 shape so
     fresh compiles produce the right thing.
     """
+    # v0.9 Phase 4: emit provider-based channel bindings.
+    # Each channel's `provider_contract` from the IR drives the template shape.
+    # Channels without a provider_contract (legacy or internal) fall back to
+    # the old url/protocol shape so existing deploy configs aren't broken.
     channels = {}
     for ch in external_channels:
         display = ch["name"]["display"]
         snake = ch["name"]["snake"]
         env_prefix = snake.upper().replace("-", "_")
-        direction = str(ch.get("direction", "OUTBOUND"))
-        delivery = str(ch.get("delivery", "RELIABLE"))
+        provider_contract = ch.get("provider_contract")
 
-        # Choose protocol from delivery intent
-        protocol = "websocket" if "REALTIME" in delivery else "http"
-
-        ch_config = {
-            "url": f"https://TODO-configure-{snake}.example.com/api",
-            "protocol": protocol,
-            "auth": {
-                "type": "bearer",
-                "token": f"${{{env_prefix}_TOKEN}}",
-            },
-        }
-
-        if protocol == "http":
-            ch_config["timeout_ms"] = 30000
-            ch_config["retry"] = {"max_attempts": 3, "backoff_ms": 1000}
-        elif protocol == "websocket":
-            ch_config["reconnect"] = True
-            ch_config["heartbeat_ms"] = 30000
-
-        channels[display] = ch_config
+        if provider_contract == "webhook":
+            channels[display] = {
+                "provider": "stub",
+                "config": {
+                    "target": f"https://TODO-configure-{snake}.example.com/hook",
+                    "timeout_ms": 10000,
+                    "auth": {"type": "bearer", "token": f"${{{env_prefix}_TOKEN}}"},
+                },
+            }
+        elif provider_contract == "email":
+            channels[display] = {
+                "provider": "stub",
+                "config": {
+                    "from": f"noreply@TODO-configure-{snake}.example.com",
+                    "api_key": f"${{{env_prefix}_API_KEY}}",
+                },
+            }
+        elif provider_contract == "messaging":
+            channels[display] = {
+                "provider": "stub",
+                "config": {
+                    "workspace_token_ref": f"${{{env_prefix}_TOKEN}}",
+                    "target": f"TODO-configure-{snake}-channel",
+                },
+            }
+        elif provider_contract == "event-stream":
+            channels[display] = {
+                "provider": "stub",
+                "config": {
+                    "transport": "sse",
+                    "endpoint_path": f"/streams/{snake}",
+                },
+            }
+        else:
+            # Legacy / no provider_contract: use old url/protocol shape
+            # for backward compatibility during migration.
+            delivery = str(ch.get("delivery", "RELIABLE"))
+            protocol = "websocket" if "REALTIME" in delivery else "http"
+            ch_config = {
+                "url": f"https://TODO-configure-{snake}.example.com/api",
+                "protocol": protocol,
+                "auth": {"type": "bearer", "token": f"${{{env_prefix}_TOKEN}}"},
+            }
+            if protocol == "http":
+                ch_config["timeout_ms"] = 30000
+                ch_config["retry"] = {"max_attempts": 3, "backoff_ms": 1000}
+            else:
+                ch_config["reconnect"] = True
+                ch_config["heartbeat_ms"] = 30000
+            channels[display] = ch_config
 
     # Auth provider from IR
     auth = ir_dict.get("auth", {})
@@ -95,7 +128,7 @@ def _generate_deploy_template(ir_dict: dict, external_channels: list) -> dict:
         }
 
     return {
-        "version": "0.1.0",
+        "version": "0.9.0",
         "bindings": {
             "identity": {
                 "provider": auth_provider,

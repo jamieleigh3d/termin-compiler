@@ -1108,8 +1108,9 @@ class TestCheckDeployConfigWarnings:
     """Test deploy config warning detection."""
 
     def test_placeholder_url_warns(self):
-        ir = {"channels": [{"name": {"display": "hook", "snake": "hook"}, "direction": "OUTBOUND"}]}
-        config = {"channels": {"hook": {"url": "https://TODO-configure-hook.example.com/api"}}}
+        ir = {"channels": [{"name": {"display": "hook", "snake": "hook"}, "direction": "OUTBOUND",
+                            "provider_contract": "webhook"}]}
+        config = {"bindings": {"channels": {"hook": {"url": "https://TODO-configure-hook.example.com/api"}}}}
         warnings = check_deploy_config_warnings(config, ir)
         assert any("placeholder" in w.lower() for w in warnings)
 
@@ -1124,7 +1125,9 @@ class TestValidateChannelConfig:
     """Test channel config validation."""
 
     def test_missing_config_for_outbound(self):
-        ir = {"channels": [{"name": {"display": "hook", "snake": "hook"}, "direction": "OUTBOUND"}]}
+        # v0.9: outbound channels with provider_contract must have a deploy binding
+        ir = {"channels": [{"name": {"display": "hook", "snake": "hook"},
+                            "direction": "OUTBOUND", "provider_contract": "webhook"}]}
         errors = validate_channel_config(ir, {})
         assert len(errors) > 0
 
@@ -1134,9 +1137,13 @@ class TestValidateChannelConfig:
         assert len(errors) == 0
 
     def test_config_with_no_url_errors(self):
-        ir = {"channels": [{"name": {"display": "hook", "snake": "hook"}, "direction": "OUTBOUND"}]}
-        errors = validate_channel_config(ir, {"channels": {"hook": {"protocol": "http"}}})
-        assert any("no 'url'" in e for e in errors)
+        # v0.9: a binding present but missing 'provider' key is an error
+        ir = {"channels": [{"name": {"display": "hook", "snake": "hook"},
+                            "direction": "OUTBOUND", "provider_contract": "webhook"}]}
+        errors = validate_channel_config(
+            ir, {"bindings": {"channels": {"hook": {"config": {}}}}}
+        )
+        assert any("no 'provider'" in e for e in errors)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1262,8 +1269,10 @@ class TestChannelDispatcher:
         assert d._metrics["hook"]["sent"] == 0
 
     def test_build_headers_bearer(self):
+        # v0.9: URL-based channels use bindings.channels shape (no provider_contract)
         ir = self._make_ir([{"name": {"display": "hook", "snake": "hook"}, "direction": "OUTBOUND"}])
-        deploy = {"channels": {"hook": {"url": "https://api.example.com", "auth": {"type": "bearer", "token": "tk"}}}}
+        deploy = {"bindings": {"channels": {"hook": {"url": "https://api.example.com",
+                                                     "auth": {"type": "bearer", "token": "tk"}}}}}
         d = ChannelDispatcher(ir, deploy)
         config = d.get_config("hook")
         headers = d._build_headers(config)
@@ -1271,7 +1280,8 @@ class TestChannelDispatcher:
 
     def test_build_headers_api_key(self):
         ir = self._make_ir([{"name": {"display": "hook", "snake": "hook"}, "direction": "OUTBOUND"}])
-        deploy = {"channels": {"hook": {"url": "https://api.example.com", "auth": {"type": "api_key", "token": "key", "header": "X-Key"}}}}
+        deploy = {"bindings": {"channels": {"hook": {"url": "https://api.example.com",
+                                                     "auth": {"type": "api_key", "token": "key", "header": "X-Key"}}}}}
         d = ChannelDispatcher(ir, deploy)
         config = d.get_config("hook")
         headers = d._build_headers(config)
@@ -1279,7 +1289,8 @@ class TestChannelDispatcher:
 
     def test_build_headers_none_auth_uses_cookie(self):
         ir = self._make_ir([{"name": {"display": "hook", "snake": "hook"}, "direction": "OUTBOUND"}])
-        deploy = {"channels": {"hook": {"url": "http://localhost:8000/webhook", "auth": {"type": "none"}}}}
+        deploy = {"bindings": {"channels": {"hook": {"url": "http://localhost:8000/webhook",
+                                                     "auth": {"type": "none"}}}}}
         d = ChannelDispatcher(ir, deploy)
         config = d.get_config("hook")
         headers = d._build_headers(config)
@@ -1378,12 +1389,21 @@ class TestChannelDispatcher:
 
     @pytest.mark.asyncio
     async def test_startup_strict_validation_fails(self):
+        # v0.9: strict mode raises for provider-contract channels with no binding.
+        # A channel without provider_contract is not checked at runtime
+        # (TERMIN-S026 catches it at compile time instead).
+        from termin_runtime.providers import ProviderRegistry, ContractRegistry
+        from termin_runtime.providers.builtins import register_builtins
+        reg = ProviderRegistry()
+        register_builtins(reg, ContractRegistry.default())
         ir = self._make_ir([{
             "name": {"display": "hook", "snake": "hook"},
             "direction": "OUTBOUND",
+            "provider_contract": "webhook",
         }])
-        d = ChannelDispatcher(ir)
-        with pytest.raises(ChannelConfigError, match="missing deploy config"):
+        # No deploy_config → startup(strict=True) should raise ChannelConfigError
+        d = ChannelDispatcher(ir, provider_registry=reg)
+        with pytest.raises(ChannelConfigError):
             await d.startup(strict=True)
 
     @pytest.mark.asyncio

@@ -11,6 +11,8 @@ Two-pass analysis:
 2. Security invariant checks: enforce the security properties that make Termin's argument
 """
 
+import re
+
 from .ast_nodes import (
     Program, Content, StateMachine, EventRule, UserStory, ShowPage,
     DisplayTable, AcceptInput, SubscribeTo, ShowRelated, AllowFilter,
@@ -1094,6 +1096,37 @@ class Analyzer:
 
     VALID_DIRECTIONS = {"inbound", "outbound", "bidirectional", "internal"}
     VALID_DELIVERIES = {"realtime", "reliable", "batch", "auto"}
+    # v0.9 Phase 4: valid named contracts for the Channel category.
+    VALID_CHANNEL_CONTRACTS = {"webhook", "email", "messaging", "event-stream"}
+    # v0.9 Phase 4: valid failure_mode values (grammar placeholder — runtime
+    # always uses "log-and-drop" in Phase 4, but we validate syntax now).
+    VALID_FAILURE_MODES = {"log-and-drop", "surface-as-error", "queue-and-retry-forever"}
+    # v0.9 Phase 4: action vocab per contract. Used to validate Action sub-blocks.
+    # Values are frozensets of source-level display-string prefixes. An action
+    # body "starts with" a prefix to be considered valid for the contract
+    # v0.9 Phase 4: action vocab per contract (first-verb matching).
+    # "webhook" is NOT in this dict: webhook is a generic HTTP channel;
+    # any action name is valid (operations vary by integration). Vocab
+    # restriction applies to structured protocols (messaging, email,
+    # event-stream) where the operation space is well-defined and
+    # cross-contract naming is a bug indicator (e.g., "Dispatch carrier
+    # pigeon" on a messaging contract).
+    #
+    # Matching extracts the first word/segment of the action name
+    # (split on whitespace then on hyphens/underscores, lowercased) and
+    # checks it against the valid verb set. This accepts both natural-
+    # language style ("Send a message alert") and API-style
+    # ("post-message", "update-status") action names.
+    _CHANNEL_ACTION_VOCAB: dict[str, frozenset[str]] = {
+        "email":        frozenset({"send", "email", "notify", "compose",
+                                   "draft", "reply", "forward", "attach"}),
+        "messaging":    frozenset({"send", "post", "reply", "update",
+                                   "react", "receive", "notify", "publish",
+                                   "when", "get", "fetch", "archive",
+                                   "delete", "subscribe", "message"}),
+        "event-stream": frozenset({"register", "publish", "subscribe",
+                                   "emit", "stream"}),
+    }
 
     def _check_channels(self) -> None:
         for channel in self.program.channels:
@@ -1148,6 +1181,66 @@ class Analyzer:
                     line=channel.line,
                     code="TERMIN-S025",
                 ))
+
+            # v0.9 Phase 4: provider contract validation.
+
+            # Outbound/bidirectional channels must declare a provider contract.
+            # Internal channels use the distributed runtime layer — no provider.
+            # Inbound channels may lack a provider in Phase 4 (inbound-only
+            # channels are typically triggered externally; deploy config wires
+            # them up). We error only on outbound/bidirectional.
+            if channel.direction in ("outbound", "bidirectional") and not channel.provider_contract:
+                self.errors.add(SemanticError(
+                    message=f'Channel "{channel.name}" is {channel.direction} but has no '
+                            f'"Provider is" declaration. Add `Provider is "<contract>"` to the '
+                            f'channel block. Valid contracts: '
+                            f'{", ".join(sorted(self.VALID_CHANNEL_CONTRACTS))}.',
+                    line=channel.line,
+                    code="TERMIN-S026",
+                ))
+
+            # Provider contract name must be one of the four built-in contracts.
+            if channel.provider_contract and channel.provider_contract not in self.VALID_CHANNEL_CONTRACTS:
+                self.errors.add(SemanticError(
+                    message=f'Channel "{channel.name}" has unknown provider contract '
+                            f'"{channel.provider_contract}". '
+                            f'Valid contracts: {", ".join(sorted(self.VALID_CHANNEL_CONTRACTS))}.',
+                    line=channel.line,
+                    code="TERMIN-S027",
+                ))
+
+            # Failure mode must be a valid value if specified (grammar placeholder).
+            if channel.failure_mode and channel.failure_mode not in self.VALID_FAILURE_MODES:
+                self.errors.add(SemanticError(
+                    message=f'Channel "{channel.name}" has unknown failure mode '
+                            f'"{channel.failure_mode}". '
+                            f'Valid modes: {", ".join(sorted(self.VALID_FAILURE_MODES))}.',
+                    line=channel.line,
+                    code="TERMIN-S028",
+                ))
+
+            # Action vocabulary validation: when provider_contract is set,
+            # each Action's name must begin with a recognized verb from
+            # the contract's vocabulary set. The first word/segment of
+            # the action name is extracted (split on whitespace, then on
+            # hyphens/underscores) and lowercased before comparison,
+            # so "post-message" → "post" and "Send a message" → "send".
+            if channel.provider_contract and channel.provider_contract in self._CHANNEL_ACTION_VOCAB:
+                allowed_vocab = self._CHANNEL_ACTION_VOCAB[channel.provider_contract]
+                for action in channel.actions:
+                    action_name = action.name
+                    # Extract first word-segment (space-split, then hyphen/underscore)
+                    first_word = re.split(r'[\s\-_]', action_name)[0].lower()
+                    if first_word not in allowed_vocab:
+                        self.errors.add(SemanticError(
+                            message=f'Action "{action_name}" on Channel "{channel.name}" is not '
+                                    f'in the vocabulary for provider contract '
+                                    f'"{channel.provider_contract}". '
+                                    f'Valid action verbs: '
+                                    f'{", ".join(sorted(allowed_vocab))}.',
+                            line=action.line if hasattr(action, "line") else channel.line,
+                            code="TERMIN-S029",
+                        ))
 
     def _is_channel_internal(self, channel) -> bool:
         """Check if a channel is internal."""

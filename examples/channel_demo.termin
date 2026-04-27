@@ -65,6 +65,7 @@ Channel called "monitoring-feed":
 --- Channels: Data (outbound) ---
 
 Channel called "pagerduty":
+  Provider is "webhook"
   Carries incidents
   Direction: outbound
   Delivery: reliable
@@ -73,6 +74,7 @@ Channel called "pagerduty":
 --- Channels: Action (external service verbs) ---
 
 Channel called "cloud-provider":
+  Provider is "webhook"
   Direction: outbound
   Delivery: reliable
 
@@ -94,6 +96,7 @@ Channel called "cloud-provider":
 --- Channels: Hybrid (data + actions) ---
 
 Channel called "slack":
+  Provider is "messaging"
   Direction: bidirectional
   Delivery: realtime
   Carries incidents

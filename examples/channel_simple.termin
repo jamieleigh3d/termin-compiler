@@ -17,6 +17,7 @@ Content called "echoes":
   Anyone with "messages.all" can view or create echoes
 
 Channel called "note-sync":
+  Provider is "webhook"
   Carries notes
   Direction: outbound
   Delivery: reliable

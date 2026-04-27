@@ -583,6 +583,8 @@ def lower(program: Program) -> AppSpec:
                 for r in ch.requirements
             ),
             actions=tuple(actions),
+            provider_contract=ch.provider_contract,
+            failure_mode=ch.failure_mode,
         ))
 
     # ── Lower boundaries ──

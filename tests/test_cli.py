@@ -188,7 +188,7 @@ class TestCLIUtils:
             "actions": [],
         }]
         result = _generate_deploy_template(ir_dict, channels)
-        assert result["version"] == "0.1.0"
+        assert result["version"] == "0.9.0"
         bindings = result["bindings"]
         assert "identity" in bindings
         assert "storage" in bindings

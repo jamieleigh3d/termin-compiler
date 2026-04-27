@@ -48,6 +48,7 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Direction:", "channel_direction_line"), ("Delivery:", "channel_delivery_line"),
     ("Requires ", "channel_requires_line"),  # disambiguated below for Compute context
     ("Endpoint:", "channel_endpoint_line"),
+    ("Failure mode is", "channel_failure_mode_line"),  # v0.9 Phase 4
     ("Action called", "action_header"),
     ("Takes ", "action_takes_line"), ("Returns ", "action_returns_line"),
     ("Boundary called", "boundary_header"), ("Contains ", "boundary_contains_line"),

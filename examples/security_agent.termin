@@ -41,6 +41,7 @@ Content called "scan runs":
   Anyone with "findings.triage" can create or update scan runs
 
 Channel called "security-tools":
+  Provider is "webhook"
   Direction: outbound
   Delivery: reliable
 
@@ -60,6 +61,7 @@ Channel called "security-tools":
     Requires "findings.view" to invoke
 
 Channel called "slack":
+  Provider is "messaging"
   Direction: bidirectional
   Delivery: realtime
   Carries findings

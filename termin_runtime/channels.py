@@ -30,6 +30,7 @@ from .channel_config import (
     _resolve_env_vars, _resolve_config_env, _check_unresolved_vars,
 )
 from .channel_ws import WebSocketConnection
+from .providers import Category, ProviderRegistry
 
 logger = logging.getLogger("termin.channels")
 
@@ -44,17 +45,25 @@ class ChannelDispatcher:
     Supports HTTP (reliable) and WebSocket (realtime) protocols.
     """
 
-    def __init__(self, ir: dict, deploy_config: dict = None):
+    def __init__(self, ir: dict, deploy_config: dict = None,
+                 provider_registry: Optional[ProviderRegistry] = None):
         self._ir = ir
         self._deploy = deploy_config or {}
+        self._registry = provider_registry
         self._channel_specs: dict[str, dict] = {}   # snake_name -> IR channel spec
         self._channel_configs: dict[str, ChannelConfig] = {}  # display_name -> config
+        self._channel_providers: dict[str, Any] = {}  # v0.9 Phase 4: display -> provider instance
         self._http_client: Optional[httpx.AsyncClient] = None
         self._ws_connections: dict[str, WebSocketConnection] = {}  # display_name -> connection
         self._message_handlers: list[Callable] = []  # callbacks for inbound WS messages
         self._metrics: dict[str, dict] = {}  # channel_name -> {sent, received, errors, last_active, state}
 
-        # Index channel specs by both display and snake names
+        # Index channel specs by both display and snake names.
+        # v0.9 Phase 4: channel bindings live exclusively under
+        # bindings.channels (v0.8 top-level fallback removed).
+        # Channels with provider_contract use _channel_providers (set
+        # at startup); channels without use _channel_configs (URL path).
+        bindings = self._deploy.get("bindings", {}).get("channels", {})
         for ch in ir.get("channels", []):
             display = ch["name"]["display"]
             snake = ch["name"]["snake"]
@@ -65,20 +74,13 @@ class ChannelDispatcher:
                 "last_active": None, "state": "disconnected",
             }
 
-            # Load config from deploy. v0.9 stores channel bindings
-            # under bindings.channels; v0.8 used top-level channels.
-            # The hard-cut to v0.9 leaves the top-level path retired
-            # after slice (b); keep it for one phase only as a quiet
-            # fallback so unmigrated test fixtures don't crash before
-            # they get updated.
-            channel_configs = (
-                self._deploy.get("bindings", {}).get("channels")
-                or self._deploy.get("channels", {})
-            )
-            if display in channel_configs:
-                self._channel_configs[display] = ChannelConfig.from_dict(channel_configs[display])
-            elif snake in channel_configs:
-                self._channel_configs[display] = ChannelConfig.from_dict(channel_configs[snake])
+            # Only build ChannelConfig for channels without a provider_contract
+            # (WebSocket / legacy URL channels). Provider-contract channels are
+            # wired up in startup() via the ProviderRegistry.
+            if not ch.get("provider_contract"):
+                raw = bindings.get(display) or bindings.get(snake)
+                if raw and isinstance(raw, dict) and raw.get("url"):
+                    self._channel_configs[display] = ChannelConfig.from_dict(raw)
 
     def on_ws_message(self, handler: Callable[[str, dict], Coroutine]):
         """Register a callback for inbound WebSocket messages."""
@@ -102,8 +104,47 @@ class ChannelDispatcher:
         return validate_channel_config(self._ir, self._deploy)
 
     async def startup(self, strict: bool = True):
-        """Initialize HTTP client and connect outbound WebSocket channels."""
-        if strict:
+        """Initialize HTTP client, wire channel providers, and connect WebSockets."""
+        # v0.9 Phase 4: resolve provider-contract channels via the registry.
+        # Must happen before the strict validation check so that missing
+        # bindings surface as ChannelConfigError when strict=True.
+        if self._registry is not None:
+            for ch in self._ir.get("channels", []):
+                display = ch["name"]["display"]
+                contract = ch.get("provider_contract")
+                if not contract:
+                    continue  # internal or legacy URL channel — handled below
+
+                binding = self._get_channel_binding(display)
+                if binding is None:
+                    if strict:
+                        raise ChannelConfigError(
+                            f"Channel '{display}' (contract: {contract}) has no deploy binding. "
+                            f"Add an entry to bindings.channels in the deploy config."
+                        )
+                    logger.info(
+                        f"Channel '{display}': no binding in deploy config, "
+                        f"log-and-drop mode active"
+                    )
+                    continue
+
+                product = binding.get("provider", "stub")
+                config_dict = binding.get("config") or {}
+                record = self._registry.get(Category.CHANNELS, contract, product)
+                if record is None:
+                    # Try stub fallback for the same contract
+                    record = self._registry.get(Category.CHANNELS, contract, "stub")
+                if record is not None:
+                    self._channel_providers[display] = record.factory(config_dict)
+                    logger.info(
+                        f"Channel '{display}': wired to {contract!r}/{product!r} provider"
+                    )
+                else:
+                    logger.warning(
+                        f"Channel '{display}': no provider registered for "
+                        f"contract={contract!r}, product={product!r}. Log-and-drop active."
+                    )
+        elif strict:
             errors = self.validate()
             if errors:
                 raise ChannelConfigError(
@@ -113,9 +154,11 @@ class ChannelDispatcher:
 
         self._http_client = httpx.AsyncClient(timeout=60.0)
 
-        # Connect WebSocket channels
+        # Connect WebSocket channels (legacy URL path — channels without provider_contract)
         for ch in self._ir.get("channels", []):
             display = ch["name"]["display"]
+            if ch.get("provider_contract"):
+                continue  # handled above via provider registry
             config = self._channel_configs.get(display)
             if not config or config.protocol != "websocket":
                 continue
@@ -212,8 +255,77 @@ class ChannelDispatcher:
 
     # ── Send (data channels) ──
 
+    def _get_channel_binding(self, display: str) -> Optional[dict]:
+        """Return the v0.9 bindings.channels entry for a channel, or None."""
+        return self._deploy.get("bindings", {}).get("channels", {}).get(display)
+
+    def _resolve_messaging_target(self, display: str) -> str:
+        """Resolve the messaging target name from the channel binding config."""
+        binding = self._get_channel_binding(display)
+        if binding:
+            return binding.get("config", {}).get("target", "stub-channel")
+        return "stub-channel"
+
+    async def _dispatch_send(self, display: str, spec: dict, provider: Any, data: dict) -> dict:
+        """Route a data-channel send to the correct provider method.
+
+        v0.9 Phase 4 contracts supported:
+          webhook  — provider.send(body)
+          email    — provider.send(recipients, subject, body, ...)
+          messaging — provider.send(target, message_text)
+
+        Always returns {"ok": bool, "outcome": str, "channel": display}.
+        """
+        contract = spec.get("provider_contract", "")
+        try:
+            if contract == "webhook":
+                result = await provider.send(body=data)
+                return {
+                    "ok": result.outcome == "delivered",
+                    "outcome": result.outcome,
+                    "channel": display,
+                }
+            elif contract == "email":
+                result = await provider.send(
+                    recipients=data.get("recipients", []),
+                    subject=data.get("subject", ""),
+                    body=data.get("body", str(data)),
+                    html_body=data.get("html_body"),
+                )
+                return {
+                    "ok": result.outcome == "delivered",
+                    "outcome": result.outcome,
+                    "channel": display,
+                }
+            elif contract == "messaging":
+                target = data.get("target") or self._resolve_messaging_target(display)
+                msg_ref = await provider.send(
+                    target=target,
+                    message_text=data.get("text", str(data)),
+                )
+                return {
+                    "ok": True,
+                    "outcome": "delivered",
+                    "channel": display,
+                    "message_ref": msg_ref.id,
+                }
+            else:
+                raise ChannelError(f"Unknown provider contract {contract!r} on channel '{display}'")
+        except ChannelError:
+            raise
+        except Exception as e:
+            # Per BRD §6.4.5: default failure mode is log-and-drop
+            logger.warning(f"Channel '{display}' send failed ({contract}): {e}")
+            self._metrics[display]["errors"] += 1
+            return {"ok": False, "outcome": "failed", "channel": display}
+
     async def channel_send(self, channel_name: str, data: dict, user_scopes: set = None) -> dict:
-        """Send data through an outbound data channel."""
+        """Send data through an outbound data channel.
+
+        v0.9 Phase 4: channels with provider_contract route through the provider
+        registry. Channels without (internal / legacy URL) fall through to the
+        existing WebSocket / HTTP paths.
+        """
         spec = self.get_spec(channel_name)
         if not spec:
             raise ChannelError(f"Unknown channel: {channel_name}")
@@ -223,9 +335,22 @@ class ChannelDispatcher:
         if user_scopes is not None and not self._check_scope(channel_name, "send", user_scopes):
             raise ChannelScopeError(f"Insufficient scope to send on channel '{display}'")
 
+        # v0.9 Phase 4: route through provider registry if available
+        provider = self._channel_providers.get(display)
+        if spec.get("provider_contract"):
+            if provider is None:
+                logger.info(
+                    f"Channel '{display}': no provider registered, send skipped (log-and-drop)"
+                )
+                return {"ok": True, "status": "not_configured", "channel": display}
+            self._metrics[display]["sent"] += 1
+            self._metrics[display]["last_active"] = _now_iso()
+            return await self._dispatch_send(display, spec, provider, data)
+
+        # Legacy URL / WebSocket path for channels without provider_contract
         config = self.get_config(channel_name)
         if not config or not config.url:
-            print(f"[Termin] Channel '{display}': no deploy config, send skipped")
+            logger.info(f"Channel '{display}': no deploy config, send skipped")
             self._metrics[display]["sent"] += 1
             return {"ok": True, "status": "not_configured", "channel": display}
 
@@ -376,7 +501,24 @@ class ChannelDispatcher:
         return {}
 
     def is_configured(self, channel_name: str) -> bool:
-        """Check if a channel has deploy config."""
+        """Check if a channel has deploy config (active provider, binding, or URL).
+
+        Outbound/bidirectional channels need an explicit provider binding or URL.
+        Inbound channels without an explicit binding are NOT considered configured
+        (v0.9 decision — the operator must declare what sends to them).
+        Internal channels are never configured (they're in-process buses).
+        """
+        spec = self.get_spec(channel_name)
+        if spec:
+            display = spec["name"]["display"]
+            # Active provider (post-startup)
+            if display in self._channel_providers:
+                return True
+            # Declared provider binding (pre-startup or no registry)
+            binding = self._get_channel_binding(display)
+            if binding and binding.get("provider"):
+                return True
+        # Legacy URL path (channels without provider_contract)
         config = self.get_config(channel_name)
         return config is not None and bool(config.url)
 
@@ -386,14 +528,34 @@ class ChannelDispatcher:
         if not spec:
             return "not_configured"
         display = spec["name"]["display"]
+        # v0.9 Phase 4: provider-based channels report "connected" once wired
+        if display in self._channel_providers:
+            return "connected"
+        # Pre-startup: if the channel has a provider_contract and a binding
+        # with a provider key, it's effectively "connected" (HTTP-style providers
+        # are stateless — no persistent connection to check).
+        contract = spec.get("provider_contract")
+        if contract:
+            binding = self._get_channel_binding(display)
+            if binding and binding.get("provider"):
+                return "connected"
+            return "not_configured"
+        # Legacy URL / WebSocket path (channels without provider_contract)
         config = self._channel_configs.get(display)
         if not config or not config.url:
             return "not_configured"
         if config.protocol == "websocket" and display in self._ws_connections:
             return self._ws_connections[display].state
-        if config.protocol == "http":
-            return "connected"
+        if config.protocol in ("http", "websocket"):
+            return "connected" if config.protocol == "http" else "disconnected"
         return "disconnected"
+
+    _CONTRACT_PROTOCOL: dict[str, str] = {
+        "webhook":      "http",
+        "email":        "email",
+        "messaging":    "messaging",
+        "event-stream": "event-stream",
+    }
 
     def get_full_status(self) -> list[dict]:
         """Get full status of all channels for reflection."""
@@ -401,15 +563,21 @@ class ChannelDispatcher:
         for ch in self._ir.get("channels", []):
             display = ch["name"]["display"]
             config = self._channel_configs.get(display)
+            contract = ch.get("provider_contract")
             metrics = self._metrics.get(display, {})
+            # v0.9: derive protocol from provider contract; fall back to URL config
+            if contract:
+                protocol = self._CONTRACT_PROTOCOL.get(contract, "provider")
+            else:
+                protocol = config.protocol if config else "none"
             entry = {
                 "name": display,
                 "direction": ch.get("direction", ""),
                 "delivery": ch.get("delivery", ""),
                 "carries": ch.get("carries_content", ""),
                 "actions": len(ch.get("actions", [])),
-                "protocol": config.protocol if config else "none",
-                "configured": bool(config and config.url),
+                "protocol": protocol,
+                "configured": self.is_configured(display),
                 "state": self.get_connection_state(display),
                 "metrics": {
                     "sent": metrics.get("sent", 0),
