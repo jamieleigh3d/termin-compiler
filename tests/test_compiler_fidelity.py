@@ -554,7 +554,13 @@ class TestComputeDemoFidelity:
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}
         # D-20: Filter out auto-generated audit log Content
-        user_content = {n for n in names if not n.startswith("compute_audit_log_")}
+        # v0.9 Phase 3 slice (e): also filter the compute_refusals
+        # sidecar (auto-generated for ai-agent apps).
+        user_content = {
+            n for n in names
+            if not n.startswith("compute_audit_log_")
+            and n != "compute_refusals"
+        }
         assert user_content == {"orders", "order_lines", "reports"}
 
     def test_order_priority_enum(self):
@@ -674,7 +680,13 @@ class TestSecurityAgentFidelity:
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}
         # D-20: Filter out auto-generated audit log Content
-        user_content = {n for n in names if not n.startswith("compute_audit_log_")}
+        # v0.9 Phase 3 slice (e): also filter the compute_refusals
+        # sidecar (auto-generated for ai-agent apps).
+        user_content = {
+            n for n in names
+            if not n.startswith("compute_audit_log_")
+            and n != "compute_refusals"
+        }
         assert user_content == {"findings", "scan_runs"}
 
     def test_finding_type_enum(self):
@@ -809,7 +821,13 @@ class TestHRPortalFidelity:
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}
         # D-20: Filter out auto-generated audit log Content
-        user_content = {n for n in names if not n.startswith("compute_audit_log_")}
+        # v0.9 Phase 3 slice (e): also filter the compute_refusals
+        # sidecar (auto-generated for ai-agent apps).
+        user_content = {
+            n for n in names
+            if not n.startswith("compute_audit_log_")
+            and n != "compute_refusals"
+        }
         assert user_content == {"employees", "departments", "salary_reviews"}
 
     def test_salary_field_confidentiality(self):
@@ -1035,7 +1053,13 @@ class TestAgentSimpleFidelity:
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}
         # D-20: Filter out auto-generated audit log Content
-        user_content = {n for n in names if not n.startswith("compute_audit_log_")}
+        # v0.9 Phase 3 slice (e): also filter the compute_refusals
+        # sidecar (auto-generated for ai-agent apps).
+        user_content = {
+            n for n in names
+            if not n.startswith("compute_audit_log_")
+            and n != "compute_refusals"
+        }
         assert user_content == {"completions"}
 
     def test_complete_compute(self):
@@ -1070,7 +1094,13 @@ class TestAgentChatbotFidelity:
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}
         # D-20: Filter out auto-generated audit log Content
-        user_content = {n for n in names if not n.startswith("compute_audit_log_")}
+        # v0.9 Phase 3 slice (e): also filter the compute_refusals
+        # sidecar (auto-generated for ai-agent apps).
+        user_content = {
+            n for n in names
+            if not n.startswith("compute_audit_log_")
+            and n != "compute_refusals"
+        }
         assert user_content == {"messages"}
 
     def test_message_role_enum(self):

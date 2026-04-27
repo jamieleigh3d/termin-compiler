@@ -182,7 +182,12 @@ class TestBuildAgentTools:
 
     def test_empty_accesses(self):
         tools = build_agent_tools([], {})
-        assert len(tools) == 4
+        # v0.9 Phase 3 slice (e): system_refuse always-available tool
+        # added to every agent's tool surface. Count: 4 content tools
+        # + 1 system_refuse = 5.
+        assert len(tools) == 5
+        names = {t["name"] for t in tools}
+        assert "system_refuse" in names
         query_tool = next(t for t in tools if t["name"] == "content_query")
         assert query_tool["input_schema"]["properties"]["content_name"]["enum"] == []
 

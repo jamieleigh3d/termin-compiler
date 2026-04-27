@@ -266,7 +266,7 @@ def _assemble(parsed: list) -> Program:
                 "compute_preconditions_header","compute_postconditions_header",
                 "compute_objective","compute_strategy","compute_directive",
                 "compute_accesses","compute_reads","compute_sends_to",
-                "compute_emits","compute_invokes",
+                "compute_emits","compute_invokes","compute_acts_as",
                 "compute_input_field","compute_output_field",
                 "compute_output_creates","compute_audit_access","content_audit")
             collecting_pre = False
@@ -304,6 +304,7 @@ def _assemble(parsed: list) -> Program:
                 elif ch[0] == "compute_sends_to": nd.sends_to.extend(ch[1])
                 elif ch[0] == "compute_emits": nd.emits.extend(ch[1])
                 elif ch[0] == "compute_invokes": nd.invokes.extend(ch[1])
+                elif ch[0] == "compute_acts_as": nd.identity_mode = ch[1]
                 elif ch[0] == "compute_input_field": nd.input_fields.append(ch[1])
                 elif ch[0] == "compute_output_field": nd.output_fields.append(ch[1])
                 elif ch[0] == "compute_output_creates": nd.output_creates = ch[1]

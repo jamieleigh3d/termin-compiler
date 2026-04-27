@@ -634,6 +634,16 @@ compute_invokes_line
     = 'Invokes' compute_list:quoted_or_word_list $
     ;
 
+# v0.9 Phase 3 slice (e): Acts as <mode> declares the agent's
+# identity mode. Default is 'delegate' (agent acts on behalf of
+# the caller; effective scopes derive from on_behalf_of).
+# 'service' means the agent has its own principal with roles
+# resolved from role_mappings in the deploy config — used for
+# scheduled jobs and cross-app integrations per BRD §6.3.3.
+compute_acts_as_line
+    = 'Acts' 'as' mode:('service' | 'delegate') $
+    ;
+
 quoted_or_word_list
     = item+:quoted_or_word_item { (',' ['and'] | 'and') item+:quoted_or_word_item }*
     ;

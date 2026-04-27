@@ -736,6 +736,16 @@ def _parse_line(text: str, rule: str, ln: int):
         rest = text[len("Invokes "):].strip()
         items = [w.strip().strip('"') for w in rest.replace(" and ", ",").split(",") if w.strip()]
         return ("compute_invokes", items)
+    if rule == "compute_acts_as_line":
+        r = P(text, rule)
+        if r is not None:
+            mode = str(r.get("mode", "")).strip().lower()
+        else:
+            rest = text[len("Acts as "):].strip().lower()
+            mode = rest
+        if mode not in ("service", "delegate"):
+            return None
+        return ("compute_acts_as", mode)
     if rule == "compute_input_field_line":
         rest = text[len("Input from field "):].strip()
         if "." in rest:

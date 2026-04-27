@@ -60,6 +60,7 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Sends to ", "compute_sends_to_line"),
     ("Emits ", "compute_emits_line"),
     ("Invokes ", "compute_invokes_line"),
+    ("Acts as ", "compute_acts_as_line"),
     ("Input from field", "compute_input_field_line"),
     ("Output into field", "compute_output_field_line"),
     ("Output creates", "compute_output_creates_line"),

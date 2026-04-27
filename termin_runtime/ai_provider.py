@@ -1239,5 +1239,32 @@ def build_agent_tools(accesses: list[str], content_lookup: dict) -> list[dict]:
                 "required": ["content_name", "record_id", "target_state"],
             },
         },
+        # v0.9 Phase 3 slice (e): system.refuse always-available tool.
+        # The agent calls this when a request conflicts with system
+        # policy or training-time restrictions. The runtime captures
+        # the call in the audit + compute_refusals sidecar; the
+        # invocation outcome becomes "refused" with the supplied
+        # reason. Per BRD §6.3.3 + design §3.7.
+        {
+            "name": "system_refuse",
+            "description": (
+                "Refuse the requested work because it conflicts with "
+                "system policy or training-time constraints. Provide a "
+                "clear, structured reason. After calling this you "
+                "should still call set_output to terminate the loop "
+                "(set_output's content does not matter — the runtime "
+                "discards it on refusal)."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "Why the work is being refused.",
+                    },
+                },
+                "required": ["reason"],
+            },
+        },
     ]
     return tools
