@@ -259,6 +259,8 @@ There is no source-level theme/style mechanism. There is no `style` escape hatch
 
 ### 6.2 Theme preference is a principal-context field
 
+> **Supersession (BRD #3 §4.2):** The Principal-record location for theme preference is `Principal.preferences.theme`, not a top-level `Principal.theme_preference` field. The `preferences: map<text, value>` store is extensible and lets future preference keys land without changing the Principal type. The semantics, enumeration, runtime operations, and deploy-config defaults specified below are unchanged; only the storage location on the Principal record is relocated. Phase 6a has shipped the relocation; Phase 5a's runtime operations read and write through `preferences.theme` accordingly.
+
 User-selectable themes are common (light/dark, accessibility modes), and consistency across pages and re-renders requires the runtime to know which preference is in effect. Theme preference is therefore a semantic field on principal context.
 
 **Enumeration:** `light | dark | auto | high-contrast`.

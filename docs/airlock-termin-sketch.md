@@ -73,7 +73,8 @@ The live PostgreSQL schema has multiple tables (`users`, `invites`, `waitlist`, 
 
 ```
 Content called "profiles":
-  Each profile has a principal_id which is unique text, required
+  Each profile has a principal_id which is principal, unique, required
+  Each profile is owned by principal_id
   Each profile has a best_of_level which is whole number, default 0
   Each profile has a best_gc_level which is one of "none", "self", "emergent", "active", default "none"
   Each profile has a best_bf_level which is one of "none", "compliant", "curious", "probing", "adversarial", default "none"
@@ -83,7 +84,12 @@ Content called "profiles":
   Anyone with "airlock.profile.read" can view their own profile
 
 Content called "sessions":
-  Each session has a player_principal which is text, required
+  Each session has a player_principal which is principal, required
+  (NOTE: BRD #3 §3.3 requires `is owned by` fields to be `unique`,
+   which would limit each player to one session. Airlock allows
+   multiple sessions per player, so `sessions` cannot declare
+   ownership in v0.9. "Their own sessions" filtering is deferred
+   until composite/transitive ownership lands per BRD #3 Appendix B.)
   Each session has survey_responses which is structured
   Each session has self_rating which is whole number
   Each session has scenario_started_at which is timestamp
@@ -205,7 +211,7 @@ Compute called "evaluator":
   Accesses sessions
   Accesses profiles
   Emits "session.scored"
-  Trigger on event "lifecycle.scenario.scoring.entered"
+  Trigger on event "sessions.lifecycle.scoring.entered"
   Directive is ```
     You are the meta-evaluator. Read the full transcript of a completed
     session and score the player across three axes:
@@ -223,9 +229,10 @@ Compute called "evaluator":
        evidence list, next-level tip, calibration commentary, badges).
     3. Update session.scores with the structured result. This causes
        lifecycle to advance to "complete" via the CEL-expr transition.
-    4. Update profile (keyed by player_principal): best_of_level,
-       best_gc_level, best_bf_level take the maximum of the new score
-       and the prior best (union scoring); all_badges takes the union;
+    4. Update the user's profile (BRD #3 §4.3 — upserts on first
+       invocation, updates thereafter): best_of_level, best_gc_level,
+       best_bf_level take the maximum of the new score and the prior
+       best (union scoring); all_badges takes the union;
        total_attempts += 1.
     5. Emit "session.scored".
   ```
@@ -277,7 +284,7 @@ As a player, I want to experience the scenario so that I can demonstrate AI flue
   Show a page called "Airlock 7"
     Show scenario narrative from inciting_incident
       Using "airlock-components.scenario-narrative"
-      Reveal on event "lifecycle.survey.scenario.entered"
+      Reveal on event "sessions.lifecycle.scenario.entered"
       Voice "ship-computer-calm"
     Show a cosmic orb of session
       Using "airlock-components.cosmic-orb"
@@ -517,21 +524,21 @@ Items worth flagging for either spec changes or future-version backlog. None are
 
 1. **A contract should be able to advertise both verbs.** `score-axis-card` could naturally be invoked either as `Display total <X>` (override mode, leveraging the existing metric verb) or as `Show a score-axis card for <X>` (new-verb mode, more readable for the specific use case). The current grammar forces the package author to pick one. Allowing a contract to declare both an `extends` *and* a new verb — and letting source pick at the use site — would be cleaner. **Recommend Appendix B item.**
 
-2. **Per-principal record filtering syntax not finalized.** Phrases like "Anyone with X can view *their own* sessions" and "subscribe to channel for *their own* sessions" appear repeatedly in the sketch. The v0.9 grammar should pin a syntax for principal-keyed row filtering that isn't `Scoped to "<scope>"` (that's coarser — it gates on scope membership, not on row ownership). The Airlock is the forcing function; the moderation_agent example sidesteps it by treating reputation as a global-scope content type. **Recommend BRD #1 §6 amendment.**
+2. **Per-principal record filtering syntax not finalized.** **RESOLVED in BRD #3 §3.** v0.9 ships `Each <singular> is owned by <field>` (content-level declaration) plus `their own <content>` permission verb. Single-row ownership only — Phase 6a constraint that the owning field must be `unique`. Sessions can't declare ownership in v0.9 (multiple sessions per player); profiles can. Composite/transitive ownership deferred to v0.10 per BRD #3 Appendix B.
 
-3. **Profile lookup by current principal needs source-level vocabulary.** The Evaluator updates "the profile keyed by the current principal" as a side effect of scoring. Source-level grammar to fetch and update such a record isn't present in the moderation_agent example or the BRD. The agent's Objective body falls back to imperative content.read / content.update prose. Worth a first-class form like `Find the profile where principal_id = current_principal.id` so the resolution is a compiler-checked path, not free-form prose. **Recommend compiler/grammar work.**
+3. **Profile lookup by current principal needs source-level vocabulary.** **RESOLVED in BRD #3 §4.** The reserved phrase `the user` resolves to a typed Principal record; `the user's <content>` performs the keyed lookup, returning null on read or upserting on update. Phase 6a has shipped both forms.
 
 4. **Confidentiality envelope on `messages.tool_calls`.** Tool calls can include diagnostic data the player shouldn't see in the side-panel verbatim (e.g., the system prompt itself if the player jailbreaks). Field-level redaction (BRD #2 §7.6) is the right primitive, but the predicate ("show full content during scoring; show redacted content during scenario") needs a syntax — the redaction is principal-context-driven (the Evaluator sees full; the player sees redacted), not row-level. **Recommend §7.6 follow-up worked example.**
 
-5. **State-machine state-entered events.** The Evaluator triggers on `"lifecycle.scenario.scoring.entered"` — a virtual event emitted when the `scenario → scoring` CEL-expr transition fires. The grammar in §5 above and the current termin.peg don't formalize how state-machine transitions emit events that compute can `Trigger on`. The naming convention used here (`<content>.<from>.<to>.entered`) is plausible but speculative. **Recommend BRD #1 §5 / state-machine spec amendment.**
+5. **State-machine state-entered events.** **RESOLVED in BRD #3 §5.** Locked format is `<content>.<field>.<state>.<verb>` — the sketch above has been updated to use `"sessions.lifecycle.scoring.entered"` and `"sessions.lifecycle.scenario.entered"`. Both `entered` and `exited` events fire on every transition; payload carries `record_id`, `from_state`, `to_state`, `on_behalf_of`, `invoked_by`, `triggered_at`, and `trigger_kind`. Phase 6b has shipped the runtime emission and compile-time validation.
 
-6. **Long-form agent system prompts.** The ARIA system prompt is multi-page in the live app. Inline triple-backtick `Directive is ```...``` ` works for hundreds of words but not for thousands. Deploy-config-loaded prompts (`aria_system_prompt_ref: "configs/..."`) work for static prompts; runtime-frozen prompts (`session.aria_system_prompt`) are needed for reproducibility. The current grammar handles the static case via deploy config; the frozen-at-session-start case requires either a `Directive from <field>` lookup form or a compute-execution-time bind. **Recommend ai-agent provider spec amendment.**
+6. **Long-form agent system prompts.** **RESOLVED in BRD #3 §6.** Three forms now legal: inline triple-backtick (existing), `Directive from deploy config "<key>"` for application-startup-resolved static prompts, and `Directive from <content>.<field>` for per-invocation field reads (the session-frozen pattern ARIA needs). Phase 6c implements all three, plus the same forms for `Objective`.
 
 ---
 
 ## 10. What this is not
 
-- **Not a runnable file.** The grammar dialect uses v0.9 features (Identity block, state-as-field-type with CEL-expr transitions) plus speculative ones (`current_principal`, `their own sessions`, state-entered virtual events) that are not yet in `termin.peg`. Treat it as a design artifact.
+- **Not a runnable file.** The grammar dialect uses v0.9 features (Identity block, state-as-field-type with CEL-expr transitions, the user / their own / state-entered events / Directive from / principal type — most landed in Phase 6a–6c) plus Phase 4 channel grammar (the three `Channel called ... Carries ... Direction:` blocks) which lives on a separate branch awaiting integration. Treat it as a design artifact until Phase 4 channels rebase.
 - **Not a literal port.** The live app has implementation details (Reeves timer state, modal-after-5s delay, hint-dropped tracking, dev-bypass JWT mode) that are intentionally absent from the Termin sketch — Termin source reads as user-stories, not state machines. Where the live app has a session field that exists only for UI bookkeeping, the Termin sketch doesn't.
 - **Not a commitment.** Whether the Airlock is ever actually ported to Termin is a product decision, not a Termin roadmap item.
 - **Not the full app.** Waitlist signup, BYOK key entry, admin dashboard, and persistent-profile dashboard are out of scope for this sketch (they fit in `presentation-base` cleanly and don't add to the spec validation). The happy-path slice is enough to stress-test BRD #2.

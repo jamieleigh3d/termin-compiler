@@ -11,13 +11,14 @@ spec example for the ai-agent compute tool-grant lines.)
  Together these enumerate the full closed tool surface for an agent
  per BRD §6.3.3.)
 
-(DESIGN ISSUE flagged for a future BRD: per-app user reputation/profile
-data is decoupled from the identity Principal. Identity owns "who
-authenticated"; the app owns "what we know about that principal in
-this app's domain." The two are linked by Principal.id, stored here
-as a plain text field. Once the identity contract surfaces a typed
-"references Principal" relationship, the principal_id field on
-user_reputation should migrate to that grammar. For now it's text.)
+(Per-app user reputation/profile data is decoupled from the identity
+Principal. Identity owns "who authenticated"; the app owns "what we
+know about that principal in this app's domain." The two are linked
+by Principal.id. Identity-keyed fields use the v0.9 `principal`
+business field type per BRD #3 §3.2 — typed at the business layer,
+opaque text storage. The compiler enforces that values flowing into
+a `principal` field came from a Principal source, not from
+arbitrary text input.)
 
 Application: Moderation Agent
   Description: AI moderator that scores incoming messages on a deterministic risk scale, takes action when warranted, alerts human moderators on edge cases, emits events for downstream consumers, and delegates risk scoring to a CEL helper.
@@ -31,7 +32,7 @@ Identity:
 
 Content called "messages":
   Each message has a body which is text, required
-  Each message has an author_principal which is text, required
+  Each message has an author_principal which is principal, required
   Each message has a posted_at which is automatic
   Anyone with "messages.read" can view messages
   Anyone with "moderation.act" can update or delete messages
@@ -41,7 +42,7 @@ a row here — a brand-new user posts a message before any reputation
 record exists. The agent looks up by author_principal and tolerates a
 missing row by treating absence as reputation = 0.)
 Content called "user reputation":
-  Each user reputation has a principal_id which is unique text, required
+  Each user reputation has a principal_id which is principal, unique, required
   Each user reputation has a reputation which is whole number
   Each user reputation has a post_count which is whole number
   Each user reputation has a joined_at which is automatic
@@ -53,7 +54,7 @@ Content called "moderation actions":
   Each moderation action has a verdict which is one of: "ok", "warned", "removed", "user_suspended"
   Each moderation action has a rationale which is text, required
   Each moderation action has a risk_score which is whole number
-  Each moderation action has a taken_by_principal which is text, required
+  Each moderation action has a taken_by_principal which is principal, required
   Each moderation action has a taken_at which is automatic
   Anyone with "moderation.act" can view or create moderation actions
   Anyone with "moderation.audit" can view moderation actions
