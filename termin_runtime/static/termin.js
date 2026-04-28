@@ -892,9 +892,153 @@ async function loadCsrBundles() {
   }
 }
 
+// ── v0.9 Phase 5b.4 B' plumbing: SPA navigation + action dispatch ──
+//
+// Per the Spectrum-provider design Q2 (B' = server-authoritative +
+// JS-as-renderer), the provider's bundle calls these to drive
+// page transitions and user-initiated mutations. The runtime owns
+// the trust plane; these helpers are the typed seam between the
+// provider and the runtime.
+
+const SHELL_CONTRACT = "__app_shell__";
+const _subscriptionHandlers = Object.create(null);  // channel -> Set<handler>
+
+async function navigate(path) {
+  if (typeof path !== "string" || !path) {
+    console.warn("[Termin] navigate: path must be a non-empty string");
+    return;
+  }
+  try {
+    const url = new URL("/_termin/page-data", window.location.origin);
+    url.searchParams.set("path", path);
+    const resp = await fetch(url.toString(), { credentials: "same-origin" });
+    if (!resp.ok) {
+      console.warn(`[Termin] navigate: ${resp.status} for path ${path}`);
+      return;
+    }
+    const payload = await resp.json();
+
+    // Browser history — back/forward must work without a full
+    // page reload. The state stash lets us re-render on popstate
+    // without a second fetch (cache the most recent payload).
+    history.pushState({ termin: true, path }, "", path);
+
+    // Hand off to the registered shell renderer. If no provider
+    // has registered "__app_shell__" yet, log and fall back to a
+    // full page load so the user isn't stranded.
+    const renderer = getRenderer(SHELL_CONTRACT);
+    if (typeof renderer === "function") {
+      renderer(
+        payload.component_tree_ir,
+        payload.bound_data,
+        payload.principal_context,
+        payload.subscriptions_to_open,
+      );
+    } else {
+      window.location.href = path;
+    }
+  } catch (err) {
+    console.warn("[Termin] navigate failed:", err.message);
+  }
+}
+
+async function action(payload) {
+  if (!payload || typeof payload !== "object" || !payload.kind) {
+    console.warn("[Termin] action: payload must be { kind: <string>, ... }");
+    return null;
+  }
+  // State-changing actions go HTTP-POST so we get request-response
+  // semantics + the existing middleware + audit trail. The
+  // WebSocket path is reserved for low-latency telemetry — not
+  // wired here for v0.9.
+  try {
+    const resp = await fetch("/_termin/action", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      console.warn(`[Termin] action: ${resp.status} ${resp.statusText}`);
+      return { ok: false, status: resp.status };
+    }
+    return await resp.json();
+  } catch (err) {
+    console.warn("[Termin] action failed:", err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+function _addSubscription(channel, handler) {
+  if (typeof channel !== "string" || typeof handler !== "function") {
+    console.warn("[Termin] subscribe: channel must be string, handler must be function");
+    return;
+  }
+  let set = _subscriptionHandlers[channel];
+  if (!set) {
+    set = new Set();
+    _subscriptionHandlers[channel] = set;
+    // Register with the in-process WebSocket subscription state.
+    // Existing `subscribe(channel)` in this file talks to the
+    // runtime's WebSocket multiplexer.
+    subscribe(channel);
+  }
+  set.add(handler);
+}
+
+function _removeSubscription(channel, handler) {
+  const set = _subscriptionHandlers[channel];
+  if (!set) return;
+  set.delete(handler);
+  if (set.size === 0) {
+    delete _subscriptionHandlers[channel];
+    // The existing subscription state allows multiple subscribers;
+    // we leave the channel-level subscription open if any caller
+    // (including this file's internal subscribe) still wants it.
+    // Per-channel teardown is a runtime decision; provider-level
+    // remove just clears the handler list.
+  }
+}
+
+// Hook for the existing WebSocket message dispatcher to route
+// incoming events into provider-registered subscription handlers.
+// Existing `state.handlers` keep working; this adds a parallel
+// dispatch surface for the Termin global.
+function _dispatchToProviderSubscriptions(channel, payload) {
+  // Prefix-match: a handler registered for "content.tickets"
+  // also receives "content.tickets.created" / ".updated" / ".deleted".
+  for (const registered in _subscriptionHandlers) {
+    if (channel === registered || channel.startsWith(registered + ".")) {
+      for (const handler of _subscriptionHandlers[registered]) {
+        try { handler(payload, channel); }
+        catch (err) {
+          console.warn(`[Termin] subscriber for ${registered} threw:`, err.message);
+        }
+      }
+    }
+  }
+}
+
+// Browser back/forward — re-fetch and render. Pure-history
+// SPA: state.termin marks frames we own; foreign frames are
+// passed through to the browser.
+window.addEventListener("popstate", function (ev) {
+  if (ev.state && ev.state.termin && ev.state.path) {
+    navigate(ev.state.path).catch(() => {});
+  }
+});
+
 // ── Public API ──
 
-window.Termin = { registerRenderer, getRenderer };
+window.Termin = {
+  registerRenderer,
+  getRenderer,
+  navigate,
+  action,
+  subscribe: _addSubscription,
+  unsubscribe: _removeSubscription,
+  _dispatchToProviderSubscriptions,  // internal hook; do not rely on
+};
 window.__termin = { state, subscribe, getCachedRecords, TERMIN_VERSION };
 
 // ── Initialize on DOM ready ──

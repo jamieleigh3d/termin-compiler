@@ -206,6 +206,96 @@ async def build_bootstrap_payload(
 
 # ── HTTP endpoint ──
 
+_VALID_ACTION_KINDS = frozenset(
+    ("create", "update", "delete", "transition", "compute")
+)
+
+
+def register_action_endpoint(app, ctx) -> None:
+    """Register `POST /_termin/action` on `app`.
+
+    The provider's JS bundle calls `Termin.action(payload)` to
+    submit user-initiated mutations. Per the Spectrum-provider
+    design Q2 trust boundary, the runtime is authoritative for
+    auth, scope checks, validation, storage writes, and audit.
+    The endpoint surface lands here so the client has a typed
+    seam; dispatch to the existing CRUD routes / state-machine
+    transitions is a follow-on slice.
+
+    Payload shape (all but `kind` are optional at the
+    endpoint level — concrete actions need the appropriate
+    fields, validated downstream):
+
+        {
+            "kind": "create" | "update" | "delete"
+                  | "transition" | "compute",
+            "content": <content-name>,
+            "id": <record-id>,         # for update/delete/transition
+            "payload": <field-values>, # for create/update
+            "target_state": <state>,   # for transition
+            "machine_name": <name>,    # for transition
+            "compute_name": <name>,    # for compute
+            "input": <field-values>,   # for compute
+        }
+
+    Returns: `{ok: bool, kind: <str>, ...}` with a 200 on
+    success or 422 on payload validation failure. Concrete
+    error codes from downstream dispatch (404, 403, 409 from
+    CRUD routes / transitions) propagate when dispatch lands
+    in a follow-on slice.
+    """
+
+    @app.post("/_termin/action")
+    async def termin_action(request: Request):
+        # Parse body. Reject anything other than a JSON object.
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=422,
+                detail="Body must be a JSON object",
+            )
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=422,
+                detail="Body must be a JSON object",
+            )
+        kind = body.get("kind")
+        if not isinstance(kind, str) or not kind:
+            raise HTTPException(
+                status_code=422,
+                detail="Required field `kind` is missing or not a string",
+            )
+        if kind not in _VALID_ACTION_KINDS:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Unknown action kind {kind!r}; expected one of "
+                    f"{sorted(_VALID_ACTION_KINDS)}"
+                ),
+            )
+
+        # Auth resolution — the request principal is the action's
+        # invoked_by per BRD #3 §3.5. Resolution uses the standard
+        # cookie-based identity path; the result lands in the
+        # audit log when downstream dispatch fires.
+        user = ctx.get_current_user(request)
+
+        # For v0.9 5b.4 B' plumbing: the endpoint validates and
+        # acknowledges. Dispatch to the existing CRUD route /
+        # transition / compute paths lands in the follow-on
+        # slice that wires the trust-plane handler.
+        return JSONResponse(
+            content={
+                "ok": True,
+                "kind": kind,
+                "received_by": user.get("role", ""),
+                "note": "v0.9 5b.4 B' plumbing — dispatch wired in follow-on slice",
+            },
+            status_code=200,
+        )
+
+
 def register_page_data_endpoint(app, ctx) -> None:
     """Register `GET /_termin/page-data?path=<path>` on `app`.
 

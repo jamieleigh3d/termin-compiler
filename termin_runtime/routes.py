@@ -41,7 +41,7 @@ from .preferences import (
     set_theme_preference,
 )
 from .presentation_bundles import register_presentation_bundle_endpoint
-from .bootstrap import register_page_data_endpoint
+from .bootstrap import register_page_data_endpoint, register_action_endpoint
 
 
 # v0.9 Phase 2: cross-cutting helpers that wrap ctx.storage with the
@@ -1036,3 +1036,10 @@ def register_runtime_endpoints(app, ctx: RuntimeContext):
     # bootstrap JSON via this endpoint instead of doing a full HTML
     # round-trip. Auth is identical to a regular page request.
     register_page_data_endpoint(app, ctx)
+
+    # v0.9 Phase 5b.4 B' plumbing: action endpoint. The provider's
+    # JS bundle submits typed action payloads here via
+    # Termin.action(...). Validation lands in this commit; dispatch
+    # to the existing CRUD / transition / compute paths is the
+    # follow-on slice.
+    register_action_endpoint(app, ctx)
