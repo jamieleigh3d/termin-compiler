@@ -87,6 +87,37 @@ Before marking your PR as ready for review:
 - [ ] Changes to the DSL, grammar, or IR schema include a conformance test
 - [ ] Changes that affect end-user behavior include a `CHANGELOG.md` entry
 
+## Provider packaging
+
+**First-party and third-party providers ship as separate packages.** This applies to every provider category — Identity, Storage, Compute, Channels, Presentation. The `termin-compiler` repository hosts the compiler, the reference runtime, and the contract Protocols any provider must satisfy. Provider implementations live in their own repositories with their own build pipelines, release cadences, and dependency stacks.
+
+Concretely:
+
+- A new Identity provider (e.g., Okta, Auth0, custom SSO) is a separate Python package with a `setup.py` declaring its dependencies, a factory function registering against the `IdentityProvider` Protocol, and its own CI / release.
+- A new Presentation provider (e.g., Carbon Design System, GOV.UK, an in-house design system) is its own package. CSR-mode providers may ship a JS bundle as a static asset, an npm package, or a CDN-hosted artifact — that's the provider's choice. The `termin-compiler` repository does not gain a Node toolchain.
+- Built-in providers shipped with the reference runtime (the SQLite storage provider, the stub identity provider, Tailwind-default presentation, etc.) are the only providers that live inside `termin-compiler`. Even these load through the same provider registry that third-party providers use — there is no special-case "built-in" code path.
+
+This separation is load-bearing: it's how Tenet 4 (providers over primitives) is enforced operationally. The contract Protocols are the only stable surface; everything else is one realization of those contracts.
+
+### Local development across multiple repositories
+
+When you're working on a provider package alongside the reference runtime, use editable installs rather than git submodules or environment variables:
+
+```bash
+# Sibling-checkout layout
+~/work/termin-compiler/
+~/work/termin-carbon-provider/
+
+# In your venv, install the sibling provider as editable so changes
+# reflect immediately without reinstalling.
+cd ~/work/termin-compiler
+pip install -e ../termin-carbon-provider
+```
+
+Each repository's CI tests against published versions of its dependencies; local development swaps in editable installs to test changes across repositories. No submodules, no path-discovery code in either repository.
+
+For Node-side providers (CSR bundles), use `npm link` or local `file:` paths in `package.json` for the equivalent workflow.
+
 ## Scope of contributions
 
 Especially welcome:
