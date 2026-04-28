@@ -1,0 +1,281 @@
+# Copyright 2026 Jamie-Leigh Blake and Termin project contributors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+"""Tests for v0.9 Phase 5b.4 B' plumbing: bootstrap payload builder.
+
+Per the Spectrum-provider design Q2 decision (B' = server-authoritative
++ JS-as-renderer), the runtime ships a bootstrap JSON payload instead
+of (or alongside) SSR-composited HTML. The payload shape:
+
+  {
+    "component_tree_ir": <PageEntry IR>,
+    "bound_data": <records keyed by content source>,
+    "principal_context": <id, scopes, preferences>,
+    "subscriptions_to_open": [<channel_id>, ...]
+  }
+
+This payload is returned at first page load (embedded in the HTML
+shell) and on SPA navigation (via GET /_termin/page-data?path=<path>).
+
+This test module covers the pure builder. The endpoint integration
+test lives in test_v09_page_data_endpoint.py.
+"""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+
+# ── Fixtures ──
+
+def _make_user(user_id: str = "alice", scopes=("x.read",), anonymous: bool = False):
+    return {
+        "role": user_id,
+        "scopes": list(scopes),
+        "User": {"Authenticated": not anonymous, "Name": user_id.title()},
+        "the_user": {
+            "id": user_id,
+            "display_name": user_id.title(),
+            "is_anonymous": anonymous,
+            "is_system": False,
+            "scopes": list(scopes),
+            "preferences": {"theme": "auto"},
+        },
+        "profile": {"DisplayName": user_id.title()},
+    }
+
+
+def _make_ctx(*, pages=None, contents=None, sources_data=None):
+    """Stand up a stub RuntimeContext with just enough surface for
+    the bootstrap builder. Real-runtime tests live elsewhere."""
+    ctx = MagicMock()
+    ctx.ir = {
+        "pages": pages or [],
+        "contents": contents or [],
+    }
+    ctx.content_lookup = {c["name"]["snake"]: c for c in (contents or [])}
+
+    class _StoragePage:
+        def __init__(self, records):
+            self.records = records
+            self.next_cursor = None
+            self.estimated_total = None
+
+    storage = MagicMock()
+    sources = sources_data or {}
+
+    async def _query(content_name, predicate, options):
+        return _StoragePage(sources.get(content_name, []))
+
+    storage.query = _query
+    ctx.storage = storage
+    return ctx
+
+
+# ── Builder: basic shapes ──
+
+@pytest.mark.asyncio
+async def test_payload_includes_component_tree_for_matched_page():
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {
+        "name": "Tickets",
+        "slug": "tickets",
+        "role": "alice",
+        "children": [
+            {"type": "data_table", "props": {"source": "tickets"}, "children": []}
+        ],
+    }
+    ctx = _make_ctx(pages=[page], sources_data={"tickets": []})
+    payload = await build_bootstrap_payload(ctx, "/tickets", _make_user("alice"))
+
+    assert payload["component_tree_ir"]["slug"] == "tickets"
+    assert payload["component_tree_ir"]["children"][0]["type"] == "data_table"
+
+
+@pytest.mark.asyncio
+async def test_payload_includes_principal_context():
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {"name": "X", "slug": "x", "role": "alice", "children": []}
+    ctx = _make_ctx(pages=[page])
+    user = _make_user("alice", scopes=("x.read", "x.write"))
+    payload = await build_bootstrap_payload(ctx, "/x", user)
+
+    pc = payload["principal_context"]
+    assert pc["id"] == "alice"
+    assert pc["display_name"] == "Alice"
+    assert pc["is_anonymous"] is False
+    assert set(pc["scopes"]) == {"x.read", "x.write"}
+    assert pc["preferences"]["theme"] == "auto"
+
+
+@pytest.mark.asyncio
+async def test_payload_loads_data_for_each_data_source():
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {
+        "name": "Mixed", "slug": "mixed", "role": "alice",
+        "children": [
+            {"type": "data_table", "props": {"source": "tickets"}, "children": []},
+            {"type": "chat", "props": {"source": "messages"}, "children": []},
+        ],
+    }
+    ctx = _make_ctx(
+        pages=[page],
+        sources_data={
+            "tickets": [{"id": 1, "title": "Bug"}],
+            "messages": [{"id": 1, "body": "Hi"}],
+        },
+    )
+    payload = await build_bootstrap_payload(ctx, "/mixed", _make_user("alice"))
+
+    assert payload["bound_data"]["tickets"] == [{"id": 1, "title": "Bug"}]
+    assert payload["bound_data"]["messages"] == [{"id": 1, "body": "Hi"}]
+
+
+@pytest.mark.asyncio
+async def test_payload_subscriptions_for_each_data_source():
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {
+        "name": "X", "slug": "x", "role": "alice",
+        "children": [
+            {"type": "data_table", "props": {"source": "tickets"}, "children": []},
+        ],
+    }
+    ctx = _make_ctx(pages=[page], sources_data={"tickets": []})
+    payload = await build_bootstrap_payload(ctx, "/x", _make_user("alice"))
+
+    # Subscriptions are per-data-source, prefix-style — clients can
+    # subscribe to "content.tickets" to catch every CRUD event for
+    # that content type.
+    assert "content.tickets" in payload["subscriptions_to_open"]
+
+
+# ── Path resolution ──
+
+@pytest.mark.asyncio
+async def test_path_with_leading_slash_resolves():
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {"name": "X", "slug": "x", "role": "alice", "children": []}
+    ctx = _make_ctx(pages=[page])
+    payload = await build_bootstrap_payload(ctx, "/x", _make_user("alice"))
+    assert payload["component_tree_ir"]["slug"] == "x"
+
+
+@pytest.mark.asyncio
+async def test_path_without_leading_slash_resolves():
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {"name": "X", "slug": "x", "role": "alice", "children": []}
+    ctx = _make_ctx(pages=[page])
+    payload = await build_bootstrap_payload(ctx, "x", _make_user("alice"))
+    assert payload["component_tree_ir"]["slug"] == "x"
+
+
+@pytest.mark.asyncio
+async def test_unknown_path_returns_none():
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {"name": "X", "slug": "x", "role": "alice", "children": []}
+    ctx = _make_ctx(pages=[page])
+    payload = await build_bootstrap_payload(ctx, "/nonexistent", _make_user("alice"))
+    assert payload is None
+
+
+# ── Role-scoped page resolution ──
+
+@pytest.mark.asyncio
+async def test_role_scoped_page_picks_user_role_variant():
+    """Two pages sharing a slug differentiated by role — the
+    builder picks the one matching the user's role."""
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    pages = [
+        {"name": "Home", "slug": "home", "role": "alice",
+         "children": [{"type": "text", "props": {"value": "alice-home"}, "children": []}]},
+        {"name": "Home", "slug": "home", "role": "Anonymous",
+         "children": [{"type": "text", "props": {"value": "anon-home"}, "children": []}]},
+    ]
+    ctx = _make_ctx(pages=pages)
+
+    payload_alice = await build_bootstrap_payload(ctx, "/home", _make_user("alice"))
+    assert payload_alice["component_tree_ir"]["children"][0]["props"]["value"] == "alice-home"
+
+    payload_anon = await build_bootstrap_payload(
+        ctx, "/home",
+        _make_user("anonymous", anonymous=True, scopes=()),
+    )
+    # The Anonymous-role page should match
+    assert payload_anon["component_tree_ir"]["children"][0]["props"]["value"] == "anon-home"
+
+
+@pytest.mark.asyncio
+async def test_role_unmatched_page_returns_none():
+    """Slug exists but no page matches the user's role — return
+    None so the endpoint can 404."""
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {"name": "Admin", "slug": "admin", "role": "admin", "children": []}
+    ctx = _make_ctx(pages=[page])
+    payload = await build_bootstrap_payload(ctx, "/admin", _make_user("alice"))
+    assert payload is None
+
+
+# ── Anonymous principal ──
+
+@pytest.mark.asyncio
+async def test_anonymous_user_builds_principal_context_correctly():
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {"name": "Public", "slug": "public", "role": "Anonymous", "children": []}
+    ctx = _make_ctx(pages=[page])
+    user = _make_user("anonymous", anonymous=True, scopes=("public.view",))
+    payload = await build_bootstrap_payload(ctx, "/public", user)
+
+    pc = payload["principal_context"]
+    assert pc["is_anonymous"] is True
+    assert pc["scopes"] == ["public.view"]
+
+
+# ── Form reference lists ──
+
+@pytest.mark.asyncio
+async def test_form_reference_content_loaded_into_bound_data():
+    """A form's field_input with reference_content (e.g., the
+    target content has a foreign-key-shaped reference) should pull
+    the referenced content's records into bound_data so the form
+    UI has the dropdown options."""
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {
+        "name": "Create Ticket", "slug": "create-ticket", "role": "alice",
+        "children": [
+            {
+                "type": "form",
+                "props": {"target": "tickets"},
+                "children": [
+                    {"type": "field_input",
+                     "props": {"reference_content": "users", "field": "assignee"},
+                     "children": []},
+                ],
+            },
+        ],
+    }
+    ctx = _make_ctx(
+        pages=[page],
+        sources_data={
+            "users": [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}],
+        },
+    )
+    payload = await build_bootstrap_payload(ctx, "/create-ticket", _make_user("alice"))
+
+    assert "users" in payload["bound_data"]
+    assert len(payload["bound_data"]["users"]) == 2

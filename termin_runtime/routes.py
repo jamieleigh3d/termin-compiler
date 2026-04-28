@@ -41,6 +41,7 @@ from .preferences import (
     set_theme_preference,
 )
 from .presentation_bundles import register_presentation_bundle_endpoint
+from .bootstrap import register_page_data_endpoint
 
 
 # v0.9 Phase 2: cross-cutting helpers that wrap ctx.storage with the
@@ -1028,3 +1029,10 @@ def register_runtime_endpoints(app, ctx: RuntimeContext):
     # providers. termin.js fetches this at boot to load registered
     # provider bundles and bind their per-contract render functions.
     register_presentation_bundle_endpoint(app, ctx)
+
+    # v0.9 Phase 5b.4 B' plumbing: page-data endpoint for SPA
+    # navigation. Per the Spectrum-provider design Q2 (B' = server-
+    # authoritative + JS-as-renderer), the client fetches each page's
+    # bootstrap JSON via this endpoint instead of doing a full HTML
+    # round-trip. Auth is identical to a regular page request.
+    register_page_data_endpoint(app, ctx)
