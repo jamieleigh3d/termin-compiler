@@ -41,7 +41,11 @@ from .preferences import (
     set_theme_preference,
 )
 from .presentation_bundles import register_presentation_bundle_endpoint
-from .bootstrap import register_page_data_endpoint, register_action_endpoint
+from .bootstrap import (
+    register_page_data_endpoint,
+    register_action_endpoint,
+    register_shell_endpoint,
+)
 
 
 # v0.9 Phase 2: cross-cutting helpers that wrap ctx.storage with the
@@ -1043,3 +1047,10 @@ def register_runtime_endpoints(app, ctx: RuntimeContext):
     # to the existing CRUD / transition / compute paths is the
     # follow-on slice.
     register_action_endpoint(app, ctx)
+
+    # v0.9 Phase 5b.4 B' plumbing: HTML shell endpoint. Returns
+    # the minimal SPA shell with embedded bootstrap JSON for a
+    # given path. Used for dev / provider-validation today;
+    # flipping the production page routes to this in place of
+    # SSR-composited HTML is the follow-on slice.
+    register_shell_endpoint(app, ctx)

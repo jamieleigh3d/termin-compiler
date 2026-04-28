@@ -46,12 +46,14 @@ Trust-plane invariants per BRD #2 + BRD #3:
 
 from __future__ import annotations
 
-from typing import Optional
+import json
+from typing import Iterable, Optional
 
 from fastapi import HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from .confidentiality import redact_records
+from .presentation_bundles import collect_csr_bundles
 from .providers import QueryOptions
 
 
@@ -324,3 +326,119 @@ def register_page_data_endpoint(app, ctx) -> None:
                 detail=f"No page resolves for path {path!r}",
             )
         return JSONResponse(content=payload)
+
+
+# ── HTML shell mode ──
+
+_SHELL_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<link rel="stylesheet" href="/runtime/termin.css">
+{provider_styles}
+</head>
+<body>
+<div id="termin-root"></div>
+<script>window.__termin_bootstrap = {bootstrap_json};</script>
+<script src="/runtime/termin.js" defer></script>
+{provider_scripts}
+</body>
+</html>
+"""
+
+
+def _safe_inline_json(payload: dict) -> str:
+    """Serialize `payload` for inlining inside a `<script>` tag.
+
+    The JSON encoding escapes `</script>` to `<\\/script>` so a
+    malicious record value containing `</script><script>...`
+    can't break out of the surrounding script block. Forward
+    slash escaping is JSON-legal and is the standard XSS-hardening
+    pattern for inline-JSON-in-HTML.
+    """
+    raw = json.dumps(payload, ensure_ascii=True, default=str)
+    return raw.replace("</", r"<\/")
+
+
+def build_shell_html(
+    payload: dict,
+    bundle_urls: Iterable[str] = (),
+    page_title: str = "",
+    style_urls: Iterable[str] = (),
+) -> str:
+    """Build the B'-mode HTML shell.
+
+    Per Spectrum-provider design Q2: at first page load the
+    runtime emits a minimal HTML response containing
+    `<div id="termin-root">`, an embedded
+    `<script>window.__termin_bootstrap = {...}</script>` data
+    island, and `<script>` tags for termin.js plus each provider
+    bundle. The provider's bundle reads the bootstrap data and
+    renders the page client-side from there.
+
+    Args:
+        payload: the bootstrap dict from `build_bootstrap_payload`.
+        bundle_urls: iterable of provider-bundle script URLs to
+            load (typically from `collect_csr_bundles`).
+        page_title: <title> value. Defaults to "Termin App".
+        style_urls: iterable of provider stylesheet URLs to load
+            via `<link rel="stylesheet">`.
+
+    Returns: the complete HTML document as a string.
+    """
+    title = page_title or "Termin App"
+    bootstrap_json = _safe_inline_json(payload)
+    provider_scripts = "\n".join(
+        f'<script src="{url}" defer></script>'
+        for url in bundle_urls if url
+    )
+    provider_styles = "\n".join(
+        f'<link rel="stylesheet" href="{url}">'
+        for url in style_urls if url
+    )
+    return _SHELL_TEMPLATE.format(
+        title=title,
+        bootstrap_json=bootstrap_json,
+        provider_scripts=provider_scripts,
+        provider_styles=provider_styles,
+    )
+
+
+def register_shell_endpoint(app, ctx) -> None:
+    """Register `GET /_termin/shell?path=<path>` on `app`.
+
+    Returns the B'-mode HTML shell for the given path. Used for
+    dev / provider-validation today; flipping the production page
+    routes to use this in place of SSR-composited HTML is the
+    follow-on slice (lands once the new Spectrum bundle is ready
+    to render the shell's bootstrap payload).
+    """
+
+    @app.get("/_termin/shell")
+    async def termin_shell(request: Request, path: str = ""):
+        if not path:
+            raise HTTPException(
+                status_code=422,
+                detail="Required query parameter `path` is missing",
+            )
+        user = ctx.get_current_user(request)
+        payload = await build_bootstrap_payload(ctx, path, user)
+        if payload is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No page resolves for path {path!r}",
+            )
+
+        bundles = collect_csr_bundles(
+            bound_providers=getattr(ctx, "presentation_providers", []),
+            deploy_config=getattr(ctx, "deploy_config", {}) or {},
+        )
+        bundle_urls = [b["url"] for b in bundles if b.get("url")]
+        page_title = (
+            payload.get("component_tree_ir", {}).get("name", "")
+            or ctx.ir.get("name", "Termin App")
+        )
+        html = build_shell_html(payload, bundle_urls, page_title=page_title)
+        return HTMLResponse(content=html)
