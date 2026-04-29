@@ -278,7 +278,6 @@ _SHELL_TEMPLATE = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>
-<link rel="stylesheet" href="/runtime/termin.css">
 {provider_styles}
 </head>
 <body>
@@ -289,6 +288,14 @@ _SHELL_TEMPLATE = """<!DOCTYPE html>
 </body>
 </html>
 """
+# v0.9 Phase 5b.4 B' loop: the shell DOES NOT load /runtime/termin.css.
+# That stylesheet ships the SSR-Tailwind pipeline's typography
+# (h1/h2/etc. with `color: var(--t-text)`, etc.) which leaks into
+# the bundle's Spectrum-rendered tree and fights for the same
+# elements. The shell stays minimal — termin.js for the WebSocket
+# multiplexer + Termin global, plus whatever provider stylesheets
+# the bundle injects on its own. SSR pages still load
+# /runtime/termin.css normally; this template is shell-only.
 
 
 def _safe_inline_json(payload: dict) -> str:

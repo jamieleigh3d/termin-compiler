@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "termin-spectrum-warehouse",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "termin.cli",
+        "serve",
+        "warehouse.termin.pkg",
+        "--deploy",
+        "examples-dev/hello_spectrum.deploy.json",
+        "--port",
+        "8765"
+      ],
+      "port": 8765
+    }
+  ]
+}
