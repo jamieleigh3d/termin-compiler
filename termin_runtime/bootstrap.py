@@ -219,6 +219,11 @@ async def build_bootstrap_payload(
 
     subscriptions = sorted(f"content.{src}" for src in sources)
 
+    # v0.9 Phase 5b.4 0.2: pre-evaluate row_action visibility per row
+    # so CSR providers don't render unauthorized buttons. The runtime
+    # owns the trust plane; bundle just renders what's allowed.
+    _attach_visible_actions(page, bound_data, user, ctx)
+
     return {
         "component_tree_ir": page,
         "bound_data": bound_data,
@@ -226,6 +231,111 @@ async def build_bootstrap_payload(
         "subscriptions_to_open": subscriptions,
         "app_chrome": _build_app_chrome(ctx, user),
     }
+
+
+def _attach_visible_actions(
+    page_node: dict, bound_data: dict, user: dict, ctx,
+) -> None:
+    """Walk every data_table in `page_node`, evaluate each row's
+    visible_actions, and attach the resulting list to a synthetic
+    `__visible_actions` field on each row in `bound_data`.
+
+    The shape:
+      bound_data["<source>"][i]["__visible_actions"] = ["Edit", "Approve"]
+      (label-keyed; CSR providers filter their per-row buttons by label)
+
+    Three action kinds emit `visible_when`:
+      * delete → `'<scope>' in identity.scopes`
+      * edit   → `'<scope>' in identity.scopes`
+      * transition → `.state.canTransition('<machine>', '<target>')`
+
+    For scope-based actions, visibility is constant per-(table,user);
+    we still iterate per-row so the output shape stays uniform. For
+    transition actions, visibility depends on the row's current state
+    in the named state machine + the user's scope on that transition,
+    looked up in `ctx.sm_lookup`.
+
+    Actions without `visible_when` (defensive — older IR shapes) are
+    treated as always-visible.
+    """
+    user_scopes = set(user.get("scopes", []) or [])
+    sm_lookup = getattr(ctx, "sm_lookup", {}) if ctx is not None else {}
+
+    def _walk(node: dict) -> None:
+        if not isinstance(node, dict):
+            return
+        if node.get("type") == "data_table":
+            source = node.get("props", {}).get("source", "")
+            row_actions = node.get("props", {}).get("row_actions", []) or []
+            rows = bound_data.get(source) if source else None
+            if isinstance(rows, list) and row_actions:
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    row["__visible_actions"] = _visible_actions_for_row(
+                        row_actions, row, user_scopes, sm_lookup, source,
+                    )
+        for child in node.get("children") or []:
+            _walk(child)
+
+    _walk(page_node)
+
+
+def _visible_actions_for_row(
+    row_actions: list, row: dict, user_scopes: set,
+    sm_lookup: dict, content_name: str,
+) -> list:
+    """Per-row visibility evaluator. See `_attach_visible_actions`
+    for context. Returns the list of action labels visible for this
+    (row, user) pair."""
+    visible: list = []
+    sm_list = sm_lookup.get(content_name, []) if content_name else []
+
+    for action in row_actions:
+        if not isinstance(action, dict):
+            continue
+        props = action.get("props", {}) or {}
+        label = props.get("label", "") or ""
+        kind = props.get("action", "transition")
+
+        if kind in ("delete", "edit"):
+            required = props.get("required_scope") or ""
+            if not required or required in user_scopes:
+                visible.append(label)
+            continue
+
+        if kind == "transition":
+            machine_name = props.get("machine_name", "") or ""
+            target = props.get("target_state", "") or ""
+            # Find the matching state machine; legacy single-SM
+            # apps may have machine_name="" so fall through to the
+            # first declared SM in that case.
+            sm = next(
+                (m for m in sm_list if m.get("machine_name") == machine_name),
+                None,
+            )
+            if sm is None and not machine_name and sm_list:
+                sm = sm_list[0]
+            if sm is None:
+                continue
+            current_state = row.get(
+                sm.get("column", "status"), sm.get("initial", "")
+            )
+            transitions = sm.get("transitions", {}) or {}
+            key = (current_state, target)
+            if key not in transitions:
+                continue
+            req = transitions.get(key) or ""
+            if not req or req in user_scopes:
+                visible.append(label)
+            continue
+
+        # Unknown action kind without visible_when — show by default.
+        # The runtime still gates the actual dispatch, so this is
+        # safe; visible-but-error UX is better than missing button.
+        visible.append(label)
+
+    return visible
 
 
 def _build_app_chrome(ctx, user: dict) -> dict:

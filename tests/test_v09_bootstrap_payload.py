@@ -400,3 +400,169 @@ async def test_app_chrome_anonymous_user_hides_username():
     payload = await build_bootstrap_payload(ctx, "/public", user)
     assert payload["app_chrome"]["is_anonymous"] is True
     assert payload["app_chrome"]["current_user_name"] == ""
+
+
+# ── v0.9 Phase 5b.4 0.2: row_action visibility (security trimming) ──
+
+@pytest.mark.asyncio
+async def test_visible_actions_filters_by_scope_for_delete():
+    """A delete action's `visible_when = "'<scope>' in identity.scopes"`
+    pre-evaluates to absent from `__visible_actions` when the user
+    lacks the scope. Bundle never sees an unauthorized button."""
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {
+        "name": "Tickets", "slug": "tickets", "role": "alice",
+        "children": [{
+            "type": "data_table",
+            "props": {
+                "source": "tickets",
+                "columns": [{"field": "title"}],
+                "row_actions": [
+                    {"type": "action_button", "props": {
+                        "label": "Delete", "action": "delete",
+                        "required_scope": "tickets.admin",
+                        "unavailable_behavior": "hide",
+                    }},
+                ],
+            },
+            "children": [],
+        }],
+    }
+    ctx = _make_ctx(
+        pages=[page],
+        sources_data={"tickets": [{"id": 1, "title": "First"}]},
+    )
+    # User does NOT have tickets.admin
+    user = _make_user("alice", scopes=("tickets.read",))
+    payload = await build_bootstrap_payload(ctx, "/tickets", user)
+    assert payload["bound_data"]["tickets"][0]["__visible_actions"] == []
+
+
+@pytest.mark.asyncio
+async def test_visible_actions_includes_authorized_action():
+    """The same delete action with the user holding the scope shows
+    up in `__visible_actions`."""
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {
+        "name": "Tickets", "slug": "tickets", "role": "alice",
+        "children": [{
+            "type": "data_table",
+            "props": {
+                "source": "tickets",
+                "columns": [{"field": "title"}],
+                "row_actions": [
+                    {"type": "action_button", "props": {
+                        "label": "Delete", "action": "delete",
+                        "required_scope": "tickets.admin",
+                    }},
+                ],
+            },
+            "children": [],
+        }],
+    }
+    ctx = _make_ctx(
+        pages=[page],
+        sources_data={"tickets": [{"id": 1, "title": "First"}]},
+    )
+    user = _make_user("alice", scopes=("tickets.admin",))
+    payload = await build_bootstrap_payload(ctx, "/tickets", user)
+    assert payload["bound_data"]["tickets"][0]["__visible_actions"] == ["Delete"]
+
+
+@pytest.mark.asyncio
+async def test_visible_actions_evaluates_transition_per_row():
+    """A transition action's visibility depends on the row's current
+    state in the named state machine + the user's scope on that
+    transition."""
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {
+        "name": "Orders", "slug": "orders", "role": "alice",
+        "children": [{
+            "type": "data_table",
+            "props": {
+                "source": "orders",
+                "columns": [{"field": "name"}, {"field": "status"}],
+                "row_actions": [
+                    {"type": "action_button", "props": {
+                        "label": "Approve", "action": "transition",
+                        "machine_name": "lifecycle",
+                        "target_state": "approved",
+                    }},
+                ],
+            },
+            "children": [],
+        }],
+    }
+    ctx = _make_ctx(
+        pages=[page],
+        sources_data={"orders": [
+            {"id": 1, "name": "A", "status": "pending"},
+            {"id": 2, "name": "B", "status": "approved"},
+        ]},
+    )
+    # Wire up the transition table. lifecycle: pending → approved
+    # requires "orders.approve". approved is terminal.
+    ctx.sm_lookup = {
+        "orders": [{
+            "machine_name": "lifecycle",
+            "column": "status",
+            "initial": "pending",
+            "transitions": {("pending", "approved"): "orders.approve"},
+        }],
+    }
+    user = _make_user("alice", scopes=("orders.approve",))
+    payload = await build_bootstrap_payload(ctx, "/orders", user)
+    rows = payload["bound_data"]["orders"]
+    # Row 1 (pending): the Approve button is reachable → visible.
+    assert rows[0]["__visible_actions"] == ["Approve"]
+    # Row 2 (already approved): no transition pending→approved
+    # applies; nothing visible.
+    assert rows[1]["__visible_actions"] == []
+
+
+@pytest.mark.asyncio
+async def test_visible_actions_transition_blocked_by_missing_scope():
+    """A transition the row's state allows but the user lacks the
+    scope for evaluates to NOT visible — same gate the runtime
+    enforces when the bundle dispatches the action server-side."""
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {
+        "name": "Orders", "slug": "orders", "role": "alice",
+        "children": [{
+            "type": "data_table",
+            "props": {
+                "source": "orders",
+                "columns": [{"field": "name"}],
+                "row_actions": [
+                    {"type": "action_button", "props": {
+                        "label": "Approve", "action": "transition",
+                        "machine_name": "lifecycle",
+                        "target_state": "approved",
+                    }},
+                ],
+            },
+            "children": [],
+        }],
+    }
+    ctx = _make_ctx(
+        pages=[page],
+        sources_data={"orders": [
+            {"id": 1, "name": "A", "status": "pending"},
+        ]},
+    )
+    ctx.sm_lookup = {
+        "orders": [{
+            "machine_name": "lifecycle",
+            "column": "status",
+            "initial": "pending",
+            "transitions": {("pending", "approved"): "orders.approve"},
+        }],
+    }
+    # User has orders.read but NOT orders.approve.
+    user = _make_user("alice", scopes=("orders.read",))
+    payload = await build_bootstrap_payload(ctx, "/orders", user)
+    assert payload["bound_data"]["orders"][0]["__visible_actions"] == []
