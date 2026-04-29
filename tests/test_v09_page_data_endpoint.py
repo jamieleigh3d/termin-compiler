@@ -124,9 +124,15 @@ def test_endpoint_returns_json_content_type(app_with_one_page):
         assert resp.headers["content-type"].startswith("application/json")
 
 
-def test_endpoint_role_unmatched_returns_404():
-    """A path whose only registered page is for a different role
-    returns 404 — same gate the auto-CRUD routes apply."""
+def test_endpoint_single_variant_renders_for_any_role():
+    """A path whose only registered page variant has a different role
+    still renders — auth enforcement lives in the data layer (CRUD
+    scope checks, confidentiality redaction), not in URL routing.
+    Same SSR-equivalent permissive stance the page route serves.
+
+    Replaces the prior `test_endpoint_role_unmatched_returns_404`
+    which captured the over-strict behavior fixed 2026-04-29.
+    """
     page = {"name": "Admin", "slug": "admin", "role": "admin", "children": []}
     ctx = StubCtx(pages=[page], user=_make_user("alice"))
     app = FastAPI()
@@ -134,4 +140,20 @@ def test_endpoint_role_unmatched_returns_404():
 
     with TestClient(app) as client:
         resp = client.get("/_termin/page-data", params={"path": "/admin"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["component_tree_ir"]["slug"] == "admin"
+
+
+def test_endpoint_unknown_slug_still_returns_404():
+    """Genuinely unknown slug (no page variant at all) → 404. The
+    relaxation in the role-mismatch case doesn't extend to unknown
+    paths."""
+    page = {"name": "Admin", "slug": "admin", "role": "admin", "children": []}
+    ctx = StubCtx(pages=[page], user=_make_user("alice"))
+    app = FastAPI()
+    register_page_data_endpoint(app, ctx)
+
+    with TestClient(app) as client:
+        resp = client.get("/_termin/page-data", params={"path": "/no-such-slug"})
         assert resp.status_code == 404

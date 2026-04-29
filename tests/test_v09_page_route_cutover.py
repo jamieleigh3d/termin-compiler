@@ -144,6 +144,58 @@ def test_hello_slug_serves_ssr_when_no_csr_provider(hello_pkg):
         assert "__termin_bootstrap" not in resp.text
 
 
+def test_role_restricted_page_serves_shell_to_anonymous_user(compiled_packages):
+    """Regression for the JL/WSL bug from 2026-04-29: a Chrome with a
+    stale `termin_role=Anonymous` cookie hit `/inventory_dashboard`
+    on warehouse.termin (which has role="warehouse clerk") and got
+    a 404 with body `{"detail": "No page resolves for path ..."}`.
+
+    The page-route cut-over had inherited `_resolve_page_for`'s
+    over-strict role match, which made the resolver stricter than
+    the SSR pipeline. SSR renders the page UI for any user (data
+    layer enforces auth). The cut-over now does the same — single-
+    variant slug returns the page regardless of role.
+
+    This test boots warehouse.termin (which has role-restricted
+    pages) with spectrum bound, hits each page slug as Anonymous,
+    and asserts shell HTML returns instead of 404.
+    """
+    pkg = compiled_packages.get("warehouse")
+    if pkg is None:
+        pytest.skip("warehouse fixture not in compiled_packages")
+    deploy = {
+        "version": "1.0.0",
+        "bindings": {
+            "presentation": {
+                "presentation-base": {"provider": "spectrum", "config": {}},
+            }
+        },
+    }
+    ir_json = json.dumps(extract_ir_from_pkg(pkg))
+    app = create_termin_app(ir_json, deploy_config=deploy, strict_channels=False)
+
+    with TestClient(app) as client:
+        # Explicitly set Anonymous cookie — replicate Chrome's stale
+        # cookie state from the JL session.
+        client.cookies.set("termin_role", "Anonymous")
+        # inventory_dashboard has role="warehouse clerk" — under the
+        # old strict matcher this returned 404. Under the new
+        # permissive matcher it serves the shell.
+        resp = client.get("/inventory_dashboard")
+        assert resp.status_code == 200, (
+            f"Expected 200 (shell HTML); got {resp.status_code}. "
+            f"Body: {resp.text[:200]}"
+        )
+        assert 'id="termin-root"' in resp.text
+        assert "__termin_bootstrap" in resp.text
+        # Same for the other role-restricted slugs.
+        for slug in ("add_product", "inventory_overview"):
+            r = client.get(f"/{slug}")
+            assert r.status_code == 200, (
+                f"/{slug}: expected 200, got {r.status_code}"
+            )
+
+
 def test_explicit_shell_url_still_works_alongside_cutover(hello_pkg):
     """`/_termin/shell?path=/hello` still serves the shell directly —
     the page-route cut-over doesn't replace it. Useful for dev /

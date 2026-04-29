@@ -63,11 +63,28 @@ def _resolve_page_for(ir: dict, path: str, user: dict) -> Optional[dict]:
     """Resolve a URL path to a single PageEntry IR for the
     requesting user.
 
-    Path matching is by slug (PageEntry.slug). When multiple pages
-    share a slug (role-scoped variants — e.g., one page for `alice`
-    and another with the same slug for `Anonymous`), the
-    user's-role variant wins. If no page matches the user's role
-    for that slug, returns None.
+    Path matching is by slug (PageEntry.slug). Two cases:
+
+      * **Single variant for a slug.** Return it regardless of the
+        page's `role` metadata — the page UI renders for any user,
+        and auth is enforced by the data layer (CRUD scope checks,
+        confidentiality redaction, ownership cascade). This matches
+        how the SSR pipeline already behaves: the page route serves
+        the rendered template to any user, and the data table is
+        empty when the user lacks the read scope. Anonymous users
+        landing on a role-restricted page see the page chrome and
+        an empty surface — they switch roles via the role-switcher.
+
+      * **Multiple variants of the same slug** (role-scoped variants —
+        e.g., a page for `Anonymous` AND a different page for `alice`
+        at the same slug). Pick the variant matching the user's role.
+        If no variant matches, fall back to the first one (so the
+        user at least sees something — same SSR-equivalent behavior).
+        A bug from 2026-04-29 had this branch return None; it caused
+        the page-route cut-over to 404 for any user whose role didn't
+        explicitly match the page's role metadata.
+
+    Returns None only when no page exists for this slug at all.
     """
     slug = path.lstrip("/").split("?", 1)[0].split("/", 1)[0]
     user_role = str(user.get("role", "")) if isinstance(user, dict) else ""
@@ -79,17 +96,21 @@ def _resolve_page_for(ir: dict, path: str, user: dict) -> Optional[dict]:
     ]
     if not matches:
         return None
-    # Prefer exact role match (case-insensitive). If none, fall
-    # back to the first variant — defensive for legacy IRs that
-    # don't role-scope pages.
+
+    # Single-variant fast path — auth is enforced downstream, not by
+    # which page we resolve. Match SSR behavior.
+    if len(matches) == 1:
+        return matches[0]
+
+    # Multi-variant — disambiguate by role. Prefer exact role match
+    # (case-insensitive); if none, fall back to the first variant
+    # rather than 404. The user still sees the page; the data layer
+    # filters access.
     for p in matches:
         page_role = str(p.get("role", ""))
         if page_role.lower() == user_role_lc:
             return p
-    # No role-matching variant — the user does not have access to
-    # this slug. None signals 404 / forbidden at the endpoint
-    # layer (the runtime's CRUD routes apply the same gate).
-    return None
+    return matches[0]
 
 
 # ── Data-source extraction ──

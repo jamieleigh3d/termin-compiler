@@ -218,15 +218,55 @@ async def test_role_scoped_page_picks_user_role_variant():
 
 
 @pytest.mark.asyncio
-async def test_role_unmatched_page_returns_none():
-    """Slug exists but no page matches the user's role — return
-    None so the endpoint can 404."""
+async def test_single_variant_slug_returns_page_regardless_of_role():
+    """Slug exists with exactly one page variant — return it
+    regardless of role. Auth is enforced downstream by CRUD scope
+    checks and confidentiality redaction; the page UI itself is
+    never the security boundary. Matches SSR pipeline behavior:
+    the page renders for any user, the data layer filters.
+
+    Replaces the prior `test_role_unmatched_page_returns_none`,
+    which asserted the over-strict behavior the page-route cut-over
+    revealed as a UX regression on 2026-04-29 (Chrome with a stale
+    `termin_role=Anonymous` cookie 404'd on `/inventory_dashboard`
+    that the SSR pipeline would have rendered).
+    """
     from termin_runtime.bootstrap import build_bootstrap_payload
 
     page = {"name": "Admin", "slug": "admin", "role": "admin", "children": []}
     ctx = _make_ctx(pages=[page])
     payload = await build_bootstrap_payload(ctx, "/admin", _make_user("alice"))
-    assert payload is None
+    assert payload is not None
+    assert payload["component_tree_ir"]["slug"] == "admin"
+
+
+@pytest.mark.asyncio
+async def test_multi_variant_role_unmatched_falls_back_to_first():
+    """Multiple variants for a slug, none matching the user's role —
+    fall back to the first variant rather than 404. The user still
+    sees the page; the data layer filters.
+
+    A multi-variant slug exists for genuine role-conditional rendering
+    (e.g., admin sees a different layout than viewer for the same
+    URL). When the user's role doesn't match any variant, returning
+    SOMETHING beats returning 404 — same SSR-equivalent permissive
+    stance as single-variant.
+    """
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    pages = [
+        {"name": "Home", "slug": "home", "role": "alice",
+         "children": [{"type": "text", "props": {"value": "alice-home"}, "children": []}]},
+        {"name": "Home", "slug": "home", "role": "bob",
+         "children": [{"type": "text", "props": {"value": "bob-home"}, "children": []}]},
+    ]
+    ctx = _make_ctx(pages=pages)
+    payload = await build_bootstrap_payload(ctx, "/home", _make_user("carol"))
+    assert payload is not None
+    # Falls back to the first variant (alice's). UI renders; data
+    # layer enforces — carol sees the structure but no data they
+    # don't have scope for.
+    assert payload["component_tree_ir"]["children"][0]["props"]["value"] == "alice-home"
 
 
 # ── Anonymous principal ──
