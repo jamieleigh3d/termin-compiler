@@ -942,30 +942,108 @@ async function navigate(path) {
   }
 }
 
+// Termin.action(payload) — client-side dispatcher to the existing
+// REST surface every conforming runtime implements per BRD #2 §11.
+// No /_termin/action server endpoint exists; the JS provider gets
+// a stable typed seam, the runtime gets zero new plumbing, and
+// alternate runtimes (e.g. Kazoo) inherit this for free.
+//
+// Payload shape:
+//   { kind: "create",     content, payload }
+//   { kind: "update",     content, id, payload }
+//   { kind: "delete",     content, id }
+//   { kind: "transition", content, id, machine_name, target_state }
+//   { kind: "compute",    compute_name, input }
+//
+// Returns: { ok, status, kind, data } on success; { ok: false,
+// status, kind, error } on HTTP / validation / network failure.
 async function action(payload) {
   if (!payload || typeof payload !== "object" || !payload.kind) {
     console.warn("[Termin] action: payload must be { kind: <string>, ... }");
-    return null;
+    return { ok: false, error: "payload must be an object with a `kind` field" };
   }
-  // State-changing actions go HTTP-POST so we get request-response
-  // semantics + the existing middleware + audit trail. The
-  // WebSocket path is reserved for low-latency telemetry — not
-  // wired here for v0.9.
-  try {
-    const resp = await fetch("/_termin/action", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!resp.ok) {
-      console.warn(`[Termin] action: ${resp.status} ${resp.statusText}`);
-      return { ok: false, status: resp.status };
+  const kind = payload.kind;
+  let url, method, body;
+
+  if (kind === "create") {
+    if (!payload.content) {
+      return { ok: false, kind, error: "`content` required for create" };
     }
-    return await resp.json();
+    url = `/api/v1/${encodeURIComponent(payload.content)}`;
+    method = "POST";
+    body = payload.payload || {};
+  } else if (kind === "update") {
+    if (!payload.content || payload.id == null) {
+      return { ok: false, kind, error: "`content` and `id` required for update" };
+    }
+    url = `/api/v1/${encodeURIComponent(payload.content)}/${encodeURIComponent(payload.id)}`;
+    method = "PUT";
+    body = payload.payload || {};
+  } else if (kind === "delete") {
+    if (!payload.content || payload.id == null) {
+      return { ok: false, kind, error: "`content` and `id` required for delete" };
+    }
+    url = `/api/v1/${encodeURIComponent(payload.content)}/${encodeURIComponent(payload.id)}`;
+    method = "DELETE";
+    body = null;
+  } else if (kind === "transition") {
+    if (!payload.content || payload.id == null
+        || !payload.machine_name || !payload.target_state) {
+      return {
+        ok: false, kind,
+        error: "`content`, `id`, `machine_name`, `target_state` required for transition",
+      };
+    }
+    // Generic transition endpoint (transitions.py) — 4 path segments
+    // after `/_transition`. Underscores in target_state survive URL
+    // encoding and are converted back to spaces server-side.
+    const targetSafe = String(payload.target_state).replace(/ /g, "_");
+    url = "/_transition/"
+      + encodeURIComponent(payload.content) + "/"
+      + encodeURIComponent(payload.machine_name) + "/"
+      + encodeURIComponent(payload.id) + "/"
+      + encodeURIComponent(targetSafe);
+    method = "POST";
+    body = null;
+  } else if (kind === "compute") {
+    if (!payload.compute_name) {
+      return { ok: false, kind, error: "`compute_name` required for compute" };
+    }
+    url = `/api/v1/compute/${encodeURIComponent(payload.compute_name)}`;
+    method = "POST";
+    body = payload.input || {};
+  } else {
+    console.warn(`[Termin] action: unknown kind ${kind}`);
+    return { ok: false, kind, error: `unknown kind: ${kind}` };
+  }
+
+  const init = {
+    method,
+    credentials: "same-origin",
+    headers: { "Accept": "application/json" },
+  };
+  if (body !== null) {
+    init.headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(body);
+  }
+
+  try {
+    const resp = await fetch(url, init);
+    let data = null;
+    const ct = resp.headers.get("content-type") || "";
+    if (ct.includes("application/json")) {
+      try { data = await resp.json(); } catch { data = null; }
+    }
+    if (!resp.ok) {
+      return {
+        ok: false, kind, status: resp.status,
+        error: (data && (data.detail || data.error)) || resp.statusText,
+      };
+    }
+    return { ok: true, kind, status: resp.status, data };
   } catch (err) {
     console.warn("[Termin] action failed:", err.message);
-    return { ok: false, error: err.message };
+    return { ok: false, kind, error: err.message };
   }
 }
 

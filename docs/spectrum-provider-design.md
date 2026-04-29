@@ -193,6 +193,58 @@ same origin hit the browser cache.
 
 ---
 
+## Q-extra. Action API surface — server endpoint vs JS-side dispatch
+
+**Decision: JS-side dispatch (no server endpoint).** `Termin.action(payload)`
+in `termin.js` translates each `kind` into the appropriate existing REST
+endpoint (CRUD on `/api/v1/<content>`, transition on `/_transition/...`,
+compute on `/api/v1/compute/...`). The runtime exposes no new
+`/_termin/action` route.
+
+**Rationale.** A short-lived `/_termin/action` endpoint shipped in 5b.4 B'
+plumbing as a typed validation facade with no dispatch logic. Two ways to
+satisfy the same goal (one stable JS-side API surface for providers):
+
+| | Server facade | JS-side dispatch (selected) |
+|---|---|---|
+| New runtime endpoint | yes (`/_termin/action`) | no |
+| Existing REST endpoints used | dispatched-to via facade | called directly |
+| Kazoo / second-runtime work | implement facade + dispatch table | zero (just BRD §11 surface) |
+| URL-convention coupling on provider bundle | none (facade abstracts) | none (`termin.js` abstracts) |
+
+The facade only earns its keep if it batches, multiplexes over WebSocket,
+or owns idempotency-key handling that the REST endpoints don't. None of
+those exist in v0.9 and none are planned. WebSocket low-latency optimistic
+flows are a possible future direction; if that becomes a concrete
+requirement, a dedicated WebSocket frame type lands then. Until then,
+JS-side dispatch is strictly less infrastructure for the same provider
+ergonomics.
+
+**Options considered:**
+
+- (A) Server facade `/_termin/action` — typed validation + dispatch on the
+  runtime. Provider-facing JS calls one URL.
+- (B) JS-side dispatch in `termin.js` — provider-facing JS still calls one
+  function; that function maps `kind` to existing REST endpoints
+  client-side. **Selected.**
+
+**Wire shape — `Termin.action(payload)`:**
+
+```js
+Termin.action({ kind: "create",     content, payload })            // POST   /api/v1/<content>
+Termin.action({ kind: "update",     content, id, payload })        // PUT    /api/v1/<content>/<id>
+Termin.action({ kind: "delete",     content, id })                 // DELETE /api/v1/<content>/<id>
+Termin.action({ kind: "transition", content, id, machine_name,
+                target_state })                                    // POST   /_transition/<content>/<machine>/<id>/<state>
+Termin.action({ kind: "compute",    compute_name, input })         // POST   /api/v1/compute/<compute_name>
+```
+
+Returns a `{ ok, status, kind, data }` (or `{ ok: false, kind, error }`)
+shape regardless of which endpoint was dispatched, so callers don't have
+to special-case per-kind response shapes.
+
+---
+
 ## Open implementation questions (smaller — autonomous-decidable)
 
 These don't need JL input but are recorded so the implementing Claude
@@ -206,11 +258,12 @@ documents the calls:
   position: keep the WebSocket multiplexer + subscription manager, replace
   the DOM-patching / hydration code with the Provider's renderer
   delegation.
-- **Action API surface** — `Termin.action(payload)` signature. Default
-  position: typed dispatch with `kind: "create" | "update" | "delete" |
-  "transition" | "compute"` + content-type + payload, delivered over
-  WebSocket for low-latency or HTTP POST for state changes that need
-  request-response semantics.
+- **Action API surface** — **RESOLVED 2026-04-29.** `Termin.action(payload)`
+  is **client-side dispatch** to the existing REST surface every conforming
+  runtime implements per BRD #2 §11. There is no `/_termin/action` server
+  endpoint — see "Q-extra" below. The JS provider gets a stable typed seam,
+  the runtime gets zero new plumbing, and alternate runtimes (e.g. Kazoo)
+  inherit it for free.
 - **Component composition for missing Spectrum equivalents** — `markdown`,
   `chat`, `metric`, possibly `nav-bar` need composition from Spectrum
   primitives. Each is a small design call when Spectrum work begins;
@@ -247,8 +300,9 @@ Runtime additions to support B'-mode rendering:
    the absence of `"ssr"` from a CSR-only provider).
 4. **`Termin.navigate(path)` and `Termin.action(payload)`** in termin.js.
    Navigate fetches `/_termin/page-data` and calls the provider's
-   registered shell renderer with the new tree. Action submits over
-   WebSocket (or HTTP POST for create/update/delete).
+   registered shell renderer with the new tree. Action dispatches
+   client-side to the existing REST surface (CRUD / transition /
+   compute) per Q-extra.
 5. **Conformance tests** for each piece.
 
 ### Phase 5b.4 Spectrum provider (separate repo, next-next)

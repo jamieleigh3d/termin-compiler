@@ -43,7 +43,6 @@ from .preferences import (
 from .presentation_bundles import register_presentation_bundle_endpoint
 from .bootstrap import (
     register_page_data_endpoint,
-    register_action_endpoint,
     register_shell_endpoint,
 )
 
@@ -1041,12 +1040,11 @@ def register_runtime_endpoints(app, ctx: RuntimeContext):
     # round-trip. Auth is identical to a regular page request.
     register_page_data_endpoint(app, ctx)
 
-    # v0.9 Phase 5b.4 B' plumbing: action endpoint. The provider's
-    # JS bundle submits typed action payloads here via
-    # Termin.action(...). Validation lands in this commit; dispatch
-    # to the existing CRUD / transition / compute paths is the
-    # follow-on slice.
-    register_action_endpoint(app, ctx)
+    # No action endpoint — `Termin.action(payload)` in termin.js
+    # dispatches client-side to the existing CRUD / transition /
+    # compute REST surface that BRD #2 §11 already standardizes.
+    # See docs/spectrum-provider-design.md "Q-extra (action API
+    # surface)" for the rationale.
 
     # v0.9 Phase 5b.4 B' plumbing: HTML shell endpoint. Returns
     # the minimal SPA shell with embedded bootstrap JSON for a
