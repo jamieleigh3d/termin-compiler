@@ -79,6 +79,129 @@ def _interpolate_env_vars(value):
     return value
 
 
+def _discover_external_providers(provider_registry, contract_registry) -> None:
+    """Discover providers exposed via Python entry points.
+
+    Third-party provider packages (termin-spectrum-provider,
+    termin-carbon-provider, etc.) advertise themselves via the
+    `termin.providers` entry-point group; the value is a function
+    `register_<product>(provider_registry, contract_registry)` that
+    matches the same shape used by termin_runtime.providers.builtins.
+
+    Per BRD §10, this is the same loading path as built-in providers.
+    The only difference is discovery — built-ins are explicitly imported
+    in `register_builtins`; externals are discovered at runtime so users
+    can install a provider package via pip without modifying core.
+
+    Entry-point registration in a provider package's setup.py:
+
+        entry_points={
+            "termin.providers": [
+                "spectrum = termin_spectrum:register_spectrum",
+            ],
+        }
+
+    Failures during a single provider's registration are logged but
+    do not abort startup — a broken optional provider should not take
+    down a service that doesn't depend on it. Deploy-time binding
+    resolution will then fail-closed if the misregistered product
+    appears in the active deploy config.
+    """
+    try:
+        from importlib.metadata import entry_points
+    except ImportError:  # pragma: no cover — py3.8+ ships this
+        return
+    try:
+        eps = entry_points(group="termin.providers")
+    except TypeError:  # pragma: no cover — pre-3.10 API
+        eps = entry_points().get("termin.providers", [])
+    for ep in eps:
+        try:
+            register_fn = ep.load()
+            register_fn(provider_registry, contract_registry)
+        except Exception as exc:
+            print(
+                f"[termin] WARNING: failed to load provider entry-point "
+                f"{ep.name!r}: {type(exc).__name__}: {exc}"
+            )
+
+
+def _populate_presentation_providers(
+    ctx, deploy_config: dict, provider_registry, contract_registry
+) -> None:
+    """Populate `ctx.presentation_providers` from deploy_config bindings.
+
+    Deploy-config bindings come in two shapes:
+
+      bindings.presentation.<contract>:        # per-contract
+        provider: "<product>"
+        config: {...}
+
+      presentation.bindings.<namespace-or-contract>:    # per-namespace
+        provider: "<product>"
+        config: {...}
+
+    Either is accepted. Namespace bindings (e.g. `presentation-base`)
+    expand to all contracts in that namespace; per-contract bindings
+    target one. Sub-contract bindings win over namespace bindings
+    when both apply (BRD #2 §11.3).
+
+    The function caches one provider instance per product across
+    contracts — calling the factory ten times with the same config
+    would create ten redundant instances.
+    """
+    from termin_runtime.providers.contracts import Category
+    from termin_runtime.providers.presentation_contract import (
+        PRESENTATION_BASE_CONTRACTS,
+    )
+
+    # Two locations where bindings might live, see BRD §11.2.
+    flat = (deploy_config.get("bindings", {}) or {}).get("presentation", {})
+    nested = (deploy_config.get("presentation", {}) or {}).get("bindings", {})
+    bindings = {**(nested or {}), **(flat or {})}
+    if not bindings:
+        return
+
+    instances: dict = {}  # product_name -> instance, cached across contracts
+
+    def _get_or_create(product: str, config: dict):
+        if product not in instances:
+            # Factory lookup: any registered (PRESENTATION, *, product)
+            # record's factory will do — they all wrap the same product.
+            for record in provider_registry.all_records():
+                if (record.category == Category.PRESENTATION
+                        and record.product_name == product):
+                    instances[product] = record.factory(config or {})
+                    break
+        return instances.get(product)
+
+    # Per-contract bindings first, then namespace fallback.
+    contract_bindings: dict[str, dict] = {}
+    for key, binding in bindings.items():
+        if not isinstance(binding, dict):
+            continue
+        if "." in key:
+            contract_bindings[key] = binding
+        else:
+            # Namespace binding — expand to base namespace's contracts.
+            # Only `presentation-base` is known until 5c contract
+            # packages land.
+            for short in PRESENTATION_BASE_CONTRACTS:
+                full = f"{key}.{short}"
+                contract_bindings.setdefault(full, binding)
+
+    # Materialize: one (contract, product, instance) triple per
+    # bound contract. Skip products that have no registered factory.
+    for contract, binding in contract_bindings.items():
+        product = binding.get("provider")
+        if not product:
+            continue
+        instance = _get_or_create(product, binding.get("config") or {})
+        if instance is None:
+            continue
+        ctx.presentation_providers.append((contract, product, instance))
+
+
 def _resolve_directive_sources(computes: list, deploy_config: dict) -> None:
     """v0.9 Phase 6c (BRD #3 §6.2): resolve deploy-config-sourced
     Directive and Objective text at application startup.
@@ -167,7 +290,16 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         (c.get("provider") or "") in ("llm", "ai-agent")
         for c in ir.get("computes", []))
     needs_deploy_config = has_external_channels or has_llm_computes
-    if deploy_config is None and needs_deploy_config:
+    # v0.9 Phase 5b.4 B' loop: presentation bindings live in deploy
+    # config too (e.g., bindings.presentation.<contract>.provider).
+    # The original `needs_deploy_config` gate predated that and only
+    # loaded the file when channels or LLMs required it — so apps
+    # with neither (like hello.termin) had their presentation
+    # bindings silently dropped. Now: load whenever a path is given,
+    # OR when channels/LLMs need it. The legacy auto-discovery of a
+    # sibling deploy.json (no explicit path) still keys off
+    # needs_deploy_config — apps that don't need it skip the lookup.
+    if deploy_config is None and (deploy_config_path or needs_deploy_config):
         app_snake = ir.get("name", "app").lower().replace(" ", "_").replace("-", "_")
         deploy_config = load_deploy_config(path=deploy_config_path, app_name=app_snake)
     elif deploy_config is None:
@@ -231,6 +363,26 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     ctx.contract_registry = ContractRegistry.default()
     ctx.provider_registry = ProviderRegistry()
     register_builtin_providers(ctx.provider_registry, ctx.contract_registry)
+
+    # v0.9 Phase 5b.4 B' loop: discover and register external provider
+    # packages via Python entry points. Sibling packages (e.g.,
+    # termin-spectrum-provider) declare an entry point under group
+    # `termin.providers` whose value is a `register_<product>` function;
+    # we load and call each one. Per BRD §10 same loading path as
+    # built-ins. A provider failing to register is logged but does
+    # not crash the app — a misconfigured optional provider should
+    # not take down a service that doesn't depend on it.
+    _discover_external_providers(ctx.provider_registry, ctx.contract_registry)
+    # v0.9 Phase 5b.4 B' loop: populate ctx.presentation_providers
+    # from deploy_config.bindings.presentation so bundle discovery
+    # (`/_termin/presentation/bundles`) and bundle serving (`/_termin/
+    # providers/<product>/bundle.js`) have something to read from.
+    # This is the slim B'-only cut-over of the deferred 5b.3 work
+    # (full per-render dispatch is still later).
+    _populate_presentation_providers(
+        ctx, deploy_config or {},
+        ctx.provider_registry, ctx.contract_registry,
+    )
     identity_binding = (deploy_config or {}).get("bindings", {}).get("identity", {})
     identity_product = identity_binding.get("provider") or "stub"
     identity_config = identity_binding.get("config") or {}

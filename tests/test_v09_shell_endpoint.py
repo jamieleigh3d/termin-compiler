@@ -83,6 +83,37 @@ def test_shell_html_includes_each_provider_bundle_url():
     assert "/runtime/providers/govuk/bundle.js" in html
 
 
+def test_shell_html_dedupes_repeated_bundle_urls():
+    """Regression: collect_csr_bundles returns one entry per
+    (contract, provider) — a single-bundle provider serving ten
+    contracts shows up ten times. The shell template must dedupe by
+    URL before injecting <script> tags; otherwise the bundle executes
+    multiple times in the browser, registering renderers redundantly
+    and noisy in DevTools.
+    """
+    payload = {"component_tree_ir": {}, "bound_data": {},
+               "principal_context": {}, "subscriptions_to_open": []}
+    spectrum_url = "/_termin/providers/spectrum/bundle.js"
+    html = build_shell_html(
+        payload,
+        bundle_urls=[spectrum_url] * 10,  # ten contracts, same URL
+    )
+    # Exactly one <script> tag for that URL — not ten.
+    assert html.count(f'src="{spectrum_url}"') == 1
+
+
+def test_shell_html_dedupes_but_preserves_distinct_urls():
+    """Dedup must preserve distinct URLs — a deploy with two providers
+    (e.g. spectrum + govuk) needs both bundles loaded."""
+    payload = {"component_tree_ir": {}, "bound_data": {},
+               "principal_context": {}, "subscriptions_to_open": []}
+    a = "/_termin/providers/spectrum/bundle.js"
+    b = "/_termin/providers/govuk/bundle.js"
+    html = build_shell_html(payload, bundle_urls=[a, a, b, b, a])
+    assert html.count(f'src="{a}"') == 1
+    assert html.count(f'src="{b}"') == 1
+
+
 def test_shell_html_includes_termin_root_div():
     payload = {"component_tree_ir": {}, "bound_data": {},
                "principal_context": {}, "subscriptions_to_open": []}

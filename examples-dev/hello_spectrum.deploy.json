@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "comment": "Hello-world deploy config that binds the Spectrum presentation provider. Pair with examples/hello.termin (or any small example) to exercise the v0.9 Phase 5b.4 B' loop end-to-end. Requires `pip install -e ../termin-spectrum-provider` and a built bundle (`npm install && npm run build` in that repo) for the loop to actually render in a browser.",
+  "bindings": {
+    "presentation": {
+      "presentation-base": {
+        "provider": "spectrum",
+        "config": {}
+      }
+    }
+  },
+  "presentation": {
+    "defaults": {
+      "theme_default": "auto"
+    }
+  }
+}

@@ -874,11 +874,21 @@ async function loadCsrBundles() {
     if (!resp.ok) return;
     const body = await resp.json();
     const bundles = (body && body.bundles) || [];
-    // Dedupe on URL — one bundle file may serve multiple contracts.
+    // Dedupe on URL — one bundle file may serve multiple contracts,
+    // and the B'-mode shell template already injects <script defer>
+    // tags for each bundle. Skip any URL that's already in the
+    // document so we don't double-execute the bundle.
     const seen = new Set();
     for (const entry of bundles) {
       if (!entry || !entry.url || seen.has(entry.url)) continue;
       seen.add(entry.url);
+      // Honor existing static script tags from the shell template.
+      // querySelector with an attribute-equals match — if the bundle
+      // is already there, skip the dynamic append.
+      if (document.querySelector(
+        `script[src="${entry.url.replace(/"/g, '\\"')}"]`)) {
+        continue;
+      }
       const script = document.createElement("script");
       script.src = entry.url;
       script.async = true;

@@ -311,9 +311,20 @@ def build_shell_html(
     """
     title = page_title or "Termin App"
     bootstrap_json = _safe_inline_json(payload)
+    # Dedupe by URL — the discovery list returns one entry per bound
+    # contract, so a single-bundle provider serving ten contracts
+    # appears ten times. The browser's script cache would handle the
+    # redundancy but the duplicate <script> tags execute the bundle
+    # multiple times, which is wasteful and confusing in DevTools.
+    seen_urls: set[str] = set()
+    deduped_urls: list[str] = []
+    for url in bundle_urls:
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            deduped_urls.append(url)
     provider_scripts = "\n".join(
         f'<script src="{url}" defer></script>'
-        for url in bundle_urls if url
+        for url in deduped_urls
     )
     provider_styles = "\n".join(
         f'<link rel="stylesheet" href="{url}">'

@@ -38,9 +38,12 @@ GOV.UK (5b.5) consume this scaffolding directly when they ship.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 from typing import Iterable, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 
 
 def collect_csr_bundles(
@@ -116,3 +119,70 @@ def register_presentation_bundle_endpoint(app: FastAPI, ctx) -> None:
                 deploy_config=getattr(ctx, "deploy_config", {}) or {},
             )
         }
+
+
+def _provider_bundle_path(provider) -> Optional[Path]:
+    """Resolve the on-disk path of a provider's CSR bundle.
+
+    The convention: the provider's package ships its built JS bundle as
+    `static/bundle.js` adjacent to the provider class's defining module.
+    This works for sibling-installed packages (pip install -e ...) and
+    wheel-installed ones identically — `Path(module.__file__).parent` is
+    the package directory either way.
+
+    Returns None if the bundle file isn't present (provider failed to
+    build, or shipped without it). The route surfaces that as a 404.
+    """
+    module_name = provider.__class__.__module__
+    module = sys.modules.get(module_name)
+    if module is None or not getattr(module, "__file__", None):
+        return None
+    package_dir = Path(module.__file__).resolve().parent
+    bundle = package_dir / "static" / "bundle.js"
+    return bundle if bundle.is_file() else None
+
+
+def register_provider_bundle_route(app: FastAPI, ctx) -> None:
+    """Register `GET /_termin/providers/{product}/bundle.js`.
+
+    Looks up the named product in `ctx.presentation_providers` and
+    serves its bundle from the provider package's `static/bundle.js`
+    file. The default `csr_bundle_url()` on Spectrum (and the
+    convention for any CSR-mode first-party provider) returns this
+    URL shape; the route resolves it without any per-provider routing
+    code.
+
+    Operators who CDN-host the bundle override `csr_bundle_url` via
+    `bindings.presentation.<contract>.config.bundle_url_override` —
+    the CDN URL appears in the bundle-discovery list, the browser
+    fetches it from the CDN, and this route is never called. The
+    route is the self-hosted path; the override is the CDN escape
+    hatch.
+    """
+
+    @app.get("/_termin/providers/{product}/bundle.js")
+    async def serve_provider_bundle(product: str):
+        for _contract, prod_name, provider in getattr(
+            ctx, "presentation_providers", []
+        ):
+            if prod_name == product:
+                path = _provider_bundle_path(provider)
+                if path is None:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=(
+                            f"Provider {product!r} is registered but its "
+                            f"bundle file is not built. Run the provider "
+                            f"package's build (e.g., `npm run build`) "
+                            f"and reload."
+                        ),
+                    )
+                return FileResponse(
+                    path,
+                    media_type="application/javascript",
+                    headers={"Cache-Control": "no-cache"},
+                )
+        raise HTTPException(
+            status_code=404,
+            detail=f"No registered presentation provider with product name {product!r}",
+        )

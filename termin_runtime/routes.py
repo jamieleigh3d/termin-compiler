@@ -40,7 +40,10 @@ from .preferences import (
     get_theme_preference,
     set_theme_preference,
 )
-from .presentation_bundles import register_presentation_bundle_endpoint
+from .presentation_bundles import (
+    register_presentation_bundle_endpoint,
+    register_provider_bundle_route,
+)
 from .bootstrap import (
     register_page_data_endpoint,
     register_shell_endpoint,
@@ -1032,6 +1035,12 @@ def register_runtime_endpoints(app, ctx: RuntimeContext):
     # providers. termin.js fetches this at boot to load registered
     # provider bundles and bind their per-contract render functions.
     register_presentation_bundle_endpoint(app, ctx)
+
+    # v0.9 Phase 5b.4 B' loop: serve provider bundle files from the
+    # provider package's `static/bundle.js`. Pairs with the discovery
+    # endpoint above — the discovery list points at this URL by
+    # default; CDN-overrides bypass it.
+    register_provider_bundle_route(app, ctx)
 
     # v0.9 Phase 5b.4 B' plumbing: page-data endpoint for SPA
     # navigation. Per the Spectrum-provider design Q2 (B' = server-
