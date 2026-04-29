@@ -143,8 +143,17 @@ function connectWebSocket() {
     updateIndicator(true);
     console.log("[Termin] WebSocket connected");
 
-    // Re-subscribe all active subscriptions
+    // Re-subscribe all active subscriptions. Legacy SSR-mode
+    // hydrators register in `state.subscriptions`; provider-mode
+    // bundles register in `_subscriptionHandlers` via Termin.subscribe.
+    // BOTH must be replayed on (re)connect — provider subscriptions
+    // typically race the WebSocket-open event during initial mount,
+    // so the in-band sendFrame inside _addSubscription is a no-op
+    // until this onopen fires.
     for (const [ch] of state.subscriptions) {
+      sendFrame("subscribe", ch, {});
+    }
+    for (const ch in _subscriptionHandlers) {
       sendFrame("subscribe", ch, {});
     }
   };
@@ -1074,10 +1083,16 @@ function _addSubscription(channel, handler) {
   if (!set) {
     set = new Set();
     _subscriptionHandlers[channel] = set;
-    // Register with the in-process WebSocket subscription state.
-    // Existing `subscribe(channel)` in this file talks to the
-    // runtime's WebSocket multiplexer.
-    subscribe(channel);
+    // Open the WebSocket-side subscription directly via sendFrame.
+    // We deliberately do NOT call the legacy `subscribe(channel)`
+    // here: that helper is the SSR-hydrator surface and stores
+    // callbacks in `state.subscriptions`. Calling it without a
+    // callback poisons that Set with `undefined`, which then
+    // throws "cb is not a function" when notifySubscribers fires
+    // for any matching channel. Provider-side subscriptions live
+    // in `_subscriptionHandlers` and dispatch through
+    // `_dispatchToProviderSubscriptions` instead.
+    sendFrame("subscribe", channel, {});
   }
   set.add(handler);
 }

@@ -127,3 +127,75 @@ def test_handleFrame_dispatches_to_provider_subscriptions():
         "so provider-registered Termin.subscribe handlers fire on WebSocket "
         "push events. See termin.js line ~200."
     )
+
+
+def test_addSubscription_does_not_poison_legacy_state():
+    """v0.9 Phase 5b.4 Spectrum chat regression: `_addSubscription`
+    (the public Termin.subscribe entry point) must NOT pipe through
+    the legacy `subscribe(channel)` helper without a callback. That
+    helper stores its second argument in `state.subscriptions` —
+    when called with `undefined` it pollutes the Set, and the next
+    `notifySubscribers` invocation does `cbs.forEach(cb => cb(...))`
+    which throws "cb is not a function" inside the WS message
+    dispatcher. Surfaced as "[Termin] Bad frame: cb is not a function"
+    spam any time a content.* push arrived.
+
+    Fix: send the WebSocket subscribe frame directly via sendFrame
+    inside `_addSubscription`, bypassing the legacy helper. The two
+    subscription stores (state.subscriptions for SSR hydrators,
+    _subscriptionHandlers for provider bundles) stay cleanly
+    separated. Caught 2026-04-29 while wiring Spectrum chat.
+    """
+    src = _js_source()
+    add_idx = src.find("function _addSubscription")
+    assert add_idx != -1, "_addSubscription should exist in termin.js"
+    end_idx = src.find("\nfunction ", add_idx + 1)
+    assert end_idx != -1
+    body = src[add_idx:end_idx]
+    # The legacy helper is `subscribe(channelId, callback)` — calling
+    # it with one arg is the regression. The new code uses sendFrame
+    # for the subscribe-frame side effect.
+    assert "sendFrame(\"subscribe\"" in body, (
+        "_addSubscription must use sendFrame to open the server-side "
+        "subscription, not the legacy `subscribe()` helper which "
+        "would pollute state.subscriptions with undefined callbacks."
+    )
+    # Belt-and-braces: explicit guard against the regression. The
+    # legacy single-arg `subscribe(channel);` call was the bug.
+    assert "    subscribe(channel);" not in body, (
+        "Don't call the legacy SSR-helper subscribe(channel) without "
+        "a callback — it stores undefined in state.subscriptions and "
+        "breaks notifySubscribers."
+    )
+
+
+def test_ws_onopen_replays_provider_subscriptions():
+    """v0.9 Phase 5b.4 Spectrum chat regression #2: when the
+    WebSocket (re)connects, `state.ws.onopen` must re-send subscribe
+    frames for BOTH `state.subscriptions` (legacy SSR hydrators)
+    AND `_subscriptionHandlers` (provider bundles).
+
+    Provider-registered subscriptions typically race the WebSocket
+    open event during initial mount: the React component's useEffect
+    runs before the WS finishes its handshake, so `_addSubscription`'s
+    in-band sendFrame call is a silent no-op (sendFrame returns null
+    when ws.readyState !== OPEN). Without the onopen replay loop,
+    those subscriptions never reach the server — the bundle subscribes,
+    but no pushes arrive. Caught 2026-04-29 with the same Spectrum
+    chat slice.
+    """
+    src = _js_source()
+    onopen_idx = src.find("state.ws.onopen")
+    assert onopen_idx != -1, "state.ws.onopen handler should exist"
+    end_idx = src.find("};", onopen_idx)
+    assert end_idx != -1
+    onopen_body = src[onopen_idx:end_idx]
+    # Both replay loops must be present.
+    assert "state.subscriptions" in onopen_body, (
+        "onopen must replay legacy SSR-hydrator subscriptions."
+    )
+    assert "_subscriptionHandlers" in onopen_body, (
+        "onopen must also replay provider-registered subscriptions, "
+        "or React-mounted Termin.subscribe handlers made before WS-open "
+        "are silently dropped."
+    )
