@@ -338,14 +338,77 @@ def build_shell_html(
     )
 
 
+async def render_shell_response(ctx, request, path: str) -> HTMLResponse:
+    """Build the B'-mode HTML shell for `path` as an HTMLResponse.
+
+    Shared between the explicit `/_termin/shell?path=...` endpoint and
+    the per-slug page route's CSR-only branch. Returns an HTMLResponse
+    on success; raises HTTPException(404) when no page resolves for
+    the given path. The caller is responsible for any 422 / auth /
+    method gating.
+
+    Pure runtime composition: builds the bootstrap payload, collects
+    bundle URLs (deduped by `build_shell_html`), reads the page title
+    from the IR, and renders the shell template.
+    """
+    user = ctx.get_current_user(request)
+    payload = await build_bootstrap_payload(ctx, path, user)
+    if payload is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No page resolves for path {path!r}",
+        )
+
+    bundles = collect_csr_bundles(
+        bound_providers=getattr(ctx, "presentation_providers", []),
+        deploy_config=getattr(ctx, "deploy_config", {}) or {},
+    )
+    bundle_urls = [b["url"] for b in bundles if b.get("url")]
+    page_title = (
+        payload.get("component_tree_ir", {}).get("name", "")
+        or ctx.ir.get("name", "Termin App")
+    )
+    html = build_shell_html(payload, bundle_urls, page_title=page_title)
+    return HTMLResponse(content=html)
+
+
+def page_should_use_shell(ctx) -> bool:
+    """True iff the bound provider for `presentation-base.page` is
+    CSR-only.
+
+    The rule: if the page-contract provider declares `csr` but not
+    `ssr` in its render_modes, the per-slug page route serves the B'
+    shell HTML instead of the SSR pipeline — the provider doesn't
+    implement SSR, so legacy Tailwind rendering would just be a
+    fallback the bundle then has to reconcile against.
+
+    When no provider is bound (default), or when the bound provider
+    supports both modes (Tailwind once it adds CSR), or when the
+    bound provider is SSR-only (GOV.UK), this returns False and the
+    SSR pipeline runs. Apps can still hit `/_termin/shell?path=...`
+    explicitly even in those cases.
+
+    The check is per-runtime, not per-page: today every `presentation-
+    base.page` contract resolves through the same provider. When 5b.3
+    full per-contract dispatch lands, this can extend to per-page-IR
+    inspection. For v0.9 5b.4 the namespace-or-contract binding model
+    keeps it simple.
+    """
+    for contract, _product, provider in getattr(ctx, "presentation_providers", []):
+        if contract == "presentation-base.page":
+            modes = getattr(provider, "render_modes", ())
+            return "csr" in modes and "ssr" not in modes
+    return False
+
+
 def register_shell_endpoint(app, ctx) -> None:
     """Register `GET /_termin/shell?path=<path>` on `app`.
 
-    Returns the B'-mode HTML shell for the given path. Used for
-    dev / provider-validation today; flipping the production page
-    routes to use this in place of SSR-composited HTML is the
-    follow-on slice (lands once the new Spectrum bundle is ready
-    to render the shell's bootstrap payload).
+    Returns the B'-mode HTML shell for the given path. The per-slug
+    page route ALSO serves this shell when the bound provider is
+    CSR-only — so this endpoint is mostly useful for dev /
+    provider-validation / explicit-shell-URL access. Both paths share
+    `render_shell_response`.
     """
 
     @app.get("/_termin/shell")
@@ -355,22 +418,4 @@ def register_shell_endpoint(app, ctx) -> None:
                 status_code=422,
                 detail="Required query parameter `path` is missing",
             )
-        user = ctx.get_current_user(request)
-        payload = await build_bootstrap_payload(ctx, path, user)
-        if payload is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No page resolves for path {path!r}",
-            )
-
-        bundles = collect_csr_bundles(
-            bound_providers=getattr(ctx, "presentation_providers", []),
-            deploy_config=getattr(ctx, "deploy_config", {}) or {},
-        )
-        bundle_urls = [b["url"] for b in bundles if b.get("url")]
-        page_title = (
-            payload.get("component_tree_ir", {}).get("name", "")
-            or ctx.ir.get("name", "Termin App")
-        )
-        html = build_shell_html(payload, bundle_urls, page_title=page_title)
-        return HTMLResponse(content=html)
+        return await render_shell_response(ctx, request, path)

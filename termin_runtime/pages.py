@@ -23,6 +23,7 @@ from .providers import Eq, QueryOptions
 from .confidentiality import redact_records
 from .presentation import build_nav_html, build_base_template, build_page_template, build_merged_page_template
 from .validation import evaluate_field_defaults
+from .bootstrap import page_should_use_shell, render_shell_response
 
 
 def extract_page_reqs(page: dict) -> dict:
@@ -131,6 +132,17 @@ def _register_page_get(app, ctx, page, slug, page_reqs, page_templates,
                        base_template, compute_js):
     @app.get(f"/{slug}", response_class=HTMLResponse)
     async def page_route(request: Request, _pg=page, _sl=slug, _reqs=page_reqs):
+        # v0.9 Phase 5b.4 B' loop: page-route cut-over. When the bound
+        # presentation provider for `presentation-base.page` is CSR-only
+        # (e.g., spectrum), the SSR-Tailwind pipeline below would render
+        # markup the bundle then has to reconcile React against — wasted
+        # work and a flash of wrong content. Short-circuit to the shell
+        # HTML in that case; the bundle's renderer takes over from the
+        # bootstrap payload. Per the page_should_use_shell contract this
+        # is a no-op when no CSR-only provider is bound (legacy default).
+        if page_should_use_shell(ctx):
+            return await render_shell_response(ctx, request, f"/{_sl}")
+
         user = ctx.get_current_user(request)
         q = request.query_params.get("q", "")
         db = await get_db(ctx.db_path)
