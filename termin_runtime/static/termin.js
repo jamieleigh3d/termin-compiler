@@ -201,6 +201,14 @@ function handleFrame(frame) {
     console.log("[Termin] Push:", ch, payload && payload.id ? `id=${payload.id}` : "");
     updateCache(ch, payload);
     notifySubscribers(ch, payload);
+    // v0.9 Phase 5b.4 B' loop: parallel dispatch to provider-
+    // registered subscription handlers (those registered via
+    // Termin.subscribe(channel, handler) from a CSR provider's
+    // bundle). The two paths exist side-by-side: legacy SSR mode
+    // hydrators run via notifySubscribers; B'-mode provider
+    // renderers run via _dispatchToProviderSubscriptions. A single
+    // page may use both during cut-over windows.
+    _dispatchToProviderSubscriptions(ch, payload);
   } else if (op === "response") {
     // Resolve pending request
     const pending = state.pendingRequests.get(ref);

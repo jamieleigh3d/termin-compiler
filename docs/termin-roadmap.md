@@ -434,10 +434,11 @@ cross-repo conformance, then Phase 7 capstone.
 | 5b.4 B' plumbing — bootstrap-payload + page-data + shell endpoints | ✅ done | client-side `Termin.action()` dispatch (no `/_termin/action` server endpoint, per Q-extra) |
 | 5b.4 B' loop wiring — entry-point discovery + bundle-serving + page-route cut-over | ✅ done | landed 2026-04-29; `pip install -e ../termin-spectrum-provider` is enough for `provider: "spectrum"` to resolve in deploy config; `/<slug>` serves shell when CSR-only provider bound |
 | 5b.4 Spectrum v0.1.0 — scaffold + `page` + `text` contracts | ✅ done | landed 2026-04-29; first time anything in Termin rendered through a CSR provider |
-| 5b.4 Spectrum data-table | ⬜ todo | **next slice (Phase A series)**; teaches Spectrum primitives integration + bound_data flow |
-| 5b.4 Spectrum form | ⬜ todo | **Phase A series, after data-table**; first contract exercising `Termin.action()` round-trip |
-| 5b.4 Spectrum markdown / metric / nav-bar / toast / banner | ⬜ todo | **Phase B parallel**, sub-agent friendly once data-table+form lock the pattern |
-| 5b.4 Spectrum chat | ⬜ todo | most complex; streaming integration; defer to its own slice |
+| 5b.4 Spectrum data-table | ✅ done | landed 2026-04-29; TableView + ActionButtonGroup + per-row Termin.action dispatch (transition + delete kinds; edit deferred to form-edit-modal slice). visible_when CEL evaluation is the largest deferred piece — every action renders unconditionally and the runtime returns 403/409 on invalid ones |
+| 5b.4 Spectrum form | ✅ done | landed 2026-04-29; Form + TextField + NumberField + Picker for text/number/currency/enum/state/reference input types. Submits via Termin.action({kind: "create"}) and reloads on success. Update mode + after_save navigation parsing deferred |
+| 5b.4 Spectrum styling polish + esbuild CSS-inject plugin | ✅ done | landed 2026-04-29; per-component CSS injection so Spectrum's macro-bundled stylesheets actually reach the document; `light-dark()` color-scheme propagation; shell template no longer loads `/runtime/termin.css` (was leaking SSR-Tailwind typography into the bundle) |
+| 5b.4 Spectrum markdown / metric / nav-bar / toast / banner | ✅ done | landed 2026-04-29; lightweight HTML renderers, ~0 KB bundle growth, 9 of 10 presentation-base contracts now live |
+| 5b.4 Spectrum chat | ⬜ todo | most complex; streaming integration with `compute.stream.<inv_id>.field.<name>` channels; the last placeholder. Defer to its own slice |
 | 5b.5 — GOV.UK SSR provider | ⬜ todo | **Phase B parallel**, separate repo (`termin-govuk-provider`); SSR-primary so simpler architecture |
 | 5c.1 — contract package YAML format + loader | 🟡 partial | format + `ContractPackageRegistry` shipped; full grammar + dispatch wiring incomplete |
 | 5c.2 — grammar table extension + verb collision detection | ⬜ todo | **Phase B parallel**, compiler-side, well-bounded for sub-agent |
@@ -458,8 +459,10 @@ cross-repo conformance, then Phase 7 capstone.
 
 | Item | Status | Notes |
 |---|---|---|
-| WebSocket → provider-subscription dispatch wiring | ⬜ todo | **Phase B parallel**, small contained slice in `termin-compiler` |
+| WebSocket → provider-subscription dispatch wiring | ✅ done | landed 2026-04-29; `handleFrame`'s push branch dispatches to both the legacy `notifySubscribers` (SSR hydrators) AND `_dispatchToProviderSubscriptions` (B' provider subscriptions). CSR providers' `Termin.subscribe(channel, handler)` now fires on real push events |
 | Page-route cut-over to shell when CSR-only provider bound | ✅ done | landed 2026-04-29 |
+| `_resolve_page_for` permissive role match | ✅ done | landed 2026-04-29; single-variant slugs return their page regardless of user role (auth enforced downstream); multi-variant slugs fall back to first when no role matches. Matches SSR pipeline's behavior — fixed a UX regression where stale `termin_role=Anonymous` cookies 404'd role-restricted pages |
+| Access-rule fallback fidelity (TatSu WSL bug) | ✅ done | landed 2026-04-29; `_parse_can_clause_fallback` extracts verbs from the `can` clause when TatSu falls back, replacing the hardcoded `verbs=["view"]` that silently rewrote `update`/`delete` rules as view-only on WSL |
 
 #### Recommended sequencing
 

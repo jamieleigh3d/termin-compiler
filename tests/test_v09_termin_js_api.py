@@ -96,3 +96,34 @@ def test_history_state_used_for_navigation():
     work without full page reloads."""
     src = _js_source()
     assert "pushState" in src or "history.pushState" in src
+
+
+def test_handleFrame_dispatches_to_provider_subscriptions():
+    """v0.9 Phase 5b.4 B' loop: when a WebSocket push arrives,
+    handleFrame must dispatch to BOTH the legacy notifySubscribers
+    surface (SSR-mode hydrators) AND the provider-subscription
+    surface (`_dispatchToProviderSubscriptions`). Without the
+    second call, B'-mode CSR providers' Termin.subscribe(...)
+    handlers never fire on push events — the WebSocket is open,
+    frames arrive, the bundle is silent.
+
+    Regression test for the wiring landed 2026-04-29 alongside the
+    Phase A spectrum slice. Greps the source rather than running
+    the JS in a browser; the pattern (push branch in handleFrame
+    calls `_dispatchToProviderSubscriptions`) is structural and
+    a textual check is enough.
+    """
+    src = _js_source()
+    # Find the handleFrame function and assert the dispatch call
+    # is present in its push branch.
+    handle_idx = src.find("function handleFrame")
+    assert handle_idx != -1, "handleFrame should exist in termin.js"
+    # Look at the next ~40 lines (push branch lives here)
+    end_idx = src.find("} else if (op === \"response\")", handle_idx)
+    assert end_idx != -1
+    push_branch = src[handle_idx:end_idx]
+    assert "_dispatchToProviderSubscriptions" in push_branch, (
+        "handleFrame's push branch must call _dispatchToProviderSubscriptions "
+        "so provider-registered Termin.subscribe handlers fire on WebSocket "
+        "push events. See termin.js line ~200."
+    )

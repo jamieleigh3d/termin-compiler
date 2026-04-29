@@ -39,34 +39,48 @@ from termin.ast_nodes import AccessRule
 
 # ── Direct fallback-helper tests ──
 
-@pytest.mark.parametrize("rest, expected_verbs, expected_content", [
-    ("view products", ["view"], "products"),
-    ("update products", ["update"], "products"),
-    ("delete products", ["delete"], "products"),
-    ("create products", ["create"], "products"),
+@pytest.mark.parametrize("rest, expected_verbs, expected_content, expected_their_own", [
+    ("view products", ["view"], "products", False),
+    ("update products", ["update"], "products", False),
+    ("delete products", ["delete"], "products", False),
+    ("create products", ["create"], "products", False),
     # Multi-verb forms that warehouse.termin uses on `products` (line 31).
-    ("create or delete products", ["create", "delete"], "products"),
-    ("create, update products", ["create", "update"], "products"),
+    ("create or delete products", ["create", "delete"], "products", False),
+    ("create, update products", ["create", "update"], "products", False),
     ("view, create, update, delete products",
-     ["view", "create", "update", "delete"], "products"),
+     ["view", "create", "update", "delete"], "products", False),
     ("create, update, or delete products",
-     ["create", "update", "delete"], "products"),
+     ["create", "update", "delete"], "products", False),
     # Multi-word content names — Termin allows spaces in content names
     # (e.g. "stock levels" in warehouse.termin line 38).
-    ("update stock levels", ["update"], "stock levels"),
-    ("create or update stock levels", ["create", "update"], "stock levels"),
+    ("update stock levels", ["update"], "stock levels", False),
+    ("create or update stock levels", ["create", "update"], "stock levels", False),
+    # `their own` row-filter qualifier (Phase 6a.3 / BRD #3 §3.4) —
+    # a regression caught on WSL 2026-04-29 night when the fallback
+    # signature didn't preserve the flag. Without these the
+    # ownership-cascade auth would silently degrade to scope-only.
+    ("view their own sessions", ["view"], "sessions", True),
+    ("update their own profiles", ["update"], "profiles", True),
+    ("view, update their own records",
+     ["view", "update"], "records", True),
+    ("delete their own things", ["delete"], "things", True),
     # Edge: empty rest defaults to view (safe behaviour, matches the
     # pre-bug fallback for malformed lines that have no verb at all).
-    ("", ["view"], ""),
+    ("", ["view"], "", False),
 ])
 def test_parse_can_clause_fallback_extracts_verbs(
-    rest: str, expected_verbs: list[str], expected_content: str
+    rest: str, expected_verbs: list[str], expected_content: str,
+    expected_their_own: bool,
 ):
-    verbs, content_name = _parse_can_clause_fallback(rest)
+    verbs, content_name, their_own = _parse_can_clause_fallback(rest)
     assert verbs == expected_verbs, (
         f"For rest={rest!r}, expected verbs {expected_verbs} but got {verbs}"
     )
     assert content_name == expected_content
+    assert their_own is expected_their_own, (
+        f"For rest={rest!r}, expected their_own={expected_their_own} "
+        f"but got {their_own}"
+    )
 
 
 def test_parse_can_clause_fallback_unknown_verb_falls_through():
@@ -78,10 +92,11 @@ def test_parse_can_clause_fallback_unknown_verb_falls_through():
     # The check function would have raised before reaching here, so
     # the fallback receives only well-formed input. Test the worst-
     # case shape: a token that's neither verb nor connector.
-    verbs, content_name = _parse_can_clause_fallback("xyz documents")
+    verbs, content_name, their_own = _parse_can_clause_fallback("xyz documents")
     # 'xyz' isn't a verb, so content starts at 'xyz' → no verbs found
     # → defensive ["view"].
     assert verbs == ["view"]
+    assert their_own is False
 
 
 # ── Full _parse_line fallback-path tests ──
