@@ -10,7 +10,7 @@
         "serve",
         "warehouse.termin.pkg",
         "--deploy",
-        "examples-dev/hello_spectrum.deploy.json",
+        "examples-dev/warehouse_spectrum.deploy.json",
         "--port",
         "8765"
       ],
@@ -25,7 +25,7 @@
         "serve",
         "agent_chatbot.termin.pkg",
         "--deploy",
-        "examples-dev/hello_spectrum.deploy.json",
+        "examples-dev/agent_chatbot.deploy.json",
         "--port",
         "8766"
       ],

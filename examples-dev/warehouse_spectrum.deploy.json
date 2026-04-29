@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "comment": "Warehouse deploy config that binds the Spectrum presentation provider. Pair with examples/warehouse.termin to exercise the data-table + form contracts via Spectrum's CSR shell. No compute or channel bindings — warehouse is presentation-only. Requires the spectrum provider package and bundle (see hello_spectrum.deploy.json's note).",
+  "bindings": {
+    "presentation": {
+      "presentation-base": {
+        "provider": "spectrum",
+        "config": {}
+      }
+    }
+  },
+  "presentation": {
+    "defaults": {
+      "theme_default": "auto"
+    }
+  }
+}

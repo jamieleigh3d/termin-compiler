@@ -1,0 +1,26 @@
+{
+  "version": "1.0.0",
+  "comment": "Agent-chatbot deploy config: Spectrum presentation + Anthropic agent provider for the `reply` compute. The Anthropic API key is sourced from the ANTHROPIC_API_KEY environment variable via deploy-config interpolation (see termin_runtime/app.py:_interpolate_env_vars). Without this binding the runtime skips the `reply` compute at startup and chat messages get no assistant reply.",
+  "bindings": {
+    "presentation": {
+      "presentation-base": {
+        "provider": "spectrum",
+        "config": {}
+      }
+    },
+    "compute": {
+      "reply": {
+        "provider": "anthropic",
+        "config": {
+          "model": "claude-haiku-4-5-20251001",
+          "api_key": "${ANTHROPIC_API_KEY}"
+        }
+      }
+    }
+  },
+  "presentation": {
+    "defaults": {
+      "theme_default": "auto"
+    }
+  }
+}
