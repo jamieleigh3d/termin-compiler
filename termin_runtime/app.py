@@ -159,6 +159,24 @@ def _populate_presentation_providers(
     flat = (deploy_config.get("bindings", {}) or {}).get("presentation", {})
     nested = (deploy_config.get("presentation", {}) or {}).get("bindings", {})
     bindings = {**(nested or {}), **(flat or {})}
+
+    # v0.9 Phase 5b.3: when no explicit binding exists for the
+    # presentation-base namespace, synthesize one to tailwind-default
+    # so the dispatch table is symmetric with the explicit-binding
+    # case. The legacy SSR Jinja path still drives actual page
+    # rendering — but downstream consumers (`page_should_use_shell`,
+    # the bundle-discovery endpoint, conformance manifests) read
+    # `ctx.presentation_providers` and benefit from a uniform shape
+    # whether or not the deploy config names a provider.
+    has_base_binding = (
+        "presentation-base" in bindings
+        or any(k.startswith("presentation-base.") for k in bindings)
+    )
+    if not has_base_binding:
+        bindings = {
+            **bindings,
+            "presentation-base": {"provider": "tailwind-default", "config": {}},
+        }
     if not bindings:
         return
 

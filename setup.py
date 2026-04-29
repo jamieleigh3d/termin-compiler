@@ -47,5 +47,19 @@ setup(
         "console_scripts": [
             "termin=termin.cli:main",
         ],
+        # v0.9 Phase 5b.3: register the first-party tailwind-default
+        # SSR presentation provider via the same `termin.providers`
+        # entry-point group external providers (e.g. termin-spectrum-
+        # provider) use. The shape mirrors that contract — termin_runtime
+        # discovers it via _discover_external_providers at app startup.
+        # Tailwind is also registered as a built-in via register_builtins;
+        # the registry's register() is overwrite-safe, so the double
+        # registration is harmless. Splitting it this way means a future
+        # operator who installs an alternative Tailwind plug-in can set
+        # the deploy config to bind that product instead, exercising the
+        # same pluggability surface Spectrum uses.
+        "termin.providers": [
+            "tailwind-default = termin_runtime.providers.builtins.presentation_tailwind_default:register_tailwind_default",
+        ],
     },
 )

@@ -156,14 +156,102 @@ def test_populate_skips_unregistered_products():
     assert ctx.presentation_providers == []
 
 
-def test_populate_no_bindings_is_a_noop():
-    """An empty deploy config leaves presentation_providers empty —
-    no surprise behavior; tailwind-default handles SSR via the
-    existing legacy renderer path."""
+def test_populate_no_bindings_synthesizes_tailwind_default():
+    """v0.9 Phase 5b.3: an empty deploy config (no presentation
+    bindings) now synthesizes a default `tailwind-default` binding for
+    the `presentation-base` namespace. This makes
+    `ctx.presentation_providers` symmetric with the explicit-binding
+    case — `page_should_use_shell` and the bundle-discovery endpoint
+    can read a uniform shape regardless of whether deploy config
+    names a provider.
+
+    Tailwind isn't registered in the fake registry above, so the
+    synthesized binding skips at the factory-lookup step; no triple
+    is emitted. With the real built-in registration in place
+    (register_builtins → register_tailwind_default), the populated
+    list contains all ten presentation-base.* contracts bound to
+    tailwind-default.
+    """
     registry, contracts, _ = _registry_with_fake_provider()
     ctx = _Ctx()
     _populate_presentation_providers(ctx, {}, registry, contracts)
+    # Fake registry has fake-spectrum but no tailwind-default →
+    # synthesized binding skips. The fan-out logic still ran.
     assert ctx.presentation_providers == []
+
+
+def test_populate_no_bindings_uses_real_tailwind_when_registered():
+    """When the real Tailwind builtin is registered (the production
+    case), the no-bindings synthesis populates ctx.presentation_providers
+    with all ten presentation-base contracts bound to tailwind-default.
+    """
+    from termin_runtime.providers.builtins.presentation_tailwind_default import (
+        register_tailwind_default,
+    )
+    contracts = ContractRegistry.default()
+    registry = ProviderRegistry()
+    register_tailwind_default(registry, contracts)
+
+    ctx = _Ctx()
+    _populate_presentation_providers(ctx, {}, registry, contracts)
+    bound_contracts = {c for c, _, _ in ctx.presentation_providers}
+    expected = {
+        f"presentation-base.{n}" for n in PRESENTATION_BASE_CONTRACTS
+    }
+    assert bound_contracts == expected
+    products = {p for _, p, _ in ctx.presentation_providers}
+    assert products == {"tailwind-default"}
+
+
+def test_populate_explicit_binding_overrides_default_synthesis():
+    """v0.9 Phase 5b.3: when deploy config DOES bind the
+    presentation-base namespace, the synthesis is skipped — the
+    explicit binding wins. Belt-and-braces against the synthesis
+    accidentally polluting deploy-config intent.
+    """
+    registry, contracts, instances = _registry_with_fake_provider()
+    ctx = _Ctx()
+    _populate_presentation_providers(
+        ctx,
+        {"bindings": {"presentation": {"presentation-base": {
+            "provider": "fake-spectrum", "config": {}}}}},
+        registry, contracts,
+    )
+    products = {p for _, p, _ in ctx.presentation_providers}
+    assert products == {"fake-spectrum"}, (
+        "Explicit binding to fake-spectrum should win over the "
+        "tailwind-default synthesis."
+    )
+
+
+def test_tailwind_default_declared_in_setup_entry_points():
+    """v0.9 Phase 5b.3 Tailwind-as-plug-in migration: tailwind-default
+    must be declared under the `termin.providers` entry-point group in
+    setup.py so it loads through the same discovery path Spectrum and
+    other third-party providers use. This is the structural assertion
+    that the migration landed; behavior is covered by the
+    `_uses_real_tailwind_when_registered` test above.
+    """
+    from pathlib import Path
+    setup_py = (
+        Path(__file__).parent.parent / "setup.py"
+    ).read_text(encoding="utf-8")
+    assert '"termin.providers"' in setup_py, (
+        "setup.py should declare a `termin.providers` entry-point group "
+        "so the tailwind-default first-party provider goes through the "
+        "same discovery path third-party providers (Spectrum) use."
+    )
+    assert "tailwind-default = " in setup_py, (
+        "setup.py should declare an entry-point named `tailwind-default` "
+        "pointing at register_tailwind_default."
+    )
+    assert (
+        "termin_runtime.providers.builtins.presentation_tailwind_default"
+        in setup_py
+    ), (
+        "Entry-point target should resolve to the existing built-in "
+        "registration function — no parallel implementation."
+    )
 
 
 def test_populate_alternate_top_level_shape():
