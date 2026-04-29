@@ -224,6 +224,86 @@ async def build_bootstrap_payload(
         "bound_data": bound_data,
         "principal_context": _principal_context_for(user),
         "subscriptions_to_open": subscriptions,
+        "app_chrome": _build_app_chrome(ctx, user),
+    }
+
+
+def _build_app_chrome(ctx, user: dict) -> dict:
+    """Assemble the page-chrome payload for B'-mode CSR providers.
+
+    The Tailwind SSR shell renders an app header with the app name,
+    nav links, a role select, and (when authenticated) a username
+    field. CSR providers can't reach into the runtime to fetch this
+    state per-render, so the bootstrap payload carries it here.
+
+    Shape:
+      app_name           — the application title displayed in the header
+      nav_items          — visible nav entries for this principal
+                           (filtered by `visible_to` role list)
+      available_roles    — role names the dev-mode role switcher offers,
+                           in the order they were declared (Anonymous
+                           first if present)
+      current_role       — the resolved role name for this request
+      current_user_name  — display name for the username entry; empty
+                           when anonymous (the field is hidden then)
+      is_anonymous       — convenience flag matching the SSR template's
+                           role-aware username-field visibility
+
+    The role switcher and username entry POST to `/set-role` (an
+    existing endpoint that sets `termin_role` / `termin_user_name`
+    cookies and 303s to /). The bundle reuses the same endpoint so
+    role state stays consistent across SSR and CSR mode.
+    """
+    role_name = user.get("role", "") if isinstance(user, dict) else ""
+    the_user = user.get("the_user") if isinstance(user, dict) else None
+    is_anonymous = (
+        bool(the_user.get("is_anonymous", True))
+        if isinstance(the_user, dict)
+        else True
+    )
+    user_name = (
+        str(the_user.get("display_name", ""))
+        if isinstance(the_user, dict) and not is_anonymous
+        else ""
+    )
+
+    # ctx.roles is an OrderedDict-shaped {role_name: [scopes...]} built
+    # at startup; iteration order matches declaration order in source,
+    # plus the synthesized "Anonymous" fallback.
+    available = list(getattr(ctx, "roles", {}) or {})
+
+    # Filter nav items by the principal's role. "all" passes; otherwise
+    # any token in `visible_to` that appears as a substring of the
+    # principal's role name passes — same rule the Tailwind SSR
+    # template uses (`{% if "<short>" in current_role %}`). This lets
+    # short tokens like "clerk" match "warehouse clerk" without
+    # forcing source authors to spell out full role names in the nav
+    # declaration.
+    nav_raw = ctx.ir.get("nav_items", []) if hasattr(ctx, "ir") else []
+    role_lc = (role_name or "").lower()
+    visible_nav: list[dict] = []
+    for item in nav_raw:
+        if not isinstance(item, dict):
+            continue
+        visible_to = item.get("visible_to") or ()
+        if "all" in visible_to or any(
+            t and t.lower() in role_lc for t in visible_to
+        ):
+            visible_nav.append({
+                "label": item.get("label", ""),
+                "page_slug": item.get("page_slug", ""),
+                "badge_content": item.get("badge_content"),
+            })
+
+    app_name = ctx.ir.get("name", "App") if hasattr(ctx, "ir") else "App"
+
+    return {
+        "app_name": app_name,
+        "nav_items": visible_nav,
+        "available_roles": available,
+        "current_role": role_name,
+        "current_user_name": user_name,
+        "is_anonymous": is_anonymous,
     }
 
 

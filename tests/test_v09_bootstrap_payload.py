@@ -319,3 +319,84 @@ async def test_form_reference_content_loaded_into_bound_data():
 
     assert "users" in payload["bound_data"]
     assert len(payload["bound_data"]["users"]) == 2
+
+
+# ── v0.9 Phase 5b.4 0.1: app_chrome (page-chrome metadata) ──
+
+@pytest.mark.asyncio
+async def test_payload_includes_app_chrome_metadata():
+    """The bootstrap payload must carry an `app_chrome` block so CSR
+    providers can render the page header (app name + nav + role
+    switcher + username entry) without re-fetching runtime state."""
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {"name": "Home", "slug": "home", "role": "alice", "children": []}
+    ctx = _make_ctx(pages=[page])
+    ctx.ir["name"] = "Demo App"
+    ctx.ir["nav_items"] = [
+        {"label": "Home", "page_slug": "home", "visible_to": ["all"]},
+        {"label": "Admin", "page_slug": "admin", "visible_to": ["alice"]},
+        {"label": "Other", "page_slug": "other", "visible_to": ["bob"]},
+    ]
+    ctx.roles = {"alice": ["x.read"], "bob": ["x.read"], "Anonymous": []}
+
+    user = _make_user("alice")
+    payload = await build_bootstrap_payload(ctx, "/home", user)
+
+    chrome = payload["app_chrome"]
+    assert chrome["app_name"] == "Demo App"
+    assert chrome["current_role"] == "alice"
+    assert chrome["current_user_name"] == "Alice"
+    assert chrome["is_anonymous"] is False
+    assert chrome["available_roles"] == ["alice", "bob", "Anonymous"]
+    # alice sees Home (visible_to=all) + Admin (alice in visible_to);
+    # not Other (only bob).
+    nav_labels = [n["label"] for n in chrome["nav_items"]]
+    assert nav_labels == ["Home", "Admin"]
+
+
+@pytest.mark.asyncio
+async def test_app_chrome_substring_matches_role_for_nav_visibility():
+    """Per the Tailwind SSR template's `"<token>" in current_role`
+    rule: a nav item visible_to a short token like "clerk" should
+    match a full role name like "warehouse clerk". Without this,
+    apps that declare nav `visible to clerk` lose those items when
+    Spectrum renders."""
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {"name": "Dash", "slug": "dash", "role": "warehouse clerk",
+            "children": []}
+    ctx = _make_ctx(pages=[page])
+    ctx.ir["nav_items"] = [
+        {"label": "Receive", "page_slug": "receive",
+         "visible_to": ["clerk", "manager"]},
+        {"label": "Hidden", "page_slug": "hidden",
+         "visible_to": ["executive"]},
+    ]
+    ctx.roles = {"warehouse clerk": [], "warehouse manager": [],
+                 "executive": [], "Anonymous": []}
+
+    user = _make_user("warehouse clerk")
+    payload = await build_bootstrap_payload(ctx, "/dash", user)
+    nav_labels = [n["label"] for n in payload["app_chrome"]["nav_items"]]
+    assert nav_labels == ["Receive"]
+
+
+@pytest.mark.asyncio
+async def test_app_chrome_anonymous_user_hides_username():
+    """When the principal is anonymous, the username entry is
+    redundant (the user has no display name to maintain). The chrome
+    block carries `is_anonymous=True` and `current_user_name=""` so
+    the UI can hide that field per the SSR template's behavior."""
+    from termin_runtime.bootstrap import build_bootstrap_payload
+
+    page = {"name": "Public", "slug": "public", "role": "Anonymous",
+            "children": []}
+    ctx = _make_ctx(pages=[page])
+    ctx.ir["nav_items"] = []
+    ctx.roles = {"Anonymous": []}
+
+    user = _make_user("anonymous", anonymous=True)
+    payload = await build_bootstrap_payload(ctx, "/public", user)
+    assert payload["app_chrome"]["is_anonymous"] is True
+    assert payload["app_chrome"]["current_user_name"] == ""

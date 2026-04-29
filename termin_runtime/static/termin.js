@@ -960,6 +960,7 @@ async function navigate(path) {
         payload.bound_data,
         payload.principal_context,
         payload.subscriptions_to_open,
+        payload.app_chrome,
       );
     } else {
       window.location.href = path;
