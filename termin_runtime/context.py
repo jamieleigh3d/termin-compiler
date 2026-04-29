@@ -108,6 +108,16 @@ class RuntimeContext:
     presentation_providers: list = field(default_factory=list)
     deploy_config: dict = field(default_factory=dict)
 
+    # v0.9 Phase 5c.1: registry of loaded contract packages keyed by
+    # namespace. Populated at app startup from
+    # `deploy_config["contract_packages"]` (list of YAML file paths).
+    # The two-pass compiler reads this when resolving `Using
+    # "<ns>.<contract>"` references; runtime contract-package dispatch
+    # (5c.3) reads it to map IR fragments to bound providers. None
+    # when no packages are loaded — typed as Optional to make the
+    # absent case unambiguous.
+    contract_package_registry: object | None = None
+
     # Callbacks set during init (avoid circular deps)
     run_event_handlers: Callable = None   # async (db, content_name, trigger, record)
     execute_compute: Callable = None      # async (comp, record, content_name, main_loop)

@@ -427,3 +427,151 @@ def test_airlock_components_fixture_loads_clean():
     assert "cosmic-orb" in contract_names
     assert "airlock-terminal" in contract_names
     assert "scenario-narrative" in contract_names
+
+
+# ── 5c.1-finish: deploy-config wired loader ──
+
+def test_load_contract_packages_attaches_registry_to_ctx(tmp_path):
+    """v0.9 Phase 5c.1-finish: when deploy config declares
+    contract_packages, the runtime helper loads them into a registry
+    attached at ctx.contract_package_registry. The two-pass compiler
+    (5c.2) and runtime contract-package dispatch (5c.3) read from
+    this registry — without it they have no way to resolve `Using
+    "<ns>.<contract>"` references at compile/render time.
+    """
+    from termin_runtime.app import _load_contract_packages
+
+    pkg_path = tmp_path / "demo.yaml"
+    pkg_path.write_text(textwrap.dedent("""
+        namespace: demo-components
+        version: 0.1.0
+        contracts:
+          - name: widget
+            source-verb: "Show a widget for <state-ref>"
+    """).strip(), encoding="utf-8")
+
+    class _Ctx:
+        contract_package_registry = None
+
+    ctx = _Ctx()
+    deploy_config = {"contract_packages": [str(pkg_path)]}
+    _load_contract_packages(ctx, deploy_config)
+    assert ctx.contract_package_registry is not None
+    assert "demo-components" in ctx.contract_package_registry.namespaces()
+
+
+def test_load_contract_packages_no_packages_is_noop(tmp_path):
+    """No contract_packages field → ctx.contract_package_registry
+    stays None. Apps using only presentation-base never invoke this
+    machinery; the code path must stay quiet for them.
+    """
+    from termin_runtime.app import _load_contract_packages
+
+    class _Ctx:
+        contract_package_registry = None
+
+    ctx = _Ctx()
+    _load_contract_packages(ctx, {})
+    assert ctx.contract_package_registry is None
+
+
+def test_load_contract_packages_resolves_relative_to_deploy_path(tmp_path):
+    """5c.1-finish: paths in deploy config resolve relative to the
+    deploy file's parent directory — the natural authoring layout
+    where contract_packages/ sits next to the deploy.json. Without
+    this, every operator would have to cd to the repo root before
+    starting the runtime.
+    """
+    from termin_runtime.app import _load_contract_packages
+
+    sub = tmp_path / "deploys"
+    sub.mkdir()
+    pkg_dir = sub / "contract_packages"
+    pkg_dir.mkdir()
+    (pkg_dir / "demo.yaml").write_text(textwrap.dedent("""
+        namespace: rel-demo
+        version: 0.1.0
+        contracts:
+          - name: thing
+            source-verb: "Show a thing for <state-ref>"
+    """).strip(), encoding="utf-8")
+    deploy_path = sub / "app.deploy.json"
+    deploy_path.write_text("{}", encoding="utf-8")
+
+    class _Ctx:
+        contract_package_registry = None
+
+    ctx = _Ctx()
+    deploy_config = {
+        "_deploy_config_path": str(deploy_path),
+        "contract_packages": ["contract_packages/demo.yaml"],
+    }
+    _load_contract_packages(ctx, deploy_config)
+    assert ctx.contract_package_registry is not None
+    assert "rel-demo" in ctx.contract_package_registry.namespaces()
+
+
+def test_load_contract_packages_fail_closed_on_missing(tmp_path):
+    """5c.1-finish: a deploy declaring a missing package can't
+    proceed — the `Using "<ns>.<contract>"` references in source
+    would be unresolvable at compile time. Fail closed at startup
+    with a useful error rather than letting the app limp along.
+    """
+    from termin_runtime.app import _load_contract_packages
+
+    class _Ctx:
+        contract_package_registry = None
+
+    ctx = _Ctx()
+    deploy_config = {
+        "contract_packages": [str(tmp_path / "missing.yaml")],
+    }
+    with pytest.raises(RuntimeError, match="contract package"):
+        _load_contract_packages(ctx, deploy_config)
+
+
+def test_load_contract_packages_fail_closed_on_verb_collision(tmp_path):
+    """5c.1-finish: cross-package verb collision surfaces at startup.
+    Per BRD #2 §4.5 this is a hard stop in v0.9 (no aliasing).
+    """
+    from termin_runtime.app import _load_contract_packages
+
+    a = tmp_path / "a.yaml"
+    a.write_text(textwrap.dedent("""
+        namespace: pkg-a
+        version: 0.1.0
+        contracts:
+          - name: thing
+            source-verb: "Show a colored item for <state-ref>"
+    """).strip(), encoding="utf-8")
+    b = tmp_path / "b.yaml"
+    b.write_text(textwrap.dedent("""
+        namespace: pkg-b
+        version: 0.1.0
+        contracts:
+          - name: rival
+            source-verb: "Show a colored item for <state-ref>"
+    """).strip(), encoding="utf-8")
+
+    class _Ctx:
+        contract_package_registry = None
+
+    ctx = _Ctx()
+    with pytest.raises(RuntimeError, match="Verb collision"):
+        _load_contract_packages(ctx, {
+            "contract_packages": [str(a), str(b)],
+        })
+
+
+def test_load_contract_packages_rejects_non_list():
+    """Defensive: deploy config typo (string instead of list) gets
+    a clear error, not a confusing AttributeError downstream.
+    """
+    from termin_runtime.app import _load_contract_packages
+
+    class _Ctx:
+        contract_package_registry = None
+
+    ctx = _Ctx()
+    with pytest.raises(RuntimeError, match="must be a list"):
+        _load_contract_packages(ctx, {"contract_packages": "single.yaml"})

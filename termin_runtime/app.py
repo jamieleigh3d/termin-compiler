@@ -220,6 +220,81 @@ def _populate_presentation_providers(
         ctx.presentation_providers.append((contract, product, instance))
 
 
+def _load_contract_packages(ctx, deploy_config: dict) -> None:
+    """v0.9 Phase 5c.1: load contract packages declared in deploy
+    config and attach a populated `ContractPackageRegistry` to ctx.
+
+    Deploy-config shape:
+        {
+          "contract_packages": [
+            "contract_packages/airlock-components.yaml",
+            ... more package paths ...
+          ]
+        }
+
+    Paths are resolved relative to the deploy config's parent
+    directory if a `_deploy_config_path` is set on the deploy_config
+    dict (the CLI sets this when loading the config); otherwise
+    relative to the current working directory.
+
+    On any load failure (malformed YAML, verb collision, missing
+    file), the runtime fails closed at startup — a deploy declaring
+    a package can't proceed without it. Per BRD #2 §10.4, the
+    `Using "<ns>.<contract>"` source forms are mandatory references
+    to a loaded package; running without the package would make
+    those references unresolvable.
+
+    No-op when `contract_packages` is missing or empty — apps that
+    only use the `presentation-base` namespace need no packages.
+    """
+    raw = deploy_config.get("contract_packages")
+    if not raw:
+        return
+    if not isinstance(raw, list):
+        raise RuntimeError(
+            "deploy_config.contract_packages must be a list of YAML "
+            "file paths (got %s)" % type(raw).__name__
+        )
+
+    from termin.contract_packages import (
+        ContractPackageError,
+        load_contract_packages_into_registry,
+    )
+
+    base_dir = None
+    cfg_path = deploy_config.get("_deploy_config_path")
+    if cfg_path:
+        from pathlib import Path
+        base_dir = Path(cfg_path).resolve().parent
+
+    resolved_paths: list = []
+    for entry in raw:
+        if isinstance(entry, dict):
+            # Future-shape: support {"path": "...", "version": "..."}
+            # gracefully — only `path` is mandatory in 5c.1.
+            entry = entry.get("path")
+        if not isinstance(entry, str) or not entry:
+            raise RuntimeError(
+                "deploy_config.contract_packages entries must be "
+                "non-empty strings (or objects with a `path` field)"
+            )
+        from pathlib import Path
+        p = Path(entry)
+        if not p.is_absolute() and base_dir is not None:
+            p = base_dir / p
+        resolved_paths.append(p)
+
+    try:
+        ctx.contract_package_registry = load_contract_packages_into_registry(
+            resolved_paths
+        )
+    except ContractPackageError as exc:
+        raise RuntimeError(
+            f"Failed to load contract package(s) declared in deploy "
+            f"config: {exc}"
+        ) from exc
+
+
 def _resolve_directive_sources(computes: list, deploy_config: dict) -> None:
     """v0.9 Phase 6c (BRD #3 §6.2): resolve deploy-config-sourced
     Directive and Objective text at application startup.
@@ -322,6 +397,12 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         deploy_config = load_deploy_config(path=deploy_config_path, app_name=app_snake)
     elif deploy_config is None:
         deploy_config = {}
+    # v0.9 Phase 5c.1: stash the path so contract-package paths in
+    # deploy config can be resolved relative to the deploy file (the
+    # natural authoring location). Idempotent if already set
+    # (caller-provided dict may have it).
+    if deploy_config_path and "_deploy_config_path" not in deploy_config:
+        deploy_config["_deploy_config_path"] = str(deploy_config_path)
     # v0.9 Phase 5a.3: source presentation defaults out of deploy_config
     # so request handlers (theme preference endpoints, render-time
     # PrincipalContext construction) can apply them without re-reading
@@ -401,6 +482,12 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
         ctx, deploy_config or {},
         ctx.provider_registry, ctx.contract_registry,
     )
+    # v0.9 Phase 5c.1: load contract packages declared in deploy
+    # config so the two-pass compiler (5c.2) and the runtime
+    # contract-package dispatch (5c.3) can resolve `Using
+    # "<ns>.<contract>"` references at startup. Idempotent no-op
+    # when no packages are declared.
+    _load_contract_packages(ctx, deploy_config or {})
     identity_binding = (deploy_config or {}).get("bindings", {}).get("identity", {})
     identity_product = identity_binding.get("provider") or "stub"
     identity_config = identity_binding.get("config") or {}
