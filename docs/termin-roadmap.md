@@ -438,13 +438,14 @@ cross-repo conformance, then Phase 7 capstone.
 | 5b.4 Spectrum form | ✅ done | landed 2026-04-29; Form + TextField + NumberField + Picker for text/number/currency/enum/state/reference input types. Submits via Termin.action({kind: "create"}) and reloads on success. Update mode + after_save navigation parsing deferred |
 | 5b.4 Spectrum styling polish + esbuild CSS-inject plugin | ✅ done | landed 2026-04-29; per-component CSS injection so Spectrum's macro-bundled stylesheets actually reach the document; `light-dark()` color-scheme propagation; shell template no longer loads `/runtime/termin.css` (was leaking SSR-Tailwind typography into the bundle) |
 | 5b.4 Spectrum markdown / metric / nav-bar / toast / banner | ✅ done | landed 2026-04-29; lightweight HTML renderers, ~0 KB bundle growth, 9 of 10 presentation-base contracts now live |
-| 5b.4 Spectrum chat | ⬜ todo | most complex; streaming integration with `compute.stream.<inv_id>.field.<name>` channels; the last placeholder. Defer to its own slice |
-| 5b.5 — GOV.UK SSR provider | ⬜ todo | **Phase B parallel**, separate repo (`termin-govuk-provider`); SSR-primary so simpler architecture |
-| 5c.1 — contract package YAML format + loader | 🟡 partial | format + `ContractPackageRegistry` shipped; full grammar + dispatch wiring incomplete |
-| 5c.2 — grammar table extension + verb collision detection | ⬜ todo | **Phase B parallel**, compiler-side, well-bounded for sub-agent |
-| 5c.3 — runtime contract-package provider dispatch | ⬜ todo | **Phase B sequential after 5c.2** |
-| 5c.4 — Airlock contract package end-to-end | ⬜ todo | proving ground; eyes-on |
-| 5c.5 — presentation conformance pack | ⬜ todo | **Phase C**, lands as one cross-repo commit per BRD §12 / Q8 |
+| 5b.3 — full multi-provider dispatch | ✅ done | landed 2026-04-29; Tailwind reaches `_populate_presentation_providers` via setup.py entry point alongside Spectrum; default-Tailwind synthesis when no binding declared; explicit binding overrides synthesis. Per-component override-mode dispatch (Tailwind page + Spectrum data-table) deferred to v0.10 — needs a rewrite of the SSR Jinja path |
+| 5b.4 Spectrum chat | ✅ done | landed 2026-04-29; div + Spectrum TextField/Button composer (no `<form>` element — native form submission would 405 against the GET-only page route); subscribes to `content.<source>` for persisted-message arrival and `compute.stream.*` for streaming token deltas; pending-bubble-per-invocation pattern. Surfaced two latent termin.js bugs in the WS subscription path (legacy-state poisoning, onopen-replay miss) — both fixed with regression tests |
+| 5b.5 — GOV.UK SSR provider | ⬜ deferred to v0.10 | Tailwind-as-plug-in fills the "second provider proves the surface" closure target for v0.9; GOV.UK gets its own slice in v0.10 with proper accessibility-review attention |
+| 5c.1 — contract package YAML format + loader | ✅ done | format + `ContractPackageRegistry` shipped earlier; deploy-config wiring (`_load_contract_packages` + `ctx.contract_package_registry`, path resolution relative to deploy file, fail-closed on missing/malformed/collision) landed 2026-04-29 |
+| 5c.2 — grammar table extension + verb collision detection | ✅ done | landed 2026-04-29; pure-Python `package_verb_matcher` (no TatSu — sidesteps the WSL context-state-leak entirely); classifier hook + `package_contract_line` parse handler + `PackageContractCall` AST + lowering to `ComponentNode(type="package_contract", contract=<qualified>)`. Cross-package verb collisions caught at registry-load time per BRD §4.5 |
+| 5c.3 — runtime contract-package provider dispatch | ✅ done | landed 2026-04-29; `_populate_presentation_providers` consults `ctx.contract_package_registry` for namespace expansion. Bindings keyed on package namespaces fan out to every contract the package declares, same shape `presentation-base` already used |
+| 5c.4 — Airlock contract package end-to-end | ✅ done | landed 2026-04-29; 5-test proving-ground at `tests/test_v09_airlock_proving_ground.py`. Source line `Show a cosmic orb of scenarios` → PackageContractCall AST node → ComponentNode with `contract = "airlock-components.cosmic-orb"` → bound `_StubAirlockProvider` returns the placeholder div per design doc Q6 |
+| 5c.5 — presentation conformance pack | ✅ done | landed 2026-04-29 (cross-repo: `termin-conformance` `feature/v0.9`); 33 tests + spec at `specs/presentation-contract.md`. Covers Provider Protocol shape, binding resolution (every clause), contract package loading (every clause). Per-component override-mode dispatch + SSR-via-render_ssr deferred to v0.10 conformance pack additions |
 
 #### Phase 6 — Source Refinements (BRD #3)
 
@@ -468,7 +469,7 @@ cross-repo conformance, then Phase 7 capstone.
 
 - **Phase A — serial, supervised (next):** Spectrum data-table → Spectrum form. JL eyes-on for browser verification; locks the integration pattern that subsequent contracts inherit.
 - **Phase B — parallel sub-agents (after A):** dispatch sub-agents on (1) the five simple Spectrum contracts, (2) GOV.UK SSR provider scaffold, (3) 5c.2 grammar extension, (4) WebSocket-to-provider-subscription wiring. JL reviews each returned commit. Phase 6d cleanup runs on the same track.
-- **Phase C — serial, cross-repo:** 5b.4 Spectrum chat (eyes-on), 5c.3+5c.4 contract-package runtime dispatch + Airlock proving ground (eyes-on), 5c.5 presentation conformance pack.
+- **Phase C — serial, cross-repo:** 5b.4 Spectrum chat (eyes-on), 5c.3+5c.4 contract-package runtime dispatch + Airlock proving ground (eyes-on), 5c.5 presentation conformance pack. **All landed 2026-04-29 in the autonomous run that closed Phase 5+6.**
 - **Phase 7 — termin-core extraction (v0.9 capstone):** see below.
 
 ---
