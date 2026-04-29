@@ -18,6 +18,7 @@ from .ast_nodes import (
     AllowFilter, AllowSearch, AllowInlineEdit, SubscribeTo, AcceptInput, ValidateUnique,
     CreateAs, AfterSave, ShowChart, DisplayAggregation, DisplayText,
     StructuredAggregation, SectionStart, ActionHeader, ActionButtonDef,
+    PackageContractCall,
     LinkColumn, ChatDirective,
 )
 from .ir import PropValue, ComponentNode, PageEntry
@@ -208,6 +209,35 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
                         children=(),
                     )
                     cur_renderable = cur_data_table
+
+            elif isinstance(d, PackageContractCall):
+                # v0.9 Phase 5c.2: a contract-package source-verb
+                # instance lowered as a ComponentNode whose `contract`
+                # is the fully-qualified name (`<ns>.<contract>`).
+                # The matched bindings flow through as props — the
+                # bound provider's render_ssr / CSR renderer reads
+                # them by name. Type stays generic ("package_contract")
+                # so the type→contract default map doesn't override
+                # node.contract during the Phase 5a.1 walk.
+                pkg_node = ComponentNode(
+                    type="package_contract",
+                    contract=d.qualified_name,
+                    props={
+                        "source_verb": d.source_verb,
+                        # Preserve the bindings under a stable key
+                        # so providers can read them without
+                        # special-casing each placeholder name.
+                        "bindings": dict(d.bindings),
+                        # Also expose each binding as a top-level
+                        # prop for ergonomics (provider authors
+                        # write `props["state-ref"]` instead of
+                        # `props["bindings"]["state-ref"]`).
+                        **{k: v for k, v in d.bindings.items()},
+                    },
+                    children=(),
+                )
+                children.append(pkg_node)
+                cur_renderable = pkg_node
 
             elif isinstance(d, UsingOverride):
                 # v0.9 Phase 5b.1: attach the contract override to

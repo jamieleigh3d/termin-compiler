@@ -370,15 +370,30 @@ def _assemble(parsed: list) -> Program:
 
 
 # --- Public API ---
-def parse_peg(source: str) -> tuple[Program, CompileResult]:
+def parse_peg(
+    source: str,
+    contract_package_registry=None,
+) -> tuple[Program, CompileResult]:
     """Parse a .termin source string into a Program AST.
 
     Returns (program, errors) where errors.ok is True if parsing succeeded.
+
+    v0.9 Phase 5c.2: when `contract_package_registry` is provided,
+    the parser consults it during line classification — lines that
+    match a registered source-verb template route to the
+    `package_contract_line` handler. The registry is installed
+    module-level via `set_active_registry` for the duration of
+    the parse and cleared on exit so subsequent parses don't see
+    stale state. Pass None (default) for source files that don't
+    use contract packages.
     """
+    from .package_verb_matcher import set_active_registry, clear_active_registry
+    if contract_package_registry is not None:
+        set_active_registry(contract_package_registry)
     errors = CompileResult()
     try: lines = _preprocess(source)
     except Exception as e:
-        errors.add(ParseError(message=f"Preprocessing failed: {e}", line=0, code="TERMIN-P001")); return Program(), errors
+        errors.add(ParseError(message=f"Preprocessing failed: {e}", line=0, code="TERMIN-P001")); clear_active_registry(); return Program(), errors
     parsed = []
     for line_num, text in lines:
         rule = classify_line(text)
@@ -389,8 +404,11 @@ def parse_peg(source: str) -> tuple[Program, CompileResult]:
             if result is not None: parsed.append(result)
         except Exception as e:
             errors.add(ParseError(message=f"Failed to parse line: {e}", line=line_num, source_line=text, code="TERMIN-P003"))
-    if not errors.ok: return Program(), errors
+    if not errors.ok:
+        clear_active_registry()
+        return Program(), errors
     try: program = _assemble(parsed)
     except Exception as e:
-        errors.add(ParseError(message=f"Block assembly failed: {e}", line=0, code="TERMIN-P004")); return Program(), errors
+        errors.add(ParseError(message=f"Block assembly failed: {e}", line=0, code="TERMIN-P004")); clear_active_registry(); return Program(), errors
+    clear_active_registry()
     return program, errors

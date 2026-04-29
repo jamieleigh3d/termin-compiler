@@ -312,6 +312,28 @@ class DisplayAggregation(Directive):
 
 
 @dataclass
+class PackageContractCall(Directive):
+    """v0.9 Phase 5c.2: an instance of a contract-package source-verb.
+
+    Created when the parser matches a line like
+    `Show a cosmic orb of scenarios` against a registered
+    contract-package source-verb template. The matched bindings
+    flow through to lowering as ComponentNode.props.
+
+    Fields:
+      qualified_name: the fully-qualified contract name, e.g.
+        "airlock-components.cosmic-orb".
+      source_verb: the verb template that matched, retained for
+        diagnostics and round-tripping.
+      bindings: placeholder name → matched bareword token. e.g.
+        {"state-ref": "scenarios"}.
+    """
+    qualified_name: str = ""
+    source_verb: str = ""
+    bindings: dict = field(default_factory=dict)
+
+
+@dataclass
 class StructuredAggregation(Directive):
     """Structured aggregation: Display count/sum/average/min/max of ..."""
     agg_type: str = ""            # "count", "sum", "average", "minimum", "maximum"

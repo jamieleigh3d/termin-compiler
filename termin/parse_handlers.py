@@ -19,7 +19,7 @@ from .ast_nodes import (
     HighlightRows, MarkAs, UsingOverride, AllowFilter, AllowSearch, AllowInlineEdit, SubscribeTo, AcceptInput,
     ValidateUnique, CreateAs, AfterSave, ShowChart, DisplayAggregation,
     StructuredAggregation, SectionStart, ActionHeader, ActionButtonDef,
-    Stream, ChatDirective, DisplayText, LinkColumn,
+    Stream, ChatDirective, DisplayText, LinkColumn, PackageContractCall,
     ComputeNode, ChannelDecl, ChannelRequirement, ActionDecl,
     BoundaryDecl, BoundaryProperty,
 )
@@ -926,6 +926,43 @@ def _parse_line(text: str, rule: str, ln: int):
         return ("content_owned_by", field_name)
     if rule == "unconditional_constraint_line":
         return _parse_unconditional_constraint(text, ln)
+    if rule == "package_contract_line":
+        # v0.9 Phase 5c.2: a contract-package source-verb instance.
+        # The classifier already confirmed the line matches some
+        # registered template — re-run the matcher here to capture
+        # the qualified name and bindings. Pure-Python; no TatSu
+        # involvement, so no fallback fidelity test needed (the
+        # test in `tests/test_v09_package_verb_matcher.py` covers
+        # the matcher directly on every platform).
+        from .package_verb_matcher import match_active_packages
+        match = match_active_packages(text)
+        if match is None:
+            # Defensive: classifier said yes but matcher says no
+            # — possible if the registry was cleared between
+            # classify and parse. Treat as parse error.
+            raise ParseError(
+                f"Line {ln}: classified as a contract-package verb "
+                f"but no registered template matches",
+                line=ln,
+            )
+        qualified, bindings = match
+        # Find the matching source_verb template — needed for
+        # round-tripping diagnostics. The registry's _verb_owners
+        # is verb→qualified, so reverse-lookup.
+        from .package_verb_matcher import get_active_registry
+        reg = get_active_registry()
+        template = ""
+        if reg is not None:
+            for verb, owner in getattr(reg, "_verb_owners", {}).items():
+                if owner == qualified:
+                    template = verb
+                    break
+        return ("directive", PackageContractCall(
+            qualified_name=qualified,
+            source_verb=template,
+            bindings=dict(bindings),
+            line=ln,
+        ))
     if rule == "channel_header":
         r = P(text, rule); return ("channel_header", ChannelDecl(name=_qs(r.get("name","")) if r else _fq(text), line=ln))
     if rule == "channel_carries_line":

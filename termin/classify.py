@@ -158,4 +158,14 @@ def classify_line(text: str) -> str:
     if text.startswith("[") and text.endswith("]"): return "compute_body_expr_line"  # legacy bracket support
     # D-19: Unconditional constraint: "field must be one of: ..."
     if " must be one of:" in text: return "unconditional_constraint_line"
+    # v0.9 Phase 5c.2: contract-package source-verb dispatch. After
+    # the legacy prefix loop and special-case checks fall through,
+    # consult the active contract-package registry — when set,
+    # it can route lines like `Show a cosmic orb of scenarios` to
+    # the package-contract handler. The matcher returns None when
+    # no registry is active or no verb template matches; the
+    # caller stays on the legacy "unknown" path in that case.
+    from .package_verb_matcher import match_active_packages
+    if match_active_packages(text) is not None:
+        return "package_contract_line"
     return "unknown"
