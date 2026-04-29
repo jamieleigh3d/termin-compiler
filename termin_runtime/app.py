@@ -194,19 +194,40 @@ def _populate_presentation_providers(
         return instances.get(product)
 
     # Per-contract bindings first, then namespace fallback.
+    # v0.9 Phase 5c.3: namespace expansion consults the contract-
+    # package registry when the namespace isn't presentation-base.
+    # This lets `bindings.presentation.airlock-components` map a
+    # provider product to all contracts declared by the
+    # airlock-components contract package, exactly the way
+    # presentation-base namespace bindings already work.
+    pkg_registry = getattr(ctx, "contract_package_registry", None)
     contract_bindings: dict[str, dict] = {}
     for key, binding in bindings.items():
         if not isinstance(binding, dict):
             continue
         if "." in key:
             contract_bindings[key] = binding
+            continue
+        # Namespace binding.
+        if key == "presentation-base":
+            shorts: tuple[str, ...] = PRESENTATION_BASE_CONTRACTS
+        elif pkg_registry is not None and key in pkg_registry.namespaces():
+            # Look up the contracts declared by this package and
+            # fan the binding out to each. The registry's
+            # `get_contract` API is by full name; iterate the
+            # private packages map to enumerate all contracts in
+            # the namespace.
+            pkg = pkg_registry._packages.get(key)
+            shorts = tuple(c.name for c in pkg.contracts) if pkg else ()
         else:
-            # Namespace binding — expand to base namespace's contracts.
-            # Only `presentation-base` is known until 5c contract
-            # packages land.
-            for short in PRESENTATION_BASE_CONTRACTS:
-                full = f"{key}.{short}"
-                contract_bindings.setdefault(full, binding)
+            # Unknown namespace — quietly skip. Deploy-time
+            # validation in BRD #2 §8.5 (required_contracts) is the
+            # right place to fail-closed; this populator is purely
+            # advisory.
+            shorts = ()
+        for short in shorts:
+            full = f"{key}.{short}"
+            contract_bindings.setdefault(full, binding)
 
     # Materialize: one (contract, product, instance) triple per
     # bound contract. Skip products that have no registered factory.
@@ -478,16 +499,19 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     # providers/<product>/bundle.js`) have something to read from.
     # This is the slim B'-only cut-over of the deferred 5b.3 work
     # (full per-render dispatch is still later).
-    _populate_presentation_providers(
-        ctx, deploy_config or {},
-        ctx.provider_registry, ctx.contract_registry,
-    )
     # v0.9 Phase 5c.1: load contract packages declared in deploy
     # config so the two-pass compiler (5c.2) and the runtime
     # contract-package dispatch (5c.3) can resolve `Using
     # "<ns>.<contract>"` references at startup. Idempotent no-op
-    # when no packages are declared.
+    # when no packages are declared. Must run BEFORE
+    # _populate_presentation_providers so the populator can expand
+    # non-presentation-base namespace bindings using the package
+    # registry's namespace catalog.
     _load_contract_packages(ctx, deploy_config or {})
+    _populate_presentation_providers(
+        ctx, deploy_config or {},
+        ctx.provider_registry, ctx.contract_registry,
+    )
     identity_binding = (deploy_config or {}).get("bindings", {}).get("identity", {})
     identity_product = identity_binding.get("provider") or "stub"
     identity_config = identity_binding.get("config") or {}

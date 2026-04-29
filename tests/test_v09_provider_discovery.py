@@ -340,3 +340,114 @@ def test_discover_external_providers_no_entry_points_is_quiet(monkeypatch):
     after = registry.all_records()
     # Nothing to assert beyond "didn't crash, didn't add anything."
     assert before == after
+
+
+# ── 5c.3: package-namespace binding expansion ──
+
+def test_populate_expands_package_namespace_binding(tmp_path):
+    """v0.9 Phase 5c.3: a deploy binding for a contract-package
+    namespace (e.g., `airlock-components`) fans out to all contracts
+    declared by that package — the same way presentation-base
+    namespace bindings already work.
+
+    Sets up:
+      * A fake package registry with namespace "demo-pkg" declaring
+        two contracts: "thingy" and "widget".
+      * A provider registered as "demo-product" against
+        "demo-pkg.thingy" and "demo-pkg.widget".
+      * Deploy config: bindings.presentation."demo-pkg".provider =
+        "demo-product".
+    Asserts both contracts end up in ctx.presentation_providers
+    bound to demo-product.
+    """
+    import textwrap
+    from termin.contract_packages import (
+        load_contract_packages_into_registry,
+    )
+
+    pkg_path = tmp_path / "demo.yaml"
+    pkg_path.write_text(textwrap.dedent("""
+        namespace: demo-pkg
+        version: 0.1.0
+        contracts:
+          - name: thingy
+            source-verb: "Show a thingy of <ref>"
+          - name: widget
+            source-verb: "Show a widget of <ref>"
+    """).strip(), encoding="utf-8")
+    pkg_registry = load_contract_packages_into_registry([pkg_path])
+
+    # Provider registry — demo-product registered for both
+    # demo-pkg.thingy and demo-pkg.widget. Use a relaxed fake
+    # contract registry that accepts any contract name.
+    contracts = ContractRegistry.default()
+    # Register the demo-pkg.* contracts so the provider registry
+    # accepts them. Phase 5c.3 will likely auto-register from the
+    # package registry; for this test we do it inline.
+    from termin_runtime.providers.contracts import (
+        Category, ContractDefinition, Tier,
+    )
+    for short in ("thingy", "widget"):
+        contracts.register_contract(ContractDefinition(
+            name=f"demo-pkg.{short}",
+            category=Category.PRESENTATION,
+            tier=Tier.TIER_2,
+            naming="named",
+            description="test",
+        ))
+    registry = ProviderRegistry()
+
+    def factory(config):
+        return MagicMock(declared_contracts=("demo-pkg.thingy", "demo-pkg.widget"),
+                        render_modes=("ssr",))
+    for short in ("thingy", "widget"):
+        registry.register(
+            Category.PRESENTATION,
+            f"demo-pkg.{short}",
+            "demo-product",
+            factory,
+        )
+
+    class _Ctx:
+        contract_package_registry = pkg_registry
+        presentation_providers = []
+
+    ctx = _Ctx()
+    deploy_config = {
+        "bindings": {"presentation": {
+            "demo-pkg": {"provider": "demo-product", "config": {}},
+        }}
+    }
+    _populate_presentation_providers(ctx, deploy_config, registry, contracts)
+    bound_contracts = {c for c, _, _ in ctx.presentation_providers}
+    assert bound_contracts == {"demo-pkg.thingy", "demo-pkg.widget"}
+    products = {p for _, p, _ in ctx.presentation_providers}
+    assert products == {"demo-product"}
+
+
+def test_populate_unknown_namespace_is_skipped_quietly():
+    """A namespace binding for a namespace nobody loaded → no-op,
+    no exception. Deploy-time required_contracts validation
+    (BRD #2 §8.5) is the fail-closed surface."""
+    registry, contracts, _ = _registry_with_fake_provider()
+
+    class _Ctx:
+        contract_package_registry = None
+        presentation_providers = []
+
+    ctx = _Ctx()
+    _populate_presentation_providers(
+        ctx,
+        {"bindings": {"presentation": {
+            "ghost-namespace": {"provider": "fake-spectrum", "config": {}},
+        }}},
+        registry, contracts,
+    )
+    # Should not raise; ghost-namespace simply contributes nothing.
+    # presentation-base auto-synthesis still applies to make the
+    # registry uniform.
+    products = {p for _, p, _ in ctx.presentation_providers}
+    # No fake-spectrum because the namespace expansion produced no
+    # contracts to bind. tailwind-default not in this fake registry,
+    # so synthesis also produces nothing.
+    assert products == set()
