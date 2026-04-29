@@ -414,6 +414,102 @@ Theme: provider architecture — pluggable presentation, storage, identity, comp
 
 ---
 
+### v0.9 Phase Status (current as of 2026-04-29)
+
+The v0.9.0 backlog table above lists the original architectural targets;
+this section breaks down where each implementation phase actually stands
+and what's queued. Order reflects the agreed sequencing: serial work
+first to lock in patterns, then parallel/sub-agent slices, then
+cross-repo conformance, then Phase 7 capstone.
+
+#### Phase 5 — Presentation Provider System (BRD #2)
+
+| Slice | Status | Notes |
+|---|---|---|
+| 5a — `tailwind-default` + theme + redaction + colorblind safety | ✅ done | landed earlier, all five sub-slices on `feature/v0.9-presentation` |
+| 5b.1 — `Using "<ns>.<contract>"` grammar | ✅ done | parse rule + override-mode validation |
+| 5b.2 — two-pass compilation machinery | ✅ done | shipped with 5b.1 |
+| 5b.3 — multi-provider dispatch | 🟡 partial | slim B'-only dispatch landed 2026-04-29 (`_populate_presentation_providers`); full per-render dispatch (SSR + CSR providers coexisting per contract) deferred until needed |
+| 5b.4 platform — bundle discovery + `Termin.registerRenderer` | ✅ done | `/_termin/presentation/bundles` + JS API |
+| 5b.4 B' plumbing — bootstrap-payload + page-data + shell endpoints | ✅ done | client-side `Termin.action()` dispatch (no `/_termin/action` server endpoint, per Q-extra) |
+| 5b.4 B' loop wiring — entry-point discovery + bundle-serving + page-route cut-over | ✅ done | landed 2026-04-29; `pip install -e ../termin-spectrum-provider` is enough for `provider: "spectrum"` to resolve in deploy config; `/<slug>` serves shell when CSR-only provider bound |
+| 5b.4 Spectrum v0.1.0 — scaffold + `page` + `text` contracts | ✅ done | landed 2026-04-29; first time anything in Termin rendered through a CSR provider |
+| 5b.4 Spectrum data-table | ⬜ todo | **next slice (Phase A series)**; teaches Spectrum primitives integration + bound_data flow |
+| 5b.4 Spectrum form | ⬜ todo | **Phase A series, after data-table**; first contract exercising `Termin.action()` round-trip |
+| 5b.4 Spectrum markdown / metric / nav-bar / toast / banner | ⬜ todo | **Phase B parallel**, sub-agent friendly once data-table+form lock the pattern |
+| 5b.4 Spectrum chat | ⬜ todo | most complex; streaming integration; defer to its own slice |
+| 5b.5 — GOV.UK SSR provider | ⬜ todo | **Phase B parallel**, separate repo (`termin-govuk-provider`); SSR-primary so simpler architecture |
+| 5c.1 — contract package YAML format + loader | 🟡 partial | format + `ContractPackageRegistry` shipped; full grammar + dispatch wiring incomplete |
+| 5c.2 — grammar table extension + verb collision detection | ⬜ todo | **Phase B parallel**, compiler-side, well-bounded for sub-agent |
+| 5c.3 — runtime contract-package provider dispatch | ⬜ todo | **Phase B sequential after 5c.2** |
+| 5c.4 — Airlock contract package end-to-end | ⬜ todo | proving ground; eyes-on |
+| 5c.5 — presentation conformance pack | ⬜ todo | **Phase C**, lands as one cross-repo commit per BRD §12 / Q8 |
+
+#### Phase 6 — Source Refinements (BRD #3)
+
+| Slice | Status | Notes |
+|---|---|---|
+| 6a / 6a.6 — Principal type + ownership + `the user` + preferences + cascade | ✅ done | full Principal type, ownership cascade through subscriptions |
+| 6b — state-machine transition events | ✅ done | typed event payloads |
+| 6c — agent directive sourcing (`Directive from deploy config "..."`, `Directive from <content>.<field>`) | ✅ done | both inline-literal and reference forms |
+| 6d — hardening + migration | 🟡 partial | examples migrated; remaining cleanup likely small; finalize during Phase C |
+
+#### Cross-cutting / journal-flagged
+
+| Item | Status | Notes |
+|---|---|---|
+| WebSocket → provider-subscription dispatch wiring | ⬜ todo | **Phase B parallel**, small contained slice in `termin-compiler` |
+| Page-route cut-over to shell when CSR-only provider bound | ✅ done | landed 2026-04-29 |
+
+#### Recommended sequencing
+
+- **Phase A — serial, supervised (next):** Spectrum data-table → Spectrum form. JL eyes-on for browser verification; locks the integration pattern that subsequent contracts inherit.
+- **Phase B — parallel sub-agents (after A):** dispatch sub-agents on (1) the five simple Spectrum contracts, (2) GOV.UK SSR provider scaffold, (3) 5c.2 grammar extension, (4) WebSocket-to-provider-subscription wiring. JL reviews each returned commit. Phase 6d cleanup runs on the same track.
+- **Phase C — serial, cross-repo:** 5b.4 Spectrum chat (eyes-on), 5c.3+5c.4 contract-package runtime dispatch + Airlock proving ground (eyes-on), 5c.5 presentation conformance pack.
+- **Phase 7 — termin-core extraction (v0.9 capstone):** see below.
+
+---
+
+## Phase 7 — termin-core extraction (v0.9 capstone)
+
+Theme: extract the shared library surface that any conforming Termin
+runtime imports from, so a second runtime (e.g., the Kazoo Rust port,
+or any third-party implementation) doesn't have to vendor or
+re-implement the contract Protocols, the Principal type, the IR types,
+the Redacted sentinel, the categorical channel/storage/identity/compute
+contract definitions, and the deploy-config binding resolver.
+
+This is GitHub issue #2 ("extract termin-core library surface") and it
+intentionally lands at the **end of v0.9**, not in the middle. The
+reasoning: every Phase 5 + Phase 6 slice teaches the project something
+about which surfaces are stable enough to extract and which are still
+shifting. Extracting too early would freeze immature contracts; doing
+it after Phase 5/6 lock means the extraction is mechanical rather than
+exploratory.
+
+| Item | Source | Notes |
+|------|--------|-------|
+| **`termin-core` package surface** | issue #2; v0.9 capstone | A new `termin-core` Python package (sibling repo `termin-core/`) containing: contract Protocols (`PresentationProvider`, `StorageProvider`, `IdentityProvider`, `ComputeProvider`, `ChannelProvider`); the categorical `Category` enum and `ContractRegistry`; the IR dataclasses (`AppSpec`, `ComponentNode`, `PageEntry`, etc.) — read-only types only, not the lowering pass; the `Principal` / `Redacted` / `PrincipalContext` value types; the deploy-config binding resolver. The reference runtime (`termin_runtime`) and the compiler (`termin`) both depend on `termin-core`. Alternate runtimes (Kazoo, third-party Rust port, etc.) depend on `termin-core` only — no transitive dependency on the reference runtime's storage / FastAPI / SQLite layers. |
+| **Cheap discipline before extraction** | feedback_commit_norm + journal | While Phase 5/6 land, when new pure rules ship (e.g., the `_populate_presentation_providers` resolver, the `page_should_use_shell` predicate, contract-package merge logic), drop them in a thin enforcement module rather than weaving into runtime-specific code. This makes the eventual extraction mechanical: "move this module into `termin-core`, fix imports, done." JL has confirmed this discipline is worth the friction. |
+| **Language-neutral contract surface (forward-looking)** | issue #2 / 2026-04-28 briefing | Python Protocols can't be imported from Rust. The Phase 7 extraction may also surface a parallel JSON-Schema-shaped contract surface so non-Python runtimes can validate against the same shapes. Decision deferred to the start of Phase 7; doesn't block the Python-side extraction. |
+| **`termin-core` conformance pack** | extension of 5c.5 | Adapter-agnostic tests verifying any runtime that imports `termin-core` produces correct binding resolution, contract-Protocol satisfaction, IR-shape acceptance. Lands with the extraction or shortly after. |
+
+**Sequencing constraint:** Phase 7 starts when **Phase 5 + Phase 6 land
+on `feature/v0.9` and the conformance pack passes**. Doing it earlier
+risks freezing surfaces that later phases would need to revise.
+
+**Out of scope for Phase 7 (deferred to v1.0 prep):**
+
+- Splitting the compiler (`termin/`) into its own repo — Phase 7 only
+  extracts the runtime / contract surface, not the compiler. Compiler
+  decoupling is a v1.0 conversation.
+- Versioning policy for `termin-core` releases — likely SemVer-aligned
+  with the runtime, but the policy text itself is a Phase 7 deliverable.
+- Multi-language ports of `termin-core` itself — issue #2 anticipated
+  this; the Python-side extraction is the v0.9 deliverable.
+
+---
+
 ## v0.10.0 Backlog — "App Server / Distributed Runtime"
 
 Theme: a hosted Termin app server on `termin.dev` plus the conformance plumbing
