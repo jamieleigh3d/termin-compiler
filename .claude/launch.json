@@ -15,6 +15,21 @@
         "8765"
       ],
       "port": 8765
+    },
+    {
+      "name": "termin-spectrum-chat",
+      "runtimeExecutable": "C:\\ProgramData\\Miniconda3\\python.exe",
+      "runtimeArgs": [
+        "-m",
+        "termin.cli",
+        "serve",
+        "agent_chatbot.termin.pkg",
+        "--deploy",
+        "examples-dev/hello_spectrum.deploy.json",
+        "--port",
+        "8766"
+      ],
+      "port": 8766
     }
   ]
 }
