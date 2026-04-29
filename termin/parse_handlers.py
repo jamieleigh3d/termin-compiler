@@ -108,6 +108,54 @@ def _validate_access_content_name(cn: str) -> None:
             )
 
 
+def _parse_can_clause_fallback(rest: str) -> tuple[list[str], str]:
+    """Extract `<verbs> <content_name>` from an access-rule's `can` clause.
+
+    Mirrors `_check_can_clause_for_unknown_verbs`'s tokenization but
+    returns the parsed verb list and content name instead of validating.
+    Used by the fallback path in the access-rule line handler when
+    TatSu rejects the line — TatSu has a known platform-dependent
+    context-state leak on WSL/Linux (see workspace MEMORY.md and
+    `feedback_grammar_peg_authoritative.md`) where the second and
+    subsequent calls return None even when the source is valid PEG.
+
+    Without this helper, the fallback hardcoded `verbs=["view"]` for
+    every line, which silently rewrites `Anyone with X can update Y`
+    as a view-only rule. Downstream semantic checks (TERMIN-S020/021/022
+    on row-action access matching) then fail because no rule actually
+    has the `update` or `delete` verb. Tracked by the bug retrospective
+    on 2026-04-29 — the fallback's "always emit something safe" stance
+    masked semantic intent on WSL while Windows worked fine.
+
+    Returns (verbs, content_name); verbs is `["view"]` only when no
+    known verb appears (extreme defensive case — should not happen for
+    well-formed source).
+    """
+    if not rest:
+        return ["view"], ""
+    connectors = {"or", "and", ","}
+    tokens = rest.replace(",", " , ").split()
+    verbs: list[str] = []
+    content_start_idx = 0
+    for i, t in enumerate(tokens):
+        if t in _KNOWN_VERBS:
+            verbs.append(t)
+            content_start_idx = i + 1
+            continue
+        if t in connectors:
+            content_start_idx = i + 1
+            continue
+        # Non-verb, non-connector → content name starts here.
+        content_start_idx = i
+        break
+    content_name = " ".join(
+        t for t in tokens[content_start_idx:] if t != ","
+    ).strip()
+    if not verbs:
+        verbs = ["view"]
+    return verbs, content_name
+
+
 def _check_can_clause_for_unknown_verbs(rest: str) -> None:
     """Scan a `... can <rest>` clause for unknown verb tokens.
 
@@ -240,10 +288,17 @@ def _parse_line(text: str, rule: str, ln: int):
         if ci >= 0:
             rest = text[ci+5:].strip()
             _check_can_clause_for_unknown_verbs(rest)
-            # If we got here, the failure was something else — preserve
-            # the pre-existing permissive default.
-            return ("access", AccessRule(scope=sc, verbs=["view"], line=ln))
-        return ("access", AccessRule(scope=sc, verbs=["view"], line=ln))
+            # PARSE the verb list from the `can` clause instead of
+            # hardcoding ["view"] — the bug from the 2026-04-29
+            # retrospective. On WSL/Linux TatSu falls back here for
+            # otherwise-valid lines, and emitting verbs=["view"] for
+            # an `... can update <content>` line silently rewrote
+            # update grants as view grants, breaking the row-action
+            # semantic checks. _parse_can_clause_fallback uses the
+            # same tokenization as _check_can_clause_for_unknown_verbs.
+            verbs, _content_name = _parse_can_clause_fallback(rest)
+            return ("access", AccessRule(scope=sc, verbs=verbs, line=ln))
+        return ("access", AccessRule(scope=_fq(text), verbs=["view"], line=ln))
     # v0.9: inline state machine sub-block lines.
     if rule == "sm_starts_as_line":
         # `<field name> starts as <state>` — extract field name and initial state.
