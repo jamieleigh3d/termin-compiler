@@ -207,308 +207,197 @@ def _make_list_route(app, ctx, path, cr, sc, row_filter=None):
 
 
 def _make_create_route(app, ctx, path, cr, sc, sm_info, owner_field=None):
+    """Slice 7.2.e of Phase 7 (2026-04-30): create handler extracted
+    to ``termin_core.routing.crud.create_content_handler``. The
+    FastAPI route is now a thin bridge that delegates to the pure
+    handler. State-machine seeding, event publishing, and IR event
+    handlers are stashed on ctx as runtime-internal hooks the pure
+    handler reads.
+    """
+    from termin_core.routing import create_content_handler
+    from .fastapi_adapter import (
+        make_auth_context,
+        to_fastapi_response,
+        to_termin_request,
+    )
+
     deps = [Depends(ctx.require_scope(sc))] if sc else []
 
+    # Per-content-type registration: state-machine info, owner field.
+    if not hasattr(ctx, "_state_machine_info_for_content"):
+        ctx._state_machine_info_for_content = {}
+    ctx._state_machine_info_for_content[cr] = sm_info
+    if not hasattr(ctx, "state_machine_info_for"):
+        ctx.state_machine_info_for = lambda cn: ctx._state_machine_info_for_content.get(cn)
+
+    if not hasattr(ctx, "_owner_field_for_content"):
+        ctx._owner_field_for_content = {}
+    if owner_field:
+        ctx._owner_field_for_content[cr] = owner_field
+    if not hasattr(ctx, "owner_field_for"):
+        ctx.owner_field_for = lambda cn: ctx._owner_field_for_content.get(cn)
+
+    # Pure-rule helpers that haven't moved to termin-core yet —
+    # exposed via ctx so the handler can call them. Slice 7.5 may
+    # move state-column seeding into core proper.
+    if not hasattr(ctx, "seed_state_columns"):
+        ctx.seed_state_columns = _seed_state_columns
+
+    if not hasattr(ctx, "publish_content_event"):
+        async def _publish(kind, content_name, record):
+            await _publish_content_event(ctx, kind, content_name, record)
+        ctx.publish_content_event = _publish
+
+    if not hasattr(ctx, "route_terminator_validation"):
+        ctx.route_terminator_validation = lambda cn, exc: _route_terminator(ctx, cn, exc)
+
+    if not hasattr(ctx, "run_event_handlers_for_content"):
+        async def _run_evt(content_name, kind, record):
+            db = await get_db(ctx.db_path)
+            try:
+                await ctx.run_event_handlers(db, content_name, kind, record)
+            finally:
+                await db.close()
+        ctx.run_event_handlers_for_content = _run_evt
+
     @app.post(path, status_code=201, dependencies=deps)
-    async def create_route(request: Request, _cr=cr, _sm=sm_info, _owner=owner_field):
+    async def create_route(request: Request, _cr=cr):
         user = ctx.get_current_user(request)
-        user_scopes = list(user.get("scopes", []))
-        bnd_id_err = check_boundary_identity(
-            ctx.boundary_identity_scopes, ctx.boundary_for_content,
-            _cr, user_scopes)
-        if bnd_id_err:
-            raise HTTPException(status_code=403, detail=bnd_id_err)
-
-        # Accept both JSON and form-encoded data
-        content_type = request.headers.get("content-type", "")
-        if "application/json" in content_type:
-            body = await request.json()
-        else:
-            form = await request.form()
-            body = {k: v for k, v in form.items() if v}
-
-        # v0.9 multi-SM create gate: strip every state-machine column
-        # from the body before validation+insert. The SQL DEFAULT on
-        # each state column applies the machine's initial state; a
-        # client-supplied value for a state column would otherwise win
-        # over the default and let a caller bootstrap a record already
-        # past its initial state — bypassing the transition rules that
-        # would otherwise gate that move.
-        body = _seed_state_columns(body, _sm, strip_existing=True)
-
-        # v0.9 Phase 6a.5: stamp the ownership field with the_user.id
-        # at create time (BRD #3 §3.5 — "the new row's owner is set to
-        # on_behalf_of.id, not invoked_by.id"). Overwrites any client-
-        # supplied value so apps cannot create rows owned by other
-        # principals. Anonymous principals can still own records (id =
-        # "anonymous"); apps that don't want anonymous ownership gate
-        # CREATE with a non-anonymous scope.
-        if _owner:
-            owner_id = (user.get("the_user") or {}).get("id", "")
-            body[_owner] = owner_id
-
-        schema = ctx.content_lookup.get(_cr, {})
-        evaluate_field_defaults(body, schema, ctx.expr_eval, user)
-        validate_enum_constraints(body, schema)
-        validate_min_max_constraints(body, schema)
-        validate_dependent_values(_cr, body, ctx.content_lookup, ctx.expr_eval)
-        body = strip_unknown_fields(body, schema)
-
-        # v0.9 Phase 2: persist via ctx.storage. The provider returns
-        # the persisted row (id assigned). The route owns the
-        # cross-cutting concerns the legacy create_record had bundled:
-        # state-column response seeding, event publishing, IR event
-        # handlers, and TerminAtor error routing.
-        try:
-            record = await ctx.storage.create(_cr, body)
-            # Seed state columns into the response dict. The SQL DEFAULT
-            # has already applied to the persisted row; the in-memory
-            # dict needs the columns too so downstream callers see a
-            # consistent shape.
-            record = _seed_state_columns(dict(record), _sm)
-            # event_bus publish — listeners (WebSocket forwarder,
-            # subscribers) get notified. This is the channel-id
-            # broadcast separate from IR-declared event handlers.
-            await _publish_content_event(ctx, "created", _cr, record)
-        except HTTPException:
-            raise
-        except Exception as e:
-            _route_terminator(ctx, _cr, e)
-            err_msg = str(e)
-            if "UNIQUE constraint" in err_msg:
-                raise HTTPException(status_code=409, detail=err_msg)
-            if "NOT NULL constraint" in err_msg:
-                raise HTTPException(status_code=400, detail=err_msg)
-            raise HTTPException(status_code=500, detail=err_msg)
-
-        # IR-declared event handlers (When ...: Create a ..., Send to
-        # channel ...) still need a raw db handle for their nested
-        # insert paths (they call insert_raw directly). v0.9.x cleanup
-        # item: route those through ctx.storage too.
-        db = await get_db(ctx.db_path)
-        try:
-            await ctx.run_event_handlers(db, _cr, "created", record)
-        finally:
-            await db.close()
-
-        return redact_record(record, schema, set(user.get("scopes", [])))
+        auth = make_auth_context(user)
+        termin_req = await to_termin_request(
+            request,
+            path_params={"content": _cr},
+            auth=auth,
+        )
+        response = await create_content_handler(termin_req, ctx)
+        return to_fastapi_response(response)
 
 
 def _make_get_route(app, ctx, path, cr, sc, lc, row_filter=None):
+    """Slice 7.2.e of Phase 7 (2026-04-30): get-by-id handler
+    extracted to ``termin_core.routing.crud.get_content_handler``.
+    """
+    from termin_core.routing import get_content_handler
+    from .fastapi_adapter import (
+        make_auth_context,
+        to_fastapi_response,
+        to_termin_request,
+    )
+
     deps = [Depends(ctx.require_scope(sc))] if sc else []
+
+    # Stash lookup-column + row_filter on ctx so the pure handler
+    # can read them without per-route closure capture.
+    if not hasattr(ctx, "_lookup_column_for_content"):
+        ctx._lookup_column_for_content = {}
+    ctx._lookup_column_for_content[cr] = lc
+    if not hasattr(ctx, "lookup_column_for"):
+        ctx.lookup_column_for = lambda cn: ctx._lookup_column_for_content.get(cn, "id")
+    if not hasattr(ctx, "_row_filter_for_content"):
+        ctx._row_filter_for_content = {}
+    if row_filter:
+        ctx._row_filter_for_content[cr] = row_filter
+    if not hasattr(ctx, "row_filter_for"):
+        ctx.row_filter_for = lambda cn: ctx._row_filter_for_content.get(cn)
 
     @app.get(path, dependencies=deps)
     async def get_route(request: Request, _cr=cr, _lc=lc):
-        param_val = list(request.path_params.values())[0] if request.path_params else None
-        # v0.9 Phase 2: Read by primary key uses ctx.storage.read; for
-        # alternate-key lookups (lookup_column != "id") we fall back
-        # to a query() with an Eq predicate. The provider boundary
-        # only knows primary keys; alternate-key lookups are runtime
-        # convenience layered on top.
-        if _lc == "id":
-            record = await ctx.storage.read(_cr, param_val)
-        else:
-            page = await ctx.storage.query(
-                _cr, Eq(field=_lc, value=param_val),
-                QueryOptions(limit=1),
-            )
-            record = dict(page.records[0]) if page.records else None
-        if record is None:
-            raise HTTPException(status_code=404, detail="Not found")
-        schema = ctx.content_lookup.get(_cr, {})
+        # FastAPI extracts the lookup-key path param under whatever
+        # name the route declared — typically {id} or {sku}. The
+        # core handler reads it under "key" so the bridge name-maps.
+        key_val = list(request.path_params.values())[0] if request.path_params else None
         user = ctx.get_current_user(request)
-        user_scopes = set(user.get("scopes", []))
-        # v0.9 Phase 6a.5: ownership row_filter on GET_ONE. Reject the
-        # read with a 404 when the principal doesn't own the record.
-        # 404 (not 403) by design — per BRD §3.4, the row "doesn't
-        # exist" from the principal's perspective; existence shouldn't
-        # leak through the auth shape.
-        if row_filter and row_filter.get("kind") == "ownership":
-            owner_field = row_filter.get("field")
-            owner_id = (user.get("the_user") or {}).get("id", "")
-            if owner_field and record.get(owner_field) != owner_id:
-                raise HTTPException(status_code=404, detail="Not found")
-        record = redact_record(record, schema, user_scopes)
-        if _cr.startswith("compute_audit_log_"):
-            records = await redact_audit_traces(
-                ctx, [record], _cr, set(user_scopes))
-            record = records[0] if records else record
-        return record
+        auth = make_auth_context(user)
+        termin_req = await to_termin_request(
+            request,
+            path_params={"content": _cr, "key": key_val},
+            auth=auth,
+        )
+        response = await get_content_handler(termin_req, ctx)
+        return to_fastapi_response(response)
 
 
 def _make_update_route(app, ctx, path, cr, sc, lc, row_filter=None):
+    """Slice 7.2.e of Phase 7 (2026-04-30): update handler extracted
+    to ``termin_core.routing.crud.update_content_handler``. The
+    FastAPI route is a thin bridge.
+    """
+    from termin_core.routing import update_content_handler
+    from .fastapi_adapter import (
+        make_auth_context,
+        to_fastapi_response,
+        to_termin_request,
+    )
+
     deps = [Depends(ctx.require_scope(sc))] if sc else []
 
+    # Per-content-type: lookup column + row_filter already stashed
+    # by _make_get_route on the same content_ref. Be defensive in
+    # case create runs in isolation.
+    if not hasattr(ctx, "_lookup_column_for_content"):
+        ctx._lookup_column_for_content = {}
+    ctx._lookup_column_for_content[cr] = lc
+    if not hasattr(ctx, "lookup_column_for"):
+        ctx.lookup_column_for = lambda cn: ctx._lookup_column_for_content.get(cn, "id")
+    if not hasattr(ctx, "_row_filter_for_content"):
+        ctx._row_filter_for_content = {}
+    if row_filter:
+        ctx._row_filter_for_content[cr] = row_filter
+    if not hasattr(ctx, "row_filter_for"):
+        ctx.row_filter_for = lambda cn: ctx._row_filter_for_content.get(cn)
+
     @app.put(path, dependencies=deps)
-    async def update_route(request: Request, _cr=cr, _lc=lc):
-        param_val = list(request.path_params.values())[0] if request.path_params else None
-        body = await request.json()
+    async def update_route(request: Request, _cr=cr):
+        key_val = list(request.path_params.values())[0] if request.path_params else None
         user = ctx.get_current_user(request)
-        user_scopes = set(user.get("scopes", []))
-        schema = ctx.content_lookup.get(_cr, {})
-        write_err = check_write_access(body, schema, user_scopes)
-        if write_err:
-            raise HTTPException(status_code=403, detail=write_err)
-
-        # v0.9 Phase 2: lookup goes through ctx.storage.read (id) or
-        # query() (alternate key). The state-machine PUT-gate still
-        # uses a raw db handle because do_state_transition() reads
-        # and writes via low-level helpers; that path is a v0.9.x
-        # cleanup item — wiring transitions through ctx.storage is
-        # straightforward but cascades into state.py + transitions.py.
-        if _lc == "id":
-            existing = await ctx.storage.read(_cr, param_val)
-            target_id = param_val
-        else:
-            page = await ctx.storage.query(
-                _cr, Eq(field=_lc, value=param_val),
-                QueryOptions(limit=1),
-            )
-            existing = dict(page.records[0]) if page.records else None
-            target_id = existing["id"] if existing else None
-
-        # v0.9 Phase 6a.5: ownership row_filter on UPDATE. Reject with
-        # 404 when the principal doesn't own the row, matching GET_ONE
-        # semantics — the row "doesn't exist" from this principal's
-        # perspective. Also rejects attempts to overwrite the
-        # ownership field itself: principal X cannot transfer their
-        # row to principal Y by setting <owner_field>=Y, even with
-        # the right scope.
-        if row_filter and row_filter.get("kind") == "ownership":
-            owner_field = row_filter.get("field")
-            owner_id = (user.get("the_user") or {}).get("id", "")
-            if existing and owner_field and existing.get(owner_field) != owner_id:
-                raise HTTPException(status_code=404, detail="Not found")
-            if owner_field in body:
-                # Strip the ownership field from the body; preserves
-                # the original owner. (Alternative: 403. The strip is
-                # less informative but lets benign updates with the
-                # same owner_id pass through cleanly.)
-                body = {k: v for k, v in body.items() if k != owner_field}
-
-        # ── State-machine PUT-route gate ──
-        #
-        # If the body carries any state-machine column whose value
-        # differs from the current record, route that change through
-        # do_state_transition — same security posture as POST
-        # /_transition: declared transitions only, required_scope
-        # enforced, atomic on rejection. Multi-SM in v0.9: each
-        # touched machine transitions in IR order; any failure stops
-        # the chain and rolls subsequent updates.
-        if existing and _cr in ctx.sm_lookup:
-            sm_list = ctx.sm_lookup.get(_cr, [])
-            state_cols = {sm["machine_name"] for sm in sm_list}
-            touched = [sm for sm in sm_list if sm["machine_name"] in body]
-            if touched:
-                # Phase 2.x (d): transitions go through ctx.storage's
-                # atomic CAS. No raw db connection in this path
-                # anymore.
-                for sm in touched:
-                    col = sm["machine_name"]
-                    new_val = body.get(col, "")
-                    cur_val = existing.get(col, "")
-                    if new_val != cur_val:
-                        await do_state_transition(
-                            ctx.storage, _cr, existing["id"], col, new_val, user,
-                            ctx.sm_lookup, ctx.terminator, ctx.event_bus,
-                        )
-            if state_cols:
-                body = {k: v for k, v in body.items() if k not in state_cols}
-
-        if existing:
-            merged = dict(existing)
-            merged.update(body)
-            validate_dependent_values(_cr, merged, ctx.content_lookup, ctx.expr_eval)
-        else:
-            validate_dependent_values(_cr, body, ctx.content_lookup, ctx.expr_eval)
-
-        if body and target_id is not None:
-            try:
-                record = await ctx.storage.update(_cr, target_id, body)
-            except Exception as e:
-                _route_terminator(ctx, _cr, e)
-                raise
-            if record is None:
-                raise HTTPException(status_code=404, detail="Not found")
-            record = dict(record)
-            await _publish_content_event(ctx, "updated", _cr, record)
-            db = await get_db(ctx.db_path)
-            try:
-                await ctx.run_event_handlers(db, _cr, "updated", record)
-            finally:
-                await db.close()
-        else:
-            # Body was state-only and already applied via transition,
-            # OR there was no record to update. Return the current
-            # record post-transition (or 404).
-            if target_id is None:
-                raise HTTPException(status_code=404, detail="Not found")
-            record = await ctx.storage.read(_cr, target_id)
-            if record is None:
-                raise HTTPException(status_code=404, detail="Not found")
-
-        return redact_record(record, schema, user_scopes)
+        auth = make_auth_context(user)
+        termin_req = await to_termin_request(
+            request,
+            path_params={"content": _cr, "key": key_val},
+            auth=auth,
+        )
+        response = await update_content_handler(termin_req, ctx)
+        return to_fastapi_response(response)
 
 
 def _make_delete_route(app, ctx, path, cr, sc, lc, row_filter=None):
+    """Slice 7.2.e of Phase 7 (2026-04-30): delete handler extracted
+    to ``termin_core.routing.crud.delete_content_handler``. The
+    FastAPI route is a thin bridge.
+    """
+    from termin_core.routing import delete_content_handler
+    from .fastapi_adapter import (
+        make_auth_context,
+        to_fastapi_response,
+        to_termin_request,
+    )
+
     deps = [Depends(ctx.require_scope(sc))] if sc else []
 
-    @app.delete(path, dependencies=deps)
-    async def delete_route(request: Request, _cr=cr, _lc=lc):
-        param_val = list(request.path_params.values())[0] if request.path_params else None
-        # v0.9: delete via ctx.storage. cascade_mode at the contract
-        # boundary is the caller's intent ("if any children, what
-        # should happen?"). The actual cascade semantics for this
-        # delete come from each child's FK declaration in the schema
-        # (ON DELETE CASCADE vs ON DELETE RESTRICT, emitted by
-        # init_db from the IR's FieldSpec.cascade_mode). RESTRICT
-        # at this level just means "if the schema says any child
-        # should restrict, honor that." The SqliteStorageProvider
-        # ignores the arg in v0.9 since SQLite's FK enforcement is
-        # the source of truth. Future providers (Postgres, DynamoDB)
-        # may consult it.
-        try:
-            target_id = param_val
-            if _lc != "id":
-                page = await ctx.storage.query(
-                    _cr, Eq(field=_lc, value=param_val),
-                    QueryOptions(limit=1),
-                )
-                if not page.records:
-                    raise HTTPException(status_code=404, detail="Record not found")
-                target_id = page.records[0].get("id")
+    if not hasattr(ctx, "_lookup_column_for_content"):
+        ctx._lookup_column_for_content = {}
+    ctx._lookup_column_for_content[cr] = lc
+    if not hasattr(ctx, "lookup_column_for"):
+        ctx.lookup_column_for = lambda cn: ctx._lookup_column_for_content.get(cn, "id")
+    if not hasattr(ctx, "_row_filter_for_content"):
+        ctx._row_filter_for_content = {}
+    if row_filter:
+        ctx._row_filter_for_content[cr] = row_filter
+    if not hasattr(ctx, "row_filter_for"):
+        ctx.row_filter_for = lambda cn: ctx._row_filter_for_content.get(cn)
 
-            # v0.9 Phase 6a.5: ownership row_filter on DELETE. Reject
-            # with 404 when the principal doesn't own the row, matching
-            # GET_ONE / UPDATE semantics.
-            if row_filter and row_filter.get("kind") == "ownership":
-                user = ctx.get_current_user(request)
-                owner_field = row_filter.get("field")
-                owner_id = (user.get("the_user") or {}).get("id", "")
-                if owner_field:
-                    rec = await ctx.storage.read(_cr, target_id)
-                    if rec is None or rec.get(owner_field) != owner_id:
-                        raise HTTPException(status_code=404, detail="Record not found")
-            deleted = await ctx.storage.delete(
-                _cr, target_id, cascade_mode=CascadeMode.RESTRICT,
-            )
-        except HTTPException:
-            raise
-        except sqlite3.IntegrityError as e:
-            msg = str(e)
-            if "FOREIGN KEY" in msg.upper():
-                singular = _cr[:-1] if _cr.endswith("s") else _cr
-                detail = (
-                    f"Cannot delete this {singular}: "
-                    f"other records reference it. Remove or reassign those first."
-                )
-                _route_terminator(ctx, _cr, e)
-                raise HTTPException(status_code=409, detail=detail)
-            raise
-        if not deleted:
-            raise HTTPException(status_code=404, detail="Record not found")
-        await _publish_content_event(ctx, "deleted", _cr, {"id": target_id})
-        return {"deleted": True}
+    @app.delete(path, dependencies=deps)
+    async def delete_route(request: Request, _cr=cr):
+        key_val = list(request.path_params.values())[0] if request.path_params else None
+        user = ctx.get_current_user(request)
+        auth = make_auth_context(user)
+        termin_req = await to_termin_request(
+            request,
+            path_params={"content": _cr, "key": key_val},
+            auth=auth,
+        )
+        response = await delete_content_handler(termin_req, ctx)
+        return to_fastapi_response(response)
 
 
 def _make_transition_route(app, ctx, path, cr, sc, lc, ts, mn=None):
