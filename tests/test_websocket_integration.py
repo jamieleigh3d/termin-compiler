@@ -25,7 +25,7 @@ import httpx
 import pytest
 import uvicorn
 import websockets
-import websockets.client
+import websockets.asyncio.client
 
 from termin_runtime import create_termin_app
 from helpers import extract_ir_from_pkg
@@ -138,7 +138,7 @@ class TestRealWebSocketPush:
         """POST to API → real WebSocket subscriber receives push."""
         server = agent_simple_server
 
-        async with websockets.client.connect(server.ws_url) as ws:
+        async with websockets.asyncio.client.connect(server.ws_url) as ws:
             # Subscribe
             await ws.send(json.dumps({
                 "v": 1, "ch": "content.completions", "op": "subscribe",
@@ -168,7 +168,7 @@ class TestRealWebSocketPush:
         """AJAX form POST → real WebSocket subscriber receives push."""
         server = agent_simple_server
 
-        async with websockets.client.connect(server.ws_url) as ws:
+        async with websockets.asyncio.client.connect(server.ws_url) as ws:
             await ws.send(json.dumps({
                 "v": 1, "ch": "content.completions", "op": "subscribe",
                 "ref": "sub1", "payload": {}
@@ -203,7 +203,7 @@ class TestRealWebSocketPush:
             )
 
         # Now subscribe — should get current data
-        async with websockets.client.connect(server.ws_url) as ws:
+        async with websockets.asyncio.client.connect(server.ws_url) as ws:
             await ws.send(json.dumps({
                 "v": 1, "ch": "content.completions", "op": "subscribe",
                 "ref": "sub1", "payload": {}
@@ -219,7 +219,7 @@ class TestRealWebSocketPush:
         """One create produces exactly one push — no duplicates."""
         server = agent_simple_server
 
-        async with websockets.client.connect(server.ws_url) as ws:
+        async with websockets.asyncio.client.connect(server.ws_url) as ws:
             await ws.send(json.dumps({
                 "v": 1, "ch": "content.completions", "op": "subscribe",
                 "ref": "sub1", "payload": {}
@@ -251,7 +251,7 @@ class TestRealWebSocketPush:
         """Push payload should be the record dict, not an event wrapper."""
         server = agent_simple_server
 
-        async with websockets.client.connect(server.ws_url) as ws:
+        async with websockets.asyncio.client.connect(server.ws_url) as ws:
             await ws.send(json.dumps({
                 "v": 1, "ch": "content.completions", "op": "subscribe",
                 "ref": "sub1", "payload": {}
@@ -288,7 +288,7 @@ class TestRealWebSocketPush:
         """
         server = channel_simple_server
 
-        async with websockets.client.connect(server.ws_url) as ws:
+        async with websockets.asyncio.client.connect(server.ws_url) as ws:
             # Subscribe to echoes (the webhook target)
             await ws.send(json.dumps({
                 "v": 1, "ch": "content.echoes", "op": "subscribe",
@@ -397,7 +397,7 @@ class TestRealWebSocketPush:
             server.start()
 
             try:
-                async with websockets.client.connect(server.ws_url) as ws:
+                async with websockets.asyncio.client.connect(server.ws_url) as ws:
                     await ws.send(json.dumps({
                         "v": 1, "ch": "content.completions", "op": "subscribe",
                         "ref": "sub1", "payload": {}
@@ -443,7 +443,7 @@ class TestRealWebSocketPush:
         """Creating content type A doesn't push to subscribers of content type B."""
         server = channel_simple_server
 
-        async with websockets.client.connect(server.ws_url) as ws:
+        async with websockets.asyncio.client.connect(server.ws_url) as ws:
             # Subscribe to echoes only
             await ws.send(json.dumps({
                 "v": 1, "ch": "content.echoes", "op": "subscribe",

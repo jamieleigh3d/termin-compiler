@@ -17,7 +17,7 @@ from typing import Optional, Callable, Coroutine
 
 try:
     import websockets
-    import websockets.client
+    import websockets.asyncio.client
     HAS_WEBSOCKETS = True
 except ImportError:
     HAS_WEBSOCKETS = False
@@ -63,7 +63,7 @@ class WebSocketConnection:
             extra_headers[auth.header] = auth.token
 
         try:
-            self._ws = await websockets.client.connect(
+            self._ws = await websockets.asyncio.client.connect(
                 url,
                 additional_headers=extra_headers,
                 ping_interval=self.config.heartbeat_ms / 1000.0 if self.config.heartbeat_ms else None,
