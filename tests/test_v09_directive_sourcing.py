@@ -224,7 +224,7 @@ def test_runtime_resolves_directive_from_deploy_config_at_startup():
     """When a compute declares Directive from deploy config "<key>",
     the runtime reads the value from deploy_config at app startup
     and surfaces it as `comp["directive"]` to compute_runner."""
-    from termin_runtime.app import _resolve_directive_sources
+    from termin_server.app import _resolve_directive_sources
 
     deploy_config = {"aria_system_prompt": "You are ARIA, a diagnostic AI."}
     comp = {
@@ -241,7 +241,7 @@ def test_runtime_resolves_directive_from_deploy_config_at_startup():
 def test_runtime_deploy_config_missing_key_leaves_directive_empty():
     """Missing key resolves to empty string and the runtime continues
     — the prompt-build path skips empty directives gracefully today."""
-    from termin_runtime.app import _resolve_directive_sources
+    from termin_server.app import _resolve_directive_sources
 
     deploy_config = {}
     comp = {
@@ -259,7 +259,7 @@ def test_runtime_resolves_objective_from_field_at_invocation():
     """Field-ref form reads from the triggering record at each
     invocation. The compute_runner picks up the value from
     `record[<field>]` when objective_source.kind == "field"."""
-    from termin_runtime.compute_runner import _resolve_directive_at_invocation
+    from termin_server.compute_runner import _resolve_directive_at_invocation
 
     comp = {
         "name": "ARIA",
@@ -283,7 +283,7 @@ def test_runtime_resolves_objective_from_field_at_invocation():
 def test_runtime_field_ref_missing_field_resolves_to_empty_string():
     """A record missing the named field resolves to empty rather
     than blowing up — same forgiving stance as deploy-config."""
-    from termin_runtime.compute_runner import _resolve_directive_at_invocation
+    from termin_server.compute_runner import _resolve_directive_at_invocation
 
     comp = {
         "name": "ARIA",
@@ -306,8 +306,8 @@ def test_runtime_field_ref_missing_field_resolves_to_empty_string():
 def test_inline_form_passes_through_without_resolution():
     """Inline-literal directives are already resolved at parse time;
     the runtime helpers leave them alone."""
-    from termin_runtime.app import _resolve_directive_sources
-    from termin_runtime.compute_runner import _resolve_directive_at_invocation
+    from termin_server.app import _resolve_directive_sources
+    from termin_server.compute_runner import _resolve_directive_at_invocation
 
     comp = {
         "name": "agent",

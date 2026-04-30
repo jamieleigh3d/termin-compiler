@@ -226,11 +226,11 @@ def test_airlock_provider_dispatch_proving_ground(airlock_registry):
     contract to the provider via a namespace binding. Final stage of
     the proving ground.
     """
-    from termin_runtime.app import _populate_presentation_providers
-    from termin_runtime.providers import (
+    from termin_server.app import _populate_presentation_providers
+    from termin_server.providers import (
         Category, ContractRegistry, ProviderRegistry,
     )
-    from termin_runtime.providers.contracts import (
+    from termin_server.providers.contracts import (
         ContractDefinition, Tier,
     )
 

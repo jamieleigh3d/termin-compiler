@@ -29,7 +29,7 @@ without regression.
 
 import pytest
 
-from termin_runtime.providers import (
+from termin_server.providers import (
     ContractRegistry, ProviderRegistry, ContractDefinition,
     ProviderRecord, Category, Tier,
 )
@@ -322,7 +322,7 @@ class TestRuntimeUsesIdentityProvider:
     def _make_test_app(self):
         """Build a minimal app + return its RuntimeContext."""
         import json
-        from termin_runtime.app import create_termin_app
+        from termin_server.app import create_termin_app
         # Construct a tiny IR-shaped dict directly to avoid the full
         # compile path. Only what's needed for the identity bootstrap.
         ir = {
@@ -353,7 +353,7 @@ class TestRuntimeUsesIdentityProvider:
     def test_identity_provider_is_constructed_at_startup(self):
         """ctx.identity_provider must be a real IdentityProvider
         instance after create_termin_app returns."""
-        from termin_runtime.providers import IdentityProvider
+        from termin_server.providers import IdentityProvider
         app, ctx = self._make_test_app()
         assert ctx is not None, "RuntimeContext should be on app.state.ctx"
         assert ctx.identity_provider is not None
@@ -363,7 +363,7 @@ class TestRuntimeUsesIdentityProvider:
         """A request with a non-Anonymous role cookie must produce
         a user dict whose Principal was constructed by the provider's
         authenticate path (not a synthesized inline shape)."""
-        from termin_runtime.providers.builtins.identity_stub import (
+        from termin_server.providers.builtins.identity_stub import (
             StubIdentityProvider,
         )
         app, ctx = self._make_test_app()
@@ -387,7 +387,7 @@ class TestRuntimeUsesIdentityProvider:
         """Per BRD §6.1: Anonymous bypasses the provider entirely.
         The runtime must construct ANONYMOUS_PRINCIPAL directly,
         never call authenticate."""
-        from termin_runtime.providers import ANONYMOUS_PRINCIPAL
+        from termin_server.providers import ANONYMOUS_PRINCIPAL
         app, ctx = self._make_test_app()
         class _Req:
             cookies = {"termin_role": "Anonymous"}
@@ -407,7 +407,7 @@ class TestRuntimeUsesIdentityProvider:
         than silently fall back to stub."""
         import json
         import pytest
-        from termin_runtime.app import create_termin_app
+        from termin_server.app import create_termin_app
         ir = {
             "name": "Test", "app_id": "test-app",
             "auth": {

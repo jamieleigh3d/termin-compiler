@@ -25,8 +25,8 @@ import uuid
 
 import pytest
 
-from termin_runtime.ai_provider import AIProvider
-from termin_runtime.events import EventBus
+from termin_server.ai_provider import AIProvider
+from termin_server.events import EventBus
 
 
 # ── Provider simulate_stream helper ─────────────────────────────────
@@ -173,7 +173,7 @@ class TestStreamingFieldExtractor:
 
     def _feed(self, chunks):
         """Feed a sequence of JSON chunks and return all emitted events."""
-        from termin_runtime.ai_provider import StreamingJsonFieldExtractor
+        from termin_server.ai_provider import StreamingJsonFieldExtractor
         ex = StreamingJsonFieldExtractor()
         events = []
         for c in chunks:
@@ -346,7 +346,7 @@ class TestAnthropicStreamComplete:
         assert asyncio.run(run()) == [("just one", True)]
 
     def test_mid_stream_error_raises_ai_provider_error(self):
-        from termin_runtime.ai_provider import AIProviderError
+        from termin_server.ai_provider import AIProviderError
         async def run():
             provider = self._make_provider_with_mock(
                 ["A", "B", "C"], raise_at=1)
@@ -612,7 +612,7 @@ class TestAgentStreamPublisher:
 
     def test_per_field_and_base_channels_populated(self):
         async def run():
-            from termin_runtime.compute_runner import publish_agent_stream_events
+            from termin_server.compute_runner import publish_agent_stream_events
 
             bus = EventBus()
             inv_id = "inv-agent-1"
@@ -920,7 +920,7 @@ class TestStreamEventsCarryTargetLocation:
         bus must include the content_name and record_id so the client
         can find `td[data-termin-row-id=...][data-termin-field=...]`."""
         async def run():
-            from termin_runtime.events import EventBus
+            from termin_server.events import EventBus
             bus = EventBus()
             q = bus.subscribe("compute.stream.")
 
@@ -965,7 +965,7 @@ class TestComputeRunnerStreamPublish:
 
     def test_runner_publishes_each_delta_then_terminal(self):
         async def run():
-            from termin_runtime.compute_runner import publish_stream_deltas
+            from termin_server.compute_runner import publish_stream_deltas
 
             bus = EventBus()
             provider = AIProvider({"ai_provider": {}})

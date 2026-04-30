@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import pytest
 
-from termin_runtime.cel_predicate import (
+from termin_server.cel_predicate import (
     compile_cel_to_predicate, NotCompilable,
 )
-from termin_runtime.providers.storage_contract import (
+from termin_server.providers.storage_contract import (
     Eq, Ne, Gt, Gte, Lt, Lte, In, Contains, And, Or, Not,
 )
 
@@ -176,10 +176,10 @@ class TestEndToEndPushdown:
 
     @pytest.mark.asyncio
     async def test_compiled_predicate_filters_via_provider(self, tmp_path):
-        from termin_runtime.providers.builtins.storage_sqlite import (
+        from termin_server.providers.builtins.storage_sqlite import (
             SqliteStorageProvider,
         )
-        from termin_runtime.providers.storage_contract import (
+        from termin_server.providers.storage_contract import (
             initial_deploy_diff, QueryOptions,
         )
         db_path = str(tmp_path / "app.db")

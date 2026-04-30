@@ -29,7 +29,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from termin_runtime.bootstrap import (
+from termin_server.bootstrap import (
     build_shell_html,
     register_shell_endpoint,
 )

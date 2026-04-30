@@ -30,7 +30,7 @@ import pytest
 from termin.peg_parser import parse_peg as parse
 from termin.lower import lower
 from termin_core.ir.types import ComponentNode, AppSpec
-from termin_runtime.providers.presentation_contract import (
+from termin_server.providers.presentation_contract import (
     PRESENTATION_BASE_CONTRACTS,
     PresentationProvider,
     PrincipalContext,
@@ -200,7 +200,7 @@ def test_protocol_rejects_non_conforming_class():
 # ── Contract registration ──
 
 def test_register_presentation_base_contracts_adds_ten():
-    from termin_runtime.providers.contracts import ContractRegistry, Category
+    from termin_server.providers.contracts import ContractRegistry, Category
 
     reg = ContractRegistry()
     before = len(reg.contracts_in(Category.PRESENTATION))
@@ -211,7 +211,7 @@ def test_register_presentation_base_contracts_adds_ten():
 
 
 def test_register_uses_namespace_qualified_names():
-    from termin_runtime.providers.contracts import ContractRegistry, Category
+    from termin_server.providers.contracts import ContractRegistry, Category
 
     reg = ContractRegistry()
     register_presentation_base_contracts(reg)

@@ -23,14 +23,14 @@ from __future__ import annotations
 
 import pytest
 
-from termin_runtime.providers.builtins import (
+from termin_server.providers.builtins import (
     TailwindDefaultProvider,
     register_tailwind_default,
     register_builtins,
 )
-from termin_runtime.providers.contracts import Category, ContractRegistry
-from termin_runtime.providers.registry import ProviderRegistry
-from termin_runtime.providers.presentation_contract import (
+from termin_server.providers.contracts import Category, ContractRegistry
+from termin_server.providers.registry import ProviderRegistry
+from termin_server.providers.presentation_contract import (
     PRESENTATION_BASE_CONTRACTS,
     PresentationProvider,
     PresentationData,

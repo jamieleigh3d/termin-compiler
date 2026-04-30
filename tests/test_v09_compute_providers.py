@@ -15,18 +15,18 @@ from __future__ import annotations
 
 import pytest
 
-from termin_runtime.providers import (
+from termin_server.providers import (
     AgentContext, AgentResult, AuditRecord, Category, CompletionResult,
     Completed, ContractRegistry, ProviderRegistry, ToolSurface,
     Principal,
 )
-from termin_runtime.providers.builtins import (
+from termin_server.providers.builtins import (
     DefaultCelProvider, StubLlmProvider, StubAgentProvider,
     AnthropicLlmProvider, AnthropicAgentProvider, register_builtins,
     register_default_cel, register_stub_llm, register_stub_agent,
     register_anthropic_llm, register_anthropic_agent,
 )
-from termin_runtime.providers.builtins._provider_hash import (
+from termin_server.providers.builtins._provider_hash import (
     hash_provider_config,
 )
 
@@ -269,7 +269,7 @@ class TestStubAgentProvider:
         async for ev in p.invoke_streaming("dir", "obj", ctx, ToolSurface()):
             events.append(ev)
         # Expect: ToolCalled, ToolResult, Completed
-        from termin_runtime.providers import ToolCalled, ToolResult
+        from termin_server.providers import ToolCalled, ToolResult
         types = [type(e).__name__ for e in events]
         assert "ToolCalled" in types
         assert "ToolResult" in types

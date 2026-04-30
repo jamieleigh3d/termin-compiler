@@ -17,7 +17,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from termin_runtime.ai_provider import build_output_tool
+from termin_server.ai_provider import build_output_tool
 
 
 # ── Fix 1: Level 1 LLM prompt mapping ──
@@ -28,7 +28,7 @@ class TestLLMPromptMapping:
 
     def test_level1_system_includes_objective(self):
         """For Level 1 computes, system = directive + objective."""
-        from termin_runtime.compute_runner import _build_llm_prompts
+        from termin_server.compute_runner import _build_llm_prompts
         comp = {
             "directive": "You are a sentiment analyzer.",
             "objective": "Classify the sentiment of the user's review.",
@@ -45,7 +45,7 @@ class TestLLMPromptMapping:
 
     def test_level1_user_message_is_fields_only(self):
         """User turn should be just the input field values."""
-        from termin_runtime.compute_runner import _build_llm_prompts
+        from termin_server.compute_runner import _build_llm_prompts
         comp = {
             "directive": "You are a translator.",
             "objective": "Translate the text to French.",
@@ -58,7 +58,7 @@ class TestLLMPromptMapping:
 
     def test_level1_no_input_fields(self):
         """When there are no input fields, user message is empty or minimal."""
-        from termin_runtime.compute_runner import _build_llm_prompts
+        from termin_server.compute_runner import _build_llm_prompts
         comp = {
             "directive": "You summarize things.",
             "objective": "Provide a daily summary.",
@@ -77,7 +77,7 @@ class TestDirectiveOptional:
 
     def test_no_default_directive_when_objective_present(self):
         """If only objective is set, system = objective only. No injected directive."""
-        from termin_runtime.compute_runner import _build_llm_prompts
+        from termin_server.compute_runner import _build_llm_prompts
         comp = {
             "directive": "",  # Author didn't write a directive
             "objective": "Analyze the code quality.",
@@ -90,7 +90,7 @@ class TestDirectiveOptional:
 
     def test_no_default_directive_for_agents(self):
         """Agent compute with no directive should not inject a default."""
-        from termin_runtime.compute_runner import _build_agent_prompts
+        from termin_server.compute_runner import _build_agent_prompts
         comp = {
             "directive": "",
             "objective": "Process incoming tickets.",
@@ -102,7 +102,7 @@ class TestDirectiveOptional:
 
     def test_explicit_directive_preserved(self):
         """When author provides both directive and objective, both in system."""
-        from termin_runtime.compute_runner import _build_llm_prompts
+        from termin_server.compute_runner import _build_llm_prompts
         comp = {
             "directive": "You are a medical coding expert.",
             "objective": "Assign ICD-10 codes to the diagnosis.",
@@ -158,7 +158,7 @@ class TestThinkingFieldControl:
 
     def test_agent_set_output_no_thinking_by_default(self):
         """Agent set_output tool should not include thinking unconditionally."""
-        from termin_runtime.compute_runner import _build_agent_set_output
+        from termin_server.compute_runner import _build_agent_set_output
         comp = {"output_fields": [], "output_params": []}
         tool = _build_agent_set_output(comp, {})
         props = tool["input_schema"]["properties"]

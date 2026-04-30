@@ -34,18 +34,18 @@ from pathlib import Path
 
 import pytest
 
-from termin_runtime.providers import (
+from termin_server.providers import (
     Eq, Ne, Gt, Gte, Lt, Lte, In, Contains, And, Or, Not,
     OrderBy, QueryOptions, Page, CascadeMode,
     FieldChange, ContentChange, MigrationDiff, initial_deploy_diff,
     StorageProvider,
 )
-from termin_runtime.providers.builtins.storage_sqlite import (
+from termin_server.providers.builtins.storage_sqlite import (
     SqliteStorageProvider, _compile_predicate,
     _encode_cursor, _decode_cursor, register_sqlite_storage,
 )
-from termin_runtime.providers.contracts import Category, ContractRegistry
-from termin_runtime.providers.registry import ProviderRegistry
+from termin_server.providers.contracts import Category, ContractRegistry
+from termin_server.providers.registry import ProviderRegistry
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -682,7 +682,7 @@ class TestRuntimeWireUp:
 
     def _make_app(self, db_path: str | None = None):
         """Build a minimal app with one Content type and one role."""
-        from termin_runtime.app import create_termin_app
+        from termin_server.app import create_termin_app
         ir = {
             "name": "Phase2Test", "app_id": "phase2-test",
             "auth": {
@@ -746,7 +746,7 @@ class TestRuntimeWireUp:
         # at the first CRUD call. Revert verification: remove the
         # `if storage_record is None: raise` block → the app would
         # build with ctx.storage=None and crash on first request.
-        from termin_runtime.app import create_termin_app
+        from termin_server.app import create_termin_app
         ir = {
             "name": "Phase2Test", "app_id": "phase2-test",
             "auth": {
@@ -777,7 +777,7 @@ class TestRouteUsesStorageProvider:
 
     def _make_app_with_route(self, tmp_path):
         """App with one CREATE + LIST route on `items`."""
-        from termin_runtime.app import create_termin_app
+        from termin_server.app import create_termin_app
         ir = {
             "name": "Phase2Test", "app_id": "phase2-test",
             "auth": {

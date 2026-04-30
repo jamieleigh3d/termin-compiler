@@ -26,7 +26,7 @@ def _ir_json(pkg_path):
 @pytest.fixture(scope="module")
 def client(compiled_packages):
     """Load compute_demo IR and return a TestClient."""
-    from termin_runtime import create_termin_app
+    from termin_server import create_termin_app
 
     ir_json = _ir_json(compiled_packages["compute_demo"])
     import tempfile, os

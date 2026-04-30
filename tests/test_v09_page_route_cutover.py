@@ -25,8 +25,8 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from termin_runtime import create_termin_app
-from termin_runtime.bootstrap import page_should_use_shell
+from termin_server import create_termin_app
+from termin_server.bootstrap import page_should_use_shell
 
 # CSR-only provider needed for the cut-over branch — skip the
 # integration tests if termin-spectrum-provider isn't installed in

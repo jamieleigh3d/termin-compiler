@@ -15,7 +15,7 @@ make them green.
 
 import pytest
 
-from termin_runtime.providers.channel_contract import (
+from termin_server.providers.channel_contract import (
     ChannelAuditRecord,
     ChannelSendResult,
     MessageRef,
@@ -26,15 +26,15 @@ from termin_runtime.providers.channel_contract import (
     CHANNEL_CONTRACT_ACTION_VOCAB,
     CHANNEL_CONTRACT_FULL_FEATURES,
 )
-from termin_runtime.providers.builtins.channel_webhook_stub import WebhookChannelStub
-from termin_runtime.providers.builtins.channel_email_stub import (
+from termin_server.providers.builtins.channel_webhook_stub import WebhookChannelStub
+from termin_server.providers.builtins.channel_email_stub import (
     EmailChannelStub, CapturedEmail,
 )
-from termin_runtime.providers.builtins.channel_messaging_stub import MessagingChannelStub
-from termin_runtime.providers import (
+from termin_server.providers.builtins.channel_messaging_stub import MessagingChannelStub
+from termin_server.providers import (
     Category, ContractRegistry, ProviderRegistry,
 )
-from termin_runtime.providers.builtins import register_builtins
+from termin_server.providers.builtins import register_builtins
 
 
 # ── ChannelAuditRecord validation ──

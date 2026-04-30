@@ -23,7 +23,7 @@ class TestIdentifierValidation:
     """IR identifiers that flow into SQL must match safe patterns."""
 
     def test_safe_identifier_accepted(self):
-        from termin_runtime.storage import validate_identifier
+        from termin_server.storage import validate_identifier
         assert validate_identifier("orders") is True
         assert validate_identifier("order_items") is True
         assert validate_identifier("compute_audit_log_scanner") is True
@@ -31,22 +31,22 @@ class TestIdentifierValidation:
         assert validate_identifier("x123") is True
 
     def test_sql_injection_rejected(self):
-        from termin_runtime.storage import validate_identifier
+        from termin_server.storage import validate_identifier
         assert validate_identifier('orders"; DROP TABLE orders; --') is False
         assert validate_identifier("orders' OR '1'='1") is False
         assert validate_identifier("name; DELETE FROM users") is False
 
     def test_empty_rejected(self):
-        from termin_runtime.storage import validate_identifier
+        from termin_server.storage import validate_identifier
         assert validate_identifier("") is False
 
     def test_spaces_rejected(self):
-        from termin_runtime.storage import validate_identifier
+        from termin_server.storage import validate_identifier
         assert validate_identifier("order items") is False
         assert validate_identifier("my table") is False
 
     def test_special_chars_rejected(self):
-        from termin_runtime.storage import validate_identifier
+        from termin_server.storage import validate_identifier
         assert validate_identifier("table;") is False
         assert validate_identifier('table"') is False
         assert validate_identifier("table'") is False
@@ -55,14 +55,14 @@ class TestIdentifierValidation:
 
     def test_uppercase_rejected(self):
         """Only lowercase snake_case allowed — IR should always be lowered."""
-        from termin_runtime.storage import validate_identifier
+        from termin_server.storage import validate_identifier
         assert validate_identifier("Orders") is False
         assert validate_identifier("ORDER_ITEMS") is False
 
     def test_init_db_rejects_unsafe_table_name(self):
         """init_db should refuse to create tables with unsafe names."""
         import asyncio
-        from termin_runtime.storage import init_db
+        from termin_server.storage import init_db
         malicious_ir = [{"name": {"snake": 'orders"; DROP TABLE users; --'}, "fields": []}]
         with pytest.raises(ValueError, match="(?i)unsafe"):
             asyncio.run(init_db(malicious_ir, db_path=":memory:"))
@@ -70,7 +70,7 @@ class TestIdentifierValidation:
     def test_init_db_rejects_unsafe_field_name(self):
         """init_db should refuse to create columns with unsafe names."""
         import asyncio
-        from termin_runtime.storage import init_db
+        from termin_server.storage import init_db
         malicious_ir = [{
             "name": {"snake": "orders"},
             "fields": [{"name": 'quantity; DROP TABLE orders; --', "business_type": "number"}],
@@ -85,17 +85,17 @@ class TestIdentifierEscaping:
     """_q() must handle embedded quotes safely."""
 
     def test_normal_identifier(self):
-        from termin_runtime.storage import _q
+        from termin_server.storage import _q
         assert _q("orders") == '"orders"'
 
     def test_embedded_double_quote_escaped(self):
-        from termin_runtime.storage import _q
+        from termin_server.storage import _q
         # SQLite escapes " by doubling: "name""with""quotes"
         result = _q('name"injection')
         assert '""' in result  # quote is doubled, not raw
 
     def test_injection_attempt_neutralized(self):
-        from termin_runtime.storage import _q
+        from termin_server.storage import _q
         malicious = 'orders"; DROP TABLE users; --'
         result = _q(malicious)
         # The result should be a single quoted identifier, not multiple statements

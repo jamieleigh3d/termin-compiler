@@ -17,8 +17,8 @@ from unittest.mock import AsyncMock, patch
 import httpx
 from fastapi.testclient import TestClient
 
-from termin_runtime import create_termin_app
-from termin_runtime.channels import (
+from termin_server import create_termin_app
+from termin_server.channels import (
     ChannelDispatcher, ChannelConfig, ChannelError, ChannelScopeError, ChannelValidationError,
     load_deploy_config, _resolve_env_vars,
 )
@@ -105,7 +105,7 @@ class TestStrictChannelValidation:
 
     def test_internal_channels_never_need_config(self):
         """Internal channels don't require deploy config even in strict mode."""
-        from termin_runtime.channels import validate_channel_config
+        from termin_server.channels import validate_channel_config
         ir = extract_ir_from_pkg(self.pkgs["channel_demo"])
         # Provide config for all external channels
         errors = validate_channel_config(ir, MOCK_DEPLOY_CONFIG)
@@ -114,7 +114,7 @@ class TestStrictChannelValidation:
 
     def test_validation_catches_missing_provider(self):
         """v0.9: validate_channel_config catches channels with a binding but no provider key."""
-        from termin_runtime.channels import validate_channel_config
+        from termin_server.channels import validate_channel_config
         ir = extract_ir_from_pkg(self.pkgs["channel_demo"])
         # Binding present but no 'provider' key
         bad_config = {"bindings": {"channels": {"pagerduty": {"config": {}}}}}
@@ -123,7 +123,7 @@ class TestStrictChannelValidation:
 
     def test_validation_catches_missing_binding(self):
         """v0.9: validate_channel_config catches channels with no binding at all."""
-        from termin_runtime.channels import validate_channel_config
+        from termin_server.channels import validate_channel_config
         ir = extract_ir_from_pkg(self.pkgs["channel_demo"])
         errors = validate_channel_config(ir, {})  # no bindings
         assert any("pagerduty" in e for e in errors)
@@ -152,8 +152,8 @@ class TestDeployConfigLoading:
 class TestChannelDispatcher:
     @pytest.fixture(autouse=True)
     def _pkgs(self, compiled_packages):
-        from termin_runtime.providers import ProviderRegistry, ContractRegistry
-        from termin_runtime.providers.builtins import register_builtins
+        from termin_server.providers import ProviderRegistry, ContractRegistry
+        from termin_server.providers.builtins import register_builtins
         self.ir = extract_ir_from_pkg(compiled_packages["channel_demo"])
         reg = ProviderRegistry()
         creg = ContractRegistry.default()
@@ -481,7 +481,7 @@ class TestWebSocketDispatcher:
         self.pkgs = compiled_packages
 
     def test_ws_connection_state_initial(self):
-        from termin_runtime.channels import WebSocketConnection
+        from termin_server.channels import WebSocketConnection
         config = ChannelConfig(url="ws://localhost:9999", protocol="websocket")
         ws = WebSocketConnection("test", config)
         assert ws.state == "disconnected"

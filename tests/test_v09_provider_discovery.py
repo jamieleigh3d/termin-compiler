@@ -17,14 +17,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from termin_runtime.app import (
+from termin_server.app import (
     _discover_external_providers,
     _populate_presentation_providers,
 )
-from termin_runtime.providers import (
+from termin_server.providers import (
     Category, ContractRegistry, ProviderRegistry,
 )
-from termin_runtime.providers.presentation_contract import (
+from termin_server.providers.presentation_contract import (
     PRESENTATION_BASE_CONTRACTS,
 )
 
@@ -185,7 +185,7 @@ def test_populate_no_bindings_uses_real_tailwind_when_registered():
     case), the no-bindings synthesis populates ctx.presentation_providers
     with all ten presentation-base contracts bound to tailwind-default.
     """
-    from termin_runtime.providers.builtins.presentation_tailwind_default import (
+    from termin_server.providers.builtins.presentation_tailwind_default import (
         register_tailwind_default,
     )
     contracts = ContractRegistry.default()
@@ -390,7 +390,7 @@ def test_populate_expands_package_namespace_binding(tmp_path):
     # Register the demo-pkg.* contracts so the provider registry
     # accepts them. Phase 5c.3 will likely auto-register from the
     # package registry; for this test we do it inline.
-    from termin_runtime.providers.contracts import (
+    from termin_server.providers.contracts import (
         Category, ContractDefinition, Tier,
     )
     for short in ("thingy", "widget"):

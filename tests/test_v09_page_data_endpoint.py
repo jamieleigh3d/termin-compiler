@@ -22,7 +22,7 @@ import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
-from termin_runtime.bootstrap import register_page_data_endpoint
+from termin_server.bootstrap import register_page_data_endpoint
 
 
 # ── Fixture: app + ctx with one page ──

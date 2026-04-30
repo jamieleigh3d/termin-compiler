@@ -202,7 +202,7 @@ class TestToolSurfaceConstruction:
     def test_runtime_builds_tool_surface_from_ir(self):
         """create_termin_app populates ctx.compute_tool_surfaces from
         the IR's ComputeSpec list."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from termin.lower import lower
         import json
 
@@ -259,7 +259,7 @@ class TestToolSurfaceConstruction:
 
 class TestToolSurfaceContract:
     def test_full_grant_set(self):
-        from termin_runtime.providers import ToolSurface
+        from termin_server.providers import ToolSurface
         s = ToolSurface(
             content_rw=("orders",),
             content_ro=("products",),

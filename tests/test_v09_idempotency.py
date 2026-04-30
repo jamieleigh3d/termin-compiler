@@ -27,8 +27,8 @@ import tempfile
 
 import pytest
 
-from termin_runtime.providers.builtins.storage_sqlite import SqliteStorageProvider
-from termin_runtime.providers.storage_contract import (
+from termin_server.providers.builtins.storage_sqlite import SqliteStorageProvider
+from termin_server.providers.storage_contract import (
     initial_deploy_diff, CascadeMode,
 )
 
@@ -133,7 +133,7 @@ class TestIdempotencyContract:
         await provider.create(
             "things", {"label": "first"}, idempotency_key="key-1")
         # Only one row in storage despite two calls.
-        from termin_runtime.providers.storage_contract import QueryOptions
+        from termin_server.providers.storage_contract import QueryOptions
         page = await provider.query("things", None, QueryOptions(limit=10))
         assert len(page.records) == 1
 
@@ -213,7 +213,7 @@ class TestPerContentTypeIsolation:
             "betas", {"name": "b-first"}, idempotency_key="k")
         assert b1["id"] is not None
         # Verify both content types have independent records.
-        from termin_runtime.providers.storage_contract import QueryOptions
+        from termin_server.providers.storage_contract import QueryOptions
         ap = await p.query("alphas", None, QueryOptions(limit=10))
         bp = await p.query("betas", None, QueryOptions(limit=10))
         assert len(ap.records) == 1

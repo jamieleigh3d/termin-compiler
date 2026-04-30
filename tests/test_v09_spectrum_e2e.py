@@ -33,7 +33,7 @@ from fastapi.testclient import TestClient
 # Skip the whole module if the provider isn't installed.
 spectrum = pytest.importorskip("termin_spectrum")
 
-from termin_runtime import create_termin_app
+from termin_server import create_termin_app
 from helpers import extract_ir_from_pkg
 
 

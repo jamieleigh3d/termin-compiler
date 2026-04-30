@@ -27,10 +27,10 @@ Tests cover:
 
 import pytest
 
-from termin_runtime.providers import (
+from termin_server.providers import (
     DeployConfig, parse_deploy_config,
 )
-from termin_runtime.providers.binding import (
+from termin_server.providers.binding import (
     resolve_effective_bindings,
 )
 

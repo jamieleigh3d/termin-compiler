@@ -503,7 +503,7 @@ class TestD19Runtime:
         })
 
     def test_create_valid_14inch_ram(self):
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         app = create_termin_app(self._build_ir(), strict_channels=False)
         with TestClient(app) as client:
@@ -512,7 +512,7 @@ class TestD19Runtime:
             assert r.status_code == 201, r.text
 
     def test_create_invalid_14inch_ram(self):
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         app = create_termin_app(self._build_ir(), strict_channels=False)
         with TestClient(app) as client:
@@ -522,7 +522,7 @@ class TestD19Runtime:
             assert "must be one of" in r.json()["detail"].lower()
 
     def test_create_valid_16inch_ram(self):
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         app = create_termin_app(self._build_ir(), strict_channels=False)
         with TestClient(app) as client:
@@ -531,7 +531,7 @@ class TestD19Runtime:
             assert r.status_code == 201, r.text
 
     def test_create_default_color_applied(self):
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         app = create_termin_app(self._build_ir(), strict_channels=False)
         with TestClient(app) as client:
@@ -542,7 +542,7 @@ class TestD19Runtime:
 
     def test_create_no_constraint_when_condition_unmet(self):
         """When condition is false, constraint should not apply."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         app = create_termin_app(self._build_ir(), strict_channels=False)
         with TestClient(app) as client:
@@ -622,7 +622,7 @@ class TestBoundaryEnforcementMap:
 
     def test_content_in_same_boundary_allowed(self):
         """Compute accessing content in the same boundary should succeed."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         ir = _block_c_ir(
             boundaries=[{
@@ -670,7 +670,7 @@ class TestBoundaryEnforcementMap:
 
     def test_cross_boundary_rejected(self):
         """Compute accessing content in a different boundary should get 403."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         ir = _block_c_ir(
             boundaries=[
@@ -730,7 +730,7 @@ class TestBoundaryEnforcementMap:
     def test_content_outside_subboundary_rejected_from_subboundary(self):
         """Content not in any sub-boundary lives in the app boundary.
         A Compute in a sub-boundary cannot reach app-level content without a channel."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         ir = _block_c_ir(
             boundaries=[{
@@ -783,7 +783,7 @@ class TestBoundaryEnforcementMap:
     def test_no_boundaries_all_content_in_app_boundary(self):
         """App with no explicit boundaries: all content is in the implicit app boundary.
         All Computes are also in the app boundary. Same boundary → allowed."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         ir = _block_c_ir(
             boundaries=[],
@@ -825,7 +825,7 @@ class TestBoundaryEnforcementMap:
 
     def test_app_level_compute_accesses_app_level_content(self):
         """A Compute not in any sub-boundary (app-level) can access app-level content."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         ir = _block_c_ir(
             boundaries=[{
@@ -876,7 +876,7 @@ class TestBoundaryEnforcementMap:
 
     def test_app_level_compute_cannot_reach_into_subboundary(self):
         """A Compute at app level cannot access content inside a sub-boundary without a channel."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         ir = _block_c_ir(
             boundaries=[{

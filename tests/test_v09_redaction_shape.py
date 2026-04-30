@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from termin_runtime.confidentiality import redact_record, is_redacted
+from termin_server.confidentiality import redact_record, is_redacted
 
 
 def _content_ir(field_specs: list[dict]) -> dict:

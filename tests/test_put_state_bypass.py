@@ -43,7 +43,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from helpers import extract_ir_from_pkg
-from termin_runtime import create_termin_app
+from termin_server import create_termin_app
 
 
 @pytest.fixture(scope="module")

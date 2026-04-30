@@ -27,7 +27,7 @@ import uvicorn
 import websockets
 import websockets.asyncio.client
 
-from termin_runtime import create_termin_app
+from termin_server import create_termin_app
 from helpers import extract_ir_from_pkg
 
 
@@ -323,7 +323,7 @@ class TestRealWebSocketPush:
         the actual background thread + event loop isolation path that caused
         the original sync bug.
         """
-        from termin_runtime.ai_provider import AIProvider
+        from termin_server.ai_provider import AIProvider
 
         ir_json = _ir_json(compiled_packages["agent_simple"])
 
@@ -361,7 +361,7 @@ class TestRealWebSocketPush:
             pass  # We need to patch at the module level
 
         # Patch the Anthropic client import to return a mock
-        import termin_runtime.ai_provider as ai_mod
+        import termin_server.ai_provider as ai_mod
         original_startup = AIProvider.startup
 
         def mock_startup(self):

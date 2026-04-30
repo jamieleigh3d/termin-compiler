@@ -128,7 +128,7 @@ class TestDependentValueRuntime:
     @pytest.fixture
     def dep_val_client(self):
         """App with dependent values for testing validation branches."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         ir = json.dumps({
             "ir_version": "0.9.0",
@@ -309,7 +309,7 @@ class TestBoundaryEdgeCases:
     """Cover boundary check edge cases in app.py."""
 
     def _make_app(self, boundaries, computes, content=None):
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         default_content = [
             {"name": {"display": "orders", "snake": "orders", "pascal": "Orders"},
@@ -379,34 +379,34 @@ class TestContentSnapshotEdgeCases:
     """Cover __getattr__ and __getitem__ error paths."""
 
     def test_getattr_existing_content(self):
-        from termin_runtime.transaction import ContentSnapshot
+        from termin_server.transaction import ContentSnapshot
         snap = ContentSnapshot({"orders": [{"id": 1}]})
         assert snap.orders == [{"id": 1}]
 
     def test_getattr_missing_content_raises(self):
-        from termin_runtime.transaction import ContentSnapshot
+        from termin_server.transaction import ContentSnapshot
         snap = ContentSnapshot({})
         with pytest.raises(AttributeError, match="no content type"):
             _ = snap.nonexistent
 
     def test_getattr_private_raises(self):
-        from termin_runtime.transaction import ContentSnapshot
+        from termin_server.transaction import ContentSnapshot
         snap = ContentSnapshot({})
         with pytest.raises(AttributeError):
             _ = snap._private
 
     def test_getitem_result(self):
-        from termin_runtime.transaction import ContentSnapshot
+        from termin_server.transaction import ContentSnapshot
         snap = ContentSnapshot({}, result=42)
         assert snap["result"] == 42
 
     def test_getitem_content(self):
-        from termin_runtime.transaction import ContentSnapshot
+        from termin_server.transaction import ContentSnapshot
         snap = ContentSnapshot({"items": [{"id": 1}]})
         assert snap["items"] == [{"id": 1}]
 
     def test_getitem_missing_raises(self):
-        from termin_runtime.transaction import ContentSnapshot
+        from termin_server.transaction import ContentSnapshot
         snap = ContentSnapshot({})
         with pytest.raises(KeyError):
             _ = snap["nonexistent"]
@@ -424,8 +424,8 @@ class TestAgentToolExecution:
     @pytest.fixture(autouse=False)
     def agent_app_with_mock(self, tmp_path):
         """Create an app with an agent Compute, mock the agent_loop to call tools."""
-        from termin_runtime import create_termin_app
-        from termin_runtime.ai_provider import AIProvider
+        from termin_server import create_termin_app
+        from termin_server.ai_provider import AIProvider
         from fastapi.testclient import TestClient
         import asyncio
 
@@ -517,7 +517,7 @@ class TestAgentToolExecution:
         tool_calls: list of (tool_name, tool_input) tuples the mock will execute.
         Returns the final result dict from the agent.
         """
-        from termin_runtime.ai_provider import AIProvider
+        from termin_server.ai_provider import AIProvider
         from fastapi.testclient import TestClient
         import asyncio
 
@@ -569,7 +569,7 @@ class TestAgentToolExecution:
             [("content_create", {"content_name": "logs", "data": {"message": "agent created this"}})]
         )
         # Verify the log was created
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         # The client is closed, but the record should be in DB
 
     def test_content_update_tool(self, agent_app_with_mock):
@@ -615,8 +615,8 @@ class TestAgentToolExecution:
 
     def test_content_query_boundary_denied(self, tmp_path):
         """Agent querying content in a different boundary should get boundary error."""
-        from termin_runtime import create_termin_app
-        from termin_runtime.ai_provider import AIProvider
+        from termin_server import create_termin_app
+        from termin_server.ai_provider import AIProvider
         from fastapi.testclient import TestClient
         import time
 
@@ -737,7 +737,7 @@ class TestTypeCoercionEdgeCases:
     @pytest.fixture
     def numeric_one_of_client(self, tmp_path):
         """App with numeric one_of values for type coercion testing."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         ir = json.dumps({
             "ir_version": "0.9.0", "reflection_enabled": False,
@@ -822,7 +822,7 @@ class TestSchedulerCoverage:
 
     def test_scheduled_compute_registers(self, tmp_path):
         """A Compute with 'Trigger on schedule' should register with scheduler."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         ir = json.dumps({
             "ir_version": "0.9.0", "reflection_enabled": False,

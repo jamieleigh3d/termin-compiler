@@ -31,12 +31,12 @@ existing role/scope test files; this file is contract-shape only.
 
 import pytest
 
-from termin_runtime.providers import (
+from termin_server.providers import (
     Category, ContractRegistry, ProviderRegistry,
     Principal, IdentityProvider, ANONYMOUS_PRINCIPAL,
 )
-from termin_runtime.providers.builtins import register_builtins
-from termin_runtime.providers.builtins.identity_stub import StubIdentityProvider
+from termin_server.providers.builtins import register_builtins
+from termin_server.providers.builtins.identity_stub import StubIdentityProvider
 
 
 # ── Fixtures ──
@@ -423,9 +423,9 @@ class TestAuditLogPrincipalRecording:
         """A human Principal flowing into write_audit_trace is
         recorded in the audit row."""
         import asyncio
-        from termin_runtime.compute_runner import write_audit_trace
-        from termin_runtime.storage import get_db, init_db, list_records
-        from termin_runtime.providers import Principal
+        from termin_server.compute_runner import write_audit_trace
+        from termin_server.storage import get_db, init_db, list_records
+        from termin_server.providers import Principal
 
         # Minimal IR-shape with one audit-enabled compute. Synthesize
         # directly to avoid the compile path.
@@ -478,9 +478,9 @@ class TestAuditLogPrincipalRecording:
         id AND the human's id — proving the BRD §6.3.4 'agent X
         acting for user Y did Z' audit shape works end-to-end."""
         import asyncio
-        from termin_runtime.compute_runner import write_audit_trace
-        from termin_runtime.storage import get_db, init_db, list_records
-        from termin_runtime.providers import Principal
+        from termin_server.compute_runner import write_audit_trace
+        from termin_server.storage import get_db, init_db, list_records
+        from termin_server.providers import Principal
 
         audit_ref = "compute_audit_log_demo"
         schema = self._audit_schema_dict(audit_ref)

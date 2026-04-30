@@ -439,7 +439,7 @@ def test_load_contract_packages_attaches_registry_to_ctx(tmp_path):
     this registry — without it they have no way to resolve `Using
     "<ns>.<contract>"` references at compile/render time.
     """
-    from termin_runtime.app import _load_contract_packages
+    from termin_server.app import _load_contract_packages
 
     pkg_path = tmp_path / "demo.yaml"
     pkg_path.write_text(textwrap.dedent("""
@@ -465,7 +465,7 @@ def test_load_contract_packages_no_packages_is_noop(tmp_path):
     stays None. Apps using only presentation-base never invoke this
     machinery; the code path must stay quiet for them.
     """
-    from termin_runtime.app import _load_contract_packages
+    from termin_server.app import _load_contract_packages
 
     class _Ctx:
         contract_package_registry = None
@@ -482,7 +482,7 @@ def test_load_contract_packages_resolves_relative_to_deploy_path(tmp_path):
     this, every operator would have to cd to the repo root before
     starting the runtime.
     """
-    from termin_runtime.app import _load_contract_packages
+    from termin_server.app import _load_contract_packages
 
     sub = tmp_path / "deploys"
     sub.mkdir()
@@ -517,7 +517,7 @@ def test_load_contract_packages_fail_closed_on_missing(tmp_path):
     would be unresolvable at compile time. Fail closed at startup
     with a useful error rather than letting the app limp along.
     """
-    from termin_runtime.app import _load_contract_packages
+    from termin_server.app import _load_contract_packages
 
     class _Ctx:
         contract_package_registry = None
@@ -534,7 +534,7 @@ def test_load_contract_packages_fail_closed_on_verb_collision(tmp_path):
     """5c.1-finish: cross-package verb collision surfaces at startup.
     Per BRD #2 §4.5 this is a hard stop in v0.9 (no aliasing).
     """
-    from termin_runtime.app import _load_contract_packages
+    from termin_server.app import _load_contract_packages
 
     a = tmp_path / "a.yaml"
     a.write_text(textwrap.dedent("""
@@ -567,7 +567,7 @@ def test_load_contract_packages_rejects_non_list():
     """Defensive: deploy config typo (string instead of list) gets
     a clear error, not a confusing AttributeError downstream.
     """
-    from termin_runtime.app import _load_contract_packages
+    from termin_server.app import _load_contract_packages
 
     class _Ctx:
         contract_package_registry = None

@@ -16,11 +16,12 @@ setup(
         "termin-core>=0.9.0,<0.10",
         # Phase 7 slice 7.3: the FastAPI hosting layer + IO-bound
         # builtins (sqlite storage, Anthropic compute, Tailwind SSR,
-        # channel stubs) and the static client assets moved to
-        # termin-server. termin_runtime/* in this repo is now a thin
-        # back-compat shim that re-exports from termin_server.
-        # termin-server pulls in fastapi, uvicorn, aiosqlite, jinja2,
-        # websockets, httpx, anthropic transitively.
+        # channel stubs) and the static client assets are in the
+        # termin-server sibling package. The slice 7.5 cleanup
+        # dropped the back-compat termin_runtime/* shim layer; new
+        # code imports from termin_server directly. termin-server
+        # pulls in fastapi, uvicorn, aiosqlite, jinja2, websockets,
+        # httpx, anthropic transitively.
         "termin-server>=0.9.0,<0.10",
         # Compiler
         "click>=8.0",

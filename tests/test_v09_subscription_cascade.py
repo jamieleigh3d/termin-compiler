@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from termin_runtime.websocket_manager import ConnectionManager
+from termin_server.websocket_manager import ConnectionManager
 
 
 # ── Helpers ──
@@ -199,7 +199,7 @@ async def test_broadcast_dead_connection_pruned_after_send_failure():
 def test_filter_owned_records_helper_returns_only_owned_rows():
     """The same filter applied at subscribe time uses the same
     ownership lookup as the broadcast cascade. Pure helper test."""
-    from termin_runtime.websocket_manager import _filter_owned_rows
+    from termin_server.websocket_manager import _filter_owned_rows
 
     rows = [
         {"id": 1, "principal_id": "alice-id", "best": 4},
@@ -214,7 +214,7 @@ def test_filter_owned_records_helper_returns_only_owned_rows():
 
 def test_filter_owned_records_anonymous_gets_empty():
     """Anonymous principals see no owned rows."""
-    from termin_runtime.websocket_manager import _filter_owned_rows
+    from termin_server.websocket_manager import _filter_owned_rows
 
     rows = [{"id": 1, "principal_id": "alice-id"}]
     user = _make_user("", anonymous=True)
@@ -226,7 +226,7 @@ def test_filter_owned_records_anonymous_gets_empty():
 def test_filter_owned_records_no_ownership_returns_unchanged():
     """When ownership_field is None (non-owned content), the
     helper passes rows through unchanged."""
-    from termin_runtime.websocket_manager import _filter_owned_rows
+    from termin_server.websocket_manager import _filter_owned_rows
 
     rows = [{"id": 1}, {"id": 2}]
     user = _make_user("alice-id")

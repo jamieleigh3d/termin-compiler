@@ -17,8 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from termin_runtime import create_termin_app
-from termin_runtime.ai_provider import AIProvider, build_output_tool, build_agent_tools
+from termin_server import create_termin_app
+from termin_server.ai_provider import AIProvider, build_output_tool, build_agent_tools
 from helpers import extract_ir_from_pkg
 
 
@@ -600,7 +600,7 @@ class TestComputeCelContext:
 
 # ── G2: Before/After snapshots for postconditions ──
 
-from termin_runtime.transaction import ContentSnapshot
+from termin_server.transaction import ContentSnapshot
 
 
 class TestContentSnapshot:
@@ -715,7 +715,7 @@ class TestBeforeAfterPostconditions:
 
 # ── G5: Runtime scheduler for Trigger on schedule ──
 
-from termin_runtime.scheduler import Scheduler, parse_schedule_interval
+from termin_server.scheduler import Scheduler, parse_schedule_interval
 
 
 class TestScheduleParser:

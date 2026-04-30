@@ -232,8 +232,8 @@ class TestWriteAuditTraceMetadata:
 
     def test_audit_metadata_populates_new_columns(self, tmp_path):
         import asyncio
-        from termin_runtime.compute_runner import write_audit_trace
-        from termin_runtime.storage import get_db, init_db, list_records
+        from termin_server.compute_runner import write_audit_trace
+        from termin_server.storage import get_db, init_db, list_records
 
         audit_ref = "compute_audit_log_summarize"
         schema = self._audit_schema_dict(audit_ref, llm=True)

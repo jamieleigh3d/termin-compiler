@@ -24,7 +24,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from termin_runtime.presentation_bundles import (
+from termin_server.presentation_bundles import (
     _provider_bundle_path,
     register_provider_bundle_route,
     collect_csr_bundles,

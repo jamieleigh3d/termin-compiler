@@ -38,7 +38,7 @@ def make_app_from_pkg(pkg_path: Path, db_path: str, **kwargs):
         with TestClient(app) as client:
             ...
     """
-    from termin_runtime import create_termin_app
+    from termin_server import create_termin_app
     ir_json = json.dumps(extract_ir_from_pkg(pkg_path))
     seed_data = extract_seed_from_pkg(pkg_path)
     kwargs.setdefault("strict_channels", False)

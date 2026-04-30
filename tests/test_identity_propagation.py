@@ -74,7 +74,7 @@ class TestBoundaryRejectionIncludesIdentity:
 
     def test_rejection_message_includes_boundary_names(self, tmp_path):
         """Cross-boundary rejection should name both boundaries."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         ir = _c2_ir(
             boundaries=[
@@ -120,7 +120,7 @@ class TestBoundaryIdentityModeRestrict:
 
     def test_restrict_mode_allows_matching_scope(self, tmp_path):
         """User with required scope can access restricted boundary content."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         ir = _c2_ir(
             boundaries=[
@@ -144,7 +144,7 @@ class TestBoundaryIdentityModeRestrict:
         restricted_data) but the boundary identity restriction blocks access
         because the 'writer' role doesn't have 'restricted.access'.
         """
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         # Give writer the admin scope for the route, but NOT restricted.access for boundary
         ir = json.dumps({
@@ -202,7 +202,7 @@ class TestBoundaryIdentityModeRestrict:
 
     def test_restrict_mode_reader_denied(self, tmp_path):
         """Reader role with no write/admin scopes denied from restricted boundary."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         ir = _c2_ir(
             boundaries=[
@@ -220,7 +220,7 @@ class TestBoundaryIdentityModeRestrict:
 
     def test_inherit_mode_allows_all(self, tmp_path):
         """Boundary with identity_mode: 'inherit' allows based on normal scope checks."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         ir = _c2_ir(
             boundaries=[
@@ -238,7 +238,7 @@ class TestBoundaryIdentityModeRestrict:
 
     def test_no_boundaries_no_restriction(self, tmp_path):
         """App without boundaries should not enforce identity restriction."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         ir = _c2_ir(boundaries=[])
         app = create_termin_app(ir, db_path=str(tmp_path / "c2_none.db"), strict_channels=False)
@@ -253,7 +253,7 @@ class TestWebhookIdentityPropagation:
 
     def test_webhook_scope_check(self, tmp_path):
         """Webhook requires declared scope to accept data."""
-        from termin_runtime import create_termin_app
+        from termin_server import create_termin_app
         from fastapi.testclient import TestClient
         ir = json.dumps({
             "ir_version": "0.9.0", "reflection_enabled": False,

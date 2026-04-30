@@ -189,7 +189,7 @@ class TestRefusalAuditWiring:
         assert "refusal_reason" in names
 
     def test_build_agent_tools_includes_system_refuse(self):
-        from termin_runtime.ai_provider import build_agent_tools
+        from termin_server.ai_provider import build_agent_tools
         tools = build_agent_tools(["messages"], {})
         names = [t["name"] for t in tools]
         assert "system_refuse" in names
@@ -209,10 +209,10 @@ class TestRefusalEndToEnd:
 
     def test_refusal_writes_sidecar_and_audit(self, tmp_path):
         import asyncio
-        from termin_runtime.context import RuntimeContext
-        from termin_runtime.compute_runner import _execute_agent_compute
-        from termin_runtime.storage import get_db, init_db, list_records
-        from termin_runtime.events import EventBus
+        from termin_server.context import RuntimeContext
+        from termin_server.compute_runner import _execute_agent_compute
+        from termin_server.storage import get_db, init_db, list_records
+        from termin_server.events import EventBus
 
         # Build a synthetic comp dict + audit + sidecar schemas.
         audit_ref = "compute_audit_log_moderator"

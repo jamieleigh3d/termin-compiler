@@ -126,7 +126,7 @@ async def test_transition_emits_exited_then_entered(
 ):
     """A successful transition emits both `<...>.<from>.exited` and
     `<...>.<to>.entered` events, in that order."""
-    from termin_runtime.state import do_state_transition
+    from termin_server.state import do_state_transition
     fake_storage.records[("tickets", 1)] = {"id": 1, "lifecycle": "draft"}
     sm_map = {"tickets": [_sm()]}
 
@@ -151,7 +151,7 @@ async def test_transition_event_payload_carries_brd_fields(
 ):
     """Per BRD §5.3 the payload has record_id, from_state, to_state,
     on_behalf_of, invoked_by, triggered_at, trigger_kind."""
-    from termin_runtime.state import do_state_transition
+    from termin_server.state import do_state_transition
     fake_storage.records[("tickets", 7)] = {"id": 7, "lifecycle": "draft"}
     sm_map = {"tickets": [_sm()]}
 
@@ -180,7 +180,7 @@ async def test_transition_payload_principals_match_for_user_action(
 ):
     """For direct user actions, on_behalf_of == invoked_by, both
     pointing at the user's principal id."""
-    from termin_runtime.state import do_state_transition
+    from termin_server.state import do_state_transition
     fake_storage.records[("tickets", 1)] = {"id": 1, "lifecycle": "draft"}
     sm_map = {"tickets": [_sm()]}
 
@@ -204,7 +204,7 @@ async def test_multiword_state_preserved_in_event_name(
 ):
     """Per BRD §5.2: state names with spaces (e.g., `in progress`)
     appear in the event name verbatim — no underscore translation."""
-    from termin_runtime.state import do_state_transition
+    from termin_server.state import do_state_transition
     fake_storage.records[("tickets", 1)] = {"id": 1, "lifecycle": "draft"}
     sm_map = {"tickets": [_sm(transitions={
         ("draft", "in progress"): "x.write",
@@ -227,7 +227,7 @@ async def test_machine_name_appears_in_event_name(
     """Multi-state-machine: the machine name (not the column name,
     which is the same for v0.9) sits in the second slot of the
     dotted name."""
-    from termin_runtime.state import do_state_transition
+    from termin_server.state import do_state_transition
     fake_storage.records[("documents", 1)] = {
         "id": 1, "approval_status": "pending",
     }

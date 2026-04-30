@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from termin_runtime.providers import (
+from termin_server.providers import (
     AgentContext, AgentEvent, AgentResult, AuditableAction, AuditRecord,
     Cost, CompletionResult, Completed, Failed,
     DefaultCelComputeProvider, LlmComputeProvider, AiAgentComputeProvider,
@@ -235,28 +235,28 @@ class TestProtocolConformance:
     must satisfy them. This is the contract-layer guarantee."""
 
     def test_default_cel_protocol(self):
-        from termin_runtime.providers.builtins import DefaultCelProvider
+        from termin_server.providers.builtins import DefaultCelProvider
         p = DefaultCelProvider()
         assert isinstance(p, DefaultCelComputeProvider)
 
     def test_llm_stub_protocol(self):
-        from termin_runtime.providers.builtins import StubLlmProvider
+        from termin_server.providers.builtins import StubLlmProvider
         p = StubLlmProvider()
         assert isinstance(p, LlmComputeProvider)
 
     def test_llm_anthropic_protocol(self):
-        from termin_runtime.providers.builtins import AnthropicLlmProvider
+        from termin_server.providers.builtins import AnthropicLlmProvider
         # Construct without an api_key — Protocol check is structural,
         # doesn't require working SDK.
         p = AnthropicLlmProvider({"model": "x"})
         assert isinstance(p, LlmComputeProvider)
 
     def test_agent_stub_protocol(self):
-        from termin_runtime.providers.builtins import StubAgentProvider
+        from termin_server.providers.builtins import StubAgentProvider
         p = StubAgentProvider()
         assert isinstance(p, AiAgentComputeProvider)
 
     def test_agent_anthropic_protocol(self):
-        from termin_runtime.providers.builtins import AnthropicAgentProvider
+        from termin_server.providers.builtins import AnthropicAgentProvider
         p = AnthropicAgentProvider({"model": "x"})
         assert isinstance(p, AiAgentComputeProvider)

@@ -26,7 +26,7 @@ from termin.analyzer import analyze
 from termin.lower import lower
 from termin_core.ir.types import ComponentNode, PropValue
 
-from termin_runtime import create_termin_app
+from termin_server import create_termin_app
 from fastapi.testclient import TestClient
 
 
@@ -403,7 +403,7 @@ class TestChatRuntimeRendering:
 
     def test_chat_renders_data_termin_chat(self):
         """The chat component should produce a data-termin-chat container."""
-        from termin_runtime.presentation import render_component
+        from termin_server.presentation import render_component
         node = {
             "type": "chat",
             "props": {
@@ -418,7 +418,7 @@ class TestChatRuntimeRendering:
 
     def test_chat_renders_input_area(self):
         """The chat should include an input area with data-termin-chat-input."""
-        from termin_runtime.presentation import render_component
+        from termin_server.presentation import render_component
         node = {
             "type": "chat",
             "props": {
@@ -433,7 +433,7 @@ class TestChatRuntimeRendering:
 
     def test_chat_renders_send_button(self):
         """The chat should include a send button."""
-        from termin_runtime.presentation import render_component
+        from termin_server.presentation import render_component
         node = {
             "type": "chat",
             "props": {
@@ -448,7 +448,7 @@ class TestChatRuntimeRendering:
 
     def test_chat_message_template(self):
         """The chat should have a message loop with data-termin-chat-message."""
-        from termin_runtime.presentation import render_component
+        from termin_server.presentation import render_component
         node = {
             "type": "chat",
             "props": {
@@ -463,7 +463,7 @@ class TestChatRuntimeRendering:
 
     def test_chat_posts_to_api(self):
         """Chat input should POST to /api/v1/{source}."""
-        from termin_runtime.presentation import render_component
+        from termin_server.presentation import render_component
         node = {
             "type": "chat",
             "props": {
@@ -478,7 +478,7 @@ class TestChatRuntimeRendering:
 
     def test_chat_renders_subscribe(self):
         """Chat should include a data-termin-subscribe attribute for live updates."""
-        from termin_runtime.presentation import render_component
+        from termin_server.presentation import render_component
         node = {
             "type": "chat",
             "props": {
@@ -493,7 +493,7 @@ class TestChatRuntimeRendering:
 
     def test_chat_custom_fields_in_template(self):
         """Custom role_field/content_field should appear in the template rendering."""
-        from termin_runtime.presentation import render_component
+        from termin_server.presentation import render_component
         node = {
             "type": "chat",
             "props": {

@@ -95,7 +95,7 @@ class TestRenderedButtonDiffersByBehavior:
 
     def test_hide_otherwise_renders_without_disabled_fallback(self):
         import json
-        from termin_runtime.presentation import render_component
+        from termin_server.presentation import render_component
 
         btn = _compile_story_with_behavior(", hide otherwise")
         # Build a minimal data_table component containing this button.
@@ -127,7 +127,7 @@ class TestRenderedButtonDiffersByBehavior:
             "hide-otherwise must not emit a disabled fallback button"
 
     def test_disable_otherwise_renders_with_disabled_fallback(self):
-        from termin_runtime.presentation import render_component
+        from termin_server.presentation import render_component
 
         btn = _compile_story_with_behavior(", disable otherwise")
         data_table = {

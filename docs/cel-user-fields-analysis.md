@@ -213,4 +213,42 @@ Net effect: slimmer `TerminRequest` value type, single source of truth for the l
 
 ---
 
+## §7 — JL's decision (2026-04-30 afternoon)
+
+JL chose the cleaner cut: **deprecate `User.*` immediately in v0.9, not v0.10.**
+
+> "We can deprecate the old user dot star Pascal case immediately and switch over the sample apps to use the new syntax. And then include a compiler warning or error if the old syntax is detected."
+
+Translated into 7.5b scope:
+
+1. **Migrate every `examples/*.termin`, `examples-dev/*.termin`, and `tests/fixtures/cascade/*.termin` file** that uses `User.X` to use the equivalent `the user.X` form. Per the matrix in §4:
+   - `User.Name` → `the user.display_name`
+   - `User.Username` → derived from `the user.id` if id is human-readable, otherwise add a runtime-side alias on `the user`
+   - `User.FirstName` → derived; needs source-level decision (probably keep as a synthetic helper on `the user`)
+   - `User.Role` → `the user.role` (extend BRD #3 §4.2 to include role on `the user`, or use `the user.scopes` directly when scope membership is what's actually needed)
+   - `User.Scopes` → `the user.scopes`
+   - `User.Authenticated` → `not the user.is_anonymous`
+
+2. **Add a compile-time error** (not just warning — pre-v1.0 means hard cut) when source contains `User.X`. Error message points the author at the equivalent `the user.X` form per the matrix above.
+
+3. **Drop the runtime-side `_build_user_object` and the `"User"` key in the user dict** entirely. CEL evaluator sites that read `user["User"]` get rewritten to read from `AuthContext.principal` directly via the `the_user` rewrite.
+
+4. **Drop `TerminRequest.legacy_user_dict`** as planned.
+
+### Open questions §7 raises
+
+- **§7-1 — Username/FirstName equivalents.** `the user.id` is opaque (a UUID-shaped string) — not a great `Username` replacement for source readability. Should we add `the user.username` and `the user.first_name` as synthetic fields on the BRD #3 §4.2 shape? Or leave them as runtime-side derivations only when source author needs them via `display_name.split()[0]` style CEL? Recommend: add `the user.first_name` (source-readable, common), drop the lowercase/underscore Username derivation entirely (source authors who need a programmatic id should use `the user.id`).
+
+- **§7-2 — `the user.role`.** BRD #3 §4.2 doesn't list `role` on `the user`. JL's directive implies it should. Recommend: extend BRD #3 §4.2 (a one-line documentation update) to include `role: text` on `the user`, with the same value `User.Role` has today.
+
+- **§7-3 — Compile-time error wording.** Suggested format:
+
+  > Error: `User.Name` is no longer supported in v0.9 source. Use `the user.display_name` instead. (See termin-source-refinements-brd-v0.9.md §4.2 for the v0.9 user-context vocabulary.)
+
+  One error per leaf, listing the modern equivalent. The error code can be `S014: legacy-user-pascalcase` or similar.
+
+If JL approves §7-1 (add `first_name`, drop Username derivation) and §7-2 (add `role`), then §7-3 is mechanical and implementation can begin.
+
+---
+
 *End of analysis.*

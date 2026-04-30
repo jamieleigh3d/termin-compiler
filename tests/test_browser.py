@@ -25,7 +25,7 @@ import uvicorn
 pw = pytest.importorskip("playwright")
 from playwright.sync_api import sync_playwright
 
-from termin_runtime import create_termin_app
+from termin_server import create_termin_app
 from helpers import extract_ir_from_pkg
 
 

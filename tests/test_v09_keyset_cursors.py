@@ -28,8 +28,8 @@ import tempfile
 
 import pytest
 
-from termin_runtime.providers.builtins.storage_sqlite import SqliteStorageProvider
-from termin_runtime.providers.storage_contract import (
+from termin_server.providers.builtins.storage_sqlite import SqliteStorageProvider
+from termin_server.providers.storage_contract import (
     initial_deploy_diff, QueryOptions, OrderBy,
 )
 

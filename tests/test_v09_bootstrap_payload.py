@@ -81,7 +81,7 @@ def _make_ctx(*, pages=None, contents=None, sources_data=None):
 
 @pytest.mark.asyncio
 async def test_payload_includes_component_tree_for_matched_page():
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {
         "name": "Tickets",
@@ -100,7 +100,7 @@ async def test_payload_includes_component_tree_for_matched_page():
 
 @pytest.mark.asyncio
 async def test_payload_includes_principal_context():
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {"name": "X", "slug": "x", "role": "alice", "children": []}
     ctx = _make_ctx(pages=[page])
@@ -117,7 +117,7 @@ async def test_payload_includes_principal_context():
 
 @pytest.mark.asyncio
 async def test_payload_loads_data_for_each_data_source():
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {
         "name": "Mixed", "slug": "mixed", "role": "alice",
@@ -141,7 +141,7 @@ async def test_payload_loads_data_for_each_data_source():
 
 @pytest.mark.asyncio
 async def test_payload_subscriptions_for_each_data_source():
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {
         "name": "X", "slug": "x", "role": "alice",
@@ -162,7 +162,7 @@ async def test_payload_subscriptions_for_each_data_source():
 
 @pytest.mark.asyncio
 async def test_path_with_leading_slash_resolves():
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {"name": "X", "slug": "x", "role": "alice", "children": []}
     ctx = _make_ctx(pages=[page])
@@ -172,7 +172,7 @@ async def test_path_with_leading_slash_resolves():
 
 @pytest.mark.asyncio
 async def test_path_without_leading_slash_resolves():
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {"name": "X", "slug": "x", "role": "alice", "children": []}
     ctx = _make_ctx(pages=[page])
@@ -182,7 +182,7 @@ async def test_path_without_leading_slash_resolves():
 
 @pytest.mark.asyncio
 async def test_unknown_path_returns_none():
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {"name": "X", "slug": "x", "role": "alice", "children": []}
     ctx = _make_ctx(pages=[page])
@@ -196,7 +196,7 @@ async def test_unknown_path_returns_none():
 async def test_role_scoped_page_picks_user_role_variant():
     """Two pages sharing a slug differentiated by role — the
     builder picks the one matching the user's role."""
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     pages = [
         {"name": "Home", "slug": "home", "role": "alice",
@@ -231,7 +231,7 @@ async def test_single_variant_slug_returns_page_regardless_of_role():
     `termin_role=Anonymous` cookie 404'd on `/inventory_dashboard`
     that the SSR pipeline would have rendered).
     """
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {"name": "Admin", "slug": "admin", "role": "admin", "children": []}
     ctx = _make_ctx(pages=[page])
@@ -252,7 +252,7 @@ async def test_multi_variant_role_unmatched_falls_back_to_first():
     SOMETHING beats returning 404 — same SSR-equivalent permissive
     stance as single-variant.
     """
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     pages = [
         {"name": "Home", "slug": "home", "role": "alice",
@@ -273,7 +273,7 @@ async def test_multi_variant_role_unmatched_falls_back_to_first():
 
 @pytest.mark.asyncio
 async def test_anonymous_user_builds_principal_context_correctly():
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {"name": "Public", "slug": "public", "role": "Anonymous", "children": []}
     ctx = _make_ctx(pages=[page])
@@ -293,7 +293,7 @@ async def test_form_reference_content_loaded_into_bound_data():
     target content has a foreign-key-shaped reference) should pull
     the referenced content's records into bound_data so the form
     UI has the dropdown options."""
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {
         "name": "Create Ticket", "slug": "create-ticket", "role": "alice",
@@ -328,7 +328,7 @@ async def test_payload_includes_app_chrome_metadata():
     """The bootstrap payload must carry an `app_chrome` block so CSR
     providers can render the page header (app name + nav + role
     switcher + username entry) without re-fetching runtime state."""
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {"name": "Home", "slug": "home", "role": "alice", "children": []}
     ctx = _make_ctx(pages=[page])
@@ -362,7 +362,7 @@ async def test_app_chrome_substring_matches_role_for_nav_visibility():
     match a full role name like "warehouse clerk". Without this,
     apps that declare nav `visible to clerk` lose those items when
     Spectrum renders."""
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {"name": "Dash", "slug": "dash", "role": "warehouse clerk",
             "children": []}
@@ -388,7 +388,7 @@ async def test_app_chrome_anonymous_user_hides_username():
     redundant (the user has no display name to maintain). The chrome
     block carries `is_anonymous=True` and `current_user_name=""` so
     the UI can hide that field per the SSR template's behavior."""
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {"name": "Public", "slug": "public", "role": "Anonymous",
             "children": []}
@@ -409,7 +409,7 @@ async def test_visible_actions_filters_by_scope_for_delete():
     """A delete action's `visible_when = "'<scope>' in identity.scopes"`
     pre-evaluates to absent from `__visible_actions` when the user
     lacks the scope. Bundle never sees an unauthorized button."""
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {
         "name": "Tickets", "slug": "tickets", "role": "alice",
@@ -443,7 +443,7 @@ async def test_visible_actions_filters_by_scope_for_delete():
 async def test_visible_actions_includes_authorized_action():
     """The same delete action with the user holding the scope shows
     up in `__visible_actions`."""
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {
         "name": "Tickets", "slug": "tickets", "role": "alice",
@@ -476,7 +476,7 @@ async def test_visible_actions_evaluates_transition_per_row():
     """A transition action's visibility depends on the row's current
     state in the named state machine + the user's scope on that
     transition."""
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {
         "name": "Orders", "slug": "orders", "role": "alice",
@@ -528,7 +528,7 @@ async def test_visible_actions_transition_blocked_by_missing_scope():
     """A transition the row's state allows but the user lacks the
     scope for evaluates to NOT visible — same gate the runtime
     enforces when the bundle dispatches the action server-side."""
-    from termin_runtime.bootstrap import build_bootstrap_payload
+    from termin_server.bootstrap import build_bootstrap_payload
 
     page = {
         "name": "Orders", "slug": "orders", "role": "alice",

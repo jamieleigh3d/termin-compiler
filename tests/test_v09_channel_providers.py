@@ -21,13 +21,13 @@ import asyncio
 
 import pytest
 
-from termin_runtime.channels import ChannelDispatcher
-from termin_runtime.channel_config import ChannelConfigError
-from termin_runtime.providers import Category, ProviderRegistry, ContractRegistry
-from termin_runtime.providers.builtins import register_builtins
-from termin_runtime.providers.builtins.channel_webhook_stub import WebhookChannelStub
-from termin_runtime.providers.builtins.channel_email_stub import EmailChannelStub
-from termin_runtime.providers.builtins.channel_messaging_stub import MessagingChannelStub
+from termin_server.channels import ChannelDispatcher
+from termin_server.channel_config import ChannelConfigError
+from termin_server.providers import Category, ProviderRegistry, ContractRegistry
+from termin_server.providers.builtins import register_builtins
+from termin_server.providers.builtins.channel_webhook_stub import WebhookChannelStub
+from termin_server.providers.builtins.channel_email_stub import EmailChannelStub
+from termin_server.providers.builtins.channel_messaging_stub import MessagingChannelStub
 
 
 # ── IR factory helpers ──
@@ -279,7 +279,7 @@ class TestLogAndDrop:
 
     def test_send_on_unknown_channel_raises_channel_error(self):
         """Unknown channel name → ChannelError (not log-and-drop — spec violation)."""
-        from termin_runtime.channel_config import ChannelError
+        from termin_server.channel_config import ChannelError
         ir = _ir(_ch("alerts", "webhook"))
         deploy = _deploy("alerts", _binding())
         dispatcher = ChannelDispatcher(ir, deploy, _registry())

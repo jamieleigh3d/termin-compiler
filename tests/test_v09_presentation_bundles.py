@@ -37,7 +37,7 @@ def test_collect_csr_bundles_empty_when_no_csr_providers():
     """Tailwind-default ships SSR-only — its csr_bundle_url returns
     None. With only SSR providers registered, the bundle list is
     empty."""
-    from termin_runtime.presentation_bundles import collect_csr_bundles
+    from termin_server.presentation_bundles import collect_csr_bundles
 
     class SsrOnly:
         declared_contracts = ("presentation-base.data-table",)
@@ -55,7 +55,7 @@ def test_collect_csr_bundles_empty_when_no_csr_providers():
 def test_collect_csr_bundles_includes_csr_providers():
     """A CSR provider's `csr_bundle_url` is reported under its
     qualified contract name and product."""
-    from termin_runtime.presentation_bundles import collect_csr_bundles
+    from termin_server.presentation_bundles import collect_csr_bundles
 
     class FakeCarbon:
         declared_contracts = ("presentation-base.data-table",)
@@ -78,7 +78,7 @@ def test_deploy_config_bundle_url_override_wins():
     """JL's option (c): provider declares URL; deploy config can
     override per-contract via
     `bindings.presentation.<contract>.config.bundle_url_override`."""
-    from termin_runtime.presentation_bundles import collect_csr_bundles
+    from termin_server.presentation_bundles import collect_csr_bundles
 
     class FakeCarbon:
         declared_contracts = ("presentation-base.data-table",)
@@ -109,7 +109,7 @@ def test_collect_csr_bundles_handles_dual_mode_provider():
     """A provider advertising both `ssr` and `csr` is listed only
     when its bundle URL is present (i.e., it has CSR support
     enabled at this binding)."""
-    from termin_runtime.presentation_bundles import collect_csr_bundles
+    from termin_server.presentation_bundles import collect_csr_bundles
 
     class DualMode:
         declared_contracts = ("presentation-base.text",)
@@ -130,7 +130,7 @@ def test_collect_csr_bundles_dedupes_same_url_across_contracts():
     surfaces the bundle once per contract — the client may need to
     know the per-contract registration mapping even if the bundle
     is the same JS file. No dedup of URL itself."""
-    from termin_runtime.presentation_bundles import collect_csr_bundles
+    from termin_server.presentation_bundles import collect_csr_bundles
 
     class MultiContract:
         declared_contracts = (
@@ -164,7 +164,7 @@ def app_with_carbon_stub():
     provider in `presentation_providers`. Bypasses the full
     create_termin_app pipeline."""
     from fastapi import FastAPI, Request
-    from termin_runtime.presentation_bundles import (
+    from termin_server.presentation_bundles import (
         register_presentation_bundle_endpoint,
     )
 
@@ -202,7 +202,7 @@ def test_bundles_endpoint_returns_json_list(app_with_carbon_stub):
 def test_bundles_endpoint_empty_when_only_ssr():
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from termin_runtime.presentation_bundles import (
+    from termin_server.presentation_bundles import (
         register_presentation_bundle_endpoint,
     )
 

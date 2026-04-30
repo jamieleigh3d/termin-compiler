@@ -31,8 +31,8 @@ from fastapi.testclient import TestClient
 from termin.peg_parser import parse_peg as parse
 from termin.lower import lower
 from termin_core.ir.serialize import serialize_ir
-from termin_runtime import create_termin_app
-from termin_runtime.preferences import (
+from termin_server import create_termin_app
+from termin_server.preferences import (
     PREFERENCES_TABLE,
     VALID_THEMES,
     InvalidThemeValueError,
@@ -414,7 +414,7 @@ def test_post_theme_returns_effective_value_in_response(alice_client):
 def _seed_pref_for_principal(db_path: str, principal_id: str, theme: str) -> None:
     conn = sqlite3.connect(db_path)
     try:
-        from termin_runtime.preferences import (
+        from termin_server.preferences import (
             ensure_preferences_table, set_theme_preference,
         )
         ensure_preferences_table(conn)
@@ -428,8 +428,8 @@ def test_principal_preferences_hydrated_with_stored_theme(tmp_path):
     """A principal with a stored theme has Principal.preferences
     carrying it after hydration — making `the_user.preferences.theme`
     resolvable in CEL contexts."""
-    from termin_runtime.identity import _hydrate_principal_preferences
-    from termin_runtime.providers.identity_contract import Principal
+    from termin_server.identity import _hydrate_principal_preferences
+    from termin_server.providers.identity_contract import Principal
 
     db_path = str(tmp_path / "fresh.db")
     _seed_pref_for_principal(db_path, "alice-id", "dark")
@@ -444,8 +444,8 @@ def test_principal_preferences_hydrated_with_stored_theme(tmp_path):
 def test_anonymous_principal_not_hydrated_from_db(tmp_path):
     """Anonymous principals get session-cookie storage, never the DB.
     Hydration is a no-op for them."""
-    from termin_runtime.identity import _hydrate_principal_preferences
-    from termin_runtime.providers.identity_contract import ANONYMOUS_PRINCIPAL
+    from termin_server.identity import _hydrate_principal_preferences
+    from termin_server.providers.identity_contract import ANONYMOUS_PRINCIPAL
 
     db_path = str(tmp_path / "anon.db")
     p2 = _hydrate_principal_preferences(
@@ -459,8 +459,8 @@ def test_theme_locked_masks_principal_preferences(tmp_path):
     """When `theme_locked` is set, hydration projects the locked value
     into Principal.preferences so CEL sees the same effective theme
     that the GET endpoint returns."""
-    from termin_runtime.identity import _hydrate_principal_preferences
-    from termin_runtime.providers.identity_contract import Principal
+    from termin_server.identity import _hydrate_principal_preferences
+    from termin_server.providers.identity_contract import Principal
 
     db_path = str(tmp_path / "lock.db")
     _seed_pref_for_principal(db_path, "alice-id", "light")
@@ -477,8 +477,8 @@ def test_theme_default_fills_in_when_no_stored_value(tmp_path):
     """Hydration falls back to theme_default when the principal has no
     stored value, so CEL `the_user.preferences.theme` is never undefined
     when the boundary configures a default."""
-    from termin_runtime.identity import _hydrate_principal_preferences
-    from termin_runtime.providers.identity_contract import Principal
+    from termin_server.identity import _hydrate_principal_preferences
+    from termin_server.providers.identity_contract import Principal
 
     db_path = str(tmp_path / "default.db")
     p = Principal(id="brand-new-id", type="human", display_name="New")
