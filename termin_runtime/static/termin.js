@@ -974,7 +974,8 @@ async function navigate(path) {
 // REST surface every conforming runtime implements per BRD #2 §11.
 // No /_termin/action server endpoint exists; the JS provider gets
 // a stable typed seam, the runtime gets zero new plumbing, and
-// alternate runtimes (e.g. Kazoo) inherit this for free.
+// alternate runtimes (e.g. an AWS-native Termin runtime) inherit
+// this for free.
 //
 // Payload shape:
 //   { kind: "create",     content, payload }

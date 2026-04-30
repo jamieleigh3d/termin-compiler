@@ -61,7 +61,7 @@ Seven personas interact with the provider system. They may be the same human in 
 2. **Package author** — publishes redistributable Termin packages whose required contracts compose into a consuming app's required-provider set. Same source-level grammar as app author.
 3. **Provider author** — Termin core team or third-party shipping a Storage / Compute / Presentation / Identity / Channel implementation against a versioned contract surface.
 4. **Boundary administrator** — binds contracts to products at some level of the boundary tree, sets allowable provider sets, configures provider products. May be different humans at different levels (root admin, org admin, app deployer).
-5. **Runtime operator** — runs a Termin runtime somewhere (Kazoo inside Amazon, Seedling on AWS, a homelab). Installs providers, advertises per-provider per-level conformance.
+5. **Runtime operator** — runs a Termin runtime somewhere (an AWS-native runtime, Seedling on AWS, a homelab). Installs providers, advertises per-provider per-level conformance.
 6. **Reviewer** — security, compliance, or domain expert. Reads source + effective boundary config as the audit envelope.
 7. **The runtime itself** — loads, validates, and enforces contracts at the seam at deploy and at runtime.
 

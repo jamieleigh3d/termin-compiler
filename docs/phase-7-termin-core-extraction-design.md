@@ -27,9 +27,9 @@
 
 Phase 7 extracts the load-bearing library surface from
 `termin_runtime/` into a separate, framework-free Python package
-`termin-core`. Any conforming runtime — Kazoo (the planned alternate
-Python runtime), a Rust port, or a managed-cloud runtime — depends
-only on `termin-core` and supplies its own framework adapter.
+`termin-core`. Any conforming runtime — an AWS-native runtime, a Rust
+port, a managed-cloud runtime — depends only on `termin-core` and
+supplies its own framework adapter.
 
 The original Issue #2 framing was "extract pure types and Protocols."
 JL's 2026-04-30 framing extends that: **the routing dispatch
@@ -50,11 +50,12 @@ This doc:
 
 ## 2. Constraints
 
-1. **Kazoo (or any other Python runtime) imports `termin-core` and
-   gets the provider plugin architecture, the WebSocket
-   routing/dispatch architecture, and the REST API routing/dispatch
-   architecture for free.** It supplies adapters for its actual
-   WebSocket implementation and HTTP framework. (JL, 2026-04-30.)
+1. **An alternate Termin runtime (e.g. an AWS-native Python runtime, or
+   any third-party Python implementation) imports `termin-core` and gets
+   the provider plugin architecture, the WebSocket routing/dispatch
+   architecture, and the REST API routing/dispatch architecture for
+   free.** It supplies adapters for its actual WebSocket implementation
+   and HTTP framework. (JL, 2026-04-30.)
 2. **The reference runtime's FastAPI / uvicorn / aiosqlite / Anthropic
    layer moves to a separate package.** `termin-core` carries
    zero dependency on FastAPI. (Implied by #1, made explicit in JL's
@@ -189,7 +190,7 @@ termin-conformance/                          # Existing repo, slimmed
 | Reference runtime (today's `termin_runtime/`) | yes | this *is* it |
 | Compiler (`termin/`) | yes | no |
 | Conformance suite | yes | yes (for reference adapter only) |
-| Kazoo (planned) | **yes** | **no** |
+| Alternate Python runtime (planned, e.g. AWS-native) | **yes** | **no** |
 | Spectrum provider package | yes | no |
 | Third-party Rust runtime (future) | via JSON Schema parallel surface (Q1, Q3) | no |
 
@@ -239,9 +240,9 @@ LLM+agent Anthropic, four channel stubs, Tailwind-default
 presentation).
 
 - **Option a:** All builtins move to `termin-server`. `termin-core`
-  ships zero concrete providers. Kazoo registers its own from scratch
-  (or imports `termin-server`'s SQLite provider opportunistically if
-  it wants to).
+  ships zero concrete providers. An alternate runtime registers its
+  own from scratch (or imports `termin-server`'s SQLite provider
+  opportunistically if it wants to).
 - **Option b:** Pure-Python builtins (CEL compute, stub identity,
   default-Tailwind-binding *synthesis*) stay in `termin-core`.
   IO-bound builtins (SQLite, Anthropic, Tailwind SSR rendering,
@@ -252,8 +253,9 @@ presentation).
 load-bearing for *any* runtime — every conformance test that uses an
 agent compute, every test that uses the stub identity, every test
 that uses default presentation synthesis depends on these. Forcing
-Kazoo to vendor its own CEL evaluator and stub identity reintroduces
-exactly the duplication Phase 7 is trying to remove. The IO-bound
+every alternate runtime to vendor its own CEL evaluator and stub
+identity reintroduces exactly the duplication Phase 7 is trying to
+remove. The IO-bound
 builtins genuinely need the framework adapter and belong outside.
 
 **Edge case:** Tailwind-default presentation synthesis is split.
@@ -282,14 +284,15 @@ jobs:
   jobs. FastAPI adapter implements `TerminWebSocket` by wrapping
   `fastapi.WebSocket`.
 - **Option b:** Move only the topic-dispatch job to core. Connection
-  management stays in `termin-server` for now. Kazoo reinvents its
-  own connection manager but reuses the dispatcher.
+  management stays in `termin-server` for now. Alternate runtimes
+  reinvent their own connection manager but reuse the dispatcher.
 
 **Recommendation:** Option a. JL specifically called out
 "WebSocket routing dispatch architecture, that has adapters for the
 actual implementation of WebSockets" as a Phase 7 goal in the
-2026-04-30 framing. Option b ships sooner but Kazoo has to redo the
-hardest part of WebSocket lifecycle correctness — the part that
+2026-04-30 framing. Option b ships sooner but every alternate runtime
+has to redo the hardest part of WebSocket lifecycle correctness — the
+part that
 already had two latent bugs the Spectrum chat slice surfaced. The
 proper extraction encodes that hard-won correctness once in core.
 
@@ -369,8 +372,9 @@ against a fresh install of upstream main.
 
 **Recommendation:** Option b incremental. Matches the slicing
 discipline that worked for Phase 5 (5a → 5b → 5c). Each slice is
-independently revertable. Slice 7.1 alone unblocks Kazoo on the
-contract surface; the dispatch extraction in 7.2 unblocks them on
+independently revertable. Slice 7.1 alone unblocks alternate runtimes
+on the contract surface; the dispatch extraction in 7.2 unblocks them
+on
 the routing surface.
 
 ---
@@ -388,8 +392,8 @@ the routing surface.
 **Recommendation:** Option a, lands as part of slice 7.5. The whole
 point of the extraction is "this is the testable surface anyone can
 claim conformance against." Without a pack that exercises the surface
-directly, there's no objective standard for "Kazoo conforms to
-termin-core."
+directly, there's no objective standard for "this alternate runtime
+conforms to termin-core."
 
 ---
 

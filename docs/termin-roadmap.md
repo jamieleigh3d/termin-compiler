@@ -478,9 +478,10 @@ cross-repo conformance, then Phase 7 capstone.
 ## Phase 7 — termin-core extraction (v0.9 capstone)
 
 Theme: extract the shared library surface that any conforming Termin
-runtime imports from, so a second runtime (e.g., the Kazoo Rust port,
-or any third-party implementation) doesn't have to vendor or
-re-implement the contract Protocols, the Principal type, the IR types,
+runtime imports from, so a second runtime (e.g., an AWS-native runtime
+implementation, a Rust port, or any third-party implementation) doesn't
+have to vendor or re-implement the contract Protocols, the Principal
+type, the IR types,
 the Redacted sentinel, the categorical channel/storage/identity/compute
 contract definitions, and the deploy-config binding resolver.
 
@@ -494,7 +495,7 @@ exploratory.
 
 | Item | Source | Notes |
 |------|--------|-------|
-| **`termin-core` package surface** | issue #2; v0.9 capstone | A new `termin-core` Python package (sibling repo `termin-core/`) containing: contract Protocols (`PresentationProvider`, `StorageProvider`, `IdentityProvider`, `ComputeProvider`, `ChannelProvider`); the categorical `Category` enum and `ContractRegistry`; the IR dataclasses (`AppSpec`, `ComponentNode`, `PageEntry`, etc.) — read-only types only, not the lowering pass; the `Principal` / `Redacted` / `PrincipalContext` value types; the deploy-config binding resolver. The reference runtime (`termin_runtime`) and the compiler (`termin`) both depend on `termin-core`. Alternate runtimes (Kazoo, third-party Rust port, etc.) depend on `termin-core` only — no transitive dependency on the reference runtime's storage / FastAPI / SQLite layers. |
+| **`termin-core` package surface** | issue #2; v0.9 capstone | A new `termin-core` Python package (sibling repo `termin-core/`) containing: contract Protocols (`PresentationProvider`, `StorageProvider`, `IdentityProvider`, `ComputeProvider`, `ChannelProvider`); the categorical `Category` enum and `ContractRegistry`; the IR dataclasses (`AppSpec`, `ComponentNode`, `PageEntry`, etc.) — read-only types only, not the lowering pass; the `Principal` / `Redacted` / `PrincipalContext` value types; the deploy-config binding resolver. The reference runtime (`termin_runtime`) and the compiler (`termin`) both depend on `termin-core`. Alternate runtimes (AWS-native, third-party Rust ports, etc.) depend on `termin-core` only — no transitive dependency on the reference runtime's storage / FastAPI / SQLite layers. |
 | **Cheap discipline before extraction** | feedback_commit_norm + journal | While Phase 5/6 land, when new pure rules ship (e.g., the `_populate_presentation_providers` resolver, the `page_should_use_shell` predicate, contract-package merge logic), drop them in a thin enforcement module rather than weaving into runtime-specific code. This makes the eventual extraction mechanical: "move this module into `termin-core`, fix imports, done." JL has confirmed this discipline is worth the friction. |
 | **Language-neutral contract surface (forward-looking)** | issue #2 / 2026-04-28 briefing | Python Protocols can't be imported from Rust. The Phase 7 extraction may also surface a parallel JSON-Schema-shaped contract surface so non-Python runtimes can validate against the same shapes. Decision deferred to the start of Phase 7; doesn't block the Python-side extraction. |
 | **`termin-core` conformance pack** | extension of 5c.5 | Adapter-agnostic tests verifying any runtime that imports `termin-core` produces correct binding resolution, contract-Protocol satisfaction, IR-shape acceptance. Lands with the extraction or shortly after. |

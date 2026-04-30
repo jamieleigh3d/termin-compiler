@@ -460,7 +460,7 @@ IBM Carbon Design System bindings.
 
 - **Theme support:** Carbon's white, g10, g90, g100 themes mapped to `light`/`dark`/auto; high-contrast mapped to a Carbon high-contrast variant.
 - **Render mode:** CSR primary (Carbon's React bindings).
-- **Audience:** enterprise applications, AWS-internal Kazoo deployments, organizations standardizing on Carbon.
+- **Audience:** enterprise applications, AWS-native runtime deployments, organizations standardizing on Carbon.
 - **Composition notes:** `metric` composed from Carbon's number-display patterns + supporting card; `chat` composed from list + input primitives; `markdown` rendered with Carbon typography tokens.
 
 ### 9.3 `gov-uk-design-system`

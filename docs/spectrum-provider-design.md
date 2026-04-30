@@ -109,9 +109,9 @@ CDN-friendly environments override via
 `bindings.presentation.<contract>.config.bundle_url_override` (the
 mechanism shipped in 5b.4 platform).
 
-**Rationale.** Air-gapped enterprise deployments (Kazoo's Amazon-internal
-context, regulated environments, public-sector) need everything
-self-contained. The audience tenet (compliance reviewers / security
+**Rationale.** Air-gapped enterprise deployments (AWS-native runtimes'
+internal-network contexts, regulated environments, public-sector) need
+everything self-contained. The audience tenet (compliance reviewers / security
 officers read source) is hard to satisfy if the runtime fetches code from
 `cdn.jsdelivr.net` at every page load. The deploy-config override path is
 the existing 5b.4 mechanism; using it costs zero new architecture. The
@@ -209,7 +209,7 @@ satisfy the same goal (one stable JS-side API surface for providers):
 |---|---|---|
 | New runtime endpoint | yes (`/_termin/action`) | no |
 | Existing REST endpoints used | dispatched-to via facade | called directly |
-| Kazoo / second-runtime work | implement facade + dispatch table | zero (just BRD §11 surface) |
+| Second-runtime work (AWS-native, Rust port, etc.) | implement facade + dispatch table | zero (just BRD §11 surface) |
 | URL-convention coupling on provider bundle | none (facade abstracts) | none (`termin.js` abstracts) |
 
 The facade only earns its keep if it batches, multiplexes over WebSocket,
@@ -262,8 +262,8 @@ documents the calls:
   is **client-side dispatch** to the existing REST surface every conforming
   runtime implements per BRD #2 §11. There is no `/_termin/action` server
   endpoint — see "Q-extra" below. The JS provider gets a stable typed seam,
-  the runtime gets zero new plumbing, and alternate runtimes (e.g. Kazoo)
-  inherit it for free.
+  the runtime gets zero new plumbing, and alternate runtimes (e.g. an
+  AWS-native Termin runtime) inherit it for free.
 - **Component composition for missing Spectrum equivalents** — `markdown`,
   `chat`, `metric`, possibly `nav-bar` need composition from Spectrum
   primitives. Each is a small design call when Spectrum work begins;
