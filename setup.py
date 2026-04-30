@@ -14,23 +14,30 @@ setup(
         # Pinned >=0.9.0,<0.10 for the duration of v0.9 development; the
         # pin tightens to a specific version when Phase 7 closes.
         "termin-core>=0.9.0,<0.10",
+        # Phase 7 slice 7.3: the FastAPI hosting layer + IO-bound
+        # builtins (sqlite storage, Anthropic compute, Tailwind SSR,
+        # channel stubs) and the static client assets moved to
+        # termin-server. termin_runtime/* in this repo is now a thin
+        # back-compat shim that re-exports from termin_server.
+        # termin-server pulls in fastapi, uvicorn, aiosqlite, jinja2,
+        # websockets, httpx, anthropic transitively.
+        "termin-server>=0.9.0,<0.10",
         # Compiler
         "click>=8.0",
         "tatsu>=5.8",
-        # Runtime (termin_runtime)
-        "fastapi>=0.100.0",
+        # `termin serve <pkg>` uses uvicorn directly. The bulk of
+        # the runtime moved to termin-server (which also pulls
+        # uvicorn standard extras) in slice 7.3, but the serve CLI
+        # still lives here in v0.9. Slice 7.5 may move serve to a
+        # termin-server CLI; until then this stays declared.
         "uvicorn>=0.23.0",
-        "websockets>=12.0",
-        "aiosqlite>=0.19.0",
-        "jinja2>=3.1.0",
-        "python-multipart>=0.0.6",
-        "cel-python>=0.5.0",
-        "httpx>=0.25.0",
         # v0.9 Step Zero: markdown sanitizer for the
         # presentation-base.markdown contract envelope (BRD #2 §7.3).
+        # Compiler reads the envelope at validation time.
         "markdown-it-py>=3.0.0",
         # v0.9 Phase 5c.1: contract package format. Loader for
         # YAML-shaped contract packages per BRD #2 §10 / Appendix C.
+        # Compiler reads contract packages at parse time.
         "pyyaml>=6.0",
     ],
     extras_require={
@@ -47,25 +54,20 @@ setup(
     },
     package_data={
         "termin": ["termin.peg"],
-        "termin_runtime": ["static/*.js", "static/*.css"],
+        # Slice 7.3 of Phase 7 (2026-04-30): static assets moved with
+        # the runtime to termin-server's package_data. The compiler's
+        # package_data carries only the PEG grammar.
     },
     entry_points={
         "console_scripts": [
             "termin=termin.cli:main",
         ],
-        # v0.9 Phase 5b.3: register the first-party tailwind-default
-        # SSR presentation provider via the same `termin.providers`
-        # entry-point group external providers (e.g. termin-spectrum-
-        # provider) use. The shape mirrors that contract — termin_runtime
-        # discovers it via _discover_external_providers at app startup.
-        # Tailwind is also registered as a built-in via register_builtins;
-        # the registry's register() is overwrite-safe, so the double
-        # registration is harmless. Splitting it this way means a future
-        # operator who installs an alternative Tailwind plug-in can set
-        # the deploy config to bind that product instead, exercising the
-        # same pluggability surface Spectrum uses.
-        "termin.providers": [
-            "tailwind-default = termin_runtime.providers.builtins.presentation_tailwind_default:register_tailwind_default",
-        ],
+        # Slice 7.3 of Phase 7 (2026-04-30): the tailwind-default
+        # provider entry point moved with the rest of the runtime to
+        # termin-server. termin-compiler no longer registers any
+        # provider entry points — the compiler is no longer the
+        # hosting layer. Spectrum and other external providers
+        # continue to register through the same termin.providers
+        # group; termin-server's app discovers them at startup.
     },
 )

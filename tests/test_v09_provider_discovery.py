@@ -226,31 +226,37 @@ def test_populate_explicit_binding_overrides_default_synthesis():
 
 def test_tailwind_default_declared_in_setup_entry_points():
     """v0.9 Phase 5b.3 Tailwind-as-plug-in migration: tailwind-default
-    must be declared under the `termin.providers` entry-point group in
-    setup.py so it loads through the same discovery path Spectrum and
-    other third-party providers use. This is the structural assertion
-    that the migration landed; behavior is covered by the
+    must be declared under the `termin.providers` entry-point group so
+    it loads through the same discovery path Spectrum and other
+    third-party providers use. Structural assertion that the migration
+    landed; behavior is covered by the
     `_uses_real_tailwind_when_registered` test above.
+
+    Slice 7.3 of Phase 7 (2026-04-30): the entry point moved from
+    termin-compiler/setup.py to termin-server/pyproject.toml when the
+    runtime extracted into the termin-server sibling repo. Read from
+    the canonical location.
     """
     from pathlib import Path
-    setup_py = (
-        Path(__file__).parent.parent / "setup.py"
+    pyproject = (
+        Path(__file__).parent.parent.parent / "termin-server" / "pyproject.toml"
     ).read_text(encoding="utf-8")
-    assert '"termin.providers"' in setup_py, (
-        "setup.py should declare a `termin.providers` entry-point group "
-        "so the tailwind-default first-party provider goes through the "
-        "same discovery path third-party providers (Spectrum) use."
+    assert 'termin.providers' in pyproject, (
+        "termin-server/pyproject.toml should declare a `termin.providers` "
+        "entry-point group so the tailwind-default first-party provider "
+        "goes through the same discovery path third-party providers "
+        "(Spectrum) use."
     )
-    assert "tailwind-default = " in setup_py, (
-        "setup.py should declare an entry-point named `tailwind-default` "
-        "pointing at register_tailwind_default."
+    assert "tailwind-default = " in pyproject, (
+        "termin-server/pyproject.toml should declare an entry-point "
+        "named `tailwind-default` pointing at register_tailwind_default."
     )
     assert (
-        "termin_runtime.providers.builtins.presentation_tailwind_default"
-        in setup_py
+        "termin_server.providers.builtins.presentation_tailwind_default"
+        in pyproject
     ), (
-        "Entry-point target should resolve to the existing built-in "
-        "registration function — no parallel implementation."
+        "Entry-point target should resolve to the canonical built-in "
+        "registration function in termin_server."
     )
 
 

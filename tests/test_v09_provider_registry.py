@@ -241,24 +241,27 @@ class TestProviderRegistry:
 
         When each later phase lands, that module moves out of this
         list and becomes a wired-and-tested primitive instead.
+
+        Slice 7.3 of Phase 7 (2026-04-30): modules moved to
+        termin_server; read from the canonical location.
         """
         import importlib
-        from termin_runtime import providers  # noqa: F401  (sentinel)
+        from termin_server import providers  # noqa: F401  (sentinel)
         unwired = [
-            "termin_runtime.storage",
-            "termin_runtime.compute_runner",
+            "termin_server.storage",
+            "termin_server.compute_runner",
         ]
         for module_name in unwired:
             m = importlib.import_module(module_name)
             with open(m.__file__, encoding="utf-8") as f:
                 content = f.read()
-            assert "from termin_runtime.providers" not in content, (
+            assert "from termin_server.providers" not in content, (
                 f"{module_name} imports providers — that primitive is "
                 f"not yet wired through the provider registry. If "
                 f"you're starting that phase, remove this entry from "
                 f"the unwired list."
             )
-            assert "import termin_runtime.providers" not in content, (
+            assert "import termin_server.providers" not in content, (
                 f"{module_name} imports providers — see above."
             )
             assert "from .providers" not in content, (
@@ -269,14 +272,19 @@ class TestProviderRegistry:
     def test_wired_modules_do_import_providers(self):
         """Positive control: Phases 1, 2, and 4 wire identity, app,
         routes, pages, and channels through the provider registry.
-        If any of these stop importing providers, the wire-up was reverted."""
+        If any of these stop importing providers, the wire-up was reverted.
+
+        Slice 7.3 of Phase 7 (2026-04-30): the modules moved to
+        termin_server; termin_runtime.X is now a forwarding shim with
+        no provider import. Read from the canonical location.
+        """
         import importlib
         for module_name in (
-            "termin_runtime.identity",
-            "termin_runtime.app",
-            "termin_runtime.routes",
-            "termin_runtime.pages",
-            "termin_runtime.channels",  # Phase 4: channels wired in v0.9
+            "termin_server.identity",
+            "termin_server.app",
+            "termin_server.routes",
+            "termin_server.pages",
+            "termin_server.channels",  # Phase 4: channels wired in v0.9
         ):
             m = importlib.import_module(module_name)
             with open(m.__file__, encoding="utf-8") as f:
@@ -288,8 +296,8 @@ class TestProviderRegistry:
             # produces — so we enforce an uncommented import line.
             import re
             imports_providers = bool(re.search(
-                r'(?m)^\s*(?:from\s+termin_runtime\.providers'
-                r'|import\s+termin_runtime\.providers'
+                r'(?m)^\s*(?:from\s+termin_server\.providers'
+                r'|import\s+termin_server\.providers'
                 r'|from\s+\.providers)\b',
                 content,
             ))

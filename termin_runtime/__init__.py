@@ -1,16 +1,14 @@
 # Copyright 2026 Jamie-Leigh Blake and Termin project contributors
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Termin Runtime — the execution environment for compiled Termin applications.
-
-Usage:
-    from termin_runtime import create_termin_app
-    app = create_termin_app(ir_json_string)
+"""Termin runtime — slice 7.3 of Phase 7 (2026-04-30) moved
+the implementation to ``termin_server``. This module remains
+as a re-export shim so existing
+``from termin_runtime import create_termin_app`` keeps
+working for v0.9. Drops in slice 7.5.
 """
 
-from .app import create_termin_app
+from termin_server import create_termin_app  # noqa: F401
 
 __all__ = ["create_termin_app"]

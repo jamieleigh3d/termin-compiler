@@ -48,6 +48,14 @@ def _isolated_test_db(tmp_path, monkeypatch):
     now.
     """
     db_path = str(tmp_path / "app.db")
+    # Slice 7.3: storage moved to termin_server. The runtime reads
+    # termin_server.storage.DEFAULT_DB_PATH; some tests still
+    # `from termin_runtime.storage import DEFAULT_DB_PATH` and the
+    # back-compat shim's `from X import *` snapshots the value at
+    # first-import. Patch both so either spelling reflects the
+    # current test's tmp_path.
+    monkeypatch.setattr(
+        "termin_server.storage.DEFAULT_DB_PATH", db_path)
     monkeypatch.setattr(
         "termin_runtime.storage.DEFAULT_DB_PATH", db_path)
     yield

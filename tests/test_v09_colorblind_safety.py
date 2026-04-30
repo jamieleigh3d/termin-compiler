@@ -212,12 +212,10 @@ def test_severity_marks_carry_non_color_signal():
     they now carry a left border whose color also gives stronger
     luminance contrast to anchor CVD viewers.
     """
-    from termin_runtime import presentation
-    # Read source and inspect each MARK_STYLES entry. A more rigorous
-    # alternative would be to import MARK_STYLES directly, but it's
-    # a local dict inside _render_data_table; the source-string
-    # check is robust against the surrounding code while still
-    # catching regressions on the dict entries themselves.
+    # Slice 7.3 of Phase 7 (2026-04-30): the renderer source moved to
+    # termin_server.presentation; termin_runtime.presentation is now a
+    # forwarding shim. Read from the canonical location.
+    from termin_server import presentation
     expected_signals = {
         "urgent": ["font-semibold"],
         "critical": ["font-bold", "border-l-4"],

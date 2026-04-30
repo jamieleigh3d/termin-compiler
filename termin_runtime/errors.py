@@ -2,11 +2,18 @@
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 
-"""Slice 7.1 of Phase 7 (2026-04-30) moved this module to
-``termin_core.errors.router``. This file is a re-export shim that
-lets existing imports continue to work for v0.9. Drop the shim in
-slice 7.5.
+"""Slice 7.3 of Phase 7 (2026-04-30) moved this module to
+``termin_server.errors``. Re-export shim — drops in slice 7.5.
+
+``from termin_server.errors import *`` carries the public
+API; the PEP 562 ``__getattr__`` forwards the rest (underscore-
+prefixed helpers tests reach into directly, and any name added
+after this shim was generated).
 """
 
-from termin_core.errors.router import *  # noqa: F401, F403
-from termin_core.errors import TerminError, TerminAtor  # noqa: F401
+from termin_server.errors import *  # noqa: F401, F403
+import termin_server.errors as _src
+
+
+def __getattr__(name):
+    return getattr(_src, name)
