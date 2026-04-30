@@ -1,8 +1,10 @@
 # Phase 7 — Slice 7.2 Routing Briefing
 
-**Status:** Awaiting JL decision on Q1–Q5 below.
+**Status:** Q1–Q4 closed (JL approved 2026-04-30 night). Q5 (slicing)
+defaulted to sub-slices. 7.2.a/b/c/d landed; 7.2.e blocked on the
+Principal-flow question (see §11 below).
 **Author:** Claude Anthropic.
-**Last touched:** 2026-04-30 evening (autonomous mode).
+**Last touched:** 2026-04-30 night (autonomous mode).
 
 ## Where we are
 
@@ -260,10 +262,78 @@ mature.
 
 ## Decisions table
 
-| ID | Question | Recommendation | JL decision |
-|---|---|---|---|
-| Q1 | TerminRequest shape — thin ASGI vs. rich convenience | b (rich) | _pending_ |
-| Q2 | Route dispatch — decorator vs. declarative list | b (declarative `RouteSpec` list) | _pending_ |
-| Q3 | Principal extraction — middleware vs. dep vs. handler | a (adapter middleware fills `request.principal`) | _pending_ |
-| Q4 | TerminWebSocket Protocol — minimal vs. split-registry | a (minimal; full state in core) | _pending_ |
-| Q5 | Slicing — single 7.2 vs. 7.2.d / .e / .f | b (sub-slices) | _pending_ |
+| ID | Question | Decision |
+|---|---|---|
+| Q1 | TerminRequest shape — thin ASGI vs. rich convenience | **rich** (TerminRequest dataclass) |
+| Q2 | Route dispatch — decorator vs. declarative list | **declarative `RouteSpec` list** |
+| Q3 | Principal extraction — middleware vs. dep vs. handler | **adapter middleware fills `request.principal`** |
+| Q4 | TerminWebSocket Protocol — minimal vs. split-registry | **minimal Protocol; full state in core** |
+| Q5 | Slicing — single 7.2 vs. 7.2.d / .e / .f | sub-slices (defaulted, no debate) |
+
+## 10. Slice 7.2.a / .b / .c / .d — closure
+
+| Sub-slice | Status | What landed |
+|---|---|---|
+| 7.2.a | ✅ landed | `termin_core.errors.exceptions` — TerminRuntimeError base + 5 subclasses (BadRequest, Scope, NotFound, Conflict, Validation) with class-level status_code mapping. 25 tests. |
+| 7.2.b | ✅ landed | `termin_runtime/validation.py` migrated to `termin_core.validation`. Raises TerminValidationError. FastAPI exception handler in app.py translates to 422 with the same response body conformance saw before. |
+| 7.2.c | ✅ landed | `termin_runtime/state.py` migrated to `termin_core.state.machine`. Raises Termin{BadRequest,Scope,NotFound,Conflict}Error. transitions.py stays as FastAPI adapter wiring (extracts in slice 7.3). |
+| 7.2.d | ✅ landed | `termin_core.routing` package — TerminRequest / TerminResponse / TerminWebSocket Protocol / RouteSpec / WebSocketRouteSpec. 29 tests. |
+
+**Suites:** termin-compiler 2545 passing on Windows; termin-conformance
+915 passing on Windows reference adapter; termin-core 57/57 passing
+(includes the framework-free guard).
+
+## 11. Slice 7.2.e — blocking decision (Principal flow)
+
+The CRUD handler extraction needs a decision on how the principal
+information flows through `TerminRequest`. Today every CRUD route
+in `termin_runtime/routes.py` calls
+``ctx.get_current_user(request)`` which returns a *user dict* of
+shape::
+
+    {"role": "warehouse manager",
+     "scopes": ["orders.read", "orders.write", ...],
+     "the_user": <Principal-shaped dict: id, display_name, claims, ...>}
+
+`Principal` (from `termin_core.providers.identity_contract`) does
+*not* carry scopes — scopes are a runtime-layer concept derived
+from role mapping at request time. So `TerminRequest.principal:
+Optional[Principal]` (per Q3=a) carries identity, not scopes.
+
+Three ways to thread scopes onto the request, each with a
+different migration path for the ~10 CRUD handlers:
+
+- **Option a (full normalization, biggest cut):** Extend
+  `TerminRequest` with a `scopes: tuple[str, ...]` field, populated
+  by the adapter middleware from `ctx.identity_provider.roles_for(
+  principal)` + role-to-scopes mapping. Every handler uses
+  `request.principal` (Principal) and `request.scopes` (tuple).
+  The legacy `ctx.get_current_user(request)` deletes. Cleanest end
+  state but every handler refactors at once.
+
+- **Option b (interim, smallest cut):** Adapter populates
+  `request.principal` AND keeps `ctx.get_current_user(request)`
+  working. Handlers being migrated to take `TerminRequest` get an
+  additional kwarg `user: dict` containing the legacy shape.
+  Migration is incremental — one handler at a time. The legacy
+  user dict is a transitional concept that drops in slice 7.5.
+
+- **Option c (split into AuthContext value type):** termin-core
+  defines a new `AuthContext` value type carrying
+  `(principal, scopes, role_name)` — not just the principal. The
+  adapter middleware computes it once and sets
+  `request.auth: AuthContext`. Cleaner data model than option b's
+  loose dict, less aggressive than option a.
+
+**Recommendation: option c.** Splits the concerns cleanly
+(Principal is *who*, AuthContext is *who-plus-what-they-can-do-here*),
+keeps the migration incremental, and the new value type is the
+right end-state shape — it doesn't decay to "transitional" the
+way option b's loose dict does. Estimated cost: define
+`AuthContext` (~20 lines), migrate handlers one at a time, drop
+`ctx.get_current_user` in slice 7.5.
+
+**Why this needs JL:** the choice ripples through every handler.
+Option a is one big PR with high merge-conflict risk; option b
+ships fast but leaves a transitional shape; option c sits between
+and adds a new value type to the contract surface. JL's call.
