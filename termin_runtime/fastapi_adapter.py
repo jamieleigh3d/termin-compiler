@@ -31,7 +31,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import Request
+from fastapi import Request, WebSocket
 from fastapi.responses import (
     JSONResponse,
     RedirectResponse,
@@ -216,7 +216,48 @@ def to_fastapi_response(resp: TerminResponse) -> Response:
     )
 
 
+class FastAPIWebSocketAdapter:
+    """Wrap a :class:`fastapi.WebSocket` so it satisfies
+    :class:`termin_core.routing.TerminWebSocket`.
+
+    Slice 7.2.f of Phase 7 (2026-04-30): the dispatcher loop lives
+    in ``termin_core.routing.channel_dispatch``; this adapter is the
+    only FastAPI-touching piece. Per Q3=a of the routing briefing the
+    Protocol is intentionally narrow (six methods + ``principal``)
+    so the adapter is correspondingly thin.
+
+    ``principal`` is set by the route shell at connection time once
+    auth has resolved; the dispatcher reads it through the Protocol.
+    Accessing the underlying ``fastapi.WebSocket`` via ``raw`` is
+    intended for slice 7.5 callers that haven't migrated yet — new
+    code stays on the Protocol surface.
+    """
+
+    def __init__(self, ws: WebSocket) -> None:
+        self.raw = ws
+        self.principal = None
+
+    async def accept(self) -> None:
+        await self.raw.accept()
+
+    async def send_json(self, data: Any) -> None:
+        await self.raw.send_json(data)
+
+    async def send_bytes(self, data: bytes) -> None:
+        await self.raw.send_bytes(data)
+
+    async def receive_json(self) -> Any:
+        return await self.raw.receive_json()
+
+    async def receive_text(self) -> str:
+        return await self.raw.receive_text()
+
+    async def close(self, code: int = 1000) -> None:
+        await self.raw.close(code=code)
+
+
 __all__ = [
+    "FastAPIWebSocketAdapter",
     "make_auth_context",
     "to_termin_request",
     "to_fastapi_response",

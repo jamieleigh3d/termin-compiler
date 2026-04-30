@@ -122,6 +122,12 @@ class RuntimeContext:
     run_event_handlers: Callable = None   # async (db, content_name, trigger, record)
     execute_compute: Callable = None      # async (comp, record, content_name, main_loop)
 
+    # Slice 7.2.f: storage closure for the framework-agnostic WS
+    # dispatcher. async (content_name) -> list[dict]. The reference
+    # runtime stashes a closure over storage.list_records here at
+    # startup; alternate runtimes supply their own.
+    list_records_for_ws: Callable = None
+
     def scope_for_content_verb(self, content_snake: str, verb: str) -> str | None:
         """Look up the scope required for a verb on a content type."""
         for g in self.ir.get("access_grants", []):

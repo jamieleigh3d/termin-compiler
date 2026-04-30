@@ -702,6 +702,19 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
             _ownership_lookup[cs.get("name", {}).get("snake", "")] = own["field"]
     ctx.conn_manager.set_content_ownership(_ownership_lookup)
 
+    # Slice 7.2.f: hand the dispatcher a closure over storage so it
+    # can serve initial-data loads on subscribe / request without
+    # importing the storage module. The closure is the WS analogue of
+    # the ctx-stash pattern slice 7.2.e introduced for CRUD handlers.
+    async def _list_records_for_ws(content_name: str) -> list[dict]:
+        from .storage import get_db, list_records  # local: keeps module load fast
+        db = await get_db(ctx.db_path)
+        try:
+            return await list_records(db, content_name)
+        finally:
+            await db.close()
+    ctx.list_records_for_ws = _list_records_for_ws
+
     # ── Event handlers (needs access to ctx for singular_lookup, expr_eval, etc.) ──
     async def run_event_handlers(db, content_name: str, trigger: str, record: dict):
         for ev in ir.get("events", []):
