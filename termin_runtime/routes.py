@@ -152,138 +152,58 @@ def register_crud_routes(app, ctx: RuntimeContext):
 
 
 def _make_list_route(app, ctx, path, cr, sc, row_filter=None):
+    """Slice 7.2.e of Phase 7 (2026-04-30): list-content handler
+    extracted to ``termin_core.routing.crud.list_content_handler``.
+    The FastAPI route here is now a thin bridge that wraps the
+    request, delegates to the pure handler, and unwraps the
+    response.
+
+    Boundary identity check, redaction, and audit-trace redaction
+    are runtime-internal concerns; the handler reads them off ctx
+    via thin shims. Slice 7.5 may move boundary checks into core
+    too, at which point the ctx hooks here become unnecessary.
+    """
+    from termin_core.routing import list_content_handler
+    from .fastapi_adapter import (
+        make_auth_context,
+        to_fastapi_response,
+        to_termin_request,
+    )
+    from .compute_runner import redact_audit_traces as _redact_audit_traces
+
     deps = [Depends(ctx.require_scope(sc))] if sc else []
 
-    # Reserved query-param names — not treated as field filters.
-    # `offset` was retired in v0.9 along with the keyset-cursor
-    # pagination contract; the runtime rejects it explicitly so
-    # callers can't silently get incorrect behavior.
-    _reserved_params = {"limit", "sort", "cursor"}
+    # Stash row_filter and ctx-side runtime concerns on ctx itself
+    # so the pure handler can read them. Closure-style binding —
+    # the handler doesn't see the route registration's scope.
+    if not hasattr(ctx, "_row_filter_for_content"):
+        ctx._row_filter_for_content = {}
+    if row_filter:
+        ctx._row_filter_for_content[cr] = row_filter
+
+    if not hasattr(ctx, "row_filter_for"):
+        ctx.row_filter_for = lambda cn: ctx._row_filter_for_content.get(cn)
+    if not hasattr(ctx, "_check_boundary_identity"):
+        ctx._check_boundary_identity = lambda cn, scopes: check_boundary_identity(
+            ctx.boundary_identity_scopes, ctx.boundary_for_content,
+            cn, scopes,
+        )
+    if not hasattr(ctx, "redact_audit_traces"):
+        async def _redact(records, content_ref, scopes):
+            return await _redact_audit_traces(ctx, records, content_ref, scopes)
+        ctx.redact_audit_traces = _redact
 
     @app.get(path, dependencies=deps)
     async def list_route(request: Request, _cr=cr):
         user = ctx.get_current_user(request)
-        user_scopes = list(user.get("scopes", []))
-        bnd_id_err = check_boundary_identity(
-            ctx.boundary_identity_scopes, ctx.boundary_for_content,
-            _cr, user_scopes)
-        if bnd_id_err:
-            raise HTTPException(status_code=403, detail=bnd_id_err)
-
-        schema = ctx.content_lookup.get(_cr, {})
-        schema_fields = {f["name"] for f in schema.get("fields", [])}
-        # Implicit columns the contract layer also accepts.
-        schema_fields.update({"id", "status"})
-        # State machine columns — multi-SM in v0.9.
-        for sm in ctx.sm_lookup.get(_cr, []):
-            schema_fields.add(sm["machine_name"])
-
-        # Parse pagination: ?limit=N&cursor=<token>. The v0.9
-        # storage contract is keyset-cursor only (BRD §6.2); the
-        # legacy ?offset= URL parameter was retired in Phase 2.x
-        # and is now rejected with a 400 so callers don't silently
-        # get incorrect behavior.
-        qp = request.query_params
-        if "offset" in qp:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "?offset= was removed in v0.9. Use ?cursor= "
-                    "with the next_cursor token from a prior "
-                    "response. Cursors are opaque; do not parse."
-                )
-            )
-        # Default: no limit (return everything) — preserves the
-        # v0.8 callers' expectation. Provider's QueryOptions.limit
-        # defaults to 50, which is the contract default; the route
-        # opts out by passing a large value when the caller didn't
-        # ask for one.
-        limit_from_url = None
-        if "limit" in qp:
-            try:
-                limit_from_url = int(qp["limit"])
-            except ValueError:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"limit must be an integer, got {qp['limit']!r}")
-            if limit_from_url < 0:
-                raise HTTPException(
-                    status_code=400, detail="limit must be non-negative")
-            if limit_from_url > 1000:
-                raise HTTPException(
-                    status_code=400, detail="limit must not exceed 1000")
-
-        # Parse sort: ?sort=field or ?sort=field:asc or ?sort=field:desc.
-        order_by_list: list[OrderBy] = []
-        if "sort" in qp:
-            raw = qp["sort"]
-            if ":" in raw:
-                sf, sd = raw.split(":", 1)
-            else:
-                sf, sd = raw, "asc"
-            sd_lower = sd.lower()
-            if sd_lower not in ("asc", "desc"):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"sort direction must be 'asc' or 'desc', got {sd!r}")
-            if sf not in schema_fields:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"unknown sort field '{sf}' for {_cr}")
-            order_by_list.append(OrderBy(field=sf, direction=sd_lower))
-
-        # Parse filters: non-reserved query params become Eq predicates.
-        filter_eqs: list = []
-        for k, v in qp.items():
-            if k in _reserved_params:
-                continue
-            if k not in schema_fields:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"unknown filter field '{k}' for {_cr}")
-            filter_eqs.append(Eq(field=k, value=v))
-
-        # v0.9 Phase 6a.5: ownership row_filter (BRD #3 §3.4 / §3.5).
-        # When the route carries row_filter={"kind":"ownership","field":F},
-        # restrict the result set to rows where F equals the principal's
-        # id (on_behalf_of per BRD §3.5; for direct user actions this is
-        # the same as the request principal — agent invocations split in
-        # Phase 6a.6+).
-        if row_filter and row_filter.get("kind") == "ownership":
-            owner_field = row_filter.get("field")
-            owner_id = (user.get("the_user") or {}).get("id", "")
-            if owner_field and owner_id:
-                filter_eqs.append(Eq(field=owner_field, value=owner_id))
-
-        predicate = None
-        if len(filter_eqs) == 1:
-            predicate = filter_eqs[0]
-        elif len(filter_eqs) > 1:
-            predicate = And(predicates=tuple(filter_eqs))
-
-        # If no limit was supplied, fall back to the contract max so
-        # legacy "return all" behavior is preserved within reason.
-        # 1000 matches QueryOptions' upper bound and the v0.8 list
-        # endpoint's protective cap.
-        effective_limit = limit_from_url if limit_from_url is not None else 1000
-
-        # Phase 2.x (e): keyset cursors only.
-        url_cursor = qp.get("cursor")
-        options = QueryOptions(
-            limit=effective_limit,
-            cursor=url_cursor,
-            order_by=tuple(order_by_list),
+        auth = make_auth_context(user)
+        termin_req = await to_termin_request(
+            request,
+            path_params={"content": _cr},
+            auth=auth,
         )
-        try:
-            page = await ctx.storage.query(_cr, predicate, options)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        records = [dict(r) for r in page.records]
-        records = redact_records(records, schema, set(user_scopes))
-        if _cr.startswith("compute_audit_log_"):
-            records = await redact_audit_traces(
-                ctx, records, _cr, set(user_scopes))
-        return records
+        response = await list_content_handler(termin_req, ctx)
+        return to_fastapi_response(response)
 
 
 def _make_create_route(app, ctx, path, cr, sc, sm_info, owner_field=None):
