@@ -8,6 +8,12 @@ setup(
     packages=find_packages(),
     python_requires=">=3.10",
     install_requires=[
+        # Phase 7 slice 7.1: contract Protocols, IR types, deploy-config
+        # parser, expression evaluator, confidentiality, identity value
+        # types, errors, validation, and state rules live in termin-core.
+        # Pinned >=0.9.0,<0.10 for the duration of v0.9 development; the
+        # pin tightens to a specific version when Phase 7 closes.
+        "termin-core>=0.9.0,<0.10",
         # Compiler
         "click>=8.0",
         "tatsu>=5.8",
