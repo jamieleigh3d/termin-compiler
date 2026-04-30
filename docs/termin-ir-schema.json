@@ -99,6 +99,12 @@
       "items": { "$ref": "#/$defs/ReclassificationPoint" },
       "default": [],
       "description": "Declared points where data changes confidentiality level through a Compute module. The compiler extracts these from Compute definitions that have output_confidentiality_scope set. Runtimes use this list for audit logging and policy enforcement."
+    },
+    "required_contracts": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "v0.9 Phase 5a.1: the set of fully-qualified presentation contracts the IR's pages require (e.g., 'presentation-base.page', 'presentation-base.data-table', 'airlock-components.cosmic-orb'). The runtime uses this for deploy-time validation per BRD #2 §8.5 — every contract listed here must have a bound provider in the deploy config (or a default-bound provider for the presentation-base namespace) before the app starts."
     }
   },
 
@@ -303,6 +309,21 @@
           "items": { "$ref": "#/$defs/DependentValueSpec" },
           "default": [],
           "description": "Conditional constraints on field values. When a condition holds, another field is constrained to specific values, required to equal a value, or given a default."
+        },
+        "ownership": {
+          "type": ["object", "null"],
+          "default": null,
+          "description": "v0.9 Phase 6a: ownership cascade declaration. When present, identifies the field that links each row to its owning Principal — the runtime applies row-level ownership filters when access rules carry the `their own` qualifier. Shape: {field: <field-name>, references: <content-ref>}."
+        },
+        "audit_level": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "v0.9 Phase 3 slice (d): audit level for compute-audit-log content tables (`compute_audit_log_<compute>`). One of 'actions' (default), 'debug', or 'none'. Mirrors `audit` for compute audit tables; nullable for non-audit content."
+        },
+        "audit_content_ref": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "v0.9 Phase 3 slice (d): for compute-audit-log content, the snake_case name of the audit table itself (always 'compute_audit_log_<compute_snake>'). Helps the runtime distinguish synthesized audit content from app-author-declared content."
         }
       }
     },
@@ -365,6 +386,11 @@
           "items": { "$ref": "#/$defs/Verb" },
           "minItems": 1,
           "description": "Which operations this scope grants."
+        },
+        "their_own": {
+          "type": "boolean",
+          "default": false,
+          "description": "v0.9 Phase 6a: when true, this grant's verbs apply only to records the principal owns (per the Content's `ownership` declaration). Source form: `Anyone with X can update their own Y`."
         }
       }
     },
@@ -640,6 +666,11 @@
           "type": ["string", "null"],
           "default": null,
           "description": "v0.9: For TRANSITION routes on multi-state-machine Content, the snake_case state-machine identifier this route drives. Same value as the corresponding StateMachineSpec.machine_name and the underlying state-typed field's snake_case name. Two different state machines on the same Content may share a target_state name (e.g. both lifecycle and approval_status could declare an 'approved' state); machine_name is the disambiguator. Null on legacy single-SM IRs and on non-TRANSITION routes."
+        },
+        "row_filter": {
+          "type": ["object", "null"],
+          "default": null,
+          "description": "v0.9 Phase 6a: row-level filter shape. When present, the runtime applies this filter as an implicit WHERE clause for routes targeting Content with `their own` access rules — restricts results to records the principal owns. Schema is provider-agnostic; populated at lower time from the access rule."
         }
       }
     },
@@ -668,9 +699,14 @@
             "aggregation", "stat_breakdown", "chart",
             "filter", "search", "highlight", "subscribe",
             "related", "action_button", "semantic_mark",
-            "edit_modal"
+            "edit_modal", "package_contract"
           ],
-          "description": "Component type. Determines which props are expected and how the component renders."
+          "description": "Component type. Determines which props are expected and how the component renders. v0.9 Phase 5c.2 adds 'package_contract' for instances of contract-package source-verbs."
+        },
+        "contract": {
+          "type": "string",
+          "default": "",
+          "description": "v0.9 Phase 5a.1: fully-qualified presentation contract this node renders against (e.g., 'presentation-base.data-table', 'airlock-components.cosmic-orb'). Empty means use the default contract for `type`. The runtime resolves provider bindings against this name; deploy-time validation aggregates these into AppSpec.required_contracts."
         },
         "props": {
           "type": "object",
@@ -944,6 +980,30 @@
           "default": [],
           "description": "Content types this Compute can access (resolved snake_case names). Required boundary declaration. The runtime restricts agent tool calls to these content types. The compiler cross-checks field wiring and CEL body references against this list."
         },
+        "reads": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "v0.9 Phase 3 slice (c): read-only Content access. Subset of `Accesses` semantics — the agent can query these but not write."
+        },
+        "sends_to": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "v0.9 Phase 3 slice (c): outbound Channel names this Compute may dispatch to."
+        },
+        "emits": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "v0.9 Phase 3 slice (c): event names this Compute may emit on the runtime event bus."
+        },
+        "invokes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "v0.9 Phase 3 slice (c): other Compute names this Compute may invoke."
+        },
         "input_fields": {
           "type": "array",
           "items": {
@@ -1092,6 +1152,17 @@
           "items": { "$ref": "#/$defs/ChannelActionSpec" },
           "default": [],
           "description": "Typed RPC verbs this Channel exposes. Actions have typed I/O and scope requirements."
+        },
+        "provider_contract": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "v0.9 Phase 4: name of the provider contract this Channel binds to (e.g., 'webhook', 'email', 'messaging', 'event-stream'). Null for internal / legacy URL channels with no provider declaration. Deploy config's `bindings.channels.<name>.provider` must register a product against this contract."
+        },
+        "failure_mode": {
+          "type": "string",
+          "enum": ["log-and-drop", "surface-as-error", "queue-and-retry-forever"],
+          "default": "log-and-drop",
+          "description": "v0.9 Phase 4: dispatch failure semantics. `log-and-drop` (default) never raises; `surface-as-error` propagates the exception to the caller; `queue-and-retry-forever` puts failed sends on a retry queue."
         }
       }
     },

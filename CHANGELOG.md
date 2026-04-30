@@ -2,6 +2,68 @@
 
 ## Unreleased — v0.9 in progress (feature/v0.9)
 
+### Phase 5+6 closure + Spectrum feature parity (2026-04-29)
+
+The full presentation-provider system landed end-to-end:
+
+**Phase 5 — Presentation Provider System (BRD #2)**
+- 5b.3 — Tailwind reaches `_populate_presentation_providers` via the
+  same `termin.providers` entry-point group Spectrum uses; default-
+  Tailwind synthesis when no explicit binding declared. Two real
+  providers prove the pluggability surface (Tailwind SSR + Spectrum
+  CSR); GOV.UK SSR provider deferred to v0.10.
+- 5b.4 Spectrum chat — last of the ten `presentation-base` contracts.
+  TextField + Button composer, subscribes to `content.<source>` for
+  persisted-message arrival and `compute.stream.*` for streaming
+  token deltas; pending-bubble-per-invocation pattern.
+- 5c.1-finish — `_load_contract_packages` reads `contract_packages`
+  from deploy config, attaches a populated registry at
+  `ctx.contract_package_registry`. Paths resolve relative to the
+  deploy file. Fail-closed on missing/malformed files and verb
+  collisions per BRD #2 §10.4.
+- 5c.2 — pure-Python `package_verb_matcher` (NOT TatSu — sidesteps
+  the WSL context-state-leak entirely): classifier hook +
+  `package_contract_line` parse handler + `PackageContractCall` AST +
+  lowering to `ComponentNode(type="package_contract", contract=...)`.
+- 5c.3 — `_populate_presentation_providers` consults the package
+  registry for non-`presentation-base` namespace expansion.
+- 5c.4 — Airlock proving ground (5 tests stitching the whole stack)
+  proves the end-to-end mechanism per BRD §10.5.
+- 5c.5 — presentation conformance pack (cross-repo,
+  `termin-conformance/feature/v0.9`): 33 tests + spec at
+  `specs/presentation-contract.md`.
+
+**Item 0 — Spectrum-vs-Tailwind feature parity (before Phase 7)**
+- 0.1 — bootstrap payload now carries `app_chrome` (app name +
+  filtered nav items + role switcher state + username field). The
+  Spectrum bundle renders header via `<PageChrome>` with Spectrum
+  primitives. Substring role-match rule mirrors the SSR Tailwind
+  template's `"<token>" in current_role`.
+- 0.2 — server-side row-action visibility. Bootstrap pre-evaluates
+  each row_action's `visible_when` (scope check for delete/edit;
+  state-machine + scope check for transition) and attaches
+  `__visible_actions: [<label>...]` to each row in bound_data. CSR
+  providers filter their per-row buttons by label; the runtime's
+  scope/transition gates remain the trust boundary.
+
+**Subsystem fixes carried in this slice**
+- WS subscription path: two latent bugs surfaced by Spectrum chat
+  wiring (`_addSubscription` poisoning `state.subscriptions` with
+  undefined; `state.ws.onopen` not replaying `_subscriptionHandlers`).
+  Both fixed with regression tests in `test_v09_termin_js_api.py`.
+- Access-rule fallback now extracts verbs faithfully on WSL — the
+  hardcoded `verbs=["view"]` regression that silently rewrote
+  `update`/`delete` rules as view-only when the TatSu fallback fired.
+- `_resolve_page_for` permissive role match — single-variant slugs
+  return their page regardless of user role; multi-variant slugs
+  fall back to first when no role matches. Fixes a 404 UX regression
+  triggered by stale `termin_role=Anonymous` cookies.
+
+**Numbers**
+- Compiler suite: 2466 → 2541 on Windows.
+- Conformance: +33 tests for the v0.9 presentation provider pack.
+- Spectrum bundle: 246 KB gzipped (under 250 KB hard cap).
+
 ### Phase 3 slice (e): refusal + Acts as + sidecar (2026-04-26)
 
 The final Phase 3 slice per docs/compute-provider-design.md
