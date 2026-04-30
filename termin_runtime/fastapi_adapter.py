@@ -107,6 +107,7 @@ async def to_termin_request(
     *,
     path_params: dict | None = None,
     auth: AuthContext | None = None,
+    legacy_user_dict: dict | None = None,
 ) -> TerminRequest:
     """Wrap a FastAPI :class:`Request` as a :class:`TerminRequest`.
 
@@ -157,6 +158,7 @@ async def to_termin_request(
         auth=auth,
         scheme=fastapi_req.url.scheme,
         client=client,
+        legacy_user_dict=legacy_user_dict,
     )
 
 
