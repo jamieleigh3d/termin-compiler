@@ -283,6 +283,104 @@ mature.
 915 passing on Windows reference adapter; termin-core 57/57 passing
 (includes the framework-free guard).
 
+## 12. Slice 7.2.e — closure (2026-04-30 night, autonomous mode)
+
+**Status: landed.** All six CRUD-class handlers extracted to
+`termin_core.routing.crud` and the FastAPI routes in
+`termin_runtime/routes.py` are now thin bridges that delegate
+through `termin_runtime/fastapi_adapter.py`.
+
+| Handler | termin-core function | FastAPI route delegates |
+|---|---|---|
+| GET `/api/v1/{content}` | `list_content_handler` | `_make_list_route` |
+| GET `/api/v1/{content}/{key}` | `get_content_handler` | `_make_get_route` |
+| POST `/api/v1/{content}` | `create_content_handler` | `_make_create_route` |
+| PUT `/api/v1/{content}/{key}` | `update_content_handler` | `_make_update_route` |
+| DELETE `/api/v1/{content}/{key}` | `delete_content_handler` | `_make_delete_route` |
+| POST `/api/v1/{content}/{key}/_transition/{m}/{t}` | `transition_content_handler` | `_make_transition_route` |
+
+**Bridge pattern.** Each FastAPI route became a ~10-line shell:
+
+```python
+@app.<verb>(path, dependencies=deps)
+async def fastapi_route(request: Request, _cr=cr):
+    user = ctx.get_current_user(request)
+    auth = make_auth_context(user)
+    termin_req = await to_termin_request(
+        request,
+        path_params={"content": _cr, ...},
+        auth=auth,
+        legacy_user_dict=user,
+    )
+    response = await <core_handler>(termin_req, ctx)
+    return to_fastapi_response(response)
+```
+
+Per-content-type registration data (lookup_column, row_filter,
+owner_field, state_machine_info) is stashed on ctx via
+`ctx._<name>_for_content` dicts and surfaced as
+`ctx.<name>_for(content_ref)` callables. Pure-rule helpers the
+handler still needs (state-column seeding, content-event
+publishing, IR event handlers) are exposed via ctx hooks. Slice
+7.5 may move some into core proper.
+
+**Transitional carrier — `TerminRequest.legacy_user_dict`.** A
+real bug surfaced: `evaluate_field_defaults` reads the v0.9 user
+dict's `["User"]` key for the PascalCase-keyed CEL shape
+(`User.Username`, `User.Role`, etc.) that IR-declared default_expr
+expressions reference. The first version of `create_content_handler`
+synthesized a wrong-shape dict (`id`/`display_name`/`scopes`)
+which caused 67 conformance failures. Fix: adapter middleware
+stamps `request.legacy_user_dict` with the original v0.9 user
+dict so the CEL surface keeps working unchanged. Deletes in slice
+7.5 once the CEL-resolved User shape moves into AuthContext or
+the CEL surface is rewritten.
+
+**Suites at slice close:**
+
+- compiler 2545 / Windows
+- conformance 915 / 0 failed / Windows reference adapter
+- termin-core 80 / 80 / Windows
+
+**Cumulative termin-core surface after 7.2.e:**
+
+```
+termin_core/
+  ir/             types, serialize
+  providers/      contracts, registry, binding, deploy_config,
+                  identity_contract, storage_contract,
+                  compute_contract, channel_contract,
+                  presentation_contract
+  expression/     cel, predicate
+  confidentiality/ redaction
+  identity/       (Principal lives in providers; AuthContext lives
+                   in routing/)
+  errors/         router (TerminError envelope, TerminAtor),
+                  exceptions (TerminRuntimeError + 5 subclasses)
+  validation/     dependents
+  state/          machine
+  routing/        request (TerminRequest, TerminResponse),
+                  websocket (TerminWebSocket Protocol),
+                  auth (AuthContext),
+                  route_specs (RouteSpec, WebSocketRouteSpec),
+                  crud (6 CRUD handlers)
+```
+
+Remaining handlers in `termin_runtime/routes.py` that haven't
+moved (each its own slice when scheduled):
+
+- `register_reflection_routes` — pure runtime introspection,
+  stays as adapter code; moves to termin-server in slice 7.3.
+- `register_compute_endpoint` — POST /api/v1/compute/<name>/trigger
+  invokes the compute pipeline. Business-logic-heavy, candidate
+  for extraction in a later 7.2.x slice.
+- `register_sse_routes` — server-sent events. Adapter-coupled
+  (StreamingResponse). Moves with termin-server.
+- `register_page_routes` — SSR page rendering. Presentation-layer,
+  Jinja2/Tailwind-coupled. Moves with termin-server.
+- `register_channel_routes` — webhook receivers, channel send.
+  Channel-layer, intertwined with channel_ws.py — slice 7.2.f.
+
 ## 11. Slice 7.2.e — blocking decision (Principal flow)
 
 The CRUD handler extraction needs a decision on how the principal
