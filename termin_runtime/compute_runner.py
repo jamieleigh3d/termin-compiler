@@ -1155,6 +1155,21 @@ def register_compute_endpoint(app, ctx: RuntimeContext):
 
         return final_output
 
+    # Slice 7.2.x: bridge POST /api/v1/compute/{compute_name}/trigger
+    # to the pure trigger_compute_handler in termin-core. The handler
+    # reads check_compute_access through ctx; stash it on first
+    # registration so the bridge is the only place this binding
+    # lives.
+    if not hasattr(ctx, "check_compute_access"):
+        ctx.check_compute_access = check_compute_access
+
+    from termin_core.routing import trigger_compute_handler
+    from .fastapi_adapter import (
+        make_auth_context,
+        to_fastapi_response,
+        to_termin_request,
+    )
+
     @app.post("/api/v1/compute/{compute_name}/trigger")
     async def trigger_compute(compute_name: str, request: Request):
         """Manually trigger any Compute regardless of declared trigger type.
@@ -1166,92 +1181,18 @@ def register_compute_endpoint(app, ctx: RuntimeContext):
         for testing, dev-loop iteration, or "re-run on this record"
         workflows.
 
-        Request body:
-            {
-              "record": { ... },      # input record (what would normally
-                                       #  come from the triggering event)
-              "content_name": "..."   # content type the record belongs to
-            }
-
-        Returns 202 Accepted with an invocation id on queued execution,
-        or 200 on synchronous completion depending on the provider.
+        Bridge to termin_core.routing.trigger_compute_handler.
         """
-        import uuid as _uuid
-        import asyncio as _asyncio
-
-        comp = ctx.compute_lookup.get(compute_name)
-        if not comp:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Compute '{compute_name}' not found")
-
         user = ctx.get_current_user(request)
-        user_scopes = set(user.get("scopes", []))
-
-        # Scope check — same rule as event-triggered execution and the
-        # synchronous invoke endpoint.
-        req_scope = comp.get("required_scope")
-        if req_scope and req_scope not in user_scopes:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Requires scope '{req_scope}' to trigger")
-
-        # Confidentiality gate.
-        gate_err = check_compute_access(comp, user_scopes)
-        if gate_err:
-            ctx.terminator.route(TerminError(
-                source=comp["name"]["display"],
-                kind="confidentiality_gate_rejected",
-                message=gate_err))
-            raise HTTPException(status_code=403, detail=gate_err)
-
-        try:
-            body = await request.json()
-        except Exception:
-            raise HTTPException(
-                status_code=400,
-                detail="Request body must be JSON")
-
-        record = body.get("record", {})
-        content_name = body.get("content_name")
-
-        # If caller did not specify content_name, try to infer from
-        # the compute's declared input content.
-        if not content_name:
-            input_content = comp.get("input_content", [])
-            if len(input_content) == 1:
-                content_name = input_content[0]
-            elif len(input_content) == 0:
-                content_name = ""  # some computes have no input content
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"Compute '{compute_name}' has multiple input "
-                        "content types; specify 'content_name' in the "
-                        "request body"))
-
-        # Confirm content_name is known when one was required/supplied.
-        if content_name and content_name not in ctx.content_lookup:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unknown content_name '{content_name}'")
-
-        invocation_id = str(_uuid.uuid4())
-        try:
-            main_loop = _asyncio.get_running_loop()
-        except RuntimeError:
-            main_loop = None
-
-        await execute_compute(ctx, comp, record, content_name,
-                              main_loop=main_loop)
-        return {
-            "invocation_id": invocation_id,
-            "compute": comp["name"]["display"],
-            "provider": comp.get("provider", "cel"),
-            "trigger": "manual",
-            "status": "completed",
-        }
+        auth = make_auth_context(user)
+        termin_req = await to_termin_request(
+            request,
+            path_params={"compute_name": compute_name},
+            auth=auth,
+            legacy_user_dict=user,
+        )
+        response = await trigger_compute_handler(termin_req, ctx)
+        return to_fastapi_response(response)
 
 
 # ── LLM streaming support (v0.8 #7) ──

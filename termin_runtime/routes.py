@@ -518,62 +518,42 @@ def register_reflection_routes(app, ctx: RuntimeContext):
 def register_channel_routes(app, ctx: RuntimeContext):
     """Register channel action/send endpoints and inbound webhook handlers."""
 
+    from termin_core.routing import (
+        channel_send_handler,
+        invoke_channel_action_handler,
+        webhook_receive_handler,
+    )
+    from .fastapi_adapter import (
+        make_auth_context,
+        to_fastapi_response,
+        to_termin_request,
+    )
+
     @app.post("/api/v1/channels/{channel_name}/actions/{action_name}")
     async def invoke_channel_action(channel_name: str, action_name: str, request: Request):
         user = ctx.get_current_user(request)
-        user_scopes = set(user.get("scopes", []))
-
-        spec = ctx.channel_dispatcher.get_spec(channel_name)
-        if not spec:
-            raise HTTPException(status_code=404,
-                                detail=f"Channel '{channel_name}' not found")
-
-        action_spec = ctx.channel_dispatcher.get_action_spec(channel_name, action_name)
-        if not action_spec:
-            raise HTTPException(status_code=404,
-                                detail=f"Action '{action_name}' not found on channel '{channel_name}'")
-
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-
-        from .channels import ChannelScopeError, ChannelValidationError, ChannelError
-        try:
-            result = await ctx.channel_dispatcher.channel_invoke(
-                channel_name, action_name, body, user_scopes=user_scopes)
-            return result
-        except ChannelScopeError as e:
-            raise HTTPException(status_code=403, detail=str(e))
-        except ChannelValidationError as e:
-            raise HTTPException(status_code=422, detail=str(e))
-        except ChannelError as e:
-            raise HTTPException(status_code=502, detail=str(e))
+        auth = make_auth_context(user)
+        termin_req = await to_termin_request(
+            request,
+            path_params={"channel_name": channel_name, "action_name": action_name},
+            auth=auth,
+            legacy_user_dict=user,
+        )
+        response = await invoke_channel_action_handler(termin_req, ctx)
+        return to_fastapi_response(response)
 
     @app.post("/api/v1/channels/{channel_name}/send")
     async def channel_send_endpoint(channel_name: str, request: Request):
         user = ctx.get_current_user(request)
-        user_scopes = set(user.get("scopes", []))
-
-        spec = ctx.channel_dispatcher.get_spec(channel_name)
-        if not spec:
-            raise HTTPException(status_code=404,
-                                detail=f"Channel '{channel_name}' not found")
-
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-
-        from .channels import ChannelScopeError, ChannelError
-        try:
-            result = await ctx.channel_dispatcher.channel_send(
-                channel_name, body, user_scopes=user_scopes)
-            return result
-        except ChannelScopeError as e:
-            raise HTTPException(status_code=403, detail=str(e))
-        except ChannelError as e:
-            raise HTTPException(status_code=502, detail=str(e))
+        auth = make_auth_context(user)
+        termin_req = await to_termin_request(
+            request,
+            path_params={"channel_name": channel_name},
+            auth=auth,
+            legacy_user_dict=user,
+        )
+        response = await channel_send_handler(termin_req, ctx)
+        return to_fastapi_response(response)
 
     # Inbound webhook handlers
     for ch in ctx.ir.get("channels", []):
@@ -588,57 +568,26 @@ def register_channel_routes(app, ctx: RuntimeContext):
 
         webhook_path = f"/webhooks/{ch_snake}"
 
-        def _make_webhook(ch_name=ch_display, ch_content=ch_carries, ch_spec=ch):
-            @app.post(webhook_path, name=f"webhook_{ch_snake}")
+        def _make_webhook(ch_name=ch_display, ch_content=ch_carries, ch_spec=ch, ch_snake_local=ch_snake):
+            @app.post(webhook_path, name=f"webhook_{ch_snake_local}")
             async def webhook_receive(request: Request):
                 user = ctx.get_current_user(request)
-                user_scopes = set(user.get("scopes", []))
-                for req in ch_spec.get("requirements", []):
-                    if req["direction"] == "send" and req["scope"] not in user_scopes:
-                        raise HTTPException(
-                            status_code=403,
-                            detail=f"Scope '{req['scope']}' required to send to channel '{ch_name}'")
-
-                try:
-                    body = await request.json()
-                except Exception:
-                    raise HTTPException(status_code=400, detail="Invalid JSON payload")
-
-                schema = ctx.content_lookup.get(ch_content)
-                if not schema:
-                    raise HTTPException(status_code=500,
-                                        detail=f"Content '{ch_content}' not found")
-
-                known_cols = set()
-                for f in schema.get("fields", []):
-                    fname = f.get("name", "")
-                    if isinstance(fname, dict):
-                        known_cols.add(fname.get("snake", ""))
-                    else:
-                        known_cols.add(str(fname))
-                record_data = {k: v for k, v in body.items() if k in known_cols}
-
-                if not record_data:
-                    raise HTTPException(status_code=422, detail="No valid fields in payload")
-
-                db = await get_db(ctx.db_path)
-                try:
-                    record = await create_record(db, ch_content, record_data,
-                                                 ctx.sm_lookup.get(ch_content, []))
-                    await ctx.run_event_handlers(db, ch_content, "created", record)
-
-                    ctx.channel_dispatcher._metrics.get(ch_name, {})["received"] = \
-                        ctx.channel_dispatcher._metrics.get(ch_name, {}).get("received", 0) + 1
-
-                    await ctx.event_bus.publish({
-                        "channel_id": f"content.{ch_content}.created",
-                        "data": record,
-                    })
-
-                    print(f"[Termin] Webhook '{ch_name}': created {ch_content} record (id={record.get('id', '?')})")
-                    return {"ok": True, "id": record.get("id"), "channel": ch_name}
-                finally:
-                    await db.close()
+                auth = make_auth_context(user)
+                termin_req = await to_termin_request(
+                    request,
+                    path_params={"channel_snake": ch_snake_local},
+                    auth=auth,
+                    legacy_user_dict=user,
+                )
+                response = await webhook_receive_handler(
+                    termin_req, ctx, channel_spec=ch_spec,
+                )
+                # Webhook successes log the same line the runtime did
+                # before — visible in dev-loop console for debugging.
+                if response.json_body and response.json_body.get("ok"):
+                    rec_id = response.json_body.get("id", "?")
+                    print(f"[Termin] Webhook '{ch_name}': created {ch_content} record (id={rec_id})")
+                return to_fastapi_response(response)
 
         _make_webhook()
         print(f"[Termin] Registered webhook: POST {webhook_path} -> {ch_carries}")
