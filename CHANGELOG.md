@@ -2,6 +2,42 @@
 
 ## Unreleased — v0.9 in progress (feature/v0.9)
 
+### Pre-Phase 7 cleanup (2026-04-29 evening)
+
+Two technical-debt items previously deferred in the morning's cleanup
+pass landed before Phase 7 starts, plus a release-process gap that
+caused the deferral.
+
+**Deploy-template generator emits v0.9 channel envelope on the
+no-`Provider` fallback path** — `termin/cli.py::_generate_deploy_template`
+wrapped channels with declared `Provider is "X"` correctly, but the
+fallback branch (channels with no provider declared in source) still
+emitted a flat `{url, protocol, auth}` blob. v0.9's strict deploy-config
+validator requires `provider` on every channel binding, so regenerating
+fixtures via `util/release.py` produced files the validator rejected,
+breaking ~110 conformance tests. Fix wraps the fallback in
+`{provider: "stub", config: {...}}`. Two regression tests added in
+`tests/test_cli.py`: shape assertion on the no-contract fallback path,
+plus an end-to-end round-trip through `parse_deploy_config` covering all
+five paths (fallback + webhook + email + messaging + event-stream).
+
+**`util/release.py` clears stale `*.deploy.json` before regenerating
+fixtures** — the CLI's `compile` command auto-generates a deploy template
+*only when one doesn't already exist*, to protect operator edits. That
+means a stale deploy.json in compiler root survives every subsequent
+regeneration, even when the generator's output shape has changed. v0.8.0
+shipped with stale fixtures partly because of this. Now `compile_examples`
+unlinks every `<root>/*.deploy.json` before invoking the CLI so the
+release artifact tracks the current generator.
+
+**`duration_ms=` kwarg back-compat in `write_audit_trace` removed** —
+`compute_runner.py:1090, :1159` migrated to `latency_ms=`,
+`tests/test_v09_identity_contract.py` two call sites migrated, and
+`tests/test_v09_compute_audit.py::test_audit_metadata_legacy_duration_ms_kwarg_still_works`
+deleted. The signature drops `duration_ms` and the runtime fallback
+shim for it. The audit-table column name `latency_ms` is unchanged —
+only the kwarg name is removed.
+
 ### Phase 5+6 closure + Spectrum feature parity (2026-04-29)
 
 The full presentation-provider system landed end-to-end:

@@ -179,7 +179,9 @@ class TestCLIUtils:
 
     def test_generate_deploy_template(self):
         """v0.9 deploy template shape: {version, bindings: {identity,
-        storage, presentation, compute, channels}, runtime}."""
+        storage, presentation, compute, channels}, runtime}. Every
+        channel binding carries `provider` + `config` so the v0.9
+        strict channel validator accepts the file."""
         ir_dict = {"auth": {"provider": "stub"}}
         channels = [{
             "name": {"display": "test channel", "snake": "test_channel"},
@@ -197,7 +199,83 @@ class TestCLIUtils:
         assert "channels" in bindings
         assert bindings["identity"]["provider"] == "stub"
         assert "test channel" in bindings["channels"]
-        assert bindings["channels"]["test channel"]["protocol"] == "http"
+        entry = bindings["channels"]["test channel"]
+        assert entry["provider"] == "stub"
+        assert entry["config"]["protocol"] == "http"
+
+    def test_generate_deploy_template_no_provider_contract_emits_v09_envelope(self):
+        """Channels without `Provider is "X"` in source — the legacy
+        fallback path — must still wrap into {provider, config}.
+        v0.9 strict channel validator requires `provider` on every
+        binding; raw flat url/protocol/auth blobs (the v0.8 shape)
+        get rejected at parse time. Regression guard for the bug
+        that broke ~110 conformance tests when the release script
+        regenerated fixtures."""
+        ir_dict = {"auth": {"provider": "stub"}}
+        # Realtime channel triggers the websocket branch of the fallback.
+        channels = [{
+            "name": {"display": "no-prov-rt", "snake": "no_prov_rt"},
+            "direction": "INBOUND",
+            "delivery": "REALTIME",
+            "actions": [],
+        }, {
+            "name": {"display": "no-prov-http", "snake": "no_prov_http"},
+            "direction": "OUTBOUND",
+            "delivery": "RELIABLE",
+            "actions": [],
+        }]
+        result = _generate_deploy_template(ir_dict, channels)
+        for name in ("no-prov-rt", "no-prov-http"):
+            entry = result["bindings"]["channels"][name]
+            assert entry["provider"] == "stub", (
+                f"channel {name} must declare a provider for v0.9 "
+                f"strict validator; got entry={entry!r}"
+            )
+            assert "config" in entry
+            assert "url" in entry["config"]
+            assert "auth" in entry["config"]
+        # WS-shaped channel keeps reconnect+heartbeat under config
+        assert result["bindings"]["channels"]["no-prov-rt"]["config"]["protocol"] == "websocket"
+        assert result["bindings"]["channels"]["no-prov-rt"]["config"]["reconnect"] is True
+        # HTTP-shaped channel keeps timeout+retry under config
+        assert result["bindings"]["channels"]["no-prov-http"]["config"]["protocol"] == "http"
+        assert result["bindings"]["channels"]["no-prov-http"]["config"]["timeout_ms"] == 30000
+
+    def test_generate_deploy_template_validates_strict_v09(self):
+        """End-to-end gate: every generated template must parse cleanly
+        through the v0.9 strict deploy-config validator. Mixes:
+        no-contract fallback channels + each known provider_contract
+        path (webhook/email/messaging/event-stream) + LLM compute."""
+        from termin_runtime.providers.deploy_config import parse_deploy_config
+
+        ir_dict = {
+            "auth": {"provider": "stub"},
+            "computes": [
+                {"name": {"display": "Reply", "snake": "reply"}, "provider": "llm"},
+            ],
+        }
+        channels = [
+            {"name": {"display": "fallback", "snake": "fallback"},
+             "direction": "OUTBOUND", "delivery": "RELIABLE", "actions": []},
+            {"name": {"display": "wh", "snake": "wh"},
+             "direction": "OUTBOUND", "delivery": "RELIABLE", "actions": [],
+             "provider_contract": "webhook"},
+            {"name": {"display": "em", "snake": "em"},
+             "direction": "OUTBOUND", "delivery": "RELIABLE", "actions": [],
+             "provider_contract": "email"},
+            {"name": {"display": "msg", "snake": "msg"},
+             "direction": "BIDIRECTIONAL", "delivery": "REALTIME", "actions": [],
+             "provider_contract": "messaging"},
+            {"name": {"display": "es", "snake": "es"},
+             "direction": "INBOUND", "delivery": "REALTIME", "actions": [],
+             "provider_contract": "event-stream"},
+        ]
+        template = _generate_deploy_template(ir_dict, channels)
+        # Throws DeployConfigError if any channel binding is missing
+        # `provider` or any other v0.9 requirement.
+        cfg = parse_deploy_config(template)
+        assert set(cfg.bindings.channels.keys()) == {"fallback", "wh", "em", "msg", "es"}
+        assert "reply" in cfg.bindings.compute
 
     def test_generate_deploy_template_compute_entries(self):
         """LLM/agent computes get a bindings.compute entry each;

@@ -457,7 +457,7 @@ class TestAuditLogPrincipalRecording:
                 ctx, comp_dict, invocation_id="inv-1", trigger="api",
                 started_at="2026-04-25T00:00:00Z",
                 completed_at="2026-04-25T00:00:01Z",
-                duration_ms=1000.0, outcome="success",
+                latency_ms=1000.0, outcome="success",
                 invoked_by=alice,
             )
             db = await get_db(db_path)
@@ -513,7 +513,7 @@ class TestAuditLogPrincipalRecording:
                 ctx, comp_dict, invocation_id="inv-2", trigger="event",
                 started_at="2026-04-25T00:00:00Z",
                 completed_at="2026-04-25T00:00:01Z",
-                duration_ms=1000.0, outcome="success",
+                latency_ms=1000.0, outcome="success",
                 invoked_by=moderation_bot,
             )
             db = await get_db(db_path)

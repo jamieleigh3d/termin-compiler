@@ -810,19 +810,17 @@ async def _execute_agent_compute(ctx: RuntimeContext, comp: dict, record: dict,
 
 async def write_audit_trace(ctx: RuntimeContext, comp: dict, invocation_id: str,
                             trigger: str, started_at: str, completed_at: str,
-                            latency_ms: float = None, outcome: str = "success",
+                            latency_ms: float = 0.0, outcome: str = "success",
                             trace_data: dict = None, error_message: str = None,
                             total_input_tokens: int = 0, total_output_tokens: int = 0,
                             invoked_by=None,
-                            audit_metadata: dict = None,
-                            duration_ms: float = None):
+                            audit_metadata: dict = None):
     """Write a trace record to the compute's audit log Content table.
 
     Per BRD §6.3.4 (v0.9 Phase 3 slice (d)):
-      - `latency_ms` is the canonical name (was `duration_ms` in
-        v0.8). The legacy keyword is accepted for back-compat with
-        any internal call sites still passing it; one or the other
-        must be supplied.
+      - `latency_ms` is the canonical column name (renamed from
+        `duration_ms` in v0.8). The transitional `duration_ms=` kwarg
+        was dropped along with the back-compat shim before Phase 7.
       - `audit_metadata` carries the BRD §6.3.4 reproducibility-grade
         fields for LLM/agent invocations: provider_product,
         model_identifier, provider_config_hash, prompt_as_sent,
@@ -843,11 +841,6 @@ async def write_audit_trace(ctx: RuntimeContext, comp: dict, invocation_id: str,
     audit_ref = comp.get("audit_content_ref")
     if audit_level == "none" or not audit_ref:
         return
-
-    # Accept either kwarg name during the v0.9 transition. Internal
-    # callers should use latency_ms.
-    if latency_ms is None:
-        latency_ms = duration_ms if duration_ms is not None else 0.0
 
     # Per BRD §6.3.4, principal info on the audit record.
     invoked_by_id = ""
@@ -1087,7 +1080,7 @@ def register_compute_endpoint(app, ctx: RuntimeContext):
                 ctx, comp, invocation_id=tx.id, trigger="api",
                 started_at=_audit_started_str,
                 completed_at=_audit_err_completed.isoformat() + "Z",
-                duration_ms=_audit_err_duration, outcome="error",
+                latency_ms=_audit_err_duration, outcome="error",
                 error_message=str(e),
                 trace_data={"compute_type": "cel", "expression": cel_body, "error": str(e)},
             )
@@ -1156,7 +1149,7 @@ def register_compute_endpoint(app, ctx: RuntimeContext):
             ctx, comp, invocation_id=tx.id, trigger="api",
             started_at=_audit_started_str,
             completed_at=_audit_completed.isoformat() + "Z",
-            duration_ms=_audit_duration, outcome="success",
+            latency_ms=_audit_duration, outcome="success",
             trace_data=trace_data,
         )
 

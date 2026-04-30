@@ -145,6 +145,16 @@ def compile_examples(dry_run: bool):
     # Note: TatSu grammar objects cause a cosmetic RecursionError during Python
     # GC at exit. This is a known TatSu issue and does not affect correctness.
 
+    # Clear stale `<name>.deploy.json` templates in the compiler root so the
+    # CLI regenerates them with the current generator. The CLI deliberately
+    # skips regeneration when a deploy.json already exists (so end-user edits
+    # aren't clobbered), but on a release we want fresh templates so any
+    # generator changes (new keys, shape fixes) reach the conformance repo.
+    if not dry_run:
+        for stale in COMPILER_ROOT.glob("*.deploy.json"):
+            stale.unlink()
+            print(f"  CLEAR: {stale.name}")
+
     count = 0
     for fn in sorted(os.listdir(EXAMPLES_DIR)):
         if not fn.endswith(".termin"):
