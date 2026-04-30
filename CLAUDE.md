@@ -265,6 +265,46 @@ The `words` terminal is greedy — it consumes keywords like "or", "with", "as".
 - **Never skip hooks** (`--no-verify`) without a concrete reason. If a
   pre-commit hook fails, fix the underlying issue rather than bypassing.
 
+## Public-Repo Codename Discipline (NON-NEGOTIABLE)
+
+**This repository is public.** Anything written here ships publicly
+the moment the next push goes out — no later, no "someone will catch
+it before release."
+
+- **Never write internal codenames for alternate Termin runtimes
+  (or any other employer/vendor-internal project) in this tree.**
+  Not in source code comments, not in markdown docs (BRDs, design
+  docs, roadmap, CHANGELOG, READMEs), not in commit messages, not
+  in PR descriptions, not in test fixtures, not in seed data. The
+  bar is "recognizable only to someone with the corresponding
+  employer/vendor context → omit or genericize."
+- **Genericize.** Use **"an AWS-native Termin runtime"** when the
+  AWS context matters (enterprise, regulated, air-gapped
+  deployments). Use **"an alternate Termin runtime"** when the
+  context is just "a second runtime exists." Use **"a third-party
+  Rust port"** when the language matters.
+- **The canonical list of prohibited codenames lives in private
+  workspace context** (`E:\ClaudeWorkspace\CLAUDE.md` and the
+  per-session memory). It is intentionally NOT enumerated in this
+  public file. If a session is unsure whether a given name counts,
+  the answer is omit-and-ask, not write-and-hope.
+- **Verify before every push.** A repo-wide pre-commit guard at
+  `util/check-codenames.sh` (slice 7.1 prep deliverable) reads
+  the prohibited list from a gitignored file and grep-fails the
+  commit on any hit. Until that lands, the verification is manual:
+  consult the workspace context for the list, then grep the repo.
+- **History remediation** (filter-repo) is a separate operation,
+  reserved for v1.0 public-launch prep. The discipline here is
+  about the *current state* — every push starts clean, every diff
+  stays clean. Past commits showing prohibited names in earlier
+  file versions are tolerated until that history pass.
+
+This rule exists because on 2026-04-30 17 references slipped into
+`termin-compiler/docs/` before being caught — the discipline rule
+lived only in `termin-dev/CLAUDE.md`, which doesn't auto-load when
+a session works from this repo. The fix was making the rule
+travel with the repo where it must be enforced.
+
 ## Seed Data
 
 Examples can have companion `_seed.json` files (e.g., `examples/projectboard_seed.json`). The compiler copies them alongside output. The runtime auto-seeds empty tables on first run. Use `--seed custom.json` for explicit seed files.
