@@ -850,6 +850,77 @@ class TestDbPathIsolation:
             f"env-pointed db should NOT have been created when "
             f"explicit db_path was passed; found: {env_path!r}")
 
+    def test_default_db_path_derives_from_app_name_and_id(self):
+        """Default db filename combines a slug of the app name and the
+        first 8 chars of the app_id. Two apps with the same name in
+        the same cwd never collide; re-deploying the same .pkg keeps
+        its data (CLI upgrade scenario)."""
+        from termin_runtime.storage import default_db_path_for_app
+        ir_a = {
+            "name": "Warehouse Inventory Manager",
+            "app_id": "3e157422-d10c-4a2b-b6c3-9f80fc80f27b",
+        }
+        ir_a_dup = dict(ir_a)
+        ir_b = {
+            "name": "Warehouse Inventory Manager",
+            "app_id": "ffffffff-d10c-4a2b-b6c3-9f80fc80f27b",
+        }
+        path_a = default_db_path_for_app(ir_a)
+        path_a_again = default_db_path_for_app(ir_a_dup)
+        path_b = default_db_path_for_app(ir_b)
+        # Same IR → same path: re-serving keeps the data.
+        assert path_a == path_a_again
+        # Same name, different id → distinct paths: no collision.
+        assert path_a != path_b
+        # Slug is human-readable.
+        assert path_a.startswith("warehouse_inventory_manager__")
+        assert path_a.endswith(".db")
+        # Suffix stable.
+        assert "3e157422" in path_a
+        assert "ffffffff" in path_b
+
+    def test_default_db_path_falls_back_when_no_app_id(self):
+        """An IR with name but no app_id (legacy or hand-rolled) gets
+        a name-only filename, still distinct from the literal app.db
+        constant when the name is meaningful."""
+        from termin_runtime.storage import default_db_path_for_app, DEFAULT_DB_PATH
+        assert default_db_path_for_app({"name": "Hello World"}) == "hello_world.db"
+        # Empty/missing IR → constant fallback (only callers that
+        # bypass create_termin_app should ever hit this).
+        assert default_db_path_for_app({}) == DEFAULT_DB_PATH
+        assert default_db_path_for_app({"name": ""}) == DEFAULT_DB_PATH
+        # Non-dict (defensive) → constant fallback.
+        assert default_db_path_for_app(None) == DEFAULT_DB_PATH
+
+    def test_create_termin_app_uses_derived_default_db_path(
+        self, compiled_packages, tmp_path, monkeypatch,
+    ):
+        """End-to-end: with no explicit db_path and no TERMIN_DB_PATH,
+        create_termin_app writes to the derived per-app filename in
+        cwd, not to literal "app.db". Two apps in the same cwd write
+        to distinct files."""
+        import os
+        monkeypatch.delenv("TERMIN_DB_PATH", raising=False)
+        monkeypatch.chdir(tmp_path)
+        ir_json = _ir_json(compiled_packages["hello"])
+        with TestClient(create_termin_app(
+            ir_json, strict_channels=False
+        )) as client:
+            assert client.get("/").status_code == 200
+        # The literal "app.db" must NOT have been created — that was the
+        # old default and it caused multi-app collisions.
+        assert not (tmp_path / "app.db").exists(), (
+            "create_termin_app fell back to literal 'app.db' instead "
+            "of the derived per-app filename")
+        # Some <slug>__<id8>.db file should exist.
+        derived = list(tmp_path.glob("*.db"))
+        assert len(derived) == 1, (
+            f"expected exactly one derived db, found: "
+            f"{[p.name for p in derived]}")
+        assert "__" in derived[0].name, (
+            f"derived filename should have '__<id8>' suffix; got "
+            f"{derived[0].name}")
+
     def test_two_apps_keep_separate_dbs(self, compiled_packages, tmp_path):
         """Boot two apps with separate db_paths; rows in one don't appear
         in the other. Without the v0.9 fix this was racy because

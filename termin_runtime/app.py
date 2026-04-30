@@ -362,9 +362,8 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     # Resolve db_path immediately so ctx.db_path is never None — every
     # runtime caller passes ctx.db_path through to get_db, and we want
     # the value visible at app construction (not buried in storage's
-    # fallback). DEFAULT_DB_PATH is "app.db" relative to cwd, matching
-    # the historical behavior for users running `python app.py` directly.
-    from .storage import DEFAULT_DB_PATH
+    # fallback).
+    from .storage import default_db_path_for_app
     # Resolve to absolute. Relative paths bind against cwd at every
     # aiosqlite.connect() — if any caller (notably tests, which may
     # change cwd between invocations) flips cwd after app startup,
@@ -376,16 +375,16 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     #   2. TERMIN_DB_PATH environment variable. Useful for ops
     #      pipelines that want to point a deployed app at a
     #      specific path without editing the compiled app.py.
-    #   3. DEFAULT_DB_PATH ("app.db" in cwd). Test conftest
-    #      monkeypatches this; production users running
-    #      `python app.py` from a deploy dir get the historical
-    #      v0.8 behavior.
+    #   3. default_db_path_for_app(ir) — derives "<slug>__<id8>.db"
+    #      from the app's name + UUID so multiple apps in the same
+    #      cwd never collide and re-serving the same .pkg keeps its
+    #      data (CLI upgrade scenarios).
     if db_path:
         resolved_db_path = db_path
     elif os.environ.get("TERMIN_DB_PATH"):
         resolved_db_path = os.environ["TERMIN_DB_PATH"]
     else:
-        resolved_db_path = DEFAULT_DB_PATH
+        resolved_db_path = default_db_path_for_app(ir)
     if resolved_db_path != ":memory:" and not os.path.isabs(resolved_db_path):
         resolved_db_path = os.path.abspath(resolved_db_path)
     ctx = RuntimeContext(ir=ir, ir_json=ir_json, db_path=resolved_db_path)

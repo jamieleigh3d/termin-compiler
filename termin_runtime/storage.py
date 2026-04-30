@@ -16,23 +16,58 @@ import aiosqlite
 from pathlib import Path
 
 
-# Default database path used when no explicit db_path is provided
-# AND no TERMIN_DB_PATH env var is set. This is a constant —
-# historically a mutable module global that init_db() rewrote
-# per-app, causing cross-app contamination when multiple apps
-# booted in the same process (one app's init_db rewrote the
-# global; another app's get_db(None) read the rewritten value).
-# v0.9 made it a constant.
+# Last-resort database path used when no explicit db_path is provided
+# AND no TERMIN_DB_PATH env var is set AND no IR is available to
+# derive a per-app filename. This is a constant — historically a
+# mutable module global that init_db() rewrote per-app, causing
+# cross-app contamination when multiple apps booted in the same
+# process (one app's init_db rewrote the global; another app's
+# get_db(None) read the rewritten value). v0.9 made it a constant.
 #
 # Resolution precedence in app.create_termin_app (highest first):
 #   1. Explicit db_path argument.
 #   2. TERMIN_DB_PATH environment variable (Phase 2.x g).
-#   3. This constant — "app.db" relative to cwd.
+#   3. default_db_path_for_app(ir) — derived from app name + id so
+#      two apps in the same cwd never collide and re-serving the
+#      same app keeps its data (upgrade scenario).
+#   4. This constant — "app.db" relative to cwd. Only reached by
+#      direct callers of get_db()/init_db() that don't go through
+#      create_termin_app, which means they don't have an IR.
 #
 # Production deployments should pass an explicit db_path or set
-# TERMIN_DB_PATH; the cwd-relative fallback exists for the
-# `python app.py` shape historically supported by v0.8.
+# TERMIN_DB_PATH; the derived per-app default exists so a fresh
+# `termin serve <pkg>` in any directory gets its own storage.
 DEFAULT_DB_PATH: str = "app.db"
+
+
+def default_db_path_for_app(ir: dict) -> str:
+    """Derive a stable per-app SQLite filename from the IR.
+
+    Format: ``<slug>__<id8>.db`` where ``slug`` is the snake-cased
+    app name and ``id8`` is the first eight chars of the app's UUID.
+    Two apps with the same human name in the same cwd still get
+    distinct files; re-serving the same app hits the same file so
+    upgrades preserve data.
+
+    Falls back to ``<slug>.db`` when the IR has no ``app_id`` (legacy
+    or hand-rolled IR), and to :data:`DEFAULT_DB_PATH` only when the
+    IR has no ``name`` either.
+    """
+    if not isinstance(ir, dict):
+        return DEFAULT_DB_PATH
+    name = ir.get("name") or ""
+    slug = re.sub(r'[^a-z0-9]+', '_', str(name).lower()).strip('_')
+    if not slug:
+        return DEFAULT_DB_PATH
+    app_id = (ir.get("app_id") or "").strip()
+    if app_id:
+        # Take 8 hex chars after stripping non-alnum so a short
+        # numeric id ("42") still produces a stable suffix; the
+        # general case is a UUID with dashes.
+        suffix = re.sub(r'[^a-z0-9]', '', app_id.lower())[:8]
+        if suffix:
+            return f"{slug}__{suffix}.db"
+    return f"{slug}.db"
 
 # Safe identifier pattern: lowercase letters, digits, underscores. Must start with a letter.
 _SAFE_IDENTIFIER = re.compile(r'^[a-z][a-z0-9_]*$')

@@ -2,6 +2,40 @@
 
 ## Unreleased — v0.9 in progress (feature/v0.9)
 
+### Default db_path derives from app name + id (2026-04-29 late evening)
+
+`create_termin_app` no longer falls back to a literal `app.db` file in
+cwd when no explicit `db_path` is passed and `TERMIN_DB_PATH` isn't set.
+The new default is `<slug>__<id8>.db` — the snake-cased app name plus
+the first eight hex chars of the app's UUID. Two consequences:
+
+- **No collisions.** Multiple apps served from the same working
+  directory each get their own SQLite file. Previously every fresh
+  `termin serve <pkg>` overwrote / migrated the same `app.db`, which
+  made multi-app local development confusing and produced subtle
+  cross-app schema collisions in the conformance suite (the symptom
+  that surfaced this).
+- **CLI upgrade scenario works.** Re-deploying the same `.pkg` (same
+  app_id) targets the same db file, so the migration system can
+  classify and apply schema changes against the prior state — that's
+  the point of the v0.9 migration framework. Different apps with the
+  same human name still get distinct files because their app_ids
+  differ.
+
+Helper lives at `termin_runtime.storage.default_db_path_for_app(ir)`.
+Resolution precedence in `create_termin_app` (highest first):
+1. Explicit `db_path` argument
+2. `TERMIN_DB_PATH` environment variable
+3. `default_db_path_for_app(ir)` — derives `<slug>__<id8>.db`
+4. `DEFAULT_DB_PATH = "app.db"` constant — only reachable by direct
+   callers of `get_db()` / `init_db()` that bypass `create_termin_app`,
+   which means no IR is available.
+
+Three new tests in `tests/test_runtime.py::TestDbPathIsolation`:
+shape of the derived filename, fallback semantics on partial IR, and
+end-to-end through `create_termin_app` confirming literal `app.db` is
+never created in cwd.
+
 ### Pre-Phase 7 cleanup (2026-04-29 evening)
 
 Two technical-debt items previously deferred in the morning's cleanup
