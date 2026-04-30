@@ -1002,6 +1002,24 @@ def create_termin_app(ir_json: str, db_path: str = None, seed_data: dict = None,
     # ── Create FastAPI app ──
     app = FastAPI(title=app_name, lifespan=lifespan)
 
+    # Slice 7.2 of Phase 7 (2026-04-30): translate framework-agnostic
+    # TerminRuntimeError exceptions raised by code in termin-core
+    # (validation, state machines, transitions, …) into FastAPI
+    # responses. The handler matches the legacy HTTPException(detail=…)
+    # response body shape so conformance tests don't see a contract
+    # change. ``extra`` rides through unchanged, letting clients see
+    # structured fields (`field`, `allowed`, etc.) when the runtime
+    # error carries them.
+    from fastapi.responses import JSONResponse
+    from termin_core.errors import TerminRuntimeError
+
+    @app.exception_handler(TerminRuntimeError)
+    async def _termin_runtime_error_handler(request, exc: TerminRuntimeError):
+        body: dict = {"detail": exc.detail}
+        if exc.extra:
+            body.update(exc.extra)
+        return JSONResponse(status_code=exc.status_code, content=body)
+
     # Set-role endpoint
     @app.post("/set-role")
     async def set_role(role: str = Form(...), user_name: str = Form("")):
