@@ -283,16 +283,18 @@ it before release."
   deployments). Use **"an alternate Termin runtime"** when the
   context is just "a second runtime exists." Use **"a third-party
   Rust port"** when the language matters.
-- **The canonical list of prohibited codenames lives in private
-  workspace context** (`E:\ClaudeWorkspace\CLAUDE.md` and the
-  per-session memory). It is intentionally NOT enumerated in this
-  public file. If a session is unsure whether a given name counts,
-  the answer is omit-and-ask, not write-and-hope.
-- **Verify before every push.** A repo-wide pre-commit guard at
-  `util/check-codenames.sh` (slice 7.1 prep deliverable) reads
-  the prohibited list from a gitignored file and grep-fails the
-  commit on any hit. Until that lands, the verification is manual:
-  consult the workspace context for the list, then grep the repo.
+- **No checked-in list of prohibited names.** A list of names-to-not-write
+  would itself be a list of names. The discipline lives in private
+  workspace context and Claude's session judgment, not in any file
+  in this tree. When unsure whether a given term counts: **omit
+  and ask**, never write-and-hope. JL will tell you to add a name
+  back if the omission was wrong; she won't tell you to add a name
+  you already accidentally wrote down.
+- **Verify before every push** by reading your own diffs critically.
+  Anything with the rhythm of "(internal name, internal context)"
+  in parentheses next to a generic descriptor is exactly the trap.
+  Search for the word "internal" itself in your diff — that
+  decoration almost always sits next to a leakable codename.
 - **History remediation** (filter-repo) is a separate operation,
   reserved for v1.0 public-launch prep. The discipline here is
   about the *current state* — every push starts clean, every diff
