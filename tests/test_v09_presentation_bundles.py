@@ -234,10 +234,9 @@ def test_termin_js_exposes_registerRenderer():
     `registerRenderer(contract, fn)` and `getRenderer(contract)`
     for CSR bundles to plug in. Sanity-check the surface so future
     refactors don't silently drop it."""
-    js_path = (
-        Path(__file__).parent.parent
-        / "termin_runtime" / "static" / "termin.js"
-    )
+    # Slice 7.3 of Phase 7 (2026-04-30): static assets in termin-server.
+    import termin_server
+    js_path = Path(termin_server.__file__).parent / "static" / "termin.js"
     src = js_path.read_text(encoding="utf-8")
     assert "registerRenderer" in src
     assert "getRenderer" in src

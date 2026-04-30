@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 from termin.peg_parser import parse_peg as parse
 from termin.analyzer import analyze
 from termin.lower import lower
-from termin.ir import Verb, ComputeSpec, ContentSchema, AccessGrant
+from termin_core.ir.types import Verb, ComputeSpec, ContentSchema, AccessGrant
 from termin_runtime import create_termin_app
 
 

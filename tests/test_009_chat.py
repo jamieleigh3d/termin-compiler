@@ -24,7 +24,7 @@ import pytest
 from termin.peg_parser import parse_peg as parse
 from termin.analyzer import analyze
 from termin.lower import lower
-from termin.ir import ComponentNode, PropValue
+from termin_core.ir.types import ComponentNode, PropValue
 
 from termin_runtime import create_termin_app
 from fastapi.testclient import TestClient
@@ -582,7 +582,7 @@ As an anonymous, I want to chat
         spec = _compile(source)
         # Serialize to JSON via the shared serializer (post Phase
         # 2.x retirement of RuntimeBackend).
-        from termin.ir_serialize import serialize_ir
+        from termin_core.ir.serialize import serialize_ir
         ir_json = serialize_ir(spec)
         ir_data = json.loads(ir_json)
         # Find the chat page

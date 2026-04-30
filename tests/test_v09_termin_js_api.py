@@ -30,10 +30,12 @@ from __future__ import annotations
 from pathlib import Path
 
 
-_JS_PATH = (
-    Path(__file__).parent.parent
-    / "termin_runtime" / "static" / "termin.js"
-)
+# Slice 7.3 of Phase 7 (2026-04-30) moved static assets to termin-server.
+# Read termin.js from its installed package location so the path
+# survives the v0.9 → v1.0 cleanup that drops the legacy
+# `termin_runtime/static/` directory.
+import termin_server
+_JS_PATH = Path(termin_server.__file__).parent / "static" / "termin.js"
 
 
 def _js_source() -> str:

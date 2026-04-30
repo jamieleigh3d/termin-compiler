@@ -15,7 +15,7 @@ from pathlib import Path
 from termin.peg_parser import parse_peg as parse, _classify_line
 from termin.analyzer import analyze
 from termin.lower import lower
-from termin.ir import BoundaryPropertySpec
+from termin_core.ir.types import BoundaryPropertySpec
 
 
 # ============================================================

@@ -19,7 +19,7 @@ import pytest
 
 from termin.peg_parser import parse_peg as parse
 from termin.lower import lower
-from termin.ir import FieldType
+from termin_core.ir.types import FieldType
 
 
 _BASE_SOURCE = '''Application: Principal Type Test

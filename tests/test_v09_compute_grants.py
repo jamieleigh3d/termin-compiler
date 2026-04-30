@@ -211,7 +211,7 @@ class TestToolSurfaceConstruction:
         spec = lower(prog)
         # Manually serialize to IR JSON (the same path the package
         # builder uses).
-        from termin.ir_serialize import serialize_ir
+        from termin_core.ir.serialize import serialize_ir
         ir_json = serialize_ir(spec)
 
         deploy = {

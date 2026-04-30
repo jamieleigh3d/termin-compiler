@@ -16,7 +16,7 @@ TDD: These tests are written RED before the fix.
 
 import pytest
 from termin.peg_parser import parse_peg as parse
-from termin.ir import Verb
+from termin_core.ir.types import Verb
 
 
 # ── Parser: compound verb patterns ──

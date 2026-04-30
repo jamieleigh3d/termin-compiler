@@ -49,7 +49,7 @@ class TestAllExamplesCompile:
                              ids=lambda p: p.stem)
     def test_lower_to_json(self, termin_file):
         """Lowered spec should serialize to valid JSON."""
-        from termin.ir_serialize import serialize_ir
+        from termin_core.ir.serialize import serialize_ir
 
         source = termin_file.read_text(encoding="utf-8")
         program, _ = parse(source)

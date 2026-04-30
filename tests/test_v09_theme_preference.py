@@ -30,7 +30,7 @@ from fastapi.testclient import TestClient
 
 from termin.peg_parser import parse_peg as parse
 from termin.lower import lower
-from termin.ir_serialize import serialize_ir
+from termin_core.ir.serialize import serialize_ir
 from termin_runtime import create_termin_app
 from termin_runtime.preferences import (
     PREFERENCES_TABLE,

@@ -14,7 +14,7 @@ import pytest
 from click.testing import CliRunner
 
 from termin.cli import main, _sha256, _generate_deploy_template
-from termin.ir_serialize import (
+from termin_core.ir.serialize import (
     ir_json_default as _ir_json_default,
     simplify_props as _simplify_props,
 )
@@ -306,7 +306,7 @@ class TestIRSerialization:
         from termin.peg_parser import parse_peg as parse
         from termin.analyzer import analyze
         from termin.lower import lower
-        from termin.ir_serialize import serialize_ir
+        from termin_core.ir.serialize import serialize_ir
         source = HELLO_TERMIN.read_text()
         program, errors = parse(source)
         assert errors.ok

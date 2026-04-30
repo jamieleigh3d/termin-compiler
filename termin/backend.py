@@ -23,7 +23,7 @@ output and `termin serve <pkg>` is the canonical run command.
 """
 
 from typing import Protocol, runtime_checkable
-from .ir import AppSpec
+from termin_core.ir.types import AppSpec
 
 
 @runtime_checkable

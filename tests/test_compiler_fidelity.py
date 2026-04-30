@@ -21,7 +21,7 @@ import pytest
 
 from termin.peg_parser import parse_peg as parse
 from termin.lower import lower
-from termin.ir import (
+from termin_core.ir.types import (
     Verb, FieldType, ComputeShape, ChannelDirection, ChannelDelivery,
 )
 

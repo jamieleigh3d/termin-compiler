@@ -133,7 +133,7 @@ def test_render_ssr_unknown_type_falls_back_safely():
 def test_render_ssr_accepts_componentnode_dataclass():
     """Direct callers may pass a ComponentNode dataclass instance
     rather than a dict — the provider projects it before delegating."""
-    from termin.ir import ComponentNode
+    from termin_core.ir.types import ComponentNode
     p = TailwindDefaultProvider()
     node = ComponentNode(
         type="text",

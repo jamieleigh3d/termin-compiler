@@ -23,7 +23,7 @@ from .ast_nodes import (
     ComputeNode, ChannelDecl, BoundaryDecl,
     BoundaryProperty, ErrorHandler, ErrorAction,
 )
-from .ir import (
+from termin_core.ir.types import (
     QualifiedName, FieldType, FieldSpec, ContentSchema, Verb, AccessGrant,
     RoleSpec, AuthSpec, TransitionFeedbackSpec, TransitionSpec, StateMachineSpec,
     EventConditionSpec, EventActionSpec, EventSpec,

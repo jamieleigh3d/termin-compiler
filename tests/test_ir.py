@@ -17,7 +17,7 @@ import pytest
 from termin.peg_parser import parse_peg as parse
 from termin.analyzer import analyze
 from termin.lower import lower
-from termin.ir import (
+from termin_core.ir.types import (
     FieldType, Verb, RouteKind, HttpMethod,
     ComputeShape, ChannelDirection, ChannelDelivery, ComputeParamSpec,
     PageEntry, ComponentNode, PropValue,

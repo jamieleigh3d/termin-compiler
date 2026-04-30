@@ -29,7 +29,7 @@ import pytest
 
 from termin.peg_parser import parse_peg as parse
 from termin.lower import lower
-from termin.ir import ComponentNode, AppSpec
+from termin_core.ir.types import ComponentNode, AppSpec
 from termin_runtime.providers.presentation_contract import (
     PRESENTATION_BASE_CONTRACTS,
     PresentationProvider,

@@ -21,7 +21,7 @@ from .ast_nodes import (
     PackageContractCall,
     LinkColumn, ChatDirective,
 )
-from .ir import PropValue, ComponentNode, PageEntry
+from termin_core.ir.types import PropValue, ComponentNode, PageEntry
 
 
 def _snake(name: str) -> str:

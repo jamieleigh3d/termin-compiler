@@ -18,7 +18,7 @@ import click
 from .peg_parser import parse_peg as parse
 from .analyzer import analyze
 from .lower import lower
-from .ir_serialize import serialize_ir
+from termin_core.ir.serialize import serialize_ir
 
 
 @click.group()

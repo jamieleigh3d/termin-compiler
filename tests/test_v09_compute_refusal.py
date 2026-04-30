@@ -162,7 +162,7 @@ class TestComputeRefusalsSidecar:
         """Anyone with the agent's audit scope can VIEW + AUDIT
         the sidecar."""
         _, spec = _compile(_AGENT_SOURCE_DEFAULT)
-        from termin.ir import Verb
+        from termin_core.ir.types import Verb
         sidecar_grants = [
             g for g in spec.access_grants
             if g.content == "compute_refusals"
