@@ -504,6 +504,18 @@ exploratory.
 on `feature/v0.9` and the conformance pack passes**. Doing it earlier
 risks freezing surfaces that later phases would need to revise.
 
+### Slice progress
+
+| Slice | Status | Scope |
+|---|---|---|
+| 7.1 | ✅ **landed 2026-04-30 evening** | Pure types and Protocols extracted: `termin_core.providers`, `termin_core.ir`, `termin_core.expression`, `termin_core.confidentiality`, `termin_core.errors`. Six target subtrees. Reference runtime imports from `termin-core` via back-compat shims. Compiler suite still 2545 passing on Windows; conformance suite still 915 passing. |
+| 7.2 | pending | Framework-agnostic dispatch — define `TerminRequest` / `TerminResponse` / `TerminWebSocket` abstractions on top of ASGI substrate (Q1=b). Move `routing/{crud,channel_dispatch,route_specs}.py` into `termin-core`. Reference runtime gains a `fastapi_adapter.py` shim; no behavior change end-to-end. Slice 7.2 also catches the slice-7.1 deferrals: `termin_runtime/{validation,state,transitions}.py` get extracted once `termin-core` ships `TerminValidationError` / `TerminTransitionError` exception types that adapters translate to their framework's error envelope. |
+| 7.3 | pending | Extract `termin-server`. Move FastAPI app, builtins (sqlite/anthropic/tailwind-ssr), static assets, CLI from `termin-compiler` repo into a new sibling. Compiler/conformance import paths flip to `termin-server`. |
+| 7.4 | pending | Compiler IR-types unification. `termin/ir.py` re-export shim deletes; compiler imports IR types directly from `termin-core`. |
+| 7.5 | pending | Conformance pack + cleanup. New `termin-core-conformance` test pack inside `termin-conformance/`. All slice-7.1 / 7.2 / 7.3 / 7.4 back-compat shims drop. `termin_runtime` package alias deletes. |
+
+
+
 **Out of scope for Phase 7 (deferred to v1.0 prep):**
 
 - Splitting the compiler (`termin/`) into its own repo — Phase 7 only

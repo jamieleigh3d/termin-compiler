@@ -2,6 +2,41 @@
 
 ## Unreleased — v0.9 in progress (feature/v0.9)
 
+### Phase 7 slice 7.1 — termin-core extraction begins (2026-04-30)
+
+Six target subtrees migrated out of `termin_runtime/` and `termin/`
+into the new sibling repo `termin-core/`:
+
+* `termin_runtime/providers/{contracts,registry,binding,deploy_config,*_contract}.py`
+  → `termin_core.providers`
+* `termin/{ir,ir_serialize}.py` → `termin_core.ir`
+* `termin_runtime/{expression,cel_predicate}.py` → `termin_core.expression`
+* `termin_runtime/confidentiality.py` → `termin_core.confidentiality`
+* `termin_runtime/errors.py` → `termin_core.errors`
+
+Each migrated file in this repo becomes a re-export shim sourcing
+from the new termin-core location. `from termin_runtime.X import Y`
+imports continue to work; `from termin.ir import Z` imports continue
+to work. The shims drop in slice 7.5 of Phase 7.
+
+`setup.py` now declares `termin-core>=0.9.0,<0.10` as a runtime
+dependency. Local development uses `pip install -e ../termin-core`
+to source the package from the sibling working tree.
+
+**Deferred to slice 7.2:** `termin_runtime/validation.py`,
+`termin_runtime/state.py`, `termin_runtime/transitions.py`. Each
+raises `fastapi.HTTPException` directly or imports concrete runtime
+internals (RuntimeContext, get_record_by_id). Clean extraction needs
+the framework-agnostic exception types and abstract Request/Response
+shapes slice 7.2 introduces.
+
+**Compiler suite still 2545 passing on Windows.** No behavior change
+visible to a `.termin.pkg` consumer — the move is mechanical
+re-arrangement behind back-compat shims.
+
+See `docs/phase-7-termin-core-extraction-design.md` for the full plan
+and `../termin-core/CHANGELOG.md` for the sibling-repo entry.
+
 ### Default db_path derives from app name + id (2026-04-29 late evening)
 
 `create_termin_app` no longer falls back to a literal `app.db` file in

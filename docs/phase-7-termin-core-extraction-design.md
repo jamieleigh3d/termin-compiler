@@ -482,29 +482,79 @@ signs off on Q1–Q8.
 | Q7 | Core conformance pack — now or defer | a (now, in slice 7.5) | **a approved** |
 | Q8 | Reference-runtime package name | a (`termin-server`) | **a approved** |
 
-## 9. Slice 7.1 — entry conditions
+## 9. Slice 7.1 — closure (2026-04-30 evening)
 
-When JL gives the go-ahead, slice 7.1 begins. Pre-flight:
+**Status: landed.** The work proceeded autonomously after Q1–Q8
+sign-off. What shipped:
 
-- New repo `github.com/jamieleigh3d/termin-core` exists, empty,
-  `feature/v0.9` branch ready to receive the first commit.
-- A second working tree at `E:/ClaudeWorkspace/termin-core/`.
-- The slice 7.1 scope (per §5):
-  - `ir/types.py` — IR dataclasses
-  - `providers/` — Protocol contracts, Category, Tier,
-    ContractDefinition, ContractRegistry, binding resolution,
-    deploy_config parser
-  - `expression/` — CEL evaluator + Predicate AST
-  - `confidentiality/` — Redacted sentinel + redact_records
-  - `identity/` — Principal, PrincipalContext value types
-  - `errors/` — TerminAtor + error envelope shapes
-  - `validation/` — D-19 dependent_values, one_of_values
-  - `state/` — pure state-machine evaluator
-- The reference runtime in `termin-compiler/termin_runtime/` keeps
-  working through slice 7.1 by importing from `termin-core` rather
-  than its own modules. No FastAPI changes yet.
-- Pin the `termin-core` version in `termin_runtime`'s setup.py at
-  `>=0.9.0,<0.10` for the duration of v0.9 development.
+| Subpackage | Source | Status |
+|---|---|---|
+| `termin_core.providers` | `termin_runtime/providers/{contracts,registry,binding,deploy_config,*_contract}.py` | ✅ moved |
+| `termin_core.ir` | `termin/{ir,ir_serialize}.py` | ✅ moved |
+| `termin_core.expression` | `termin_runtime/{expression,cel_predicate}.py` | ✅ moved |
+| `termin_core.confidentiality` | `termin_runtime/confidentiality.py` | ✅ moved |
+| `termin_core.errors` | `termin_runtime/errors.py` | ✅ moved |
+| Identity value types (`Principal`, `PrincipalContext`) | `termin_runtime/providers/identity_contract.py` | ✅ moved (folded into provider extraction; lives next to the `IdentityProvider` Protocol) |
+| `termin_core.validation` | `termin_runtime/validation.py` | ⏸ **deferred to slice 7.2** — module raises `fastapi.HTTPException`; needs the framework-agnostic exception type from 7.2 |
+| `termin_core.state` | `termin_runtime/{state,transitions}.py` | ⏸ **deferred to slice 7.2** — both files mix pure rules with HTTPException-raising orchestration and storage-write side effects |
+
+**What the closure looks like in commits (sibling repos):**
+
+* `termin-core` `feature/v0.9`: skeleton commit + 5 extraction commits
+  + CHANGELOG update.
+* `termin-compiler` `feature/v0.9`: 5 back-compat-shim commits (one
+  per category) + setup.py dependency add + roadmap/CHANGELOG update.
+* No commits in `termin-conformance` (the suite tests the runtime, not
+  the import paths; the move is invisible to it).
+
+**Suites at slice close:**
+
+- `termin-compiler` 2545 passing on Windows. No behavior change.
+- `termin-conformance` 915 passing on Windows reference adapter. No
+  behavior change.
+
+**Re-export shim pattern.** Every moved file in `termin-compiler` is
+replaced by a module like:
+
+```python
+"""Slice 7.1 of Phase 7 (2026-04-30) moved this module to
+``termin_core.<package>.<file>``. Re-export shim — drop in slice 7.5.
+"""
+from termin_core.<package>.<file> import *  # noqa: F401, F403
+```
+
+Two deliberate exceptions to plain-`import *`:
+
+1. **Underscore-prefixed names that pre-existing code imports
+   directly.** Python's `import *` doesn't carry underscore names by
+   convention, but `_now_iso`, `_StubSubscription`, `_cel_sum`, etc.
+   are cross-module-used in tests and in the still-in-place builtins.
+   The shim explicitly re-exports them by name to preserve their
+   visibility for v0.9.
+2. **`presentation_contract.py`**'s `register_presentation_base_contracts`
+   gets explicitly re-exported (it's the only module with `__all__`).
+
+**Slice 7.2 inheritance.** When 7.2 lands the framework-agnostic
+exception types (`TerminValidationError`, `TerminTransitionError`,
+maybe `TerminScopeError`), the deferred validation/state/transitions
+modules become extractable. The shim pattern works the same way: move
+to `termin_core.validation` / `termin_core.state`, leave a re-export
+shim in the original location.
+
+### What slice 7.1 explicitly did NOT do
+
+- **Did not extract framework-agnostic dispatch.** routes.py, app.py,
+  bootstrap.py, channel_ws.py, websocket_manager.py, presentation.py
+  all still couple to FastAPI directly. That's slice 7.2's scope.
+- **Did not extract the SQLite / Anthropic / Tailwind builtins.**
+  They stay in `termin_runtime/providers/builtins/` for now. That's
+  slice 7.3's scope (move to `termin-server`).
+- **Did not unify compiler IR types.** The compiler still has
+  `termin/ir.py` as a re-export shim; lower.py still imports from
+  there. The actual unification (compiler imports IR types directly
+  from `termin-core` and `termin/ir.py` deletes) is slice 7.4.
+- **Did not write a core conformance pack.** That's slice 7.5,
+  alongside the shim cleanup.
 
 7.1 commit boundary: every test in `termin-compiler` and
 `termin-conformance` still green; conformance fixtures unchanged;
