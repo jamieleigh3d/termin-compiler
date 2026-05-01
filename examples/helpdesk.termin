@@ -15,7 +15,7 @@ Content called "tickets":
   Each ticket has a description which is text, required
   Each ticket has a priority which is one of: "low", "medium", "high", "critical"
   Each ticket has a category which is one of: "bug", "feature request", "question", "account issue"
-  Each ticket has a submitted by which is text, required, defaults to `User.Name`
+  Each ticket has a submitted by which is text, required, defaults to `user.display_name`
   Each ticket has an assigned to which is text
   Each ticket has a created at which is automatic, defaults to `now`
   Each ticket has a ticket lifecycle which is state:
@@ -40,7 +40,7 @@ Content called "tickets":
 
 Content called "comments":
   Each comment has a ticket which references tickets, required, cascade on delete
-  Each comment has an author which is text, required, defaults to `User.Name`
+  Each comment has an author which is text, required, defaults to `user.display_name`
   Each comment has a body which is text, required
   Each comment has a posted at which is automatic, defaults to `now`
   Anyone with "tickets.view" can view comments

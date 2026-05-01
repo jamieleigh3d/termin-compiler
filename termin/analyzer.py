@@ -1775,7 +1775,71 @@ class Analyzer:
                 ))
 
 
-def analyze(program: Program) -> CompileResult:
-    """Run semantic analysis and security invariant checks on a Program AST."""
+def analyze(program: Program, source_text: str | None = None) -> CompileResult:
+    """Run semantic analysis and security invariant checks on a Program AST.
+
+    ``source_text`` is the original .termin source — when provided, the
+    analyzer also scans backtick-delimited CEL expressions for the
+    legacy ``User.X`` PascalCase surface (slice 7.5b — JL deprecated
+    it immediately, not in v0.10) and emits one error per match.
+    """
     analyzer = Analyzer(program)
-    return analyzer.analyze()
+    result = analyzer.analyze()
+    if source_text is not None:
+        _check_legacy_user_pascalcase(source_text, result)
+    return result
+
+
+# Slice 7.5b (2026-04-30): the legacy ``User.X`` PascalCase CEL
+# surface (User.Name, User.Role, User.Scopes, User.Authenticated,
+# User.Username, User.FirstName) is deprecated immediately. JL's
+# directive: "compiler warning or error if the old syntax is
+# detected" — error per pre-v1.0 hard-cut policy.
+import re as _re
+_LEGACY_USER_PATTERN = _re.compile(r"\bUser\.([A-Z]\w*)")
+_LEGACY_USER_FIXIT = {
+    "Name": "the user.display_name",
+    "Username": (
+        "the user.id (for opaque programmatic id) or "
+        "the user.display_name (for human-readable name) — "
+        "the lowercase/snake derivation User.Username had "
+        "no BRD-shaped equivalent and is dropped in v0.9"
+    ),
+    "FirstName": (
+        "the user.display_name — User.FirstName was a "
+        "split-on-whitespace synthetic field and is dropped in v0.9"
+    ),
+    "Role": "the user.roles (plural list — v0.9 may contain a single role)",
+    "Scopes": "the user.scopes",
+    "Authenticated": "not the user.is_anonymous",
+}
+
+
+def _check_legacy_user_pascalcase(
+    source_text: str, result: CompileResult,
+) -> None:
+    """Scan the source for ``User.X`` references and emit one
+    SemanticError per match, with a fix-it suggestion mapping each
+    PascalCase leaf to its v0.9 ``the user.X`` equivalent.
+
+    Scans the entire source (not just backtick-delimited CEL) because
+    the legacy surface only ever appeared inside CEL contexts and any
+    incidental match in prose / scope strings would be a false positive
+    we want to fix anyway. Line numbers come from line-by-line
+    iteration so the error report points at the offending line.
+    """
+    for line_num, line in enumerate(source_text.splitlines(), start=1):
+        for match in _LEGACY_USER_PATTERN.finditer(line):
+            leaf = match.group(1)
+            fix_it = _LEGACY_USER_FIXIT.get(leaf, "the user.X equivalent")
+            result.add(SemanticError(
+                message=(
+                    f"`User.{leaf}` is no longer supported in v0.9. "
+                    f"Use `{fix_it}` instead. "
+                    f"(See termin-source-refinements-brd-v0.9.md §4.2 "
+                    f"for the v0.9 user-context vocabulary.)"
+                ),
+                line=line_num,
+                code="TERMIN-S014",
+                suggestion=fix_it,
+            ))

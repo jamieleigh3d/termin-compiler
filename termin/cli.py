@@ -198,7 +198,7 @@ def _compile_source(source_path: Path, format_json: bool = False):
         sys.exit(1)
 
     # Analyze
-    analysis_errors = analyze(program)
+    analysis_errors = analyze(program, source_text=source_text)
     if not analysis_errors.ok:
         if format_json:
             click.echo(json.dumps(analysis_errors.to_json_list(), indent=2), err=True)

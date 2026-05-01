@@ -20,7 +20,7 @@ Content called "employees":
   Each employee has a bonus rate which is a number, confidentiality is "salary.access"
   Each employee has a ssn which is text, confidentiality is "pii.access"
   Each employee has a phone which is text, confidentiality is "pii.access"
-  Each employee has a added by which is text, defaults to `User.Name`
+  Each employee has a added by which is text, defaults to `user.display_name`
   Anyone with "employees.view" can view employees
   Anyone with "employees.manage" can create or update employees
   Anyone with "hr.manage" can delete employees
@@ -39,7 +39,7 @@ Content called "salary reviews":
   Each salary review has an old salary which is currency
   Each salary review has a new salary which is currency
   Each salary review has a reason which is text
-  Each salary review has an approved by which is text, defaults to `User.Name`
+  Each salary review has an approved by which is text, defaults to `user.display_name`
   Each salary review has a created at which is automatic, defaults to `now`
   Each salary review has a review lifecycle which is state:
     review lifecycle starts as pending

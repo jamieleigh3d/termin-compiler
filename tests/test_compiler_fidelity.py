@@ -362,7 +362,13 @@ class TestHelpdeskFidelity:
     def test_ticket_submitted_by_default(self):
         f = _field(_content(self.spec, "tickets"), "submitted_by")
         assert f.default_expr is not None
-        assert "User.Name" in f.default_expr
+        # Slice 7.5b (2026-04-30): the legacy ``User.Name`` PascalCase
+        # surface is gone (compile-time error per TERMIN-S014). The
+        # example migrated to ``user.display_name`` (optional-``the``
+        # form). Either ``user.display_name`` or ``the user.display_name``
+        # is acceptable; both rewrite to ``the_user.display_name`` at
+        # CEL-eval time.
+        assert "user.display_name" in f.default_expr
 
     def test_comment_ticket_reference(self):
         f = _field(_content(self.spec, "comments"), "ticket")

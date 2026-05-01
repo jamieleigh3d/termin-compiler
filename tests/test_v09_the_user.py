@@ -121,14 +121,21 @@ def test_user_dict_the_user_matches_brd_shape():
     assert tu["preferences"]["theme"] == "auto"
 
 
-def test_user_dict_legacy_User_still_present():
-    """Back-compat: the legacy User key (PascalCase fields) stays for
-    code that already uses it."""
+def test_user_dict_no_legacy_User_key():
+    """Slice 7.5b (2026-04-30): the legacy ``User`` PascalCase key in
+    the runtime user dict is gone. CEL no longer references it
+    (TERMIN-S014 compile error on ``User.X``); the only key the
+    runtime exposes for caller identity is ``the_user``, shaped per
+    BRD #3 §4.2."""
     p = Principal(id="u-1", type="human", display_name="Alice")
     d = _build_user_dict(p, role_name="user", scopes=["x.read"])
-    assert "User" in d
-    assert "Name" in d["User"]
-    assert "Authenticated" in d["User"]
+    assert "User" not in d
+    assert "the_user" in d
+    assert "id" in d["the_user"]
+    assert "display_name" in d["the_user"]
+    assert "is_anonymous" in d["the_user"]
+    assert "scopes" in d["the_user"]
+    assert "roles" in d["the_user"]
 
 
 # ── CEL preprocessor: `the user` → `the_user` ──
