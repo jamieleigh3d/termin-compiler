@@ -247,7 +247,7 @@ class TestInvalidFailureMode:
         assert "TERMIN-S028" in codes
 
     def test_valid_failure_modes_do_not_error(self):
-        for mode in ("surface-as-error", "queue-and-retry-forever", "log-and-drop"):
+        for mode in ("surface-as-error", "queue-and-retry", "log-and-drop"):
             src = _BASE + f"""
 Channel called "ch":
   Provider is "webhook"

@@ -290,6 +290,127 @@ class TestLogAndDrop:
             )
 
 
+# ── Failure modes (v0.9.1) ──
+
+class TestSurfaceAsError:
+    """v0.9.1 reference-runtime implementation of failure_mode='surface-as-error'.
+
+    Source authors who set `Failure mode is surface-as-error` on a channel
+    expect provider exceptions to propagate to the caller as ChannelError
+    instead of being silently swallowed (log-and-drop default). The
+    dispatcher reads `failure_mode` from the channel spec and re-raises
+    the underlying exception wrapped as ChannelError when set."""
+
+    def _ir_with_mode(self, mode: str) -> dict:
+        ch = _ch("alerts", "webhook")
+        ch["failure_mode"] = mode
+        return _ir(ch)
+
+    def test_surface_as_error_re_raises_provider_exception(self):
+        """Provider raising → ChannelError propagates to caller."""
+        from termin_server.channel_config import ChannelError
+        ir = self._ir_with_mode("surface-as-error")
+        deploy = _deploy("alerts", _binding())
+        d = ChannelDispatcher(ir, deploy, _registry())
+        asyncio.run(d.startup(strict=False))
+
+        class BoomProvider:
+            async def send(self, body=None, headers=None):
+                raise RuntimeError("simulated upstream failure")
+
+        d._channel_providers["alerts"] = BoomProvider()
+        with pytest.raises(ChannelError) as exc:
+            asyncio.run(d.channel_send("alerts", {"x": 1}))
+        # The wrapped exception preserves the original error message so
+        # operators can debug from the audit log.
+        assert "simulated upstream failure" in str(exc.value)
+
+    def test_surface_as_error_chains_original_exception(self):
+        """Re-raised ChannelError carries the original exception via __cause__."""
+        from termin_server.channel_config import ChannelError
+        ir = self._ir_with_mode("surface-as-error")
+        deploy = _deploy("alerts", _binding())
+        d = ChannelDispatcher(ir, deploy, _registry())
+        asyncio.run(d.startup(strict=False))
+
+        original = RuntimeError("original error")
+
+        class BoomProvider:
+            async def send(self, body=None, headers=None):
+                raise original
+
+        d._channel_providers["alerts"] = BoomProvider()
+        with pytest.raises(ChannelError) as exc:
+            asyncio.run(d.channel_send("alerts", {"x": 1}))
+        assert exc.value.__cause__ is original
+
+    def test_surface_as_error_increments_error_metric(self):
+        """surface-as-error still records the error in metrics — the
+        difference from log-and-drop is propagation, not bookkeeping."""
+        ir = self._ir_with_mode("surface-as-error")
+        deploy = _deploy("alerts", _binding())
+        d = ChannelDispatcher(ir, deploy, _registry())
+        asyncio.run(d.startup(strict=False))
+
+        class BoomProvider:
+            async def send(self, body=None, headers=None):
+                raise RuntimeError("boom")
+
+        d._channel_providers["alerts"] = BoomProvider()
+        try:
+            asyncio.run(d.channel_send("alerts", {"x": 1}))
+        except Exception:
+            pass
+        assert d._metrics["alerts"]["errors"] == 1
+
+    def test_log_and_drop_still_default_when_mode_unspecified(self):
+        """Sanity: a channel with no failure_mode still log-and-drops."""
+        ir = _ir(_ch("alerts", "webhook"))   # default mode in _ch is log-and-drop
+        deploy = _deploy("alerts", _binding())
+        d = ChannelDispatcher(ir, deploy, _registry())
+        asyncio.run(d.startup(strict=False))
+
+        class BoomProvider:
+            async def send(self, body=None, headers=None):
+                raise RuntimeError("boom")
+
+        d._channel_providers["alerts"] = BoomProvider()
+        # Must not raise.
+        result = asyncio.run(d.channel_send("alerts", {"x": 1}))
+        assert result["ok"] is False
+        assert result["outcome"] == "failed"
+
+
+class TestQueueAndRetryFallback:
+    """v0.9.x reference-runtime treatment of failure_mode='queue-and-retry'.
+
+    The grammar accepts the line, the IR records it, the analyzer
+    validates the value. Full implementation (exp backoff +
+    dead-letter after configurable max-retry-hours, 24h cap) lands
+    v0.10. Until then, the dispatcher falls back to log-and-drop
+    with a logged warning so existing apps don't break."""
+
+    def test_queue_and_retry_falls_back_to_log_and_drop_in_v091(self):
+        ch = _ch("alerts", "webhook")
+        ch["failure_mode"] = "queue-and-retry"
+        ir = _ir(ch)
+        deploy = _deploy("alerts", _binding())
+        d = ChannelDispatcher(ir, deploy, _registry())
+        asyncio.run(d.startup(strict=False))
+
+        class BoomProvider:
+            async def send(self, body=None, headers=None):
+                raise RuntimeError("boom")
+
+        d._channel_providers["alerts"] = BoomProvider()
+        # v0.9.x: must not raise (fallback). v0.10 will replace this
+        # with a deterministic queued-shape assertion when the worker
+        # ships.
+        result = asyncio.run(d.channel_send("alerts", {"x": 1}))
+        assert result["ok"] is False
+        assert result["outcome"] == "failed"
+
+
 # ── Multiple channels ──
 
 class TestMultipleChannels:

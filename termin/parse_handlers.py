@@ -981,8 +981,11 @@ def _parse_line(text: str, rule: str, ln: int):
     if rule == "channel_endpoint_line":
         r = P(text, rule); return ("channel_prop", "endpoint", str(r.get("path","")).strip() if r else text.split(":",1)[1].strip())
     if rule == "channel_failure_mode_line":
-        # "Failure mode is surface-as-error" / "Failure mode is queue-and-retry-forever" / "Failure mode is log-and-drop"
-        # Grammar placeholder in Phase 4 — runtime always uses log-and-drop.
+        # "Failure mode is surface-as-error" / "Failure mode is queue-and-retry" / "Failure mode is log-and-drop"
+        # v0.9.1: surface-as-error implemented in reference runtime (re-raises
+        # ChannelError on send failure). queue-and-retry remains a placeholder
+        # — full implementation deferred to v0.10 with exponential backoff +
+        # dead-letter queue + configurable max-retry-hours (24h cap).
         mode = text[len("Failure mode is"):].strip().strip('"').strip("'").lower()
         return ("channel_prop", "failure_mode", mode)
     if rule == "action_header":

@@ -1160,9 +1160,9 @@
         },
         "failure_mode": {
           "type": "string",
-          "enum": ["log-and-drop", "surface-as-error", "queue-and-retry-forever"],
+          "enum": ["log-and-drop", "surface-as-error", "queue-and-retry"],
           "default": "log-and-drop",
-          "description": "v0.9 Phase 4: dispatch failure semantics. `log-and-drop` (default) never raises; `surface-as-error` propagates the exception to the caller; `queue-and-retry-forever` puts failed sends on a retry queue."
+          "description": "Dispatch failure semantics. `log-and-drop` (default) never raises; the send() exception is logged and the result carries outcome=failed. `surface-as-error` propagates the exception to the caller as ChannelError (v0.9.1 reference runtime implements this). `queue-and-retry` enqueues the payload for redelivery with exponential backoff; after a configurable max retry window (default reasonable, max 24h) the payload moves to a dead-letter table — full implementation lands v0.10, grammar accepted in v0.9.x with log-and-drop fallback."
         }
       }
     },

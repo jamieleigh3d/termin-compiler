@@ -38,8 +38,12 @@ Per BRD §10 Phase 4:
 - `event-stream` provider stub (external SSE/WebSocket) — deferred
 - SMS / phone-call contracts
 - Real Slack/Teams products (stub sufficient for Phase 4)
-- Failure mode overrides (`Failure mode is surface-as-error` / `queue-and-retry-forever`)
-  — grammar placeholder only; runtime always logs-and-drops in Phase 4
+- `Failure mode is surface-as-error` — grammar placeholder in Phase 4;
+  reference-runtime implementation lands in v0.9.1 (re-raises ChannelError).
+- `Failure mode is queue-and-retry` — grammar placeholder in Phase 4 and v0.9.x;
+  full implementation (exponential backoff + dead-letter queue + configurable
+  max-retry-hours, default reasonable, 24h cap) lands v0.10. v0.9.x runtime
+  falls back to log-and-drop.
 - Conformance tests in `termin-conformance` — noted for final report; a
   subsequent check-in with JL determines the conformance agent's handoff
 
@@ -440,11 +444,21 @@ class ChannelDispatcher:
 ### 6.3 Failure mode
 
 BRD §6.4.5: default is **log-and-drop**. Provider exceptions are caught; the
-channel returns `{"ok": False, "outcome": "failed"}` without propagating. The
-`surface-as-error` and `queue-and-retry-forever` failure modes are grammar
-placeholders in Phase 4 — the PEG accepts the line, the IR records it, but the
-runtime always uses log-and-drop. This avoids source breakage when they're
-implemented later.
+channel returns `{"ok": False, "outcome": "failed"}` without propagating.
+
+**`surface-as-error`** — implemented in v0.9.1. The dispatcher re-raises a
+`ChannelError` to the caller when the provider's `send()` raises. Source
+authors choose this when a send failure should fail the calling Compute /
+event handler / agent step rather than be silently swallowed.
+
+**`queue-and-retry`** — grammar placeholder in v0.9.x; the PEG accepts the
+line, the IR records it, the analyzer validates, and the v0.9.1 dispatcher
+falls back to log-and-drop with a logged warning. Full implementation in
+v0.10 introduces a `_termin_channel_queue` SQLite table, an async retry
+worker with exponential backoff, and a `_termin_channel_dead_letter` table
+that receives payloads still failing after the configured max-retry-hours
+window (default reasonable, max 24h). See the v0.10 backlog entry for the
+worker design.
 
 ---
 

@@ -1432,9 +1432,15 @@ class Analyzer:
     VALID_DELIVERIES = {"realtime", "reliable", "batch", "auto"}
     # v0.9 Phase 4: valid named contracts for the Channel category.
     VALID_CHANNEL_CONTRACTS = {"webhook", "email", "messaging", "event-stream"}
-    # v0.9 Phase 4: valid failure_mode values (grammar placeholder — runtime
-    # always uses "log-and-drop" in Phase 4, but we validate syntax now).
-    VALID_FAILURE_MODES = {"log-and-drop", "surface-as-error", "queue-and-retry-forever"}
+    # Channel failure_mode values:
+    #   log-and-drop      — default; send() exception is logged, never raised.
+    #   surface-as-error  — send() exception re-raised as ChannelError to
+    #                       caller. Implemented in v0.9.1 reference runtime.
+    #   queue-and-retry   — enqueue payload, retry with exponential backoff,
+    #                       move to dead-letter after configurable timeout
+    #                       (default reasonable, max 24h). Grammar placeholder
+    #                       in v0.9.x — full implementation lands v0.10.
+    VALID_FAILURE_MODES = {"log-and-drop", "surface-as-error", "queue-and-retry"}
     # v0.9 Phase 4: action vocab per contract. Used to validate Action sub-blocks.
     # Values are frozensets of source-level display-string prefixes. An action
     # body "starts with" a prefix to be considered valid for the contract

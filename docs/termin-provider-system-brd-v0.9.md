@@ -684,7 +684,7 @@ requirements for subscribers, retention/replay window.
 
 **Failure handling:**
 - Default failure mode: **log-and-drop**. Channel sends that fail are logged; app keeps running.
-- Source can override per channel: `Failure mode is surface-as-error` (caller sees failure) or `Failure mode is queue-and-retry-forever` (durable retry).
+- Source can override per channel: `Failure mode is surface-as-error` (caller sees failure; v0.9.1 implemented) or `Failure mode is queue-and-retry` (durable retry with exponential backoff + dead-letter after configurable timeout, max 24h; full implementation lands v0.10).
 - Idempotency keys flow from runtime through provider for retry safety. Runtime supplies an event-derived idempotency key; provider honors it where applicable.
 - Each provider declares retry policy (exponential backoff, max attempts, dead-letter destination).
 
