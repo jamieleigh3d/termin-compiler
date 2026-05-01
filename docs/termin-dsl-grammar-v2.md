@@ -63,7 +63,7 @@ All executable expressions, conditions, and Compute bodies are enclosed in backt
 Single backticks are used for inline expressions:
 
 ```
-Display text `SayHelloTo(User.Name)`
+Display text `SayHelloTo(the user.display_name)`
 When `stockLevel.updated && stockLevel.quantity <= stockLevel.reorderThreshold`:
 ```
 

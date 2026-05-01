@@ -127,18 +127,18 @@ When `has_state_machine` is `true`, new records must be created with `status` se
 When `default_expr` is set (non-null), the runtime evaluates it at record creation time for fields not provided by the caller.
 
 ```json
-{ "name": "submitted_by", "default_expr": "User.Name" }
+{ "name": "submitted_by", "default_expr": "the_user.display_name" }
 { "name": "priority", "default_expr": "\"normal\"" }
 { "name": "count", "default_expr": "0" }
 { "name": "created_at", "default_expr": "now" }
 ```
 
 The evaluation context must include:
-- **`User`** — the standard User identity object (see § 3.2)
+- **`the_user`** — the identity binding (see § 3.2). Source-level CEL writes `the user.display_name` (with optional leading `the`) and the compiler/runtime rewrites the space-separated form to the snake-case CEL identifier `the_user`.
 - **`now`** — current UTC timestamp as ISO 8601 string
 - **`today`** — current date as ISO 8601 string
 
-DSL authors write `defaults to [User.Name]` (CEL expression) or `defaults to "literal"` (literal string). The compiler normalizes both into a CEL expression string in `default_expr`. Literals become CEL string literals: `"normal"` in DSL becomes `'"normal"'` in the IR.
+DSL authors write `defaults to [the user.display_name]` (CEL expression) or `defaults to "literal"` (literal string). The compiler normalizes both into a CEL expression string in `default_expr`. Literals become CEL string literals: `"normal"` in DSL becomes `'"normal"'` in the IR.
 
 **Evaluation rules:**
 1. Only evaluate on **create**, not update
@@ -171,22 +171,25 @@ Termin uses a scope-based access model. Scopes are flat strings (not hierarchica
 
 **The `stub` provider** is for development. It presents a role picker UI and stores the selection in a cookie. Production runtimes should implement real identity providers (SSO, OIDC, SAML) but the scope-checking logic remains the same.
 
-### 3.2 The User Object
+### 3.2 The Identity Binding (`the user`)
 
-Every auth provider must produce a standard `User` object available in CEL expressions. This is the identity contract between the auth system and the expression evaluator.
+Every Identity provider must produce a `Principal` value type per BRD #1 §6.1; the runtime exposes it as the `the user` binding to source-level CEL per BRD #3 §4.2. The DSL leading `the` is optional (`user.X` and `the user.X` both parse to the same CEL identifier `the_user.X`).
 
 | Field | Type | Description |
 |---|---|---|
-| `User.Username` | string | Login identifier. `"anonymous"` for unauthenticated users. |
-| `User.Name` | string | Display name. `"Anonymous"` fallback. |
-| `User.FirstName` | string | First name, derived from Name if provider doesn't supply it. |
-| `User.Role` | string | Current role name. |
-| `User.Scopes` | array | Scopes granted by the current role. |
-| `User.Authenticated` | boolean | `true` if the user has a real identity, `false` for anonymous. |
+| `the user.id` | string | Stable opaque identifier from the provider. `"anonymous"` for unauthenticated callers. May be an email, a login name, or an internal ID — the runtime treats it as an opaque string. |
+| `the user.display_name` | string | Display name. `"Anonymous"` fallback. |
+| `the user.scopes` | list[string] | Effective scopes granted by the current role(s). |
+| `the user.roles` | list[string] | Roles the principal holds. v0.9 cookie-based runtime resolves a 1-tuple; richer providers (Okta groups, OIDC claims, SAML attributes) may populate multiple. |
+| `the user.is_anonymous` | boolean | `true` if the caller has no real identity (e.g., no cookie, no token). |
+| `the user.is_system` | boolean | `true` for system-acting computes (per BRD #3 §4.2 service-identity mode). Always `false` for human callers. |
+| `the user.preferences` | object | Per-principal preferences map (e.g., `{theme: "dark"}`). The runtime merges provider-managed entries with the runtime-managed `_termin_principal_preferences` table. |
 
-**PascalCase convention:** System objects in CEL use PascalCase (`User.Name`, `User.Role`). Data fields use snake_case (`item.submitted_by`). This is intentional — it visually distinguishes system-provided values from row data. The DSL is case-insensitive, but CEL inside `[brackets]` is case-sensitive.
+**Naming convention:** `the user` is the only space-separated source-level binding the compiler rewrites to a snake-case CEL identifier (`the_user`). Data fields follow normal snake_case (`item.submitted_by`). Unlike v0.8, system identity does NOT use PascalCase — that surface was retired in v0.9 (see migration note below).
 
-**No dedicated email field:** The standard User object does not include a `User.Email` field. Email is PII, provider-dependent, and not needed for runtime operations. Applications that need email should declare it as a Content field. Note: `User.Username` may be an email address (many auth providers use email as the login identifier) — the runtime treats it as an opaque string regardless of its format.
+**Migration from v0.8 `User.PascalCase`:** v0.8 exposed identity as `User.Username`, `User.Name`, `User.FirstName`, `User.Role`, `User.Scopes`, `User.Authenticated`. v0.9 retired this surface. The compiler emits TERMIN-S014 with per-leaf fix-it suggestions on legacy use. `User.Username` and `User.FirstName` were dropped (display_name is sufficient); the rest remap to `the user.id`, `the user.display_name`, `the user.roles`, `the user.scopes`, `not the user.is_anonymous`. v0.9 also extended the Principal model to hold *multiple* roles per BRD #1 §6.1 (`the user.roles` is a list, not a scalar).
+
+**No dedicated email field:** The Principal does not include an `email` field. Email is PII, provider-dependent, and not needed for runtime operations. Applications that need email should declare it as a Content field. Note: `the user.id` may be an email address (many auth providers use email as the login identifier) — the runtime treats it as an opaque string regardless of format.
 
 ### 3.3 Access Grant Enforcement
 

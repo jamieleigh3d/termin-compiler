@@ -135,7 +135,7 @@ Content called "messages":
 **Also valid (multi-user chat):**
 ```
 Content called "chat messages":
-  Each chat message has a sender which is text, defaults to `User.Name`
+  Each chat message has a sender which is text, defaults to `the user.display_name`
   Each chat message has a body which is text
   Each chat message has a sent at which is automatic
 

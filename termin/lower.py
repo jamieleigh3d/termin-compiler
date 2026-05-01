@@ -164,7 +164,7 @@ def lower(program: Program) -> AppSpec:
             default_ir = None
             if f.type_expr.default_expr is not None:
                 if f.type_expr.default_is_expr:
-                    default_ir = f.type_expr.default_expr  # CEL: User.Name, 0, now
+                    default_ir = f.type_expr.default_expr  # CEL: the user.display_name, 0, now
                 else:
                     default_ir = f'"{f.type_expr.default_expr}"'  # Literal: "N/A" → JEXL '"N/A"'
             fields.append(FieldSpec(

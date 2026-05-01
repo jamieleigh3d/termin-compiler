@@ -539,7 +539,7 @@ An HR management system that naturally exercises all confidentiality features:
 - review_date (date)
 - old_salary (currency)
 - new_salary (currency)
-- approved_by (text, `defaults to [User.Name]`)
+- approved_by (text, `defaults to [the user.display_name]`)
 
 ### Computes
 

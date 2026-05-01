@@ -10,7 +10,7 @@
 
 Termin uses [CEL (Common Expression Language)](https://github.com/google/cel-spec) for all expressions in the DSL. This document defines the expression delimiter syntax, system types available in the CEL evaluation context, and system functions.
 
-CEL is non-Turing-complete, formally specified, and has matching implementations in Python, JavaScript, Rust, and Go. Termin expressions use standard function-call syntax: `sum(items)`, `upper(User.Name)`, `size(employees)`.
+CEL is non-Turing-complete, formally specified, and has matching implementations in Python, JavaScript, Rust, and Go. Termin expressions use standard function-call syntax: `sum(items)`, `upper(the user.display_name)`, `size(employees)`.
 
 ---
 
@@ -21,7 +21,7 @@ CEL is non-Turing-complete, formally specified, and has matching implementations
 Single backticks delimit inline expressions:
 
 ```termin
-Each ticket has a submitted by which is text, defaults to `User.Name`
+Each ticket has a submitted by which is text, defaults to `the user.display_name`
 Highlight rows where `priority == "critical" || priority == "high"`
 ```
 
@@ -80,38 +80,41 @@ Compute called "SayHelloTo":
 Backticks resolve the parsing ambiguity with array indices that brackets had:
 
 ```termin
-`User.Scopes[0]`           — unambiguous, no conflict with delimiter
+`the user.scopes[0]`       — unambiguous, no conflict with delimiter
 `items.filter(x, x.tags[0] == "urgent")`  — nested brackets work naturally
 ```
 
-With the old `[bracket]` syntax, `[User.Scopes[0]]` was ambiguous because the parser couldn't distinguish the inner `]` from the outer `]`.
+With the old `[bracket]` syntax, `[the user.scopes[0]]` was ambiguous because the parser couldn't distinguish the inner `]` from the outer `]`.
 
 ---
 
 ## 2. System Types
 
-### 2.1 User
+### 2.1 the user (identity binding)
 
-The current caller's identity. Available in **all** CEL expressions. Injected by the runtime from the authentication provider.
+The current caller's identity. Available in **all** CEL expressions. Injected by the runtime from the authentication provider per BRD #3 §4.2. The leading `the` is optional in source; `user.X` and `the user.X` both bind to the same value.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `User.Username` | string | Opaque identifier (may be email, login name, etc.) |
-| `User.Name` | string | Display name (e.g., "Jamie-Leigh Blake") |
-| `User.FirstName` | string | First name portion of display name |
-| `User.Role` | string | Current role name (e.g., "hr business partner") |
-| `User.Scopes` | list[string] | Scopes granted by the current role |
-| `User.Authenticated` | bool | `true` if authenticated, `false` for anonymous |
+| `the user.id` | string | Stable opaque identifier from the identity provider. `"anonymous"` for unauthenticated callers. |
+| `the user.display_name` | string | Display name (e.g., "Jamie-Leigh Blake"). `"Anonymous"` fallback. |
+| `the user.scopes` | list[string] | Effective scopes granted by the current role(s). |
+| `the user.roles` | list[string] | Roles the principal holds. v0.9 cookie-based runtime resolves a 1-tuple; richer providers (Okta groups, OIDC claims) populate the full set. |
+| `the user.is_anonymous` | bool | `true` if the caller has no real identity. |
+| `the user.is_system` | bool | `true` for system-acting computes (per BRD #3 §4.2 service-identity mode). |
+| `the user.preferences` | object | Per-principal preferences map (e.g., `{theme: "dark"}`). Provider-managed plus runtime-managed entries. |
 
 **Usage:**
 ```termin
-Each ticket has a submitted by which is text, defaults to `User.Name`
-Display text `upper(User.FirstName)`
+Each ticket has a submitted by which is text, defaults to `the user.display_name`
+Display text `upper(the user.display_name)`
+When `the user.is_anonymous`:
+  ...
 ```
 
-**Provider contract:** Every auth provider (stub, OAuth, JWT, OIDC, etc.) must produce a `User` object with all six fields. The runtime normalizes provider-specific identity into this shape. `User.Username` is opaque — it may be an email, a login name, or an internal ID depending on the provider.
+**Provider contract:** Every Identity provider (stub, OAuth, JWT, OIDC, etc.) produces a `Principal` value type per BRD #1 §6.1; the runtime exposes it as the `the user` binding to source-level CEL. `the user.id` is opaque — it may be an email, a login name, or an internal ID depending on the provider.
 
-**Replaces:** `CurrentUser`, `LoggedInUser.CurrentUser`, `UserProfile`. These are deprecated and will be removed.
+**Replaces:** the v0.8 `User.PascalCase` surface (`User.Name`, `User.Username`, `User.FirstName`, `User.Role`, `User.Scopes`, `User.Authenticated`) was retired in v0.9. The compiler emits TERMIN-S014 with per-leaf fix-it suggestions on legacy use. `User.Username` and `User.FirstName` were dropped entirely (display_name is sufficient); the rest remap to `the user.id`, `the user.display_name`, `the user.roles`, `the user.scopes`, and `not the user.is_anonymous`.
 
 ### 2.2 Compute
 
@@ -252,9 +255,15 @@ Field access uses dot notation. The runtime injects content records into the CEL
 | Deprecated | Replacement | Notes |
 |-----------|-------------|-------|
 | `[expr]` | `` `expr` `` | Backtick delimiter (IR 0.4.0) |
-| `LoggedInUser.CurrentUser` | `User` | Direct access via `User.Name`, `User.FirstName` |
-| `CurrentUser` | `User` | Same object, cleaner name |
-| `UserProfile` (as type name) | `User` | Not a separate type |
+| `User.Name` | `the user.display_name` | Retired v0.9 — TERMIN-S014 |
+| `User.Username` | (dropped) | Retired v0.9 — display_name is sufficient |
+| `User.FirstName` | (dropped) | Retired v0.9 — display_name is sufficient |
+| `User.Role` | `the user.roles` | Retired v0.9 — roles is plural per BRD #1 §6.1 |
+| `User.Scopes` | `the user.scopes` | Retired v0.9 |
+| `User.Authenticated` | `not the user.is_anonymous` | Retired v0.9 |
+| `LoggedInUser.CurrentUser` | `the user` | Pre-v0.9 alias chain |
+| `CurrentUser` | `the user` | Pre-v0.9 alias |
+| `UserProfile` (as type name) | `the user` | Not a separate type |
 
 ---
 

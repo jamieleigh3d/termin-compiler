@@ -1022,7 +1022,7 @@ As Anonymous, I want to see a page "Hello" so that I can be greeted:
   Display text "Anon, Hello!"
 
 As user, I want to see a page "Hello" so that I can be greeted:
-  Display text `SayHelloTo(User.FirstName)`
+  Display text `SayHelloTo(the user.display_name)`
 
 Compute called "SayHelloTo":
   Transform: takes name : text, produces greeting : text
