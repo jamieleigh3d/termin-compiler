@@ -1,5 +1,74 @@
 # Changelog
 
+## [0.9.1] — 2026-05-01
+
+Correctness + hygiene patch on top of v0.9.0. **No IR schema
+changes** — IR version stays at 0.9.0; `.termin.pkg` fixtures
+are byte-identical regenerations.
+
+### Added
+
+- **TERMIN-A028 / TERMIN-A029-shaped reference-runtime tests for
+  `surface-as-error`** in `tests/test_v09_channel_providers.py`
+  (TestSurfaceAsError + TestQueueAndRetryFallback). 5 tests
+  pinning the v0.9.1 dispatcher contract — re-raise on raise,
+  `__cause__` chain preserved, error metric increments,
+  log-and-drop default unchanged, queue-and-retry fallback to
+  log-and-drop is conformant.
+- **Phase 6d hardening — docs migration** for the v0.9
+  `the user` CEL surface. `docs/termin-cel-types.md` §2.1,
+  `docs/termin-runtime-implementers-guide.md` §3.2, the IR
+  schema's `default_expr` description, and inline examples in
+  `D-09-chat-presentation-component.md`,
+  `termin-confidentiality-runtime-design.md`,
+  `termin-dsl-grammar-v2.md`, and `termin-provider-system-brd-v0.9.md`
+  all refreshed to use `the user.display_name` /
+  `the user.scopes` / `the user.is_anonymous` instead of the
+  retired `User.X` PascalCase surface (TERMIN-S014). Archival
+  docs (`cel-user-fields-analysis.md`, the slice 7.2 routing
+  briefing) intentionally preserved as period documents.
+- **EditModalFlow regression tests** in
+  `tests/test_edit_action_button.py` (`TestEditModalNoDuplicateStateField`,
+  2 tests) — pin the v0.9.0 fix that retired the duplicate
+  `field_input` emission for state-machine columns in
+  `lower_pages._build_edit_modal`.
+- **v0.10 `queue-and-retry` design** documented in
+  `docs/termin-roadmap.md` — full worker design (persistent
+  queue table, async retry loop, exponential backoff defaults,
+  dead-letter table, configurable max-retry-hours capped at 24h,
+  observability surface, conformance test pattern). The
+  v0.9.1 grammar accepts the renamed mode; the v0.9.x runtime
+  falls back to log-and-drop until the worker lands.
+
+### Changed
+
+- **`failure_mode` enum:** renamed
+  `queue-and-retry-forever` → `queue-and-retry` in
+  `termin/analyzer.py::VALID_FAILURE_MODES`,
+  `termin/parse_handlers.py` rule comment, the IR schema enum,
+  and every doc reference. The "forever" qualifier was
+  operationally wrong — the v0.10 design caps retry duration.
+- `termin/cli.py` — friendlier error message when
+  `pip install termin-server` is missing (the import error path
+  for `termin serve`).
+
+### Fixed
+
+- `datetime.utcnow()` (deprecated in Python 3.12, removed in
+  3.13) inline-comment example refreshed in `termin/lower.py`
+  to use the v0.9 `the user.display_name` form. The actual
+  `utcnow()` call sites all live in `termin-server`; this is a
+  comment-only fix in the compiler.
+
+### Suite
+
+2552 tests passing on Windows (was 2547; +5 from
+TestSurfaceAsError + TestQueueAndRetryFallback + 2 from
+TestEditModalNoDuplicateStateField rolled forward from v0.9.0
+release-day; -2 reconciliation in test counts is normal). Full
+compile-smoke + serve-smoke verified end-to-end on Windows + WSL
+per the v0.9.0 release-day audit pattern.
+
 ## [0.9.0] — 2026-04-30
 
 The v0.9 milestone release. Closes Phase 7 of v0.9 — the runtime

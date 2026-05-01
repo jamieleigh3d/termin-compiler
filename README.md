@@ -120,7 +120,7 @@ Content-level scoping (`Scoped to "access_salary"`) gates entire content types. 
 
 ## Conformance Suite
 
-The [termin-conformance](https://github.com/jamieleigh3d/termin-conformance) repository contains 925 behavioral tests (915 HTTP/WebSocket on the in-process `reference` adapter + 10 Playwright browser tests on the `served-reference` adapter, plus 31 adapter-gated skips) that validate any conforming runtime. Tests use an adapter pattern --- swap the adapter to test your runtime without changing a single test. The `served-reference` adapter launches the runtime on a real localhost port for browser-automation tests; the default in-process `reference` adapter runs the HTTP suite in under 30 seconds.
+The [termin-conformance](https://github.com/jamieleigh3d/termin-conformance) repository contains the v0.9.1 behavioral test suite (1036 passing on the in-process `reference` adapter + 10 Playwright browser tests on the `served-reference` adapter, plus 32 adapter-gated skips) that validate any conforming runtime. v0.9.1 added the Phase 3 (compute provider, 45 tests) and Phase 4 (channel provider, 77 tests) cross-runtime conformance packs that v0.9.0 left deferred. Tests use an adapter pattern --- swap the adapter to test your runtime without changing a single test. The `served-reference` adapter launches the runtime on a real localhost port for browser-automation tests; the default in-process `reference` adapter runs the HTTP suite in under 50 seconds.
 
 ## IR and Package Format
 
