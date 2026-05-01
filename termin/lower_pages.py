@@ -119,11 +119,22 @@ def _build_edit_modal(content, sm_by_content, content_by_name):
     (see v0.9 backlog). For now, at most one state field is emitted per
     modal, matching the sm_by_content[content.name] singleton assumption.
     """
+    # State-machine columns get rendered as state-selects below; skip
+    # them in the regular-field loop so they aren't emitted twice (the
+    # browser then sees two `data-termin-field="<machine>"` elements,
+    # `form.querySelector` matches the text input first, and openEdit's
+    # `Array.from(sel.options)` throws on the input's missing .options).
+    state_machine_columns = {
+        _snake(sm.machine_name)
+        for sm in sm_by_content.get(content.name, [])
+    }
     field_inputs = []
     for f in content.fields:
         if _snake(f.name) in _SYSTEM_FIELD_NAMES:
             continue
         if f.type_expr.base_type == "automatic":
+            continue
+        if _snake(f.name) in state_machine_columns:
             continue
         props = _build_field_input_props(f, f.name, content_by_name)
         field_inputs.append(ComponentNode(type="field_input", props=props))

@@ -1,6 +1,46 @@
 # Changelog
 
-## Unreleased — v0.9 in progress (feature/v0.9)
+## [0.9.0] — 2026-04-30
+
+The v0.9 milestone release. Closes Phase 7 of v0.9 — the runtime
+extraction work that splits the reference runtime out of this repo
+into two new sibling packages, `termin-core` (framework-free
+contract surface) and `termin-server` (reference FastAPI hosting
+layer). `termin-compiler` now depends on `termin-core>=0.9.0` and
+`termin-server>=0.9.0`; the legacy `termin_runtime/` shim layer
+that carried tests through the transition was deleted in slice 7.5a.
+
+**Release-day suite:** 2547 tests passing on Windows. The +2 from
+the 2545 baseline are the regression tests for the EditModalFlow
+fix below.
+
+### Release-day fixes (2026-04-30)
+
+**`termin serve` import fix.** `termin/cli.py` still imported
+`from termin_runtime import create_termin_app` after slice 7.5a
+deleted that package — `termin serve <pkg>` failed at startup with
+`ModuleNotFoundError: No module named 'termin_runtime'`. Switched
+to the canonical `from termin_server import create_termin_app`
+import and added a friendlier ImportError message pointing at
+`pip install termin-server` for the case where the dependency
+hasn't been installed.
+
+**EditModalFlow lowering bug.** State-machine columns lowered
+to **two** `field_input` ComponentNode children inside the
+`edit_modal` — one with the column's intrinsic input type
+(text/number/etc.) and one with `input_type="state"`. The renderer
+emitted both, so the modal form had two
+`data-termin-field="<machine>"` elements. `form.querySelector(...)`
+matched the text input first; openEdit's
+`Array.from(sel.options).forEach(...)` then threw
+`TypeError: undefined is not iterable` on the input's missing
+`.options` and the modal never opened. Fix in
+`termin/lower_pages.py::_build_edit_modal` skips state-machine
+columns in the regular-field loop. Two regression tests in
+`tests/test_edit_action_button.py::TestEditModalNoDuplicateStateField`
+lock in the contract: a state-machine column must produce
+exactly one `field_input`, and it must be `input_type="state"`.
+v0.8 browser conformance returns to 10/10.
 
 ### Phase 7 slice 7.1 — termin-core extraction begins (2026-04-30)
 

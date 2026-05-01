@@ -231,6 +231,76 @@ As a manager, I want to manage products:
         assert "created_at" not in field_names
 
 
+class TestEditModalNoDuplicateStateField:
+    """When a content has a state machine, the edit_modal must emit
+    exactly one field_input for the state column — input_type='state'
+    so the renderer produces a <select>. Emitting both a regular
+    field_input AND a state field_input yields two
+    `data-termin-field="<machine>"` elements in the form; openEdit's
+    `form.querySelector` then matches the text input first, so
+    `Array.from(sel.options).forEach(...)` throws TypeError on the
+    input's missing `.options` and the modal never opens.
+
+    Regression test for the v0.9 EditModalFlow browser failure."""
+
+    SRC = '''Application: Test
+Identity:
+  Scopes are "read", "write", and "admin"
+  A "manager" has "read", "write", and "admin"
+
+Content called "products":
+  Each product has a SKU which is unique text, required
+  Each product has a name which is text, required
+  Each product has a lifecycle which is state:
+    lifecycle starts as draft
+    lifecycle can also be active or discontinued
+    draft can become active if the user has write
+  Anyone with "read" can view products
+  Anyone with "write" can create or update products
+
+As a manager, I want to manage products:
+  Show a page called "Products"
+  Display a table of products with columns: name, lifecycle
+  For each product, show actions:
+    "Edit" edits if available, hide otherwise
+'''
+
+    def test_state_machine_column_emits_exactly_one_field_input(self):
+        program, errors = parse(self.SRC)
+        assert errors.ok, errors.format()
+        app_spec = lower(program)
+        page = app_spec.pages[0]
+        modal = next(c for c in page.children if c.type == "edit_modal")
+        field_inputs = [c for c in modal.children if c.type == "field_input"]
+        # Count every field_input whose `field` prop is the state column.
+        lifecycle_inputs = [
+            c for c in field_inputs
+            if c.props.get("field") == "lifecycle"
+        ]
+        assert len(lifecycle_inputs) == 1, (
+            f"State-machine column 'lifecycle' must emit exactly one "
+            f"field_input; got {len(lifecycle_inputs)} with input_types "
+            f"{[c.props.get('input_type') for c in lifecycle_inputs]}"
+        )
+        assert lifecycle_inputs[0].props.get("input_type") == "state", (
+            f"The single field_input for a state-machine column must be "
+            f"input_type='state'; got {lifecycle_inputs[0].props.get('input_type')!r}"
+        )
+
+    def test_non_state_columns_still_emit_field_inputs(self):
+        """Sanity: skipping the state column doesn't break the other
+        columns. SKU + name should still be present."""
+        program, errors = parse(self.SRC)
+        assert errors.ok, errors.format()
+        app_spec = lower(program)
+        page = app_spec.pages[0]
+        modal = next(c for c in page.children if c.type == "edit_modal")
+        field_inputs = [c for c in modal.children if c.type == "field_input"]
+        names = {c.props.get("field") for c in field_inputs}
+        assert "sku" in names
+        assert "name" in names
+
+
 # ── Runtime end-to-end ──────────────────────────────────────────────
 
 APP_DIR = Path(__file__).parent.parent

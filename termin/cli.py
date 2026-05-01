@@ -386,7 +386,15 @@ def compile(source: str, output: str | None, seed_path: str | None,
 def serve(package: str, port: int, host: str, deploy: str, no_strict_channels: bool):
     """Serve a .termin.pkg package as a running application."""
     import uvicorn
-    from termin_runtime import create_termin_app
+    try:
+        from termin_server import create_termin_app
+    except ImportError:
+        click.echo(
+            "Error: `termin serve` requires the `termin-server` package.\n"
+            "Install it with: pip install termin-server",
+            err=True,
+        )
+        sys.exit(1)
 
     pkg_path = Path(package)
 
