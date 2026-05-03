@@ -1,6 +1,6 @@
 # D-01: Provider Taxonomy and Access Levels
 
-**Status:** DECIDED — foundational (pre-v0.5.0). Promoted from `termin-roadmap-archive.md` to its own file 2026-05-03 to make the four-level taxonomy discoverable alongside D-02 onward.
+**Status:** DECIDED — foundational (pre-v0.5.0). Promoted from `termin-roadmap-archive.md` to its own file 2026-05-03 to make the four-level taxonomy discoverable alongside D-02 onward. **Updated 2026-05-03 (same day):** L2 reframed as "LLM with context (conversation field) and tools (`Invokes`) — single coordinated invocation, no Strategy" and marked as in-scope for v0.9.2 implementation. L3 reframed as "autonomous agent with `Strategy is`." See companion docs `termin-v0.9.2-conversation-field-type-tech-design.md` and `termin-v0.9.3-airlock-on-termin-tech-design.md` for the implementing work.
 **Decided by:** JL + Claude
 **Affects:** Provider design, IR schema, compiler, runtime, all LLM/agent compute work
 
@@ -13,8 +13,8 @@ Compute providers are organized in a four-level taxonomy by access scope and inv
 | Level | Name | Shape | Provider string |
 |-------|------|-------|----------------|
 | **L1** | LLM, field-to-field | Single-shot prompt → completion. Explicit `Input from field` / `Output into field` wiring. One API call per invocation. No tools. | `Provider is "llm"` |
-| **L2** | LLM, with context | LLM call with additional context beyond the explicit input fields (e.g., related records, conversation history, deployment metadata). One API call per invocation. No tools. | *(reserved; never implemented as a distinct provider — see status below)* |
-| **L3** | Agent, app-scoped | Multi-turn agent with a tool surface bounded to one application's content. Tool-use loop happens internally to one provider lifecycle. Closed tool surface from `Accesses` / `Reads` / `Sends to` / `Emits` / `Invokes` declarations. | `Provider is "ai-agent"` |
+| **L2** | LLM with context (conversation field) and tools (`Invokes`) | One coordinated provider invocation per trigger; the tool-use loop happens internally inside that one call. Conversation context is wired via `Conversation is <record>.<field>` (a v0.9.2 conversation field type). Tool surface declared via `Invokes`. No autonomous Strategy. | `Provider is "ai-agent"` *(without `Strategy is`)* |
+| **L3** | Autonomous agent | Multiple coordinated provider invocations under runtime orchestration. The agent has a `Strategy is` block that drives multi-step plans. Tool surface is closed by `Accesses` / `Reads` / `Sends to` / `Emits` / `Invokes` declarations. Tool-use loop happens internally to each provider lifecycle, but the agent self-directs across multiple lifecycles toward a goal. | `Provider is "ai-agent"` *(with `Strategy is`)* |
 | **L4** | Agent, config-boundary | Agent with cross-boundary access — can reach across multiple apps within a deployment via reflection (`reflect.apps()`) or cross-boundary channel invocation. Same agent loop semantics as L3, but the tool surface includes deployment-level operations. | `Provider is "ai-agent"` with cross-boundary `Accesses` |
 
 ---
@@ -24,11 +24,11 @@ Compute providers are organized in a four-level taxonomy by access scope and inv
 | Level | Status | Evidence |
 |-------|--------|----------|
 | L1 | Implemented in v0.5.0. | `examples/agent_simple.termin`. The `Input from field` / `Output into field` syntax + `Provider is "llm"` are first-class grammar. |
-| L2 | **Never implemented as a distinct provider.** Most use cases that motivated L2 are now served by L1's multi-input pattern (multiple `Input from field` declarations, with the runtime composing them into the user message) or by L3 agents that load context via tool calls. The L2 slot remains in the taxonomy as a conceptual placeholder; if a future use case genuinely needs LLM-with-implicit-context-but-no-tools, it can be added without renumbering. |
-| L3 | Implemented in v0.5.0. | `examples/agent_chatbot.termin`, the v0.9.3 ARIA design (`termin-v0.9.3-airlock-on-termin-tech-design.md`). Provider string `"ai-agent"`, agent loop with tool-use iteration internal to one provider call, closed tool surface from `Accesses` declarations. |
-| L4 | Implemented as a usage pattern of L3, not a distinct provider. | `examples/security_agent.termin` — uses `reflect.apps()` to enumerate all deployed apps and `channel.invoke(...)` for cross-boundary operations. The provider string is still `"ai-agent"`; L4 is what you get when an `"ai-agent"` compute declares cross-boundary `Accesses`. |
+| L2 | **Implemented in v0.9.2** as the consumer of the new `conversation` field type and the `Conversation is` source line. Refreshed `examples/agent_chatbot.termin` is the prototype: an `"ai-agent"` compute with `Conversation is <field>` + `Invokes "..."` + no `Strategy is`. One coordinated provider invocation per trigger; the tool-use loop happens internally. v0.9.3 ARIA is the production-shaped L2 example. |
+| L3 | Implemented in v0.5.0; refined ongoing. | `examples/security_agent.termin` is the prototype — has `Strategy is`, runs autonomously through multiple coordinated provider invocations. Provider string `"ai-agent"` (same as L2); the level distinction is the presence of `Strategy is`. |
+| L4 | Implemented as a usage pattern of L3, not a distinct provider. | `examples/security_agent.termin` also exemplifies L4 — uses `reflect.apps()` to enumerate all deployed apps and `channel.invoke(...)` for cross-boundary operations. The provider string is still `"ai-agent"`; L4 is what you get when an `"ai-agent"` compute (almost always L3-shaped with `Strategy is`) declares cross-boundary `Accesses`. |
 
-**Provider strings in the IR schema:** [`docs/termin-ir-schema.json`](../termin-ir-schema.json) currently enumerates only `"llm"` (L1), `"ai-agent"` (L3), and `null`/`"cel"` (the default deterministic CEL evaluator, which sits *outside* this taxonomy — CEL is not an AI provider). L2 and L4 are conceptual taxonomy slots, not separate provider strings. This is a deliberate choice: the level distinction is informative (it helps authors and reviewers reason about an agent's reach), but the runtime behavior is fully determined by the provider string + the compute's `Accesses` declarations.
+**Provider strings in the IR schema:** [`docs/termin-ir-schema.json`](../termin-ir-schema.json) currently enumerates only `"llm"` (L1), `"ai-agent"` (L2/L3), and `null`/`"cel"` (the default deterministic CEL evaluator, which sits *outside* this taxonomy — CEL is not an AI provider). The L2 vs L3 distinction is informative, determined by whether `Strategy is` is declared on the `"ai-agent"` compute. L4 is informative, determined by whether the `"ai-agent"` compute's `Accesses` cross boundaries. This is a deliberate choice: the level distinctions help authors and reviewers reason about an agent's reach, but the runtime behavior is fully determined by the provider string + the compute's other declarations.
 
 ---
 
@@ -48,7 +48,8 @@ The taxonomy is useful for three audiences:
 - **[D-05 — Compute Access Declarations](D-05-compute-access-declarations.md)** — defines the `Accesses` declarations that determine L3's tool surface (and, when cross-boundary, L4's broader reach).
 - **[D-12 — LLM Structured Output](D-12-llm-structured-output.md)** — applies to both L1 and L3; both use the auto-generated `set_output` tool for structured field assignment.
 - **[D-20 — Agent Observability](D-20-agent-observability.md)** — the audit surface; trace shape differs between L1 (single completion) and L3/L4 (agent loop with tool calls). The polymorphic trace envelope handles both.
-- **`termin-v0.9.2-conversation-field-type-tech-design.md`** — the conversation field type is an L3-shaped affordance; L1 doesn't use it. The provider Protocol updates in v0.9.2 only affect L3 (and any future L2/L4 implementations).
+- **[`termin-v0.9.2-conversation-field-type-tech-design.md`](../termin-v0.9.2-conversation-field-type-tech-design.md)** — the conversation field type and the `Conversation is` source line are the L2 implementation. The provider Protocol updates in v0.9.2 affect any `"ai-agent"` compute (both L2 and L3). v0.9.2 §17 is the authoritative L2 reframe spec.
+- **[`termin-v0.9.3-airlock-on-termin-tech-design.md`](../termin-v0.9.3-airlock-on-termin-tech-design.md)** — ARIA in v0.9.3 is the production-shaped L2 example; the meta-evaluator is also L2.
 
 ---
 
@@ -58,17 +59,6 @@ The taxonomy is useful for three audiences:
 - **Choice of model within a level.** Which Claude / OpenAI / Bedrock model an `"llm"` or `"ai-agent"` compute uses is a deploy-config concern, not a level distinction. Sonnet vs Opus vs Haiku does not change the level.
 - **Streaming vs request-response.** Both are supported within both L1 and L3 per the streaming protocol; not a level distinction.
 - **Single-tenant vs multi-tenant deployments.** The taxonomy is per-compute; the deployment model is orthogonal. An L3 agent in a multi-tenant deployment is still L3.
-
----
-
-## Reserved: when L2 might become a real provider
-
-If a future use case genuinely needs *LLM call + automatic context loading + no tool loop*, a `"llm-with-context"` provider could be added at L2. Candidates that have come up in informal discussion:
-
-- A summarizer that needs to read several related records but doesn't need agent autonomy.
-- A classifier that needs deployment-level configuration injected as context.
-
-The current workarounds (multi-input L1, or simple L3 with a single tool call) are good enough for these cases. L2 stays a slot, not a feature.
 
 ---
 
