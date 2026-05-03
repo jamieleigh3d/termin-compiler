@@ -32,7 +32,7 @@ agent_chatbot.termin
 
 ### D-01: Provider Taxonomy and Access Levels (DECIDED)
 
-Four levels: Level 1 (LLM field-to-field), Level 2 (LLM+context), Level 3 (agent app-scoped), Level 4 (agent config-boundary). Levels 1 and 3 implemented in v0.5.0.
+Four levels: Level 1 (LLM field-to-field), Level 2 (LLM+context), Level 3 (agent app-scoped), Level 4 (agent config-boundary). Levels 1 and 3 implemented in v0.5.0. **Promoted to its own file 2026-05-03:** `design-decisions/D-01-provider-taxonomy.md` — read that for the current full statement, including L4's actual implementation status (it's a usage pattern of L3 with cross-boundary `Accesses`, not a distinct provider) and L2's reserved-but-not-built status.
 
 ### D-02: LLM Field Wiring Syntax (DECIDED)
 
