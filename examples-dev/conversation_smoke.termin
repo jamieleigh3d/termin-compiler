@@ -1,0 +1,17 @@
+Application: Conversation Smoke
+  Description: v0.9.2 L2 smoke test — verifies the conversation field type compiles end-to-end. Append verb, event class, and provider materialization land in L3/L5/L7.
+Id: 8d1b4a2f-8e0d-4c3b-a05f-2d6f8b9a0123
+
+Identity:
+  Scopes are "read"
+  An "anonymous" has "read"
+
+Content called "chat_threads":
+  Each chat_thread has a title which is text, default "Conversation"
+  Each chat_thread has a conversation which is conversation
+  Each chat_thread has a debug_log which is conversation
+  Anyone with "read" can view or create chat_threads
+
+As anonymous, I want to see threads so that I know conversation works:
+  Show a page called "Threads"
+    Display a table of chat_threads with columns: title

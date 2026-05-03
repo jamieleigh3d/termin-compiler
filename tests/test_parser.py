@@ -507,6 +507,24 @@ def test_parse_new_types():
     assert types["count"].maximum == 9999
 
 
+def test_parse_conversation_field():
+    """v0.9.2 L2: `conversation` is a base type for AI-agent message logs.
+    Stored as JSON column; per-entry shape is canonical (kind, body, etc.,
+    owned by the runtime). Apps just declare `which is conversation` —
+    no role enum, no body-field redeclaration.
+    """
+    program, errors = parse('''Content called "chat_threads":
+  Each chat_thread has a title which is text
+  Each chat_thread has a conversation which is conversation
+  Anyone with "read" can view chat_threads''')
+    assert errors.ok, errors.format()
+    c = program.contents[0]
+    types = {f.name: f.type_expr for f in c.fields}
+    assert types["title"].base_type == "text"
+    assert types["conversation"].base_type == "conversation"
+    assert types["conversation"].required is False
+
+
 def test_parse_structured_field():
     """v0.9.2 L1: `structured` is a base type for opaque JSON-shaped values
     (tool args, scoring blobs, attachments, conversation entries' metadata).

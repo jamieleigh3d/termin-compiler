@@ -121,6 +121,7 @@ base_type
     | 'number'                     #TypeNumber
     | 'principal'                  #TypePrincipal
     | 'structured'                 #TypeStructured
+    | 'conversation'               #TypeConversation
     | 'one' 'of:' vals:enum_vals  #TypeEnum
     | 'list' 'of' inner:word      #TypeList
     ;

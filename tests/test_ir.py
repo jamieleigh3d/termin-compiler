@@ -975,6 +975,65 @@ class TestStructuredFieldType:
 
 
 # ============================================================
+# v0.9.2 L2: conversation field type
+# ============================================================
+
+
+class TestConversationFieldType:
+    """v0.9.2 L2: `conversation` is a base type for AI-agent message logs.
+    Per-entry shape (id, kind, body, source, tool_call_id, parent_id,
+    tool_name, tool_args, attachments, created_at, appended_by_principal_id)
+    is canonical and owned by the runtime — apps just declare
+    `which is conversation`. Storage layer treats it as a JSON column
+    holding the ordered list of entries.
+
+    L2 covers field type declaration + storage shape only. Append verb
+    (L3), event class (L5), conversation provider materialization (L7),
+    chat presentation contract update (L9), and the rest of the
+    conversation surface land in subsequent slices.
+    """
+
+    _AUTH_PREAMBLE = '''Identity:
+  Scopes are "read"
+  A "user" has "read"
+'''
+
+    def _parse_and_lower(self, source):
+        program, errors = parse(self._AUTH_PREAMBLE + source)
+        assert errors.ok, errors.format()
+        result = analyze(program)
+        assert result.ok, result.format()
+        return lower(program)
+
+    def test_conversation_lowers_to_json_column(self):
+        source = '''Content called "chat_threads":
+  Each chat_thread has a title which is text
+  Each chat_thread has a conversation which is conversation
+  Anyone with "read" can view chat_threads
+'''
+        spec = self._parse_and_lower(source)
+        ct = spec.content[0]
+        cv = next(f for f in ct.fields if f.name == "conversation")
+        assert cv.business_type == "conversation"
+        assert cv.column_type == FieldType.JSON
+
+    def test_multiple_conversation_fields_on_one_content(self):
+        """Per the v0.9.2 design (composability goal §3): a content type can
+        have multiple conversation fields if it ever needs them."""
+        source = '''Content called "sessions":
+  Each session has chat which is conversation
+  Each session has debug_log which is conversation
+  Anyone with "read" can view sessions
+'''
+        spec = self._parse_and_lower(source)
+        sessions = spec.content[0]
+        cols = {f.name: f for f in sessions.fields}
+        for name in ("chat", "debug_log"):
+            assert cols[name].business_type == "conversation", name
+            assert cols[name].column_type == FieldType.JSON, name
+
+
+# ============================================================
 # v0.9 multi-state-machine IR lowering
 # ============================================================
 
