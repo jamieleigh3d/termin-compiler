@@ -120,6 +120,7 @@ base_type
     | 'a' 'number'                 #TypeNumber
     | 'number'                     #TypeNumber
     | 'principal'                  #TypePrincipal
+    | 'structured'                 #TypeStructured
     | 'one' 'of:' vals:enum_vals  #TypeEnum
     | 'list' 'of' inner:word      #TypeList
     ;

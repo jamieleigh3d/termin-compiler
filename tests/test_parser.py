@@ -507,6 +507,24 @@ def test_parse_new_types():
     assert types["count"].maximum == 9999
 
 
+def test_parse_structured_field():
+    """v0.9.2 L1: `structured` is a base type for opaque JSON-shaped values
+    (tool args, scoring blobs, attachments, conversation entries' metadata).
+    Stored as JSON column; CEL access reads it as a tree of maps/lists/scalars.
+    """
+    program, errors = parse('''Content called "sessions":
+  Each session has scores which is structured
+  Each session has survey_responses which is structured, required
+  Anyone with "read" can view sessions''')
+    assert errors.ok, errors.format()
+    c = program.contents[0]
+    types = {f.name: f.type_expr for f in c.fields}
+    assert types["scores"].base_type == "structured"
+    assert types["scores"].required is False
+    assert types["survey_responses"].base_type == "structured"
+    assert types["survey_responses"].required is True
+
+
 def test_parse_all_examples():
     from pathlib import Path
     for name in ["hello", "hello_user", "warehouse", "helpdesk", "projectboard", "compute_demo"]:

@@ -911,6 +911,70 @@ class TestContentSchemaAudit:
 
 
 # ============================================================
+# v0.9.2 L1: structured field type
+# ============================================================
+
+
+class TestStructuredFieldType:
+    """v0.9.2 L1: `structured` is a base type for opaque JSON-shaped values
+    (tool_args on agent invocations, scores blobs, survey responses,
+    attachment metadata on conversation entries).
+
+    Lowering: business_type="structured", column_type=FieldType.JSON.
+    Storage backend treats it the same way it treats list-typed columns
+    (TEXT column holding a JSON-encoded value)."""
+
+    _AUTH_PREAMBLE = '''Identity:
+  Scopes are "read"
+  A "user" has "read"
+'''
+
+    def _parse_and_lower(self, source):
+        program, errors = parse(self._AUTH_PREAMBLE + source)
+        assert errors.ok, errors.format()
+        result = analyze(program)
+        assert result.ok, result.format()
+        return lower(program)
+
+    def test_structured_lowers_to_json_column(self):
+        source = '''Content called "sessions":
+  Each session has scores which is structured
+  Anyone with "read" can view sessions
+'''
+        spec = self._parse_and_lower(source)
+        sessions = spec.content[0]
+        scores = next(f for f in sessions.fields if f.name == "scores")
+        assert scores.business_type == "structured"
+        assert scores.column_type == FieldType.JSON
+
+    def test_structured_required_constraint(self):
+        source = '''Content called "computes":
+  Each compute has tool_args which is structured, required
+  Anyone with "read" can view computes
+'''
+        spec = self._parse_and_lower(source)
+        computes = spec.content[0]
+        ta = next(f for f in computes.fields if f.name == "tool_args")
+        assert ta.business_type == "structured"
+        assert ta.column_type == FieldType.JSON
+        assert ta.required is True
+
+    def test_multiple_structured_fields_on_one_content(self):
+        source = '''Content called "sessions":
+  Each session has survey_responses which is structured
+  Each session has scores which is structured
+  Each session has metadata which is structured
+  Anyone with "read" can view sessions
+'''
+        spec = self._parse_and_lower(source)
+        sessions = spec.content[0]
+        cols = {f.name: f for f in sessions.fields}
+        for name in ("survey_responses", "scores", "metadata"):
+            assert cols[name].business_type == "structured", name
+            assert cols[name].column_type == FieldType.JSON, name
+
+
+# ============================================================
 # v0.9 multi-state-machine IR lowering
 # ============================================================
 

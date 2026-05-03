@@ -1,0 +1,17 @@
+Application: Structured Smoke
+  Description: v0.9.2 L1 smoke test — verifies the structured field type compiles end-to-end
+Id: 7c0a3f1e-7d9c-4b2a-9f4e-1c5e7a8f9012
+
+Identity:
+  Scopes are "read"
+  An "anonymous" has "read"
+
+Content called "blobs":
+  Each blob has a label which is text, required
+  Each blob has a payload which is structured
+  Each blob has a metadata which is structured, required
+  Anyone with "read" can view or create blobs
+
+As anonymous, I want to see blobs so that I know structured works:
+  Show a page called "Blobs"
+    Display a table of blobs with columns: label

@@ -238,7 +238,7 @@ def _parse_type_text(text: str, ln: int = 0) -> TypeExpr:
           "percentage": "percentage", "true/false": "boolean", "boolean": "boolean",
           "date and time": "datetime", "date": "date", "automatic": "automatic",
           "a whole number": "whole_number", "whole number": "whole_number",
-          "principal": "principal"}
+          "principal": "principal", "structured": "structured"}
     if text in TM: expr.base_type = TM[text]
     elif text.startswith("one of:"):
         expr.base_type = "enum"

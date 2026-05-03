@@ -101,6 +101,11 @@ def _field_type(te: TypeExpr) -> FieldType:
         return FieldType.TIMESTAMP
     if te.base_type == "list":
         return FieldType.JSON
+    if te.base_type == "structured":
+        # v0.9.2 L1: structured = opaque JSON-shaped value. Storage layer
+        # treats it the same way as list types (TEXT column holding JSON).
+        # CEL access reads it as a tree of maps/lists/scalars.
+        return FieldType.JSON
     return FieldType.TEXT
 
 
