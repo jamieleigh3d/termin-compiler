@@ -612,37 +612,103 @@ This is the OVERSEER pattern v0.9.3 uses: each overseer event is a `When` rule w
 
 ## 14. Presentation contract update: `presentation-base.chat`
 
+### 14.1 Binding form
+
 The existing `presentation-base.chat` contract binds to a messages collection:
 
 ````
 Show a chat for messages with role "role", content "body"
 ````
 
-v0.9.2 adds binding to a conversation field:
+v0.9.2 adds binding to a conversation field. The dot notation matches every other content+field reference in v0.9.2 (`Conversation is X.Y`, `Append to X.Y as ...`, `Anyone with X can append to Y.Z`):
 
 ````
-Show a chat for <record>.<conversation-field>
+Show a chat for <content>.<field>
 ````
 
-The contract auto-discovers the entry shape (canonical kinds + optional source + attachments + tool linkage). Per-kind / per-source styling can be configured via additional modifiers:
+The bare form is sufficient — the contract auto-discovers the entry shape (canonical kinds + optional source + attachments + tool linkage) and renders sane defaults. Per-kind and per-source styling are opt-in modifiers, declared as a sub-block:
 
 ````
 Show a chat for sessions.conversation_log:
   kind "user" styles as "user-message"
   kind "assistant" styles as "agent-message"
-  kind "system_event" where source == "OVERSEER" styles as "overseer-message"
-  kind "tool_call" displays inline collapsed
-  kind "tool_result" displays inline alongside its tool_call
+  kind "system_event" where `source == "OVERSEER"` styles as "overseer-message"
+  kind "tool_call" displays collapsed
+  kind "tool_result" displays alongside "tool_call"
 ````
 
-(Exact modifier syntax to be finalized during implementation; this shape is illustrative.)
+### 14.2 Per-kind clause grammar
+
+Each clause names a canonical kind (the closed enum from §7.2: `user`, `assistant`, `tool_call`, `tool_result`, `system_event`) plus a styling or display directive. The two directive forms are independent — a clause may carry one or both.
+
+**Class form:**
+
+````
+kind "<canonical-kind>" [where `<CEL predicate>`] styles as "<class-name>"
+````
+
+The class-name string lands as a CSS class on the rendered entry's root element (`<div class="user-message">...`). Authors using Tailwind can put utility classes there directly: `styles as "bg-blue-100 text-blue-900 rounded-lg p-3"`. Authors using Spectrum or another presentation provider use whichever class names that provider's CSS recognizes. The chat component does not interpret the string — it just sets the attribute.
+
+**Display form:**
+
+````
+kind "<canonical-kind>" [where `<CEL predicate>`] displays <mode>
+````
+
+Where `<mode>` is one of:
+
+- `expanded` — full-content rendering (the default for every kind without a clause).
+- `collapsed` — the entry shows as a compact one-line chip the user can click to expand.
+- `alongside "<other-kind>"` — the entry folds into the most recent visible entry of `<other-kind>` instead of getting its own row. This is how `tool_result` rides under its matching `tool_call`.
+
+A kind may have both a `styles as` and a `displays` clause via two separate lines:
+
+````
+kind "tool_call" styles as "tool-call-chip"
+kind "tool_call" displays collapsed
+````
+
+### 14.3 The `where` predicate
+
+The optional `where \`<CEL>\`` clause lets a single kind have multiple styling rules discriminated by entry metadata. The CEL predicate evaluates against the entry shape from §7.2 — `kind`, `body`, `source`, `tool_call_id`, `tool_name`, `tool_args`, `attachments`, `parent_id`, `appended_by_principal_id`. Bind names match the JSON shape; no `entry.` prefix.
+
+````
+kind "system_event" where `source == "OVERSEER"` styles as "overseer-message"
+kind "system_event" where `source == "audit_log"` styles as "audit-row"
+kind "system_event" styles as "neutral-event"   # catch-all fallback
+````
+
+Match order is source order — first matching predicate wins per entry. Plain clauses (no `where`) are catch-alls for the kind. The `where` predicate cannot reference parent-record fields; if you need parent context for styling, expose a derived field on the entry via the writer (or fall back to a default styling and let CSS handle it).
+
+### 14.4 Validation (compile-time)
+
+- The kind value must be one of the five canonical kinds. Typos raise `TERMIN-S###` (next free code).
+- The `displays alongside "<other-kind>"` other-kind must also be canonical.
+- Duplicate plain clauses for the same kind (no `where` on either) is a warning — the second is dead code.
+- A clause with neither `styles as` nor `displays` is a warning (it does nothing).
+
+### 14.5 Default rendering
+
+Kinds without a matching clause fall back to a convention class:
+
+| Kind | Default class | Default display |
+|------|---------------|-----------------|
+| `user` | `termin-chat-user` | expanded |
+| `assistant` | `termin-chat-assistant` | expanded |
+| `tool_call` | `termin-chat-tool-call` | collapsed |
+| `tool_result` | `termin-chat-tool-result` | alongside `tool_call` |
+| `system_event` | `termin-chat-system-event` (+ `termin-chat-system-event-<source>` when `source` is set) | expanded |
+
+Authors who like the convention can write CSS for those class names without any clause overrides at all. The clause syntax is for when defaults aren't enough.
+
+### 14.6 Component behaviour
 
 The chat component:
 
-- Subscribes to `<content>.<field>.appended` events for live updates.
+- Subscribes to `<content>.<field>.appended` events (§9) for live updates — new entries fade in at the bottom.
 - Supports the WebSocket append frame (§8.3) for sending user messages with low latency.
-- Renders attachments per their mime_type (image inline; PDF as a download link with a thumbnail; text as collapsed expandable).
-- Reads invocation outcome via the audit/sidecar surface to render refusals (§7.2).
+- Renders attachments per mime_type — `image/*` inline; `application/pdf` as a download link with a thumbnail; text-ish as collapsed expandable.
+- Reads invocation outcome via the audit/sidecar surface to render refusals (§7.2) — refusals appear as a styled banner under the user message, not as a conversation entry.
 
 The existing messages-collection binding continues to work for backwards compatibility. Apps migrate their chat surface independently of any agent migration.
 
