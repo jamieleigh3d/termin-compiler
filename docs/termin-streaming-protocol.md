@@ -237,6 +237,39 @@ Clients do not need to wait for `done` to render — they assemble
 deltas in real time and trust the persisted record event for
 finalization.
 
+## Inbound frames (v0.9.2)
+
+The streaming sections above describe **server-to-client** delivery
+(compute output deltas). v0.9.2 L4 adds the first **client-to-server**
+frame on the same WebSocket — the `append` frame, paired with the
+`POST /<resource>/{id}/<field>:append` REST endpoint introduced in L3.
+
+```json
+{
+  "type": "append",
+  "resource": "<content snake>",
+  "id": "<record id>",
+  "field": "<conversation field name>",
+  "payload": { "kind": "...", "body": "...", ... }
+}
+```
+
+The handler shares one code path with the REST endpoint (the
+`_do_append` helper in termin-server). On success there is no
+acknowledgement frame — the originator picks up the new entry via
+the standard `content.<name>.<field>.appended` event (L5) on its
+existing record subscription, the same delivery any other subscriber
+receives. On failure the server sends a structured error frame on
+the `runtime.append` channel:
+
+```json
+{ "v": 1, "ch": "runtime.append", "op": "error", "ref": "<frame ref>",
+  "payload": { "code": "validation_error|not_found|forbidden|internal_error",
+               "message": "..." } }
+```
+
+Authoritative spec: §8.3 of `termin-v0.9.2-conversation-field-type-tech-design.md`.
+
 ## Non-streaming fallback
 
 A provider that does not support streaming returns the full result
