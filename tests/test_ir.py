@@ -1198,6 +1198,65 @@ Content called "chat_threads":
 
 
 # ============================================================
+# v0.9.2 L5: <content>.<field>.appended event class
+# ============================================================
+
+
+class TestAppendedEventTrigger:
+    """v0.9.2 L5: computes can declare
+    `Trigger on event "<content>.<field>.appended"` and a `where` predicate
+    that references `appended_entry`. The compiler stores the trigger
+    string and the where-CEL on ComputeSpec; the runtime side (server)
+    publishes the matching event and binds `appended_entry` into the
+    predicate eval context.
+    """
+
+    _PREAMBLE = '''Identity:
+  Scopes are "chat.use"
+  An "anonymous" has "chat.use"
+
+Content called "chat_threads":
+  Each chat_thread has a title which is text
+  Each chat_thread has a conversation which is conversation
+  Anyone with "chat.use" can view chat_threads
+'''
+
+    def _parse_and_lower(self, source):
+        program, errors = parse(self._PREAMBLE + source)
+        assert errors.ok, errors.format()
+        result = analyze(program)
+        assert result.ok, result.format()
+        return lower(program)
+
+    def test_appended_trigger_parses_and_lowers(self):
+        """The compute's trigger string is preserved verbatim and the
+        where-CEL referencing `appended_entry` lands on trigger_where."""
+        spec = self._parse_and_lower('''Compute called "log_user_msg":
+  Transform: takes a chat_thread, produces a chat_thread
+  Trigger on event "chat_threads.conversation.appended" where `appended_entry.kind == "user"`
+  Anyone with "chat.use" can execute this
+  `chat_thread`
+''')
+        assert len(spec.computes) == 1
+        comp = spec.computes[0]
+        assert comp.trigger == 'event "chat_threads.conversation.appended"'
+        assert comp.trigger_where == 'appended_entry.kind == "user"'
+
+    def test_appended_trigger_without_where_still_parses(self):
+        """The where clause is optional. Without it the runtime fires
+        the compute on every append regardless of kind."""
+        spec = self._parse_and_lower('''Compute called "fan_out":
+  Transform: takes a chat_thread, produces a chat_thread
+  Trigger on event "chat_threads.conversation.appended"
+  Anyone with "chat.use" can execute this
+  `chat_thread`
+''')
+        comp = spec.computes[0]
+        assert comp.trigger == 'event "chat_threads.conversation.appended"'
+        assert comp.trigger_where is None
+
+
+# ============================================================
 # v0.9 multi-state-machine IR lowering
 # ============================================================
 
