@@ -11,7 +11,7 @@ Content called "chat_threads":
   Each chat_thread has a conversation which is conversation
   Anyone with "chat.use" can view chat_threads
   Anyone with "chat.use" can create chat_threads
-  Anyone with "chat.use" can append to chat_threads' conversation
+  Anyone with "chat.use" can append to chat_threads.conversation
 
 As anonymous, I want to see threads so that I can verify append works:
   Show a page called "Threads"

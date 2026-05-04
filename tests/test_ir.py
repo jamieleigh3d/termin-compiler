@@ -1065,7 +1065,7 @@ class TestAppendVerb:
   Each chat_thread has a title which is text
   Each chat_thread has a conversation which is conversation
   Anyone with "chat.use" can view chat_threads
-  Anyone with "chat.use" can append to chat_threads' conversation
+  Anyone with "chat.use" can append to chat_threads.conversation
 ''')
         append_grants = [
             g for g in spec.access_grants
@@ -1083,7 +1083,7 @@ class TestAppendVerb:
   Each chat_thread has a title which is text
   Each chat_thread has a conversation which is conversation
   Anyone with "chat.use" can view chat_threads
-  Anyone with "chat.use" can append to chat_threads' conversation
+  Anyone with "chat.use" can append to chat_threads.conversation
 ''')
         append_routes = [r for r in spec.routes if r.kind == RouteKind.APPEND]
         assert len(append_routes) == 1, f"expected one append route, got {append_routes!r}"
@@ -1102,8 +1102,8 @@ class TestAppendVerb:
   Each session has a chat which is conversation
   Each session has a debug_log which is conversation
   Anyone with "chat.use" can view sessions
-  Anyone with "chat.use" can append to sessions' chat
-  Anyone with "chat.use" can append to sessions' debug_log
+  Anyone with "chat.use" can append to sessions.chat
+  Anyone with "chat.use" can append to sessions.debug_log
 ''')
         append_routes = sorted(
             (r for r in spec.routes if r.kind == RouteKind.APPEND),

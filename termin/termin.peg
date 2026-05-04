@@ -199,13 +199,14 @@ access_line
 
 # v0.9.2 L3: field-targeted append permission. Distinct rule because
 # the target is a specific field, not a content type. Source forms:
-#   Anyone with "X" can append to <plural>' <field>
-#   Anyone with "X" can append to their own <plural>' <field>
-# The plural ends with an apostrophe to mark possession (English
-# convention for plural possessives — `chat_threads' conversation`).
+#   Anyone with "X" can append to <content>.<field>
+#   Anyone with "X" can append to their own <content>.<field>
+# Dot notation matches the rest of v0.9.2 (Conversation is X.Y, Append
+# to X.Y as ..., trigger event "X.Y.appended"); one canonical content+
+# field reference shape across the whole DSL.
 access_append_line
     = 'Anyone' 'with' scope:quoted_string 'can' 'append' 'to'
-      [their_own:('their' 'own')] plural:word "'" field:word $
+      [their_own:('their' 'own')] content:word '.' field:word $
     ;
 
 # v0.9.2 L3: source-level Append action verb. Usable in compute

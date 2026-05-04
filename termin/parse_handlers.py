@@ -209,13 +209,17 @@ def _check_can_clause_for_unknown_verbs(rest: str) -> None:
 
 
 def _parse_access_append(text: str, ln: int) -> AccessRule:
-    """v0.9.2 L3: parse `Anyone with "X" can append to [their own] <plural>' <field>`.
+    """v0.9.2 L3: parse `Anyone with "X" can append to [their own] <content>.<field>`.
 
     Tries the TatSu rule first; falls back to a regex-based path for the
     Linux/WSL state-leak case (workspace rule 9). Both must produce the
     same AccessRule shape — verbs=["append"], append_field=<snake>,
     their_own=<bool>. Fallback fidelity is exercised in
     tests/test_access_rule_fallback_fidelity.py.
+
+    Dot notation matches `Conversation is X.Y`, `Append to X.Y as ...`,
+    and the trigger event name shape — one canonical content+field
+    reference shape across the whole DSL.
     """
     r = _try_parse(text, "access_append_line")
     if r:
@@ -226,7 +230,7 @@ def _parse_access_append(text: str, ln: int) -> AccessRule:
             scope=scope, verbs=["append"], their_own=their,
             append_field=field, line=ln,
         )
-    # Fallback: parse out scope, their_own flag, plural, field via
+    # Fallback: parse out scope, their_own flag, content, field via
     # straight string ops. Match the TatSu output exactly so the shape
     # is identical.
     scope = _fq(text)
@@ -239,11 +243,11 @@ def _parse_access_append(text: str, ln: int) -> AccessRule:
     if tail.startswith("their own "):
         their_own = True
         tail = tail[len("their own "):].strip()
-    # tail is `<plural>' <field>` — split on the apostrophe-space pair.
-    apos_idx = tail.find("' ")
+    # tail is `<content>.<field>` — split on the dot.
+    dot_idx = tail.find(".")
     field = ""
-    if apos_idx >= 0:
-        field = tail[apos_idx + 2:].strip()
+    if dot_idx >= 0:
+        field = tail[dot_idx + 1:].strip()
     return AccessRule(
         scope=scope, verbs=["append"], their_own=their_own,
         append_field=field, line=ln,

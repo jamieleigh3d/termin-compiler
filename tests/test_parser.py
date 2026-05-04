@@ -544,10 +544,11 @@ def test_parse_structured_field():
 
 
 def test_parse_append_access_rule():
-    """v0.9.2 L3: `Anyone with "X" can append to <plural>' <field>` is a new
+    """v0.9.2 L3: `Anyone with "X" can append to <content>.<field>` is a new
     access-rule shape that grants append-only permission on a specific field
     of a content type. Different from view/create/update/delete — those are
-    content-level; append is field-level."""
+    content-level; append is field-level. Dot notation matches the rest of
+    v0.9.2 (Conversation is X.Y, Append to X.Y as ..., trigger event names)."""
     program, errors = parse('''Identity:
   Scopes are "chat.use"
   An "anonymous" has "chat.use"
@@ -555,7 +556,7 @@ Content called "chat_threads":
   Each chat_thread has a title which is text
   Each chat_thread has a conversation which is conversation
   Anyone with "chat.use" can view chat_threads
-  Anyone with "chat.use" can append to chat_threads' conversation''')
+  Anyone with "chat.use" can append to chat_threads.conversation''')
     assert errors.ok, errors.format()
     c = program.contents[0]
     append_rules = [r for r in c.access_rules if "append" in r.verbs]
@@ -567,7 +568,7 @@ Content called "chat_threads":
 
 
 def test_parse_append_their_own():
-    """v0.9.2 L3 + L10: `Anyone with X can append to their own <plural>' <field>`
+    """v0.9.2 L3 + L10: `Anyone with X can append to their own <content>.<field>`
     composes the row-filter qualifier with the field target."""
     program, errors = parse('''Identity:
   Scopes are "session.read"
@@ -577,7 +578,7 @@ Content called "sessions":
   Each session is owned by player
   Each session has a conversation_log which is conversation
   Anyone with "session.read" can view their own sessions
-  Anyone with "session.read" can append to their own sessions' conversation_log''')
+  Anyone with "session.read" can append to their own sessions.conversation_log''')
     assert errors.ok, errors.format()
     c = program.contents[0]
     append_rules = [r for r in c.access_rules if "append" in r.verbs]

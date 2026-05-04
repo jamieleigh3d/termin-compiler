@@ -368,19 +368,19 @@ Subsequent agent processing (compute trigger → provider call → response auto
 
 ### 8.4 Permission semantics
 
-New permission verb on the parent record:
+New permission verb on the parent record. Uses dot notation to reference the content+field pair, matching `Conversation is X.Y`, the `Append to X.Y as ...` action verb, and the trigger event name shape — one canonical content+field reference shape across the whole DSL.
 
 ````
-Anyone with "<scope>" can append to <field>
-Anyone with "<scope>" can append to their own <plural>' <field>
+Anyone with "<scope>" can append to <content>.<field>
+Anyone with "<scope>" can append to their own <content>.<field>
 ````
 
 Examples:
 
 ````
-Anyone with "chat.use" can append to chat_threads' conversation
-Anyone with "airlock.session.read" can append to their own sessions'
-                                          conversation_log
+Anyone with "chat.use" can append to chat_threads.conversation
+Anyone with "airlock.session.read" can append to their own
+                                          sessions.conversation_log
 ````
 
 Append permission is independent of read/update permissions on the same record. A consumer might be able to append messages without being able to read or update the thread itself; or vice versa.
@@ -734,7 +734,7 @@ Content called "chat_threads":
   Each chat_thread has a conversation which is conversation
   Anyone with "chat.use" can view chat_threads
   Anyone with "chat.use" can create chat_threads
-  Anyone with "chat.use" can append to chat_threads' conversation
+  Anyone with "chat.use" can append to chat_threads.conversation
 
 Compute called "current_time":
   Provider is "default-CEL"
