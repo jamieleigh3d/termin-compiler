@@ -85,31 +85,50 @@ class TestAgentChatbotIR:
     def _setup_ir(self, compiled_packages):
         type(self).ir = extract_ir_from_pkg(compiled_packages["agent_chatbot"])
 
+    def _reply(self):
+        # v0.9.2: agent_chatbot now declares two computes — `reply`
+        # (the ai-agent) and `current_time` (a CEL invokable tool).
+        # Filter by name rather than relying on declaration order.
+        return next(
+            c for c in self.ir["computes"]
+            if c["name"]["snake"] == "reply"
+        )
+
     def test_compute_provider_agent(self):
-        comp = self.ir["computes"][0]
+        comp = self._reply()
         assert comp["provider"] == "ai-agent"
 
     def test_compute_has_conversation_source(self):
         """v0.9.2 L6: reply compute wires Conversation is X.Y."""
-        comp = self.ir["computes"][0]
+        comp = self._reply()
         cs = comp.get("conversation_source")
         assert cs is not None and len(cs) == 2
         assert cs[1] == "conversation"
 
     def test_compute_trigger_is_appended_event(self):
-        comp = self.ir["computes"][0]
+        comp = self._reply()
         trigger = comp.get("trigger") or ""
         assert "appended" in trigger and "conversation" in trigger
 
     def test_compute_trigger_where_filters_user_kind(self):
-        comp = self.ir["computes"][0]
+        comp = self._reply()
         where = comp.get("trigger_where") or ""
         assert "appended_entry" in where
         assert "user" in where
 
     def test_compute_directive(self):
-        comp = self.ir["computes"][0]
+        comp = self._reply()
         assert "conversational" in comp["directive"]
+
+    def test_compute_invokes_current_time(self):
+        """v0.9.2 close-out: the L11 example demonstrates Invokes
+        runtime wiring — `reply` invokes `current_time` as a tool."""
+        comp = self._reply()
+        invokes = comp.get("invokes") or []
+        assert "current_time" in invokes, (
+            f"reply compute should declare Invokes \"current_time\"; "
+            f"got invokes={invokes!r}"
+        )
 
     def test_chat_threads_has_conversation_field(self):
         chat_threads = next(

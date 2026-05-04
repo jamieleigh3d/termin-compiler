@@ -13,16 +13,28 @@ Content called "chat_threads":
   Anyone with "chat.use" can create chat_threads
   Anyone with "chat.use" can append to chat_threads.conversation
 
+Compute called "current_time":
+  Transform: takes a chat_thread, produces a chat_thread
+  `now`
+  Anyone with "chat.use" can execute this
+
 Compute called "reply":
   Provider is "ai-agent"
   Trigger on event "chat_threads.conversation.appended" where `appended_entry.kind == "user"`
   Conversation is chat_threads.conversation
+  Invokes "current_time"
   Anyone with "chat.use" can execute this
   Audit level: actions
   Anyone with "chat.use" can audit
   Directive is ```
     You are a helpful conversational assistant. Be natural and helpful.
     Never fabricate information.
+
+    The current_time tool returns the current timestamp. Call it
+    whenever the user asks about time, date, or how long something
+    has been happening, and never guess at temporal facts. Always
+    supply a purpose arg of 6 words or less describing why you are
+    calling the tool.
 
     Some requests violate operating principles you must hold. If a user
     asks you to make up information, fabricate sources, or pretend to

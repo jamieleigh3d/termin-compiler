@@ -528,11 +528,13 @@ Verified against the official Anthropic API docs ([Tool use](https://platform.cl
 When the agent's invocation completes successfully, the runtime appends to the conversation field:
 
 - **Final text response** → `kind: "assistant"` entry (no `type`; defaults to response) with the text in `body`.
-- **Tool calls the agent made along the way** → `kind: "tool_call"` entries (one per call), with `tool_call_id` from Anthropic's response, `tool_name`, `tool_args`, and `body = "<tool_name>(<json args>)"` — the structured fields hold the data; `body` is the at-a-glance summary for chat UI and audit reads. **No truncation in v0.9.2.** A future v0.9.3+ slice will add an optional `purpose` field on tool entries (a 6-words-or-less display string the agent supplies, hard-truncated with ellipsis after 12 words) so chat UIs can show a short label without parsing args.
-- **Tool results returned by the runtime** → `kind: "tool_result"` entries, linked by `tool_call_id`, with the result text in `body`.
+- **Tool calls the agent made along the way** → `kind: "tool_call"` entries (one per call), with `tool_call_id` from Anthropic's response, `tool_name`, `tool_args`, and `body = "<tool_name>(<json args>)"` — the structured fields hold the data; `body` is the at-a-glance summary for chat UI and audit reads. **`tool_args` does not include `purpose`** — the runtime strips it out before persisting and before invoking the tool callback (purpose is conversation-surface metadata, not tool input). **Body is not truncated.** Optional **`purpose` field**: when the agent supplies it, the runtime persists a runtime-truncated form on the entry — hard cap at 12 words with ellipsis when over (6 words is the documented ideal in the tool schema description). Chat UIs that want a short label can use `purpose`; the unconditional `body` is the fallback for entries that don't carry one.
+- **Tool results returned by the runtime** → `kind: "tool_result"` entries, linked by `tool_call_id`, with the result text in `body`. (No `purpose` on tool_result — it's a return value, not a deliberate action.)
 - All entries written in this pipeline get the same `parent_id` (the user message that triggered the agent), so reviewers can reconstruct turn boundaries.
 
 The runtime imposes **no context-window management** in v0.9.2 — the full conversation field is materialized and sent on every turn. When apps grow long enough to hit Anthropic's context-window limit, the provider call errors and the runtime falls through to the standard error path (no auto-append; chat UI shows a stale-state). A future v0.9.3+ slice will add a hierarchical-summarization layer (a projection that runs before `materialize_to_anthropic`, summarizing older turns so the active window stays under budget). The shape of that projection is deliberately deferred until real usage shows what tradeoffs matter.
+
+**The `purpose` schema field is added to every tool's input_schema** by the conversation-mode tool surface builder — standard CRUD tools (`content_query` etc.), the always-available `system_refuse`, and every `Invokes`-declared compute. Description text in the schema directs the agent to supply 6 words or fewer; the runtime enforces the 12-word hard cap on persistence (so a poorly-trained or non-compliant model can't blow up the chat surface). The field is optional; agents that omit it produce entries with no `purpose` field at all (the chat UI falls back to `body`).
 
 If the agent calls `system.refuse(reason)` along the way, the runtime:
 
@@ -574,6 +576,8 @@ Compute called "reply":
 - `Directive is ...` — system prompt.
 
 `Objective` is optional — only needed for turn-by-turn instructions that the directive doesn't already cover. For most agent_chatbot-style apps, the directive is sufficient.
+
+**Invokes runtime semantics (v0.9.2):** Each named compute in the `Invokes` list becomes an Anthropic-shape tool the agent can call. v0.9.2 supports **default-CEL** computes only — wiring an `llm` or `ai-agent` compute as a tool is reserved for a future slice (the runtime cleanly skips non-CEL providers in `build_invokable_compute_tools`). The tool's `input_schema` is built from the compute's input params: each param surfaces as an object-typed property (the agent passes a record-shaped dict, the runtime evaluates the body with that dict bound to the param name). Tool dispatch evaluates the CEL body with `tool_args` bound — the runtime returns the mutated `output_params` record (Transform/Reduce convention) when the body sets fields on it; otherwise the bare expression result is returned as `{value: <result>}`. Dispatch path lives in `compute_runner._execute_tool`; the wiring is conversation-mode-aware (Invokes tools are added to the agent's tool surface on every conversation-mode dispatch).
 
 **Validation at compile time:**
 
@@ -798,10 +802,11 @@ Navigation bar:
 
 The v0.9.1-shape original is preserved at `examples/agent_chatbot_legacy.termin` for backwards-compat documentation; it still compiles so the conformance release pipeline exercises the legacy messages-collection pattern.
 
-**Two intentional simplifications relative to the design draft:**
+**One intentional simplification relative to the design draft:**
 
 - **`Show a chat for chat_threads.conversation` has no clauses** — per JL's L9 redesign (the §14 "convention over configuration" callout): source declares **what**, the chat provider decides **how**. Per-kind styling, display modes, and inline-collapse rules are deploy-config or CSS-targeting concerns, not source surface.
-- **No `Invokes "current_time"` tool demo in the v0.9.2 example.** The Invokes runtime wiring (which would let the agent call author-declared computes as tools, alongside the standard CRUD tools) is a separate slice — `Invokes` is recognized by the parser and analyzer but the agent_loop tool surface only currently exposes content_query / content_create / content_update / state_transition / system_refuse. Adding author-defined tools is the natural next step beyond v0.9.2 (and lights up the `purpose` field discussion noted in §21). For v0.9.2 the example focuses on the things that work end-to-end: conversation context, auto-write-back, refusal.
+
+**`Invokes "current_time"` tool demo IS in the v0.9.2 example** as of the close-out slice (2026-05-04 evening): the agent can call `current_time` as a tool (a CEL compute that takes a chat_thread param and produces a chat_thread with `title = now`), and the auto-write-back pipeline persists both the `tool_call` entry (with the agent-supplied `purpose`) and the `tool_result` entry. v0.9.2 ships default-CEL invokable tools only; LLM and ai-agent invocations from another agent are reserved for future slices.
 
 ### 16.3 What changed
 
@@ -931,8 +936,9 @@ With two parallel agents: ~6–7 days clock time. The grammar foundations (L1, L
 - **OpenAI / Bedrock provider conversation support** unless someone's actively using them. Anthropic ships in v0.9.2; others can follow.
 - **Per-kind aliases** (e.g., letting an app declare "player" as the display label for `user`-kind entries). Handle via the chat provider's deploy config, not in source.
 - **Field-level semantic hints on the conversation type itself** (e.g., `which is conversation, kind: "debug"` to mark a field as not-user-facing). Real future slice for when the conversation type needs internal discrimination, but no app needs it in v0.9.2. Picked up as v0.9.3 / v0.10 when Airlock or another app shows the use case. JL's Wave 3 callout is logged here so we don't forget it.
-- **Optional `purpose` field on tool entries** (a 6-words-or-less display string the agent supplies when calling a tool — e.g. `"checking calendar availability"` rather than the long `tool_name(json args)` body). Hard-truncates with ellipsis after 12 words. Lets chat UIs show a short label without parsing args. v0.9.3+. The body-as-`tool_name(args)` shape that v0.9.2 ships is not blocking: chat providers already collapse tool entries by default.
 - **Hierarchical context-window summarization** (a projection that runs before `materialize_to_anthropic`, summarizing older turns so the active conversation window stays under the provider's context budget as the conversation grows). v0.9.3+. v0.9.2 sends the full materialized field every turn; when an app first hits the limit, the provider call errors and the chat shows a stale state. The shape of the projection is deferred until real usage shows what tradeoffs matter.
+- **LLM and ai-agent invocations as tools** — `Invokes "X"` where X is itself an `llm` or `ai-agent` compute. v0.9.2 wired default-CEL invokable tools; other provider categories are skipped at tool-surface build time. v0.9.3+ when a use case lands.
+- **Compute shape for pure-return CEL bodies** — Transform/Reduce conventions mutate a named output param (the runtime returns that param record to the agent). A future `Returns is <expr>` shape would let a CEL compute return the value of an expression directly without the param-mutation dance — cleaner for tools like `current_time` that conceptually return a value rather than transforming a record. Out of v0.9.2 scope.
 
 ---
 
