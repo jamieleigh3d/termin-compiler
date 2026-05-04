@@ -195,18 +195,43 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
                 page_name = d.page_name
 
             elif isinstance(d, ChatDirective):
-                chat_source = _snake(d.source)
-                chat_node = ComponentNode(
-                    type="chat",
-                    props={
-                        "source": chat_source,
-                        "role_field": d.role_field,
-                        "content_field": d.content_field,
-                    },
-                    children=(
-                        ComponentNode(type="subscribe", props={"content": chat_source}),
-                    ),
-                )
+                # v0.9.2 L9 (tech design §14): two binding shapes share the
+                # `chat` ComponentNode — the legacy messages-collection
+                # binding (role_field + content_field) and the new
+                # conversation-field binding (source + conversation_field).
+                # Provider renderers discriminate on `conversation_field`
+                # being present.
+                if d.conversation_field is not None:
+                    parent_content, conv_field = d.conversation_field
+                    parent_snake = _snake(parent_content)
+                    field_snake = _snake(conv_field)
+                    chat_node = ComponentNode(
+                        type="chat",
+                        props={
+                            "source": parent_snake,
+                            "conversation_field": field_snake,
+                        },
+                        # The chat surface subscribes to the field-specific
+                        # `<content>.<field>.appended` event (§14.5) — not the
+                        # CRUD `created` event used by the legacy binding.
+                        # The presentation contract is the same; only the
+                        # channel name differs. The runtime hydrator resolves
+                        # the channel from `data-termin-conversation-field`.
+                        children=(),
+                    )
+                else:
+                    chat_source = _snake(d.source)
+                    chat_node = ComponentNode(
+                        type="chat",
+                        props={
+                            "source": chat_source,
+                            "role_field": d.role_field,
+                            "content_field": d.content_field,
+                        },
+                        children=(
+                            ComponentNode(type="subscribe", props={"content": chat_source}),
+                        ),
+                    )
                 children.append(chat_node)
                 cur_renderable = chat_node
 

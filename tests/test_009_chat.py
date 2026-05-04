@@ -593,3 +593,157 @@ As an anonymous, I want to chat
         assert chat["props"]["source"] == "messages"
         assert chat["props"]["role_field"] == "role"
         assert chat["props"]["content_field"] == "content"
+
+
+# ============================================================
+# v0.9.2 L9: bare `Show a chat for <content>.<field>` binding
+# ============================================================
+
+# Per the v0.9.2 conversation field type tech design §14, the new
+# binding form is pure semantics — no clause sub-block, no
+# modifiers — and parses alongside the legacy messages-collection
+# forms. The chat ComponentNode discriminates on the
+# `conversation_field` prop being present.
+
+
+_CONV_SOURCE = '''Application: Chat Conversation Test
+  Description: v0.9.2 L9 — bare conversation-field binding
+Id: 00000000-0000-0000-0000-000000000091
+
+Identity:
+  Scopes are "chat.use"
+  An "anonymous" has "chat.use"
+
+Content called "chat_threads":
+  Each chat_thread has a title which is text, default "Conversation"
+  Each chat_thread has a conversation which is conversation
+  Anyone with "chat.use" can view chat_threads
+  Anyone with "chat.use" can create chat_threads
+  Anyone with "chat.use" can append to chat_threads.conversation
+
+As an anonymous, I want to chat
+  so that I can talk:
+    Show a page called "Chat"
+    Show a chat for chat_threads.conversation
+'''
+
+
+class TestChatConversationFieldParsing:
+    """The dotted form parses into a ChatDirective whose
+    ``conversation_field`` is the (content, field) pair."""
+
+    def test_conversation_form_parses(self):
+        from termin.ast_nodes import ChatDirective
+        program, errors = parse(_CONV_SOURCE)
+        assert errors.ok, errors.format()
+        story = program.stories[0]
+        chat_directives = [d for d in story.directives if isinstance(d, ChatDirective)]
+        assert len(chat_directives) == 1
+        cd = chat_directives[0]
+        assert cd.conversation_field == ("chat_threads", "conversation")
+        # Source carries the content half forward — provider renderers
+        # use it to discover the parent record's content type.
+        assert cd.source == "chat_threads"
+
+    def test_legacy_form_does_not_set_conversation_field(self):
+        """The pre-L9 messages-collection forms must leave
+        ``conversation_field`` as None so renderers can branch on it."""
+        from termin.ast_nodes import ChatDirective
+        legacy = '''Application: Legacy Chat
+  Description: Test
+Id: 00000000-0000-0000-0000-000000000092
+
+Identity:
+  Scopes are "chat.use"
+  Anonymous has "chat.use"
+
+Content called "messages":
+  Each message has a role which is one of: "user", "assistant"
+  Each message has a content which is text
+  Anyone with "chat.use" can view or create messages
+
+As an anonymous, I want to chat
+  so that I can talk:
+    Show a page called "Chat"
+    Show a chat for messages with role "role", content "content"
+'''
+        program, errors = parse(legacy)
+        assert errors.ok, errors.format()
+        story = program.stories[0]
+        cd = next(d for d in story.directives if isinstance(d, ChatDirective))
+        assert cd.conversation_field is None
+        assert cd.role_field == "role"
+        assert cd.content_field == "content"
+
+
+class TestChatConversationFieldLowering:
+    """The dotted form lowers to a chat ComponentNode whose props are
+    `source` (parent content snake-case) + `conversation_field` (field
+    name). No `role_field`/`content_field`; no implicit subscribe child.
+    """
+
+    def test_chat_node_props(self):
+        spec = _compile(_CONV_SOURCE)
+        page = next(p for p in spec.pages if p.slug == "chat")
+        chat = _find_component(page, "chat")
+        assert chat is not None
+        assert chat.props["source"] == "chat_threads"
+        assert chat.props["conversation_field"] == "conversation"
+        # Legacy props must NOT leak in — the renderer keys on prop
+        # presence to discriminate, so an accidental default would put
+        # the chat in the wrong rendering branch.
+        assert "role_field" not in chat.props
+        assert "content_field" not in chat.props
+
+    def test_chat_node_has_no_subscribe_child_for_conversation_form(self):
+        """The conversation-field form subscribes to
+        `<content>.<field>.appended` — a different channel than the legacy
+        `content.<name>` CRUD prefix the subscribe child carries. The
+        runtime hydrator resolves the channel from
+        `data-termin-conversation-field`; no subscribe child is needed."""
+        spec = _compile(_CONV_SOURCE)
+        page = next(p for p in spec.pages if p.slug == "chat")
+        chat = _find_component(page, "chat")
+        assert all(c.type != "subscribe" for c in chat.children)
+
+    def test_legacy_form_lowering_unchanged(self):
+        """Regression: the legacy collection form lowers as before — same
+        props (`source`, `role_field`, `content_field`) and the implicit
+        subscribe child."""
+        spec = _compile_file("agent_chatbot.termin")
+        page = next(p for p in spec.pages if p.slug == "chat")
+        chat = _find_component(page, "chat")
+        assert chat.props["source"] == "messages"
+        assert chat.props["role_field"] == "role"
+        assert chat.props["content_field"] == "body"
+        assert "conversation_field" not in chat.props
+        assert any(c.type == "subscribe" for c in chat.children)
+
+    def test_serialized_ir_carries_conversation_field(self):
+        """The IR JSON shape is the over-the-wire contract for runtimes;
+        a typo in the prop key would silently regress every conformance
+        runtime."""
+        spec = _compile(_CONV_SOURCE)
+        from termin_core.ir.serialize import serialize_ir
+        ir_data = json.loads(serialize_ir(spec))
+        chat_page = next(p for p in ir_data["pages"] if p["slug"] == "chat")
+        chat = next(c for c in chat_page["children"] if c["type"] == "chat")
+        assert chat["props"]["source"] == "chat_threads"
+        assert chat["props"]["conversation_field"] == "conversation"
+
+
+class TestChatConversationSmokeExample:
+    """The L9 smoke example in examples-dev/ must compile (mirrors the
+    pattern §16.2 will land in examples/ at L11)."""
+
+    def test_smoke_example_compiles(self):
+        smoke_path = (
+            EXAMPLES_DIR.parent / "examples-dev" / "chat_conversation_smoke.termin"
+        )
+        assert smoke_path.exists(), f"missing smoke example at {smoke_path}"
+        source = smoke_path.read_text(encoding="utf-8")
+        spec = _compile(source)
+        page = next(p for p in spec.pages if p.slug == "chat")
+        chat = _find_component(page, "chat")
+        assert chat is not None
+        assert chat.props["conversation_field"] == "conversation"

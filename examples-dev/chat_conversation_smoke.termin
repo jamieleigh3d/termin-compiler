@@ -1,0 +1,19 @@
+Application: Chat Conversation Smoke
+  Description: v0.9.2 L9 smoke test — verifies the bare `Show a chat for <content>.<field>` binding form compiles end-to-end. The chat surface binds to a conversation field on chat_threads; the runtime renders each §7.2 entry. Mirrors the pattern §16.2 will land in examples/ at L11. No clauses, no modifiers — pure semantics, the chat provider decides rendering (§14).
+Id: 9c2e4d8a-4b5a-4f8c-9c1f-3a2b1d6e7f80
+
+Identity:
+  Scopes are "chat.use"
+  An "anonymous" has "chat.use"
+
+Content called "chat_threads":
+  Each chat_thread has a title which is text, default "Conversation"
+  Each chat_thread has a conversation which is conversation
+  Anyone with "chat.use" can view chat_threads
+  Anyone with "chat.use" can create chat_threads
+  Anyone with "chat.use" can append to chat_threads.conversation
+
+As an anonymous, I want to chat with the AI
+  so that I can have a conversation:
+    Show a page called "Chat"
+    Show a chat for chat_threads.conversation

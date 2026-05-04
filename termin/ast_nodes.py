@@ -10,7 +10,7 @@ All nodes are Python dataclasses with a `line` field for error reporting.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Tuple
 
 
 # --- Type Expressions ---
@@ -225,6 +225,16 @@ class ChatDirective(Directive):
     source: str = ""            # Content name to display as chat
     role_field: str = "role"    # field name for message role
     content_field: str = "content"  # field name for message body
+    # v0.9.2 L9 (tech design §14.1): when set, the chat binds to a
+    # `conversation` field on a content type via the dot-notation form
+    # `Show a chat for <content>.<field>`. The tuple is
+    # ``(content_singular_or_plural, field_name)`` carried through from
+    # the source spelling; lower() resolves the content half to the
+    # canonical snake_case content name. None for the legacy messages-
+    # collection binding (`Show a chat for <messages>` and
+    # `Show a chat for <messages> with role "X", content "Y"`) which
+    # continues to work per §14.5.
+    conversation_field: Optional[Tuple[str, str]] = None
 
 
 @dataclass

@@ -414,8 +414,17 @@ show_page_line
     = 'Show' 'a' 'page' 'called' name:quoted_string $
     ;
 
+# v0.9.2 L9 (tech design §14): the bare `Show a chat for <content>.<field>`
+# form binds the chat to a `conversation` field on a content type. Dot
+# notation matches the rest of v0.9.2 (Conversation is X.Y, Append to X.Y
+# as ..., trigger event "X.Y.appended"); one canonical content+field
+# reference shape across the whole DSL. No clauses, no modifiers — pure
+# semantics, the chat provider decides rendering. The legacy messages-
+# collection forms continue to parse for backwards compatibility per
+# §14.5; apps migrate their chat surface independently.
 chat_line
-    = 'Show' 'a' 'chat' 'for' source:words_before_with 'with' 'role' role_field:quoted_string ',' 'content' content_field:quoted_string $  #ChatMapped
+    = 'Show' 'a' 'chat' 'for' conversation_ref:field_ref $  #ChatConversation
+    | 'Show' 'a' 'chat' 'for' source:words_before_with 'with' 'role' role_field:quoted_string ',' 'content' content_field:quoted_string $  #ChatMapped
     | 'Show' 'a' 'chat' 'for' source:rest_of_text $  #ChatDefault
     ;
 

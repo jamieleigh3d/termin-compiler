@@ -564,6 +564,21 @@ def _parse_line(text: str, rule: str, ln: int):
     if rule == "chat_line":
         r = P(text, rule)
         if r:
+            # v0.9.2 L9 (tech design §14.1): the dot-notation form
+            # `Show a chat for <content>.<field>` binds to a conversation
+            # field. TatSu produces a `conversation_ref` mapping with
+            # `{content, field}`; the source string carries the
+            # plural/singular spelling forward unchanged for lower()
+            # to resolve.
+            conv = r.get("conversation_ref")
+            if conv is not None:
+                content = str(conv.get("content", "")).strip()
+                field_name = str(conv.get("field", "")).strip()
+                return ("directive", ChatDirective(
+                    source=content,
+                    conversation_field=(content, field_name),
+                    line=ln,
+                ))
             source = str(r.get("source", "")).strip()
             if r.get("role_field") is not None:
                 role_field = _qs(r.get("role_field", ""))
@@ -571,6 +586,9 @@ def _parse_line(text: str, rule: str, ln: int):
                 return ("directive", ChatDirective(source=source, role_field=role_field, content_field=content_field, line=ln))
             else:
                 return ("directive", ChatDirective(source=source, line=ln))
+        # Fallback path (TatSu state-leak on WSL/Linux per workspace
+        # MEMORY.md note 9). Reconstruct the same AST shape TatSu would
+        # produce so fidelity tests don't catch a divergence.
         rest = text[len("Show a chat for "):].strip()
         wi = rest.find(" with role ")
         if wi >= 0:
@@ -582,6 +600,19 @@ def _parse_line(text: str, rule: str, ln: int):
             if ci >= 0:
                 content_field = _fq(mapping[ci+10:])
             return ("directive", ChatDirective(source=source, role_field=role_field or "role", content_field=content_field or "content", line=ln))
+        # Bare form: prefer the dotted-conversation-field shape if the
+        # rest is a single `<word>.<word>` token (no spaces, exactly one
+        # dot). Otherwise fall back to the legacy collection binding.
+        if " " not in rest and rest.count(".") == 1:
+            content, field_name = rest.split(".", 1)
+            content = content.strip()
+            field_name = field_name.strip()
+            if content and field_name:
+                return ("directive", ChatDirective(
+                    source=content,
+                    conversation_field=(content, field_name),
+                    line=ln,
+                ))
         return ("directive", ChatDirective(source=rest, line=ln))
     if rule == "display_table_line":
         rest = text[len("Display a table of "):].strip(); wi = rest.find(" with columns:")
