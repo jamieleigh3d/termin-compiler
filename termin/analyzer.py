@@ -1408,6 +1408,102 @@ class Analyzer:
                     suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
                 ))
 
+            # v0.9.2 L6 (tech design §10): `Conversation is X.Y` validation.
+            #
+            # TERMIN-S057: A compute that wires `Conversation is X.Y` cannot
+            #   also declare `Accesses X` for the same parent content. The
+            #   conversation field is materialized natively by the runtime
+            #   and write-back is auto — bundling that under `Accesses`
+            #   (which means tool-mediated CRUD) would be a category error
+            #   per §10. The two surfaces are deliberately distinct.
+            #
+            # TERMIN-S058: A compute that wires `Conversation is X.Y` must
+            #   also `Trigger on event "X.Y.appended"` so the runtime knows
+            #   which conversation activity drives the agent. Computes
+            #   triggered by other events can still read a conversation
+            #   field via legacy `content.query` — they just don't get the
+            #   native materialization, and they don't declare `Conversation
+            #   is`. This check matches the trigger string by name pattern;
+            #   the L5 event-registry cross-check ships separately.
+            if compute.conversation_source:
+                cs_content_raw, cs_field = compute.conversation_source
+
+                # Resolve any source-spelled content reference (singular,
+                # plural, or canonical) to the canonical content name so
+                # comparisons across `conversation_source` and `accesses`
+                # are robust to source-form variation. Returns the
+                # original token unchanged if no content matches — that
+                # lets unresolved names surface their own error elsewhere
+                # rather than be silently swallowed here.
+                def _canon(n: str) -> str:
+                    c = self._find_content_by_name(n)
+                    if c is not None:
+                        return c.name
+                    if (n + "s") in self.content_names:
+                        return n + "s"
+                    return n
+
+                cs_content_resolved = _canon(cs_content_raw)
+
+                # TERMIN-S057: Conversation + Accesses on the same content.
+                accesses_resolved_set = {_canon(a) for a in compute.accesses}
+                if cs_content_resolved in accesses_resolved_set:
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'Compute "{compute.name}" declares both '
+                            f'`Conversation is {cs_content_raw}.{cs_field}` '
+                            f'and `Accesses {cs_content_raw}`. The conversation '
+                            f'field is materialized natively by the runtime '
+                            f'and does not need a tool-mediated `Accesses` '
+                            f'grant on the same content. Remove the `Accesses '
+                            f'{cs_content_raw}` line, or remove the '
+                            f'`Conversation is` line if you want only '
+                            f'tool-mediated CRUD on the field.'
+                        ),
+                        line=compute.line,
+                        code="TERMIN-S057",
+                    ))
+                # TERMIN-S058: Trigger event must be `<content>.<field>.appended`.
+                # The trigger AST string for `Trigger on event "X"` is
+                # `event "X"` (the `Trigger on ` prefix is stripped at parse
+                # time but `event` and the quoted name are retained). Match
+                # by extracting the quoted event name and comparing.
+                expected_event = f'{cs_content_raw}.{cs_field}.appended'
+                # Also accept the resolved (snake_case) form so authors who
+                # spell the singular get the same answer as those who spell
+                # the canonical content name.
+                expected_event_resolved = f'{cs_content_resolved}.{cs_field}.appended'
+                trigger_str = (compute.trigger or "").strip()
+                # Pull the event name from `event "<name>"` — accept both
+                # straight quotes and whitespace variations. Fall back to
+                # whole-string comparison if the prefix isn't present so an
+                # unprefixed event name still matches by equality.
+                actual_event = ""
+                if trigger_str.startswith("event "):
+                    rest = trigger_str[len("event "):].strip()
+                    if rest.startswith('"') and rest.endswith('"') and len(rest) >= 2:
+                        actual_event = rest[1:-1]
+                    else:
+                        actual_event = rest
+                else:
+                    actual_event = trigger_str
+                if actual_event not in (expected_event, expected_event_resolved):
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'Compute "{compute.name}" wires '
+                            f'`Conversation is {cs_content_raw}.{cs_field}` but '
+                            f'its trigger is '
+                            f'{(actual_event and chr(34) + actual_event + chr(34)) or "absent"}. '
+                            f'Conversation-wired ai-agent computes must '
+                            f'`Trigger on event "{expected_event}"` so the '
+                            f'runtime knows which conversation activity drives '
+                            f'the agent. Add or correct the `Trigger on event` '
+                            f'line.'
+                        ),
+                        line=compute.line,
+                        code="TERMIN-S058",
+                    ))
+
     def _check_compute_has_access(self) -> None:
         """Every Compute must have an access rule.
 

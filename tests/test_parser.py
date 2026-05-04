@@ -599,6 +599,65 @@ def test_parse_append_action_line():
     assert rule == "append_action_line", f"classifier returned {rule!r}"
 
 
+# ── v0.9.2 L6: `Conversation is <content>.<field>` compute source line ──
+#
+# Per tech design §10, ai-agent computes wire conversation context with a
+# dedicated source line — the runtime materializes the field natively on
+# invocation and auto-appends the assistant entry on response. The grammar
+# rule lives in termin.peg as `compute_conversation_line`; the AST carries
+# the (content, field) pair on ComputeNode.conversation_source. Lowering,
+# IR JSON serialization, and analyzer validation are tested separately
+# (test_ir.py + test_analyzer.py).
+
+class TestConversationIsParse:
+    _PREAMBLE = '''Identity:
+  Scopes are "chat.use"
+  An "anonymous" has "chat.use"
+
+Content called "chat_threads":
+  Each chat_thread has a title which is text
+  Each chat_thread has a conversation which is conversation
+  Anyone with "chat.use" can view chat_threads
+'''
+
+    _COMPUTE_TEMPLATE = '''Compute called "reply":
+  Provider is "ai-agent"
+  Trigger on event "chat_threads.conversation.appended"
+  Conversation is chat_threads.conversation
+  Anyone with "chat.use" can execute this
+  Directive is ```
+    Reply.
+  ```
+'''
+
+    def test_conversation_is_captured_on_compute_node(self):
+        program, errors = parse(self._PREAMBLE + self._COMPUTE_TEMPLATE)
+        assert errors.ok, errors.format()
+        assert len(program.computes) == 1
+        cs = program.computes[0].conversation_source
+        assert cs is not None, (
+            "ComputeNode.conversation_source should be set when source "
+            "declares `Conversation is X.Y`"
+        )
+        assert cs == ("chat_threads", "conversation")
+
+    def test_conversation_is_absent_when_not_declared(self):
+        # A compute without `Conversation is` should not back-fill the
+        # field. Default is None — the analyzer uses None to mean "legacy
+        # pattern; runtime does not auto-materialize".
+        program, errors = parse(self._PREAMBLE + '''Compute called "reply":
+  Provider is "ai-agent"
+  Accesses chat_threads
+  Trigger on event "chat_threads.created"
+  Anyone with "chat.use" can execute this
+  Directive is ```
+    Reply.
+  ```
+''')
+        assert errors.ok, errors.format()
+        assert program.computes[0].conversation_source is None
+
+
 def test_parse_all_examples():
     from pathlib import Path
     for name in ["hello", "hello_user", "warehouse", "helpdesk", "projectboard", "compute_demo"]:

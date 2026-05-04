@@ -476,6 +476,15 @@ class ComputeNode:
     objective_source: Optional[dict] = None
     trigger: Optional[str] = None                 # "schedule <interval>" or "event <name>"
     trigger_where: Optional[str] = None           # CEL expression for trigger filtering
+    # v0.9.2 L6 (tech design §10): `Conversation is <content>.<field>` —
+    # the parent content's conversation-typed field that the runtime
+    # materializes as native LLM context and auto-appends to on response.
+    # Carried as (content_singular_or_plural, field_name) preserving the
+    # source spelling; `lower()` normalizes the content reference to the
+    # canonical snake_case content name. Mutually exclusive with `Accesses`
+    # of the same content (analyzer TERMIN-S057); the trigger event must
+    # name `<content>.<field>.appended` (analyzer TERMIN-S058).
+    conversation_source: Optional[tuple[str, str]] = None
     accesses: list[str] = field(default_factory=list)        # content types this Compute can touch
     # v0.9 Phase 3 slice (c): full access-grant grammar.
     # Reads grants content.{query,read} only — no writes, no state.

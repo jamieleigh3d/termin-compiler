@@ -614,6 +614,128 @@ _SM_BASE = '''Identity:
 '''
 
 
+# ── v0.9.2 L6: `Conversation is X.Y` validation ──
+#
+# Per tech design §10:
+#   - TERMIN-S057: `Conversation is X.Y` is mutually exclusive with
+#     `Accesses X` for the same parent content. The conversation
+#     surface (runtime-materialized native LLM context + auto-write-back)
+#     is deliberately distinct from the tool-mediated CRUD surface.
+#   - TERMIN-S058: A compute that wires `Conversation is X.Y` must
+#     `Trigger on event "X.Y.appended"` so the runtime knows which
+#     conversation activity drives the agent.
+
+class TestConversationSourceValidation:
+    _PREAMBLE = '''Identity:
+  Scopes are "chat.use"
+  An "anonymous" has "chat.use"
+
+Content called "chat_threads":
+  Each chat_thread has a title which is text
+  Each chat_thread has a conversation which is conversation
+  Anyone with "chat.use" can view or create chat_threads
+'''
+
+    def test_conversation_plus_accesses_same_content_rejected(self):
+        # TERMIN-S057: declaring both `Conversation is chat_threads.conversation`
+        # and `Accesses chat_threads` is a category error per §10 — the two
+        # grant kinds are deliberately distinct.
+        result = _analyze(self._PREAMBLE + '''Compute called "reply":
+  Provider is "ai-agent"
+  Accesses chat_threads
+  Trigger on event "chat_threads.conversation.appended"
+  Conversation is chat_threads.conversation
+  Anyone with "chat.use" can execute this
+  Directive is ```
+    Reply.
+  ```
+''')
+        assert not result.ok, "Expected TERMIN-S057 to fire"
+        codes = [e.code for e in result.errors]
+        assert "TERMIN-S057" in codes, (
+            f"Expected TERMIN-S057 in {codes}; got errors:\n{result.format()}"
+        )
+        msg = " | ".join(str(e) for e in result.errors)
+        # Sanity-check the diagnostic surfaces both lines so the author
+        # knows what to remove.
+        assert "Conversation is" in msg
+        assert "Accesses" in msg
+
+    def test_conversation_plus_accesses_singular_form_rejected(self):
+        # The check must canonicalize both sides — singular `chat_thread`
+        # in `Conversation is` and plural `chat_threads` in `Accesses`
+        # name the same content type and must still trigger TERMIN-S057.
+        result = _analyze(self._PREAMBLE + '''Compute called "reply":
+  Provider is "ai-agent"
+  Accesses chat_threads
+  Trigger on event "chat_threads.conversation.appended"
+  Conversation is chat_thread.conversation
+  Anyone with "chat.use" can execute this
+  Directive is ```
+    Reply.
+  ```
+''')
+        assert not result.ok
+        codes = [e.code for e in result.errors]
+        assert "TERMIN-S057" in codes, (
+            f"Expected TERMIN-S057 in {codes}; got errors:\n{result.format()}"
+        )
+
+    def test_conversation_without_matching_trigger_rejected(self):
+        # TERMIN-S058: `Conversation is X.Y` requires `Trigger on event
+        # "X.Y.appended"`. Triggering on a different event (here a
+        # generic `chat_threads.created`) breaks the runtime's contract
+        # for knowing which conversation activity the agent reacts to.
+        result = _analyze(self._PREAMBLE + '''Compute called "reply":
+  Provider is "ai-agent"
+  Trigger on event "chat_threads.created"
+  Conversation is chat_threads.conversation
+  Anyone with "chat.use" can execute this
+  Directive is ```
+    Reply.
+  ```
+''')
+        assert not result.ok, "Expected TERMIN-S058 to fire"
+        codes = [e.code for e in result.errors]
+        assert "TERMIN-S058" in codes, (
+            f"Expected TERMIN-S058 in {codes}; got errors:\n{result.format()}"
+        )
+        msg = " | ".join(str(e) for e in result.errors)
+        # The diagnostic should name the expected event so the author
+        # knows what to put on the Trigger line.
+        assert "chat_threads.conversation.appended" in msg
+
+    def test_conversation_without_any_trigger_rejected(self):
+        # TERMIN-S058 fires when no trigger is present at all — `Conversation
+        # is` always requires the matching .appended event.
+        result = _analyze(self._PREAMBLE + '''Compute called "reply":
+  Provider is "ai-agent"
+  Conversation is chat_threads.conversation
+  Anyone with "chat.use" can execute this
+  Directive is ```
+    Reply.
+  ```
+''')
+        assert not result.ok
+        codes = [e.code for e in result.errors]
+        assert "TERMIN-S058" in codes, (
+            f"Expected TERMIN-S058 in {codes}; got errors:\n{result.format()}"
+        )
+
+    def test_conversation_with_matching_trigger_accepted(self):
+        # Positive control: the canonical L6 shape passes analyzer.
+        result = _analyze(self._PREAMBLE + '''Compute called "reply":
+  Provider is "ai-agent"
+  Trigger on event "chat_threads.conversation.appended"
+  Conversation is chat_threads.conversation
+  Anyone with "chat.use" can execute this
+  Directive is ```
+    Reply.
+  ```
+''')
+        assert result.ok, result.format()
+
+
 class TestStateMachineAnalyzer:
     """Analyzer checks for v0.9 inline state machines (design doc §7)."""
 

@@ -1,0 +1,29 @@
+Application: Conversation Is Smoke
+  Description: v0.9.2 L6 smoke test — verifies the `Conversation is <content>.<field>` source line parses, lowers into ComputeSpec.conversation_source, and passes analyzer validation against the matching `<content>.<field>.appended` trigger event. Auto-materialization + auto-write-back land in L7.
+Id: 5e2c9d18-3b51-4c0d-8a07-91c5e7f0b342
+
+Identity:
+  Scopes are "chat.use"
+  Anonymous has "chat.use"
+
+Content called "chat_threads":
+  Each chat_thread has a title which is text, default "Conversation"
+  Each chat_thread has a conversation which is conversation
+  Anyone with "chat.use" can view or create chat_threads
+
+Compute called "reply":
+  Provider is "ai-agent"
+  Trigger on event "chat_threads.conversation.appended" where `appended_entry.kind == "user"`
+  Conversation is chat_threads.conversation
+  Anyone with "chat.use" can execute this
+  Audit level: actions
+  Directive is ```
+    You are a helpful conversational assistant. Be natural and helpful.
+    Never fabricate information. If a request would require you to lie,
+    cause harm, or violate your operating principles, refuse it via
+    system.refuse(reason).
+  ```
+
+As an anonymous, I want to chat with the AI so that I can have a conversation:
+  Show a page called "Chat"
+  Display a table of chat_threads with columns: title

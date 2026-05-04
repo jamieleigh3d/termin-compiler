@@ -1115,6 +1115,89 @@ class TestAppendVerb:
 
 
 # ============================================================
+# v0.9.2 L6: `Conversation is <content>.<field>` source line
+# ============================================================
+
+
+class TestConversationSourceIR:
+    """v0.9.2 L6: `Conversation is X.Y` lowers to
+    ComputeSpec.conversation_source = (snake_content, field) so the runtime
+    can materialize the conversation field natively at agent invocation
+    time. Auto-materialization + auto-write-back implementation lands in
+    L7; L6 records the wiring in the IR only.
+    """
+
+    _PREAMBLE = '''Identity:
+  Scopes are "chat.use"
+  An "anonymous" has "chat.use"
+
+Content called "chat_threads":
+  Each chat_thread has a title which is text
+  Each chat_thread has a conversation which is conversation
+  Anyone with "chat.use" can view chat_threads
+'''
+
+    def _parse_and_lower(self, source):
+        program, errors = parse(self._PREAMBLE + source)
+        assert errors.ok, errors.format()
+        result = analyze(program)
+        assert result.ok, result.format()
+        return lower(program)
+
+    def test_conversation_source_lowered_to_compute_spec(self):
+        spec = self._parse_and_lower('''Compute called "reply":
+  Provider is "ai-agent"
+  Trigger on event "chat_threads.conversation.appended"
+  Conversation is chat_threads.conversation
+  Anyone with "chat.use" can execute this
+  Directive is ```
+    Reply.
+  ```
+''')
+        assert len(spec.computes) == 1
+        compute = spec.computes[0]
+        assert compute.conversation_source is not None, (
+            "ComputeSpec.conversation_source should be populated when source "
+            "declares `Conversation is X.Y`"
+        )
+        # IR resolves the content reference to the canonical snake name —
+        # same convention as `accesses`, `input_fields`, `output_fields`.
+        assert compute.conversation_source == ("chat_threads", "conversation")
+
+    def test_conversation_source_resolves_singular_to_canonical(self):
+        # Authors may spell the singular (`chat_thread`) or canonical
+        # (`chat_threads`); IR canonicalizes to the snake-cased content
+        # name so downstream backends and conformance contracts see
+        # one shape regardless of source spelling.
+        spec = self._parse_and_lower('''Compute called "reply":
+  Provider is "ai-agent"
+  Trigger on event "chat_threads.conversation.appended"
+  Conversation is chat_thread.conversation
+  Anyone with "chat.use" can execute this
+  Directive is ```
+    Reply.
+  ```
+''')
+        compute = spec.computes[0]
+        assert compute.conversation_source == ("chat_threads", "conversation")
+
+    def test_conversation_source_absent_by_default(self):
+        # Computes without `Conversation is` keep conversation_source = None.
+        # The runtime uses that as the discriminator between native
+        # conversation handling (L7) and the legacy pattern.
+        spec = self._parse_and_lower('''Compute called "reply":
+  Provider is "ai-agent"
+  Accesses chat_threads
+  Trigger on event "chat_threads.created"
+  Anyone with "chat.use" can execute this
+  Directive is ```
+    Reply.
+  ```
+''')
+        assert spec.computes[0].conversation_source is None
+
+
+# ============================================================
 # v0.9 multi-state-machine IR lowering
 # ============================================================
 

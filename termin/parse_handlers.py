@@ -856,6 +856,29 @@ def _parse_line(text: str, rule: str, ln: int):
             rest = trigger_part.strip()
             where_expr = _eb(where_part)
         return ("compute_trigger", rest, where_expr)
+    # v0.9.2 L6 (tech design §10): `Conversation is <content>.<field>`
+    # wires a conversation field to the compute's LLM context. Carries the
+    # raw source spelling forward; `lower()` resolves the content singular
+    # to the canonical snake_case content name. The fallback path mirrors
+    # the TatSu shape exactly (a `(content, field)` pair from a `<word>.<word>`
+    # token) to preserve fidelity on WSL/Linux where the TatSu state-leak
+    # hits — see workspace MEMORY.md note 9.
+    if rule == "compute_conversation_line":
+        r = P(text, rule)
+        if r is not None:
+            ref = r.get("ref") or {}
+            content = str(ref.get("content", "")).strip()
+            field_name = str(ref.get("field", "")).strip()
+        else:
+            rest = text[len("Conversation is "):].strip()
+            if "." in rest:
+                content, field_name = rest.split(".", 1)
+                content = content.strip()
+                field_name = field_name.strip()
+            else:
+                content = rest
+                field_name = ""
+        return ("compute_conversation", (content, field_name))
     if rule == "compute_preconditions_line":
         return ("compute_preconditions_header",)
     if rule == "compute_postconditions_line":

@@ -984,6 +984,14 @@
           "default": null,
           "description": "CEL expression for event trigger filtering. When present, the Compute is only invoked if this expression evaluates to true against the triggering event. Routing filter, not a safety gate (see preconditions for that)."
         },
+        "conversation_source": {
+          "type": ["array", "null"],
+          "default": null,
+          "items": { "type": "string" },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "v0.9.2 L6 (compiler tech design §10): wired conversation source for ai-agent computes. [content_snake_name, field_name] when present. The runtime materializes the conversation field at invocation time, passes it as native LLM context to the provider, and auto-appends the assistant entry on response. Mutually exclusive with `accesses` of the same content (TERMIN-S057). The compute must trigger on the matching `<content>.<field>.appended` event (TERMIN-S058)."
+        },
         "accesses": {
           "type": "array",
           "items": { "type": "string" },

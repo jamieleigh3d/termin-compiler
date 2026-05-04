@@ -270,6 +270,7 @@ def _assemble(parsed: list) -> Program:
             _compute_child_kinds = ("compute_shape","compute_body","compute_body_multiline",
                 "compute_access","access","compute_identity","compute_requires_conf",
                 "compute_output_conf","compute_provider","compute_trigger",
+                "compute_conversation",  # v0.9.2 L6 (tech design §10)
                 "compute_preconditions_header","compute_postconditions_header",
                 "compute_objective","compute_strategy","compute_directive",
                 "compute_directive_source","compute_objective_source",
@@ -304,6 +305,9 @@ def _assemble(parsed: list) -> Program:
                     nd.trigger = ch[1]
                     if len(ch) > 2 and ch[2]:
                         nd.trigger_where = ch[2]
+                elif ch[0] == "compute_conversation":
+                    # v0.9.2 L6: (content_singular, field_name)
+                    nd.conversation_source = ch[1]
                 elif ch[0] == "compute_objective": nd.objective = ch[1]
                 elif ch[0] == "compute_strategy": nd.strategy = ch[1]
                 elif ch[0] == "compute_directive": nd.directive = ch[1]

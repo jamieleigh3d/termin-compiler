@@ -75,6 +75,9 @@ _PREFIXES: list[tuple[str, str]] = [
     ("Directive from", "compute_directive_field_line"),
     ("Directive is", "compute_directive_line"),
     ("Trigger on", "compute_trigger_line"),
+    # v0.9.2 L6: `Conversation is <content>.<field>` wires conversation
+    # context for an ai-agent compute. See termin.peg compute_conversation_line.
+    ("Conversation is", "compute_conversation_line"),
     ("Preconditions are:", "compute_preconditions_line"),
     ("Postconditions are:", "compute_postconditions_line"),
     # Phase 6c (BRD #3 §6.3): same three Objective sourcing forms.

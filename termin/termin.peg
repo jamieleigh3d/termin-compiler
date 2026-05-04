@@ -624,6 +624,16 @@ compute_trigger_line
     = 'Trigger' 'on' rest:rest_of_line $
     ;
 
+# v0.9.2 L6 (tech design §10): wires the LLM's conversation context for
+# an ai-agent compute. The runtime materializes the conversation field
+# at invocation time and passes it natively to the provider; on response
+# completion the runtime auto-appends the assistant entry. Distinct from
+# `Accesses` (tool-mediated CRUD); the analyzer rejects declaring both
+# `Conversation is X.Y` and `Accesses X` for the same parent content.
+compute_conversation_line
+    = 'Conversation' 'is' ref:field_ref $
+    ;
+
 compute_preconditions_line
     = 'Preconditions' 'are:' $
     ;

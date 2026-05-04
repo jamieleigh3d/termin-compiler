@@ -635,6 +635,14 @@ def lower(program: Program) -> AppSpec:
         comp_snake = _snake(comp.name)
         audit_content_ref = f"compute_audit_log_{comp_snake}" if audit_level != "none" else None
 
+        # v0.9.2 L6: lower `Conversation is <content>.<field>` source binding.
+        # Resolve the content singular/plural to the canonical snake name so
+        # the IR carries the same shape as `accesses` and `input_fields`.
+        conversation_source = None
+        if comp.conversation_source:
+            cs_content_raw, cs_field = comp.conversation_source
+            conversation_source = (_resolve_to_content(cs_content_raw), cs_field)
+
         computes.append(ComputeSpec(
             name=_qname(comp.name),
             shape=shape,
@@ -666,6 +674,7 @@ def lower(program: Program) -> AppSpec:
             strategy=comp.strategy,
             trigger=comp.trigger,
             trigger_where=comp.trigger_where,
+            conversation_source=conversation_source,
             accesses=tuple(_resolve_to_content(a) for a in comp.accesses),
             reads=tuple(_resolve_to_content(r) for r in comp.reads),
             sends_to=tuple(comp.sends_to),
