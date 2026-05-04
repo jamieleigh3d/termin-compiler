@@ -375,24 +375,33 @@ class Analyzer:
         return matches[0] if matches else None
 
     def _check_ownership(self) -> None:
-        """v0.9 Phase 6a.2 + 6a.3: validate ownership declarations and the
-        `their own <content>` permission verb.
+        """v0.9 Phase 6a.2 + 6a.3 + v0.9.2 Slice L10: validate ownership
+        declarations and the `their own <content>` permission verb.
 
-        Per BRD #3 §3.3 / §3.4:
+        Per BRD #3 §3.3 / §3.4 (as extended by v0.9.2 §15):
           - The named field must exist on the content type.
           - Must be `principal`-typed.
-          - Must be `unique`.
           - Must be `required`.
+          - The field MAY be `unique` (single-row ownership, the v0.9.1
+            shape) or non-unique (multi-row scoping-key ownership, the
+            v0.9.2 §15 extension).
           - At most one ownership declaration per content.
           - `their own <content>` access lines require ownership block.
+          - On non-unique ownership, `their own <singular>` is rejected
+            because the singular form implies a single record but
+            multi-row content has many. Use `their own <plural>` instead
+            (§15.3, TERMIN-S057).
 
         Codes:
           TERMIN-S048 — ownership field doesn't exist on content
           TERMIN-S049 — ownership field is not `principal`-typed
-          TERMIN-S050 — ownership field is not `unique`
+          TERMIN-S050 — RETIRED in v0.9.2 §15. The unique requirement
+                        is dropped; non-unique ownership is now legal.
           TERMIN-S051 — ownership field is not `required`
           TERMIN-S052 — multiple ownership declarations on the same content
           TERMIN-S053 — `their own X` access without X declaring ownership
+          TERMIN-S057 — `their own <singular>` on non-unique ownership
+                        (v0.9.2 §15.3)
         """
         for content in self.program.contents:
             # v0.9 Phase 6a.3 first: TERMIN-S053. Validate `their own`
@@ -476,20 +485,17 @@ class Analyzer:
                     code="TERMIN-S049",
                 ))
 
-            # TERMIN-S050: must be unique
-            if not te.unique:
-                self.errors.add(SemanticError(
-                    message=(
-                        f'Ownership field "{field_name}" on content '
-                        f'"{content.name}" must be `unique`. Per BRD #3 §3.3, '
-                        f'this guarantees at most one row per principal — '
-                        f'the multiple-row case for "the user\'s {content.singular or content.name}" '
-                        f'is prevented at the storage layer. Add the `unique` '
-                        f'modifier to the field declaration.'
-                    ),
-                    line=target.line,
-                    code="TERMIN-S050",
-                ))
+            # TERMIN-S050: RETIRED in v0.9.2 §15. The unique requirement
+            # was dropped to support multi-row ownership (a content type
+            # where one principal owns many records, e.g. sessions).
+            # When the field IS unique, behavior is unchanged from v0.9.1:
+            # the lookup returns at most one row, single forms work as
+            # before. When the field is NOT unique, runtimes treat the
+            # named field as a scoping key and `their own <plural>`
+            # resolves to the set of records the principal owns.
+            #
+            # TERMIN-S057 (below) catches the singular/non-unique mismatch
+            # in `their own <singular>` access lines.
 
             # TERMIN-S051: must be required
             if not te.required:
@@ -504,6 +510,52 @@ class Analyzer:
                     line=target.line,
                     code="TERMIN-S051",
                 ))
+
+            # TERMIN-S057 (v0.9.2 §15.3): on non-unique ownership,
+            # `their own <singular>` is a compile error — the singular
+            # form implies a single record but multi-row content has
+            # many. Use `their own <plural>` to read the set.
+            #
+            # Only fires when:
+            #   1. ownership is declared (we're inside the `if not decls`
+            #      guard above)
+            #   2. the named field is non-unique
+            #   3. an access rule uses `their own <noun>` and <noun>
+            #      matches the content's singular but not its plural
+            #
+            # When the field IS unique, both singular and plural forms
+            # are accepted (v0.9.1 behavior preserved per §15.3).
+            if not te.unique:
+                content_plural = content.name.lower().strip()
+                content_singular = (content.singular or "").lower().strip()
+                for rule in content.access_rules:
+                    if not rule.their_own:
+                        continue
+                    noun = (rule.their_own_noun or "").lower().strip()
+                    # The plural form is canonical — accept it silently.
+                    if noun == content_plural:
+                        continue
+                    # Singular form on non-unique ownership is the
+                    # error. We only fire when the noun specifically
+                    # matches the singular; a noun that matches
+                    # neither is a different problem (and either S053
+                    # already fires or the content reference resolved
+                    # via singular-as-fallback in v0.9.1 — keep that
+                    # tolerance for unique ownership only).
+                    if content_singular and noun == content_singular:
+                        self.errors.add(SemanticError(
+                            message=(
+                                f'Access rule "Anyone with \\"{rule.scope}\\" '
+                                f'can ... their own {noun}" uses the singular '
+                                f'form, but ownership field "{field_name}" on '
+                                f'content "{content.name}" is non-unique — a '
+                                f'principal may own many {content_plural}. '
+                                f'Use "their own {content_plural}" to read the '
+                                f'set. Per v0.9.2 §15.3.'
+                            ),
+                            line=rule.line,
+                            code="TERMIN-S057",
+                        ))
 
     def _check_row_action_access_rules(self) -> None:
         """Row action buttons of kind=delete/edit require the governing

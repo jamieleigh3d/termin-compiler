@@ -6,16 +6,22 @@
 
 """Tests for v0.9 Phase 6a.2: `Each X is owned by <field>` ownership.
 
-Per BRD #3 §3.3:
+Per BRD #3 §3.3 (as extended by v0.9.2 §15):
   - Content body sub-line: `Each <singular> is owned by <field>`.
   - The named field must:
       * exist on the content
       * be `principal`-typed (TERMIN-S049)
-      * be `unique` (TERMIN-S050)
       * be `required` (TERMIN-S051)
+      * MAY be `unique` (single-row) or non-unique (multi-row scoping
+        key per v0.9.2 §15.2). v0.9.1's TERMIN-S050 unique requirement
+        is RETIRED.
   - At most one ownership declaration per content (TERMIN-S052).
   - IR emits ContentSchema.ownership = OwnershipSpec(field=<snake>) when
     declared; None otherwise.
+
+See `tests/test_v092_l10_multi_row_ownership.py` for the §15
+non-unique-ownership tests and the new TERMIN-S057 (singular form on
+non-unique ownership).
 """
 
 from __future__ import annotations
@@ -141,16 +147,22 @@ def test_S049_field_is_whole_number_not_principal():
     assert "TERMIN-S049" in codes
 
 
-# ── TERMIN-S050: field not unique ──
+# ── TERMIN-S050: RETIRED in v0.9.2 §15 ──
 
-def test_S050_field_missing_unique():
+def test_S050_no_longer_fires_when_field_missing_unique():
+    """v0.9.2 §15 drops the unique requirement to support multi-row
+    ownership. A non-unique ownership field now compiles cleanly."""
     src = _BASE.replace(
         "Each session has a player_principal which is principal, required, unique",
         "Each session has a player_principal which is principal, required",
     )
     _, res = _compile(src)
     codes = {e.code for e in res.errors}
-    assert "TERMIN-S050" in codes
+    assert "TERMIN-S050" not in codes
+    # And the whole compile succeeds.
+    assert list(res.errors) == [], (
+        f"unexpected errors: {[(e.code, e.message) for e in res.errors]}"
+    )
 
 
 # ── TERMIN-S051: field not required ──
@@ -200,17 +212,21 @@ Content called "things":
 
 # ── Combined / aggregated ──
 
-def test_S049_S050_S051_all_fire_for_text_unrequired_ununique_field():
+def test_S049_S051_fire_for_text_unrequired_field():
+    """v0.9.2 §15 dropped S050 (unique requirement). The remaining
+    structural checks — must be principal-typed (S049) and required
+    (S051) — still fire when both are violated."""
     src = _BASE.replace(
         "Each session has a player_principal which is principal, required, unique",
         "Each session has a player_principal which is text",
     )
     _, res = _compile(src)
     codes = {e.code for e in res.errors}
-    # S049 (not principal), S050 (not unique), S051 (not required) all fire
+    # S049 (not principal), S051 (not required) still fire.
     assert "TERMIN-S049" in codes
-    assert "TERMIN-S050" in codes
     assert "TERMIN-S051" in codes
+    # S050 is retired; no longer fires.
+    assert "TERMIN-S050" not in codes
 
 
 def test_existing_examples_have_no_ownership():

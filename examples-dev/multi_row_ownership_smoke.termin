@@ -1,0 +1,19 @@
+Application: Multi-row Ownership Smoke
+  Description: v0.9.2 §15 multi-row ownership — non-unique scoping field; one principal may own many sessions
+Id: 1c193af9-3c5b-415e-9de8-5cacc968f39c
+
+Identity:
+  Scopes are "play"
+  A "player" has "play"
+
+Content called "sessions":
+  Each session has a player_principal which is principal, required
+  Each session has a started_at which is datetime, required
+  Each session has a self_rating which is whole number
+  Each session is owned by player_principal
+  Anyone with "play" can view their own sessions
+  Anyone with "play" can create sessions
+  Anyone with "play" can update their own sessions
+
+As player, I want to see a page "My Sessions" so that I can review my play history:
+  Display a table of sessions with columns: started_at, self_rating

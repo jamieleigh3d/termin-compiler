@@ -58,6 +58,12 @@ class AccessRule:
     # BRD #3 §3.4. When true, the access rule applies only to rows the
     # invoking principal owns (per the content's `is owned by` declaration).
     their_own: bool = False
+    # v0.9.2 Slice L10: the noun the author wrote after `their own`.
+    # Preserved verbatim (lowercase, whitespace-trimmed) so the analyzer
+    # can distinguish singular from plural forms — required for the
+    # multi-row ownership extension (§15.3): on non-unique ownership,
+    # `their own <singular>` is TERMIN-S057. None when `their_own=False`.
+    their_own_noun: Optional[str] = None
     line: int = 0
     # v0.9.2 L3: when verbs == ["append"], append_field names the
     # specific conversation field this grant targets. None for the

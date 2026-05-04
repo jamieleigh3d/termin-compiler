@@ -51,12 +51,25 @@ def _build_access(r, ln) -> AccessRule:
     # ends up as "their own sessions"; we strip the qualifier and flag the
     # AccessRule so lowering can attach a row_filter to the resulting
     # routes. Per BRD #3 §3.4.
+    #
+    # v0.9.2 Slice L10: preserve the noun (singular vs plural) so the
+    # analyzer can enforce §15.3's TERMIN-S057 rule on non-unique
+    # ownership. Lowercased + trimmed for case-insensitive matching
+    # against content.name and content.singular.
     cn = str(r.get("content_name", "")).strip()
     their_own = False
+    their_own_noun: Optional[str] = None
     cn_lower = cn.lower()
     if cn_lower.startswith("their own "):
         their_own = True
-    return AccessRule(scope=scope, verbs=vs, their_own=their_own, line=ln)
+        their_own_noun = cn_lower[len("their own "):].strip()
+    return AccessRule(
+        scope=scope,
+        verbs=vs,
+        their_own=their_own,
+        their_own_noun=their_own_noun,
+        line=ln,
+    )
 
 
 def _build_story(text, ln) -> UserStory:

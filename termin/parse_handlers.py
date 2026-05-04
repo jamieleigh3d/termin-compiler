@@ -405,8 +405,16 @@ def _parse_line(text: str, rule: str, ln: int):
             # semantic checks. _parse_can_clause_fallback uses the
             # same tokenization as _check_can_clause_for_unknown_verbs.
             verbs, _content_name, their_own = _parse_can_clause_fallback(rest)
+            # v0.9.2 Slice L10: preserve the noun the author wrote after
+            # `their own` so the analyzer can detect singular vs plural
+            # for the §15.3 TERMIN-S057 check.
+            their_own_noun = _content_name.lower().strip() if their_own else None
             return ("access", AccessRule(
-                scope=sc, verbs=verbs, their_own=their_own, line=ln,
+                scope=sc,
+                verbs=verbs,
+                their_own=their_own,
+                their_own_noun=their_own_noun,
+                line=ln,
             ))
         return ("access", AccessRule(scope=_fq(text), verbs=["view"], line=ln))
     # v0.9.2 L3: field-targeted append permission
