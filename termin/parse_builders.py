@@ -53,7 +53,7 @@ def _build_access(r, ln) -> AccessRule:
     # routes. Per BRD #3 §3.4.
     #
     # v0.9.2 Slice L10: preserve the noun (singular vs plural) so the
-    # analyzer can enforce §15.3's TERMIN-S057 rule on non-unique
+    # analyzer can enforce §15.3's TERMIN-S062 rule on non-unique
     # ownership. Lowercased + trimmed for case-insensitive matching
     # against content.name and content.singular.
     cn = str(r.get("content_name", "")).strip()

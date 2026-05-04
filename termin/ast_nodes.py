@@ -62,7 +62,7 @@ class AccessRule:
     # Preserved verbatim (lowercase, whitespace-trimmed) so the analyzer
     # can distinguish singular from plural forms — required for the
     # multi-row ownership extension (§15.3): on non-unique ownership,
-    # `their own <singular>` is TERMIN-S057. None when `their_own=False`.
+    # `their own <singular>` is TERMIN-S062. None when `their_own=False`.
     their_own_noun: Optional[str] = None
     line: int = 0
     # v0.9.2 L3: when verbs == ["append"], append_field names the

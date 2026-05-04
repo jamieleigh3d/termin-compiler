@@ -12,8 +12,10 @@ Per `docs/termin-v0.9.2-conversation-field-type-tech-design.md` §15:
   - When the field is non-unique, `their own <plural>` is valid and
     resolves to the set `{r ∈ Content : r.<field> == principal.id}`.
   - When the field is non-unique, `their own <singular>` is a compile
-    error (TERMIN-S057) — the singular form implies a single record but
-    multi-row content has many.
+    error (TERMIN-S062) — the singular form implies a single record but
+    multi-row content has many. (Originally landed as TERMIN-S057 in
+    Wave 3; renumbered on 2026-05-04 once it became clear that S057
+    was already in use by L6's Conversation+Accesses guard.)
   - When the field is unique, behavior is unchanged from v0.9.1: both
     singular and plural forms work, the cardinality is one row per
     principal, and the lookup returns at most one row.
@@ -21,8 +23,9 @@ Per `docs/termin-v0.9.2-conversation-field-type-tech-design.md` §15:
 Note on `the user's <singular>` (§15.3): the spec also calls this a
 compile error on non-unique ownership. The `the user's <X>` source form
 itself (BRD #3 §4.3) is not yet implemented in the grammar — it's still
-deferred. When that form lands, a parallel TERMIN-S058 check will gate
-it the same way TERMIN-S057 gates `their own <singular>`.
+deferred. When that form lands, a parallel check will gate it the same
+way TERMIN-S062 gates `their own <singular>` (a free error code will
+be assigned then).
 """
 
 from __future__ import annotations
@@ -121,7 +124,8 @@ def test_their_own_plural_lowers_to_row_filter_on_non_unique():
     )
 
 
-# ── TERMIN-S057: their own <singular> on non-unique ownership ──
+# ── TERMIN-S062: their own <singular> on non-unique ownership ──
+# (Renumbered from S057 on 2026-05-04 — see module docstring.)
 
 _NON_UNIQUE_SINGULAR = '''Application: Multi-row Ownership Singular
   Description: their own singular on non-unique ownership
@@ -138,24 +142,24 @@ Content called "sessions":
 '''
 
 
-def test_S057_their_own_singular_on_non_unique_ownership():
+def test_S062_their_own_singular_on_non_unique_ownership():
     """`their own <singular>` implies a single record. On non-unique
-    ownership, multiple records may exist — emit TERMIN-S057 so the
+    ownership, multiple records may exist — emit TERMIN-S062 so the
     author switches to `their own <plural>`."""
     _, res = _compile(_NON_UNIQUE_SINGULAR)
     codes = {e.code for e in res.errors}
-    assert "TERMIN-S057" in codes, (
-        f"expected TERMIN-S057, got: {[(e.code, e.message) for e in res.errors]}"
+    assert "TERMIN-S062" in codes, (
+        f"expected TERMIN-S062, got: {[(e.code, e.message) for e in res.errors]}"
     )
 
 
-def test_S057_message_names_the_content_and_suggests_plural():
+def test_S062_message_names_the_content_and_suggests_plural():
     """The error must point at the offending content and tell the
     author to use the plural form."""
     _, res = _compile(_NON_UNIQUE_SINGULAR)
-    s057 = [e for e in res.errors if e.code == "TERMIN-S057"]
-    assert len(s057) == 1
-    msg = s057[0].message.lower()
+    s062 = [e for e in res.errors if e.code == "TERMIN-S062"]
+    assert len(s062) == 1
+    msg = s062[0].message.lower()
     assert "session" in msg  # content singular named
     assert "sessions" in msg  # suggested plural form
     assert "non-unique" in msg or "not unique" in msg
@@ -186,7 +190,7 @@ def test_unique_ownership_still_compiles_unchanged():
     assert list(res.errors) == []
 
 
-def test_unique_ownership_their_own_singular_does_not_fire_S057():
+def test_unique_ownership_their_own_singular_does_not_fire_S062():
     """On unique ownership, `their own <singular>` is a legal idiom — the
     field carries a uniqueness guarantee so singular makes sense.
     Per §15.3: behavior is unchanged from v0.9.1 when the field is unique."""
@@ -196,8 +200,8 @@ def test_unique_ownership_their_own_singular_does_not_fire_S057():
     )
     _, res = _compile(src)
     codes = {e.code for e in res.errors}
-    assert "TERMIN-S057" not in codes, (
-        "TERMIN-S057 must NOT fire on unique ownership singular form. "
+    assert "TERMIN-S062" not in codes, (
+        "TERMIN-S062 must NOT fire on unique ownership singular form. "
         f"Got: {[(e.code, e.message) for e in res.errors]}"
     )
 

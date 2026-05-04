@@ -390,7 +390,7 @@ class Analyzer:
           - On non-unique ownership, `their own <singular>` is rejected
             because the singular form implies a single record but
             multi-row content has many. Use `their own <plural>` instead
-            (§15.3, TERMIN-S057).
+            (§15.3, TERMIN-S062).
 
         Codes:
           TERMIN-S048 — ownership field doesn't exist on content
@@ -400,8 +400,10 @@ class Analyzer:
           TERMIN-S051 — ownership field is not `required`
           TERMIN-S052 — multiple ownership declarations on the same content
           TERMIN-S053 — `their own X` access without X declaring ownership
-          TERMIN-S057 — `their own <singular>` on non-unique ownership
-                        (v0.9.2 §15.3)
+          TERMIN-S062 — `their own <singular>` on non-unique ownership
+                        (v0.9.2 §15.3) — was TERMIN-S057 prior to the
+                        2026-05-04 renumbering that resolved the dual
+                        use with L6's Conversation+Accesses guard
         """
         for content in self.program.contents:
             # v0.9 Phase 6a.3 first: TERMIN-S053. Validate `their own`
@@ -494,7 +496,7 @@ class Analyzer:
             # named field as a scoping key and `their own <plural>`
             # resolves to the set of records the principal owns.
             #
-            # TERMIN-S057 (below) catches the singular/non-unique mismatch
+            # TERMIN-S062 (below) catches the singular/non-unique mismatch
             # in `their own <singular>` access lines.
 
             # TERMIN-S051: must be required
@@ -511,10 +513,12 @@ class Analyzer:
                     code="TERMIN-S051",
                 ))
 
-            # TERMIN-S057 (v0.9.2 §15.3): on non-unique ownership,
+            # TERMIN-S062 (v0.9.2 §15.3): on non-unique ownership,
             # `their own <singular>` is a compile error — the singular
             # form implies a single record but multi-row content has
             # many. Use `their own <plural>` to read the set.
+            # (Renumbered from S057 on 2026-05-04 — see code-table
+            # comment at top of this method for context.)
             #
             # Only fires when:
             #   1. ownership is declared (we're inside the `if not decls`
@@ -554,7 +558,7 @@ class Analyzer:
                                 f'set. Per v0.9.2 §15.3.'
                             ),
                             line=rule.line,
-                            code="TERMIN-S057",
+                            code="TERMIN-S062",
                         ))
 
     def _check_row_action_access_rules(self) -> None:

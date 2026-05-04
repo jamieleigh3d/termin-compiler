@@ -20,8 +20,9 @@ Per BRD #3 §3.3 (as extended by v0.9.2 §15):
     declared; None otherwise.
 
 See `tests/test_v092_l10_multi_row_ownership.py` for the §15
-non-unique-ownership tests and the new TERMIN-S057 (singular form on
-non-unique ownership).
+non-unique-ownership tests and the new TERMIN-S062 (singular form on
+non-unique ownership; was originally TERMIN-S057, renumbered on
+2026-05-04 — see that file's docstring).
 """
 
 from __future__ import annotations

@@ -411,7 +411,7 @@ def _parse_line(text: str, rule: str, ln: int):
             verbs, _content_name, their_own = _parse_can_clause_fallback(rest)
             # v0.9.2 Slice L10: preserve the noun the author wrote after
             # `their own` so the analyzer can detect singular vs plural
-            # for the §15.3 TERMIN-S057 check.
+            # for the §15.3 TERMIN-S062 check.
             their_own_noun = _content_name.lower().strip() if their_own else None
             return ("access", AccessRule(
                 scope=sc,
