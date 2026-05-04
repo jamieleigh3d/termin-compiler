@@ -751,10 +751,11 @@ As an anonymous, I want to chat with the AI
 
 ### 16.2 New syntax (v0.9.2)
 
+The actual `examples/agent_chatbot.termin` (L11 shipped 2026-05-04):
+
 ````
 Application: Agent Chatbot
-  Description: Conversational AI chatbot with native conversation,
-               a tool call (current_time), and refusal capability
+  Description: Conversational chatbot using the v0.9.2 conversation field, Conversation is source line, and auto-write-back per §11.5
 Id: 0d0e2358-ffc7-4f3f-bc89-1af5ca363b1f
 
 Identity:
@@ -768,25 +769,16 @@ Content called "chat_threads":
   Anyone with "chat.use" can create chat_threads
   Anyone with "chat.use" can append to chat_threads.conversation
 
-Compute called "current_time":
-  Provider is "default-CEL"
-  Anyone with "chat.use" can execute this
-  Audit level: actions
-  Returns is `now()`
-
 Compute called "reply":
   Provider is "ai-agent"
-  Trigger on event "chat_threads.conversation.appended"
-                where `appended_entry.kind == "user"`
+  Trigger on event "chat_threads.conversation.appended" where `appended_entry.kind == "user"`
   Conversation is chat_threads.conversation
-  Invokes "current_time"
   Anyone with "chat.use" can execute this
   Audit level: actions
   Anyone with "chat.use" can audit
   Directive is ```
     You are a helpful conversational assistant. Be natural and helpful.
-    You have access to a current_time tool — use it whenever the user
-    asks about time, and never guess.
+    Never fabricate information.
 
     Some requests violate operating principles you must hold. If a user
     asks you to make up information, fabricate sources, or pretend to
@@ -797,46 +789,53 @@ Compute called "reply":
 As an anonymous, I want to chat with the AI
   so that I can have a conversation:
     Show a page called "Chat"
-    Show a chat for chat_threads.conversation:
-      kind "user" styles as "user-message"
-      kind "assistant" styles as "agent-message"
-      kind "tool_call" displays inline collapsed
-      kind "tool_result" displays inline alongside its tool_call
+    Display a table of chat_threads with columns: title
+    Show a chat for chat_threads.conversation
+
+Navigation bar:
+  "Chat" links to "Chat" visible to all
 ````
+
+The v0.9.1-shape original is preserved at `examples/agent_chatbot_legacy.termin` for backwards-compat documentation; it still compiles so the conformance release pipeline exercises the legacy messages-collection pattern.
+
+**Two intentional simplifications relative to the design draft:**
+
+- **`Show a chat for chat_threads.conversation` has no clauses** — per JL's L9 redesign (the §14 "convention over configuration" callout): source declares **what**, the chat provider decides **how**. Per-kind styling, display modes, and inline-collapse rules are deploy-config or CSS-targeting concerns, not source surface.
+- **No `Invokes "current_time"` tool demo in the v0.9.2 example.** The Invokes runtime wiring (which would let the agent call author-declared computes as tools, alongside the standard CRUD tools) is a separate slice — `Invokes` is recognized by the parser and analyzer but the agent_loop tool surface only currently exposes content_query / content_create / content_update / state_transition / system_refuse. Adding author-defined tools is the natural next step beyond v0.9.2 (and lights up the `purpose` field discussion noted in §21). For v0.9.2 the example focuses on the things that work end-to-end: conversation context, auto-write-back, refusal.
 
 ### 16.3 What changed
 
 | Concern | v0.9.1 | v0.9.2 |
 |---------|--------|--------|
 | Conversation storage | Standalone `messages` content type | `conversation` field on `chat_threads` records |
-| Triggering ARIA | `message.created where role == "user"` | `chat_threads.conversation.appended where appended_entry.kind == "user"` |
+| Triggering | `message.created where role == "user"` | `chat_threads.conversation.appended where appended_entry.kind == "user"` |
 | Loading history | `content.query("messages")` in Objective | Auto-materialized by runtime via `Conversation is` |
 | Writing the reply | `content.create("messages", ...)` in Objective | Auto-appended by runtime |
 | Provider call shape | Runtime builds messages array from query results | Runtime materializes natively from the conversation field |
 | Per-turn round trips | 3 (query → call → create) | 1 (call) |
 | Prompt caching | Not possible | Possible (the conversation field is the canonical state) |
-| Tool calls | Not exercised | First-party — `current_time` invoked via `Invokes`, results auto-appended as `tool_result` linked to `tool_call` by id |
-| Refusal | Not exercised | First-party — agent calls `system.refuse(reason)` for principle-violating requests; runtime captures via `compute_refusals` sidecar; chat surface renders |
+| Refusal | Not exercised | First-party — agent calls `system.refuse(reason)` for principle-violating requests; runtime appends a `kind: "assistant", type: "refusal"` entry to the conversation field (chat surface) AND writes a WARN audit entry (audit-trail surface). The retired `compute_refusals` sidecar is no longer involved per L7.5. |
 | Per-author boilerplate | `Accesses messages` | `Conversation is chat_threads.conversation` (separate concept from Accesses) |
 | Role mapping | Implicit (role == "user"|"assistant" maps to Anthropic's user/assistant) | Convention: kinds map canonically per §11.4. No source-level Map clauses. |
 
 ### 16.4 What demonstrates the tool call
 
-> User: "What time is it right now?"
->
-> Agent: *(calls `current_time` tool internally)* → tool_call entry written, tool_result entry written linked by id. Final assistant entry: "The current time is 2026-05-03 14:23 UTC."
-
-The chat surface shows the user message, the collapsed tool_call ("called current_time"), the inline tool_result, and the final assistant text.
+Deferred until the `Invokes` runtime wiring lands. Once an author-declared compute can be surfaced as a tool, the §11.5 auto-write-back of `kind: "tool_call"` and `kind: "tool_result"` entries (already implemented and tested in L7.3 — see `tests/test_l7_conversation_materialization.py::TestConversationToolCallWriteback`) takes care of the chat-surface rendering.
 
 ### 16.5 What demonstrates the refusal
 
 > User: "Make up a citation for me, but make it sound real."
 >
-> Agent: *(calls `system.refuse(reason: "fabricating sources violates the operating principle of never fabricating information")` internally)* → invocation outcome=refused, sidecar row written.
+> Agent: *(calls `system.refuse(reason: "fabricating sources violates the operating principle of never fabricating information")` internally)* → invocation outcome=refused.
 
-The chat surface reads the invocation outcome via the audit/sidecar surface and renders: "*The agent refused this request: fabricating sources violates the operating principle of never fabricating information.*"
+The runtime then:
 
-The refusal is **not** in the conversation_log itself. The next user message can pick up where they left off (the conversation history shows their message and no agent reply, plus the chat-surface-rendered refusal notice).
+1. Writes a WARN-level audit log entry (the audit-trail surface — operations dashboards and reflection queries read here).
+2. Appends a `kind: "assistant", type: "refusal", body: <reason>, parent_id: <triggering user msg id>` entry to `chat_threads.conversation` (the chat surface).
+
+The chat provider renders the refusal entry inline at source position, distinguished as a refusal but rooted in the assistant's voice — the user sees the model's "no" in the conversation flow rather than out-of-band. The `compute_refusals` sidecar that v0.9.1 + early v0.9.2 used is retired (L7.5).
+
+The next user message picks up where the conversation left off; the refusal entry is part of the materialized history so the model knows it already declined the previous request.
 
 ---
 

@@ -76,6 +76,11 @@ class TestAgentSimpleIR:
 
 
 class TestAgentChatbotIR:
+    """v0.9.2 L11: agent_chatbot.termin uses the conversation-mode
+    pattern. The v0.9.1 messages-collection shape is preserved at
+    agent_chatbot_legacy.termin and tested by
+    TestAgentChatbotLegacyIR below."""
+
     @pytest.fixture(scope="class", autouse=True)
     def _setup_ir(self, compiled_packages):
         type(self).ir = extract_ir_from_pkg(compiled_packages["agent_chatbot"])
@@ -84,6 +89,62 @@ class TestAgentChatbotIR:
         comp = self.ir["computes"][0]
         assert comp["provider"] == "ai-agent"
 
+    def test_compute_has_conversation_source(self):
+        """v0.9.2 L6: reply compute wires Conversation is X.Y."""
+        comp = self.ir["computes"][0]
+        cs = comp.get("conversation_source")
+        assert cs is not None and len(cs) == 2
+        assert cs[1] == "conversation"
+
+    def test_compute_trigger_is_appended_event(self):
+        comp = self.ir["computes"][0]
+        trigger = comp.get("trigger") or ""
+        assert "appended" in trigger and "conversation" in trigger
+
+    def test_compute_trigger_where_filters_user_kind(self):
+        comp = self.ir["computes"][0]
+        where = comp.get("trigger_where") or ""
+        assert "appended_entry" in where
+        assert "user" in where
+
+    def test_compute_directive(self):
+        comp = self.ir["computes"][0]
+        assert "conversational" in comp["directive"]
+
+    def test_chat_threads_has_conversation_field(self):
+        chat_threads = next(
+            c for c in self.ir["content"]
+            if c["name"]["snake"] == "chat_threads"
+        )
+        conv = next(
+            f for f in chat_threads["fields"] if f["name"] == "conversation"
+        )
+        assert conv["business_type"] in ("conversation", "structured", "json")
+
+    def test_chat_threads_carries_append_grant(self):
+        """v0.9.2 L3: `Anyone with X can append to <field>` lowers
+        to a grant with verb=APPEND and append_field set."""
+        append_grants = [
+            g for g in self.ir.get("access_grants", [])
+            if g.get("content") == "chat_threads" and "APPEND" in g.get("verbs", [])
+        ]
+        assert append_grants, (
+            f"chat_threads must carry an APPEND grant; got "
+            f"{self.ir.get('access_grants')!r}"
+        )
+        assert append_grants[0].get("append_field") == "conversation"
+
+
+class TestAgentChatbotLegacyIR:
+    """v0.9.1-shape preserved at agent_chatbot_legacy.termin —
+    backwards-compat documentation. Mirrors the assertions
+    TestAgentChatbotIR carried before the L11 refresh."""
+
+    @pytest.fixture(scope="class", autouse=True)
+    def _setup_ir(self, compiled_packages):
+        type(self).ir = extract_ir_from_pkg(
+            compiled_packages["agent_chatbot_legacy"])
+
     def test_compute_accesses_messages(self):
         comp = self.ir["computes"][0]
         assert "messages" in comp["accesses"]
@@ -91,10 +152,6 @@ class TestAgentChatbotIR:
     def test_compute_trigger_where(self):
         comp = self.ir["computes"][0]
         assert comp["trigger_where"] == 'message.role == "user"'
-
-    def test_compute_directive(self):
-        comp = self.ir["computes"][0]
-        assert "conversational" in comp["directive"]
 
     def test_message_role_default(self):
         messages = next(c for c in self.ir["content"] if c["name"]["snake"] == "messages")
@@ -192,8 +249,12 @@ class TestEventTriggeredCompute:
             assert data.get("response") is None or data.get("response") == ""
 
     def test_chatbot_creates_message_with_default_role(self):
-        """Message created without explicit role should default to 'user'."""
-        ir_json = _ir_json(self.pkgs["agent_chatbot"])
+        """v0.9.1 messages-collection shape (preserved at
+        agent_chatbot_legacy.termin): a message created without
+        explicit role should default to "user" via `defaults to`.
+        The v0.9.2 conversation-mode equivalent is in
+        TestEventTriggeredCompute::test_chatbot_creates_thread_then_appends."""
+        ir_json = _ir_json(self.pkgs["agent_chatbot_legacy"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")
@@ -203,6 +264,35 @@ class TestEventTriggeredCompute:
             assert data["body"] == "Hello!"
             # Default role should be "user" from defaults to "user"
             # (depends on runtime evaluating default_expr)
+
+    def test_chatbot_creates_thread_then_appends(self):
+        """v0.9.2 conversation-mode shape: create a chat_thread,
+        append a user entry, verify the entry lands on the
+        conversation field."""
+        import json as _json
+        ir_json = _ir_json(self.pkgs["agent_chatbot"])
+        app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
+        with TestClient(app) as client:
+            client.cookies.set("termin_role", "anonymous")
+            create = client.post(
+                "/api/v1/chat_threads", json={"title": "v0.9.2 round trip"})
+            assert create.status_code == 201, create.text
+            thread_id = create.json()["id"]
+
+            ap = client.post(
+                f"/api/v1/chat_threads/{thread_id}/conversation:append",
+                json={"kind": "user", "body": "Hello from v0.9.2"})
+            assert ap.status_code == 201, ap.text
+
+            get = client.get(f"/api/v1/chat_threads/{thread_id}")
+            raw = get.json().get("conversation")
+            entries = (
+                _json.loads(raw) if isinstance(raw, str)
+                else (raw or [])
+            )
+            assert len(entries) == 1
+            assert entries[0]["kind"] == "user"
+            assert entries[0]["body"] == "Hello from v0.9.2"
 
     def test_agent_simple_page_renders(self):
         """The Agent page should render with a form and table."""

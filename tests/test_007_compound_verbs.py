@@ -210,8 +210,13 @@ class TestAffectedExamples:
                 f"{name}: {content}/{scope} expected {expected_verbs}, got {actual}"
             )
 
-    def test_agent_chatbot_view_or_create(self):
-        self._load_and_check("agent_chatbot", {
+    def test_agent_chatbot_legacy_view_or_create(self):
+        # v0.9.2 L11: the canonical agent_chatbot.termin no longer
+        # uses the compound `view or create` form (it uses separate
+        # `Anyone with X can view`/`can create`/`can append to`
+        # lines). The compound form is preserved for testing on the
+        # legacy v0.9.1-shape file.
+        self._load_and_check("agent_chatbot_legacy", {
             ("messages", "chat.use"): {Verb.VIEW, Verb.CREATE},
         })
 

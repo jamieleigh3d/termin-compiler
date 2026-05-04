@@ -1082,6 +1082,11 @@ class TestAgentSimpleFidelity:
 # ============================================================
 
 class TestAgentChatbotFidelity:
+    """v0.9.2 L11 refresh: agent_chatbot.termin uses the conversation
+    field type and the `Conversation is X.Y` source line. The v0.9.1
+    messages-collection shape is preserved at agent_chatbot_legacy.
+    termin and tested by TestAgentChatbotLegacyFidelity below."""
+
     @pytest.fixture(autouse=True)
     def setup(self):
         self.spec = _compile("agent_chatbot.termin")
@@ -1093,29 +1098,118 @@ class TestAgentChatbotFidelity:
             n for n in names
             if not n.startswith("compute_audit_log_")
         }
-        assert user_content == {"messages"}
+        # v0.9.2: chat_threads holds the conversation field.
+        assert user_content == {"chat_threads"}
 
-    def test_message_role_enum(self):
-        f = _field(_content(self.spec, "messages"), "role")
-        assert set(f.enum_values) == {"user", "assistant"}
-        assert f.default_expr is not None  # defaults to "user"
+    def test_chat_threads_has_conversation_field(self):
+        f = _field(_content(self.spec, "chat_threads"), "conversation")
+        assert f is not None
+        assert f.business_type == "conversation"
+
+    def test_chat_threads_has_title_default(self):
+        f = _field(_content(self.spec, "chat_threads"), "title")
+        assert f is not None
+        # `defaults to "Conversation"` lowers to a literal default.
+        assert (f.default_expr is not None
+                or getattr(f, "default_value", None) is not None), f
 
     def test_reply_compute(self):
         c = _compute(self.spec, "reply")
         assert c.provider == "ai-agent"
         assert c.trigger is not None and "event" in c.trigger
         assert c.directive is not None
-        assert c.objective is not None
+        # v0.9.2: no Objective on conversation-mode agents — the
+        # Directive is sufficient for chat-style behavior.
 
-    def test_reply_accesses(self):
+    def test_reply_uses_conversation_source(self):
+        """v0.9.2 L6: the reply compute wires Conversation is
+        chat_threads.conversation. The IR carries it as a 2-tuple."""
         c = _compute(self.spec, "reply")
-        assert "messages" in c.accesses
+        cs = getattr(c, "conversation_source", None)
+        assert cs is not None and len(cs) == 2
+        assert cs[0] in ("chat_threads", "chat_thread")
+        assert cs[1] == "conversation"
 
-    def test_reply_trigger_where(self):
+    def test_reply_does_not_carry_accesses_on_chat_threads(self):
+        """v0.9.2 TERMIN-S057 invariant: a conversation-mode compute's
+        IR does not list its conversation parent content in accesses."""
         c = _compute(self.spec, "reply")
-        # DSL: Trigger on event "message.created" where `message.role == "user"`
+        cs = getattr(c, "conversation_source", None)
+        assert cs is not None
+        assert cs[0] not in c.accesses, (
+            f"reply compute carries both conversation_source={cs!r} "
+            f"and accesses={c.accesses!r} — TERMIN-S057 should have "
+            f"caught this at compile time"
+        )
+
+    def test_reply_does_not_carry_output_fields(self):
+        """v0.9.2 TERMIN-S061 invariant: conversation-mode computes
+        don't carry output_fields (the legacy set_output sentinel
+        isn't on the conversation-mode tool surface)."""
+        c = _compute(self.spec, "reply")
+        if getattr(c, "conversation_source", None) is not None:
+            assert not c.output_fields, (
+                f"reply compute carries conversation_source AND "
+                f"output_fields={c.output_fields!r} — TERMIN-S061 "
+                f"should have caught this"
+            )
+
+    def test_reply_trigger_where_filters_user_kind(self):
+        c = _compute(self.spec, "reply")
+        # DSL: Trigger on event "chat_threads.conversation.appended"
+        #      where `appended_entry.kind == "user"`
         assert c.trigger_where is not None
-        assert "role" in c.trigger_where
+        assert "appended_entry" in c.trigger_where
+        assert "user" in c.trigger_where
+
+    def test_chat_threads_carries_append_grant(self):
+        """v0.9.2 L3: `Anyone with X can append to <content>.<field>`
+        lowers to an access grant with Verb.APPEND and append_field
+        set to the conversation field name."""
+        from termin_core.ir.types import Verb
+        append_grants = [
+            g for g in self.spec.access_grants
+            if g.content == "chat_threads" and Verb.APPEND in g.verbs
+        ]
+        assert len(append_grants) >= 1, (
+            f"chat_threads must carry at least one APPEND grant; "
+            f"got {self.spec.access_grants!r}"
+        )
+        g = append_grants[0]
+        assert g.append_field == "conversation"
+
+
+class TestAgentChatbotLegacyFidelity:
+    """v0.9.1-shape preserved at agent_chatbot_legacy.termin —
+    backwards-compat documentation that still compiles and runs.
+    Mirrors what the TestAgentChatbotFidelity class asserted before
+    the L11 refresh."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.spec = _compile("agent_chatbot_legacy.termin")
+
+    def test_content_names(self):
+        names = {c.name.snake for c in self.spec.content}
+        user_content = {
+            n for n in names
+            if not n.startswith("compute_audit_log_")
+        }
+        # Legacy shape: messages content type with role+body fields.
+        assert user_content == {"messages"}
+
+    def test_message_role_enum(self):
+        f = _field(_content(self.spec, "messages"), "role")
+        assert set(f.enum_values) == {"user", "assistant"}
+        assert f.default_expr is not None
+
+    def test_reply_compute_is_ai_agent(self):
+        c = _compute(self.spec, "reply")
+        assert c.provider == "ai-agent"
+        assert "messages" in c.accesses
+        # Legacy uses the messages-collection pattern: Objective
+        # tells the agent to query/create messages directly.
+        assert c.objective is not None and "messages" in c.objective
 
 
 # ============================================================
@@ -1153,7 +1247,9 @@ class TestAllExamplesAccessGrantVerbs:
         for grant in spec.access_grants:
             assert len(grant.verbs) > 0, f"Empty verbs in grant for {grant.content}"
             for v in grant.verbs:
-                assert v in (Verb.VIEW, Verb.CREATE, Verb.UPDATE, Verb.DELETE, Verb.AUDIT), \
+                # v0.9.2 L3 added Verb.APPEND for conversation-field grants.
+                assert v in (Verb.VIEW, Verb.CREATE, Verb.UPDATE,
+                             Verb.DELETE, Verb.AUDIT, Verb.APPEND), \
                     f"Invalid verb {v} in grant for {grant.content}"
 
     def test_grant_scopes_are_declared(self, example):

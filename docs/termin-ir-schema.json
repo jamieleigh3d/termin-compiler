@@ -156,9 +156,9 @@
         },
         "business_type": {
           "type": "string",
-          "enum": ["text", "whole_number", "number", "currency", "percentage", "date", "datetime", "automatic", "boolean", "enum", "reference", "list", "state"],
+          "enum": ["text", "whole_number", "number", "currency", "percentage", "date", "datetime", "automatic", "boolean", "enum", "reference", "list", "state", "structured", "conversation"],
           "default": "text",
-          "description": "Semantic type from the DSL. Runtimes use this for input validation, formatting, and UI hints. 'reference' means a foreign key to another Content. 'enum' means a constrained set of values. 'automatic' means a system-managed timestamp (created_at, updated_at). 'datetime' is a user-entered date+time. 'state' (v0.9+) means the field is a state machine — each state-typed field on a Content produces a corresponding StateMachineSpec entry; the column name matches the snake_case field name."
+          "description": "Semantic type from the DSL. Runtimes use this for input validation, formatting, and UI hints. 'reference' means a foreign key to another Content. 'enum' means a constrained set of values. 'automatic' means a system-managed timestamp (created_at, updated_at). 'datetime' is a user-entered date+time. 'state' (v0.9+) means the field is a state machine — each state-typed field on a Content produces a corresponding StateMachineSpec entry; the column name matches the snake_case field name. 'structured' (v0.9.2 L1) is opaque JSON storage with CEL access (boundary cases like provider IO and opaque payloads, not app domain modeling). 'conversation' (v0.9.2 L2) is a JSON-array-backed field carrying canonical conversation entries — see conversation-field-contract.md for the entry shape and the Append CRUD verb."
         },
         "column_type": {
           "$ref": "#/$defs/FieldType",

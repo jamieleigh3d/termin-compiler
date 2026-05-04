@@ -334,49 +334,73 @@ As an anonymous, I want to chat
 # ============================================================
 
 class TestAgentChatbotMigration:
-    """Test that agent_chatbot.termin compiles with the new chat syntax."""
+    """v0.9.1-shape (`messages` collection + chat clauses) compilation
+    is preserved at examples/agent_chatbot_legacy.termin. The v0.9.2
+    refresh of agent_chatbot.termin uses the conversation-mode
+    binding (`Show a chat for chat_threads.conversation`) — covered
+    by TestAgentChatbotV092Migration below."""
 
     def test_compiles_without_error(self):
-        """agent_chatbot.termin should compile cleanly."""
-        spec = _compile_file("agent_chatbot.termin")
+        """agent_chatbot_legacy.termin should compile cleanly."""
+        spec = _compile_file("agent_chatbot_legacy.termin")
         assert spec is not None
-        assert spec.name == "Agent Chatbot"
+        assert spec.name == "Agent Chatbot Legacy"
 
     def test_chat_page_has_chat_component(self):
-        """The Chat page should have a chat component instead of data_table+form."""
-        spec = _compile_file("agent_chatbot.termin")
+        spec = _compile_file("agent_chatbot_legacy.termin")
         page = next(p for p in spec.pages if p.slug == "chat")
         chat = _find_component(page, "chat")
         assert chat is not None, "Expected a 'chat' component on the Chat page"
 
     def test_chat_component_source(self):
-        """Chat component should reference 'messages' content."""
-        spec = _compile_file("agent_chatbot.termin")
+        """Legacy chat component references the `messages` collection."""
+        spec = _compile_file("agent_chatbot_legacy.termin")
         page = next(p for p in spec.pages if p.slug == "chat")
         chat = _find_component(page, "chat")
         assert chat.props["source"] == "messages"
 
     def test_chat_component_field_mapping(self):
-        """agent_chatbot maps role='role', content='body' explicitly
-        because the Content field is named 'body', not 'content'."""
-        spec = _compile_file("agent_chatbot.termin")
+        """Legacy maps role='role', content='body' explicitly."""
+        spec = _compile_file("agent_chatbot_legacy.termin")
         page = next(p for p in spec.pages if p.slug == "chat")
         chat = _find_component(page, "chat")
         assert chat.props["role_field"] == "role"
         assert chat.props["content_field"] == "body"
 
     def test_no_data_table_in_chat_page(self):
-        """The old data_table should be gone after migration."""
-        spec = _compile_file("agent_chatbot.termin")
+        spec = _compile_file("agent_chatbot_legacy.termin")
         page = next(p for p in spec.pages if p.slug == "chat")
         tables = _find_all_components(page, "data_table")
         assert len(tables) == 0, "Chat page should not have data_table after migration"
 
     def test_messages_content_still_exists(self):
-        """The Content declaration stays — chat reads from it."""
-        spec = _compile_file("agent_chatbot.termin")
+        spec = _compile_file("agent_chatbot_legacy.termin")
         content_names = {c.name.snake for c in spec.content}
         assert "messages" in content_names
+
+
+class TestAgentChatbotV092Migration:
+    """v0.9.2 L11 refresh of agent_chatbot.termin: conversation-mode
+    binding (`Show a chat for chat_threads.conversation`) per §14
+    of the v0.9.2 conversation-field tech design."""
+
+    def test_chat_page_uses_conversation_field_binding(self):
+        spec = _compile_file("agent_chatbot.termin")
+        page = next(p for p in spec.pages if p.slug == "chat")
+        chat = _find_component(page, "chat")
+        assert chat is not None
+        assert chat.props["source"] == "chat_threads"
+        assert chat.props["conversation_field"] == "conversation"
+        # No legacy role/content_field props on the v0.9.2 binding.
+        assert "role_field" not in chat.props
+        assert "content_field" not in chat.props
+
+    def test_chat_threads_content_carries_conversation_field(self):
+        spec = _compile_file("agent_chatbot.termin")
+        chat_threads = next(
+            c for c in spec.content if c.name.snake == "chat_threads"
+        )
+        assert any(f.name == "conversation" for f in chat_threads.fields)
 
 
 # ============================================================
@@ -541,8 +565,15 @@ class TestChatRuntimeIntegration:
             assert 'data-termin-chat-input' in r.text
 
     def test_post_message_via_api(self):
-        """POST to /api/v1/messages should create a message record."""
-        ir_json = _ir_json(self.pkgs["agent_chatbot"])
+        """v0.9.1 collection shape: POST to /api/v1/messages creates
+        a record. Preserved at agent_chatbot_legacy.termin.
+
+        v0.9.2 equivalent (POST to
+        /api/v1/chat_threads/{id}/conversation:append) is exercised
+        in test_agents.py::TestEventTriggeredCompute::
+        test_chatbot_creates_thread_then_appends and end-to-end in
+        test_l7_conversation_materialization.py."""
+        ir_json = _ir_json(self.pkgs["agent_chatbot_legacy"])
         app = create_termin_app(ir_json, strict_channels=False, deploy_config={})
         with TestClient(app) as client:
             client.cookies.set("termin_role", "anonymous")
@@ -709,8 +740,10 @@ class TestChatConversationFieldLowering:
     def test_legacy_form_lowering_unchanged(self):
         """Regression: the legacy collection form lowers as before — same
         props (`source`, `role_field`, `content_field`) and the implicit
-        subscribe child."""
-        spec = _compile_file("agent_chatbot.termin")
+        subscribe child. Verified against agent_chatbot_legacy.termin
+        (the v0.9.1-shape preserved alongside the L11-refreshed
+        agent_chatbot.termin)."""
+        spec = _compile_file("agent_chatbot_legacy.termin")
         page = next(p for p in spec.pages if p.slug == "chat")
         chat = _find_component(page, "chat")
         assert chat.props["source"] == "messages"
