@@ -1034,6 +1034,87 @@ class TestConversationFieldType:
 
 
 # ============================================================
+# v0.9.2 L3: Append CRUD verb
+# ============================================================
+
+
+class TestAppendVerb:
+    """v0.9.2 L3: the Append verb adds a field-targeted permission and a
+    new auto-generated REST endpoint at POST /<resource>/{id}/<field>:append.
+
+    Unlike view/create/update/delete (which are content-level), append is
+    field-level — the access rule cites the specific conversation field it
+    grants append rights to. The lowered AccessGrant carries the field name;
+    the lowered RouteSpec is RouteKind.APPEND with field_name set.
+    """
+
+    _AUTH_PREAMBLE = '''Identity:
+  Scopes are "chat.use"
+  An "anonymous" has "chat.use"
+'''
+
+    def _parse_and_lower(self, source):
+        program, errors = parse(self._AUTH_PREAMBLE + source)
+        assert errors.ok, errors.format()
+        result = analyze(program)
+        assert result.ok, result.format()
+        return lower(program)
+
+    def test_append_grant_lowers_to_access_grant_with_field(self):
+        spec = self._parse_and_lower('''Content called "chat_threads":
+  Each chat_thread has a title which is text
+  Each chat_thread has a conversation which is conversation
+  Anyone with "chat.use" can view chat_threads
+  Anyone with "chat.use" can append to chat_threads' conversation
+''')
+        append_grants = [
+            g for g in spec.access_grants
+            if Verb.APPEND in g.verbs and g.content == "chat_threads"
+        ]
+        assert len(append_grants) == 1, f"expected one append grant, got {append_grants!r}"
+        g = append_grants[0]
+        assert g.scope == "chat.use"
+        assert g.append_field == "conversation"
+
+    def test_append_route_emitted_with_field_path(self):
+        """The lowering emits POST /api/v1/chat_threads/{id}/conversation:append
+        with kind=APPEND and field_name set."""
+        spec = self._parse_and_lower('''Content called "chat_threads":
+  Each chat_thread has a title which is text
+  Each chat_thread has a conversation which is conversation
+  Anyone with "chat.use" can view chat_threads
+  Anyone with "chat.use" can append to chat_threads' conversation
+''')
+        append_routes = [r for r in spec.routes if r.kind == RouteKind.APPEND]
+        assert len(append_routes) == 1, f"expected one append route, got {append_routes!r}"
+        r = append_routes[0]
+        assert r.method == HttpMethod.POST
+        assert r.path == "/api/v1/chat_threads/{id}/conversation:append"
+        assert r.content_ref == "chat_threads"
+        assert r.field_name == "conversation"
+        assert r.required_scope == "chat.use"
+
+    def test_multiple_conversation_fields_get_independent_append_routes(self):
+        """If a content has two conversation fields and grants append on
+        both, we get two distinct APPEND routes — one per field."""
+        spec = self._parse_and_lower('''Content called "sessions":
+  Each session has a title which is text
+  Each session has a chat which is conversation
+  Each session has a debug_log which is conversation
+  Anyone with "chat.use" can view sessions
+  Anyone with "chat.use" can append to sessions' chat
+  Anyone with "chat.use" can append to sessions' debug_log
+''')
+        append_routes = sorted(
+            (r for r in spec.routes if r.kind == RouteKind.APPEND),
+            key=lambda r: r.path,
+        )
+        assert [r.field_name for r in append_routes] == ["chat", "debug_log"]
+        assert append_routes[0].path == "/api/v1/sessions/{id}/chat:append"
+        assert append_routes[1].path == "/api/v1/sessions/{id}/debug_log:append"
+
+
+# ============================================================
 # v0.9 multi-state-machine IR lowering
 # ============================================================
 

@@ -14,7 +14,7 @@ from typing import Optional
 
 from .ast_nodes import (
     Application, Identity, Role, RoleAlias, Content, Field, TypeExpr,
-    AccessRule, StateMachine, EventRule, EventAction, EventCondition,
+    AccessRule, AppendAction, StateMachine, EventRule, EventAction, EventCondition,
     ErrorHandler, ErrorAction, UserStory, ShowPage, DisplayTable, ShowRelated,
     HighlightRows, MarkAs, UsingOverride, AllowFilter, AllowSearch, AllowInlineEdit, SubscribeTo, AcceptInput,
     ValidateUnique, CreateAs, AfterSave, ShowChart, DisplayAggregation,
@@ -208,6 +208,97 @@ def _check_can_clause_for_unknown_verbs(rest: str) -> None:
         )
 
 
+def _parse_access_append(text: str, ln: int) -> AccessRule:
+    """v0.9.2 L3: parse `Anyone with "X" can append to [their own] <plural>' <field>`.
+
+    Tries the TatSu rule first; falls back to a regex-based path for the
+    Linux/WSL state-leak case (workspace rule 9). Both must produce the
+    same AccessRule shape — verbs=["append"], append_field=<snake>,
+    their_own=<bool>. Fallback fidelity is exercised in
+    tests/test_access_rule_fallback_fidelity.py.
+    """
+    r = _try_parse(text, "access_append_line")
+    if r:
+        scope = _qs(r.get("scope", ""))
+        their = bool(r.get("their_own"))
+        field = str(r.get("field", "")).strip()
+        return AccessRule(
+            scope=scope, verbs=["append"], their_own=their,
+            append_field=field, line=ln,
+        )
+    # Fallback: parse out scope, their_own flag, plural, field via
+    # straight string ops. Match the TatSu output exactly so the shape
+    # is identical.
+    scope = _fq(text)
+    rest_idx = text.find(" can append to ")
+    if rest_idx < 0:
+        # Defensive: classifier shouldn't have routed us here.
+        return AccessRule(scope=scope, verbs=["append"], line=ln)
+    tail = text[rest_idx + len(" can append to "):].strip()
+    their_own = False
+    if tail.startswith("their own "):
+        their_own = True
+        tail = tail[len("their own "):].strip()
+    # tail is `<plural>' <field>` — split on the apostrophe-space pair.
+    apos_idx = tail.find("' ")
+    field = ""
+    if apos_idx >= 0:
+        field = tail[apos_idx + 2:].strip()
+    return AccessRule(
+        scope=scope, verbs=["append"], their_own=their_own,
+        append_field=field, line=ln,
+    )
+
+
+def _parse_append_action(text: str, ln: int) -> AppendAction:
+    """v0.9.2 L3: parse a source-level `Append to <ref>.<field> as "<kind>" with body \\`<expr>\\`` line.
+
+    Optional metadata tail (`, source: \\`...\\``) is captured verbatim
+    on the AppendAction for later slices to decompose. Fallback path
+    uses string ops only — TatSu state leaks have historically caused
+    None returns on Linux for valid input.
+    """
+    r = _try_parse(text, "append_action_line")
+    if r:
+        record = str(r.get("record", "")).strip()
+        field = str(r.get("field", "")).strip()
+        kind = _qs(r.get("kind", ""))
+        body = _qs(r.get("body", "")) if isinstance(r.get("body"), dict) else ""
+        if not body:
+            # body is an `expr` — content sits in r["body"]["content"]
+            b = r.get("body")
+            if isinstance(b, dict):
+                body = str(b.get("content", "")).strip()
+        meta = str(r.get("metadata", "")).strip()
+        return AppendAction(
+            record=record, field=field, kind=kind,
+            body_expr=body, metadata_tail=meta, line=ln,
+        )
+    # Fallback: extract pieces via straight string ops.
+    # Format: "Append to RECORD.FIELD as "KIND" with body `EXPR`[, ...]"
+    after_to = text[len("Append to "):].strip() if text.startswith("Append to ") else text.strip()
+    dot_idx = after_to.find(".")
+    record = after_to[:dot_idx].strip() if dot_idx >= 0 else ""
+    after_dot = after_to[dot_idx + 1:].strip() if dot_idx >= 0 else after_to
+    as_idx = after_dot.find(" as ")
+    field = after_dot[:as_idx].strip() if as_idx >= 0 else after_dot
+    after_as = after_dot[as_idx + len(" as "):].strip() if as_idx >= 0 else ""
+    kind = _fq(after_as)
+    # Find first backtick block — that's the body expression.
+    bt1 = after_as.find("`")
+    body = ""
+    meta = ""
+    if bt1 >= 0:
+        bt2 = after_as.find("`", bt1 + 1)
+        if bt2 >= 0:
+            body = after_as[bt1 + 1:bt2].strip()
+            meta = after_as[bt2 + 1:].strip()
+    return AppendAction(
+        record=record, field=field, kind=kind,
+        body_expr=body, metadata_tail=meta, line=ln,
+    )
+
+
 def _parse_line(text: str, rule: str, ln: int):
     """Parse a single classified line into a tagged AST tuple.
 
@@ -318,6 +409,14 @@ def _parse_line(text: str, rule: str, ln: int):
                 scope=sc, verbs=verbs, their_own=their_own, line=ln,
             ))
         return ("access", AccessRule(scope=_fq(text), verbs=["view"], line=ln))
+    # v0.9.2 L3: field-targeted append permission
+    # `Anyone with "X" can append to [their own] <plural>' <field>`
+    if rule == "access_append_line":
+        return ("access", _parse_access_append(text, ln))
+    # v0.9.2 L3: source-level Append action verb
+    # `Append to <record>.<field> as "<kind>" with body \`<expr>\` [, <metadata>: <expr>]`
+    if rule == "append_action_line":
+        return ("append_action", _parse_append_action(text, ln))
     # v0.9: inline state machine sub-block lines.
     if rule == "sm_starts_as_line":
         # `<field name> starts as <state>` — extract field name and initial state.

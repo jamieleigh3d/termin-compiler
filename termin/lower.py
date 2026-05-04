@@ -257,7 +257,7 @@ def lower(program: Program) -> AppSpec:
     )
 
     # ── Lower access grants ──
-    verb_map = {"view": Verb.VIEW, "create": Verb.CREATE, "update": Verb.UPDATE, "delete": Verb.DELETE, "audit": Verb.AUDIT}
+    verb_map = {"view": Verb.VIEW, "create": Verb.CREATE, "update": Verb.UPDATE, "delete": Verb.DELETE, "audit": Verb.AUDIT, "append": Verb.APPEND}
     grants = []
     for c in program.contents:
         for rule in c.access_rules:
@@ -273,14 +273,19 @@ def lower(program: Program) -> AppSpec:
                 raise SemanticError(
                     f"TERMIN-S031: Access grant for '{c.name}' with scope '{rule.scope}' "
                     f"has no recognized verbs (got {rule.verbs!r}). "
-                    f"Valid verbs: view, create, update, delete, audit.",
+                    f"Valid verbs: view, create, update, delete, audit, append.",
                     line=rule.line,
                 )
+            # v0.9.2 L3: append_field is set on the AST when the rule
+            # came from `... can append to <plural>' <field>`. Carry it
+            # through to the IR so the route generator knows which
+            # conversation field this grant targets.
             grants.append(AccessGrant(
                 content=_snake(c.name),
                 scope=rule.scope,
                 verbs=frozenset(verbs),
                 their_own=rule.their_own,
+                append_field=_snake(rule.append_field) if rule.append_field else None,
             ))
 
     # ── Lower state machines ──
@@ -508,6 +513,39 @@ def lower(program: Program) -> AppSpec:
                         target_state=tr.to_state,
                         machine_name=sm_col,
                     ))
+
+        # v0.9.2 L3: append routes for conversation fields with grants.
+        # Each `Anyone with X can append to <plural>' <field>` access rule
+        # produces one POST /<resource>/{id}/<field>:append route. Multiple
+        # grants on the same (content, field) pair: first wins for the
+        # required_scope (matches CRUD verb-scope resolution policy).
+        seen_append_fields: set[str] = set()
+        for rule in c.access_rules:
+            if "append" not in rule.verbs or not rule.append_field:
+                continue
+            field_snake = _snake(rule.append_field)
+            if field_snake in seen_append_fields:
+                continue
+            seen_append_fields.add(field_snake)
+            # Row filter for `their own ... ' <field>`: the runtime must
+            # check ownership of the parent record before allowing the
+            # append. Reuses the same RowFilterSpec(kind="ownership")
+            # shape as v0.9 CRUD their-own grants so handlers don't
+            # need a new code path.
+            append_filter = (
+                RowFilterSpec(kind="ownership", field=ownership_field)
+                if rule.their_own and ownership_field
+                else None
+            )
+            routes.append(RouteSpec(
+                method=HttpMethod.POST,
+                path=f"{base_path}/{{id}}/{field_snake}:append",
+                kind=RouteKind.APPEND,
+                content_ref=content_ref,
+                required_scope=rule.scope,
+                row_filter=append_filter,
+                field_name=field_snake,
+            ))
 
     # ── Lower pages (Presentation v2: component trees) ──
     pages = lower_pages(program, content_by_name, sm_by_content)

@@ -128,6 +128,16 @@ def classify_line(text: str) -> str:
     if " can execute this" in text: return "compute_access_line"
     # D-20: "can audit" inside Compute blocks — must also be checked before prefix loop
     if " can audit" in text and text.startswith("Anyone with"): return "compute_audit_access_line"
+    # v0.9.2 L3: "can append to <plural>' <field>" — field-targeted
+    # permission, distinct from content-level access_line. Must be
+    # checked before the "Anyone with" prefix routes to access_line
+    # (which only knows view/create/update/delete verbs).
+    if " can append to " in text and text.startswith("Anyone with"):
+        return "access_append_line"
+    # v0.9.2 L3: source-level Append action verb. Distinct prefix
+    # ("Append to ") so it doesn't collide with anything else. Used
+    # in compute bodies, page form handlers, When-rule actions (L8).
+    if text.startswith("Append to "): return "append_action_line"
     for prefix, rule in _PREFIXES:
         if text.startswith(prefix):
             # Disambiguate "For each X, show actions:" from "For each X, show Y grouped by Z"

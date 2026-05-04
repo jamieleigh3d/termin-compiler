@@ -53,11 +53,35 @@ class Field:
 @dataclass
 class AccessRule:
     scope: str
-    verbs: list[str]  # "view", "create", "update", "delete", "create or update"
+    verbs: list[str]  # "view", "create", "update", "delete", "create or update", "append"
     # v0.9 Phase 6a.3: `their own <content>` row-filter qualifier per
     # BRD #3 §3.4. When true, the access rule applies only to rows the
     # invoking principal owns (per the content's `is owned by` declaration).
     their_own: bool = False
+    line: int = 0
+    # v0.9.2 L3: when verbs == ["append"], append_field names the
+    # specific conversation field this grant targets. None for the
+    # content-level CRUD verbs (view/create/update/delete/audit).
+    append_field: Optional[str] = None
+
+
+@dataclass
+class AppendAction:
+    """v0.9.2 L3: source-level `Append to <record>.<field> as "<kind>" with body <expr>` action.
+
+    Usable in compute bodies, page form-submit handlers, and When-rule
+    action lists (L8). Carries the parsed pieces verbatim; the runtime
+    materializes the entry shape (id + created_at + appended_by_principal_id
+    are auto-generated).
+    """
+    record: str             # content singular or plural reference (e.g., "chat_threads")
+    field: str              # snake_case field name on that content
+    kind: str               # canonical kind: "user", "assistant", "tool_call", etc.
+    body_expr: str          # CEL expression string (backtick-stripped)
+    # Free-form metadata tail captured verbatim — handler decomposes
+    # `, source: \`...\`, tool_call_id: \`...\`` etc. when wired up by
+    # downstream slices (L7 auto-write-back, L8 When-rule actions).
+    metadata_tail: str = ""
     line: int = 0
 
 

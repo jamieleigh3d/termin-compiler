@@ -363,8 +363,8 @@
 
     "Verb": {
       "type": "string",
-      "enum": ["VIEW", "CREATE", "UPDATE", "DELETE", "AUDIT"],
-      "description": "CRUD+Audit operation verb for access control. AUDIT gates read access to execution traces (D-20)."
+      "enum": ["VIEW", "CREATE", "UPDATE", "DELETE", "AUDIT", "APPEND"],
+      "description": "CRUD+Audit operation verb for access control. AUDIT gates read access to execution traces (D-20). APPEND (v0.9.2 L3) is a field-targeted permission for conversation fields — append_field on the grant identifies the target."
     },
 
     "AccessGrant": {
@@ -391,6 +391,11 @@
           "type": "boolean",
           "default": false,
           "description": "v0.9 Phase 6a: when true, this grant's verbs apply only to records the principal owns (per the Content's `ownership` declaration). Source form: `Anyone with X can update their own Y`."
+        },
+        "append_field": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "v0.9.2 L3: when verbs contains APPEND, names the snake_case conversation field this grant targets. Source form: `Anyone with X can append to Y' <field>`. Null for non-APPEND grants."
         }
       }
     },
@@ -627,8 +632,8 @@
 
     "RouteKind": {
       "type": "string",
-      "enum": ["LIST", "GET_ONE", "CREATE", "UPDATE", "DELETE", "TRANSITION", "STREAM"],
-      "description": "The semantic purpose of a route. Runtimes use this to select the correct handler pattern."
+      "enum": ["LIST", "GET_ONE", "CREATE", "UPDATE", "DELETE", "TRANSITION", "STREAM", "APPEND"],
+      "description": "The semantic purpose of a route. Runtimes use this to select the correct handler pattern. APPEND (v0.9.2 L3) is a field-targeted action route at POST /<resource>/{id}/<field>:append — appends a new entry to a conversation field; field_name on the spec names the target column."
     },
 
     "RouteSpec": {
@@ -671,6 +676,11 @@
           "type": ["object", "null"],
           "default": null,
           "description": "v0.9 Phase 6a: row-level filter shape. When present, the runtime applies this filter as an implicit WHERE clause for routes targeting Content with `their own` access rules — restricts results to records the principal owns. Schema is provider-agnostic; populated at lower time from the access rule."
+        },
+        "field_name": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "v0.9.2 L3: For APPEND routes, the snake_case conversation field name this route appends to. Encoded in the path AND on the spec so handlers locate the JSON column without re-parsing the path. Null on non-APPEND routes."
         }
       }
     },

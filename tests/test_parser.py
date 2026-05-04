@@ -543,6 +543,62 @@ def test_parse_structured_field():
     assert types["survey_responses"].required is True
 
 
+def test_parse_append_access_rule():
+    """v0.9.2 L3: `Anyone with "X" can append to <plural>' <field>` is a new
+    access-rule shape that grants append-only permission on a specific field
+    of a content type. Different from view/create/update/delete — those are
+    content-level; append is field-level."""
+    program, errors = parse('''Identity:
+  Scopes are "chat.use"
+  An "anonymous" has "chat.use"
+Content called "chat_threads":
+  Each chat_thread has a title which is text
+  Each chat_thread has a conversation which is conversation
+  Anyone with "chat.use" can view chat_threads
+  Anyone with "chat.use" can append to chat_threads' conversation''')
+    assert errors.ok, errors.format()
+    c = program.contents[0]
+    append_rules = [r for r in c.access_rules if "append" in r.verbs]
+    assert len(append_rules) == 1, f"expected 1 append rule, got {append_rules!r}"
+    rule = append_rules[0]
+    assert rule.scope == "chat.use"
+    assert rule.append_field == "conversation"
+    assert rule.their_own is False
+
+
+def test_parse_append_their_own():
+    """v0.9.2 L3 + L10: `Anyone with X can append to their own <plural>' <field>`
+    composes the row-filter qualifier with the field target."""
+    program, errors = parse('''Identity:
+  Scopes are "session.read"
+  An "anonymous" has "session.read"
+Content called "sessions":
+  Each session has a player which is principal, required, unique
+  Each session is owned by player
+  Each session has a conversation_log which is conversation
+  Anyone with "session.read" can view their own sessions
+  Anyone with "session.read" can append to their own sessions' conversation_log''')
+    assert errors.ok, errors.format()
+    c = program.contents[0]
+    append_rules = [r for r in c.access_rules if "append" in r.verbs]
+    assert len(append_rules) == 1
+    rule = append_rules[0]
+    assert rule.scope == "session.read"
+    assert rule.append_field == "conversation_log"
+    assert rule.their_own is True
+
+
+def test_parse_append_action_line():
+    """v0.9.2 L3: source-level `Append to <ref>.<field> as "<kind>" with body \\`<expr>\\``
+    is a new action verb usable in compute bodies, page form handlers, and
+    (later, via L8) in When-rule action lists. The expression form uses backticks.
+    """
+    from termin.classify import classify_line
+    line = 'Append to chat_threads.conversation as "user" with body `request.body.text`'
+    rule = classify_line(line)
+    assert rule == "append_action_line", f"classifier returned {rule!r}"
+
+
 def test_parse_all_examples():
     from pathlib import Path
     for name in ["hello", "hello_user", "warehouse", "helpdesk", "projectboard", "compute_demo"]:
