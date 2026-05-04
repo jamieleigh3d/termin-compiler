@@ -14,8 +14,8 @@ import re
 from typing import Optional
 
 from .ast_nodes import (
-    Program, Content, Field, TypeExpr, AccessRule, StateMachine,
-    Transition, EventRule, UserStory, Directive, ShowPage, DisplayTable,
+    Program, Content, Field, TypeExpr, AccessRule, AppendAction, StateMachine,
+    Transition, EventRule, EventAction, UserStory, Directive, ShowPage, DisplayTable,
     ShowRelated, HighlightRows, MarkAs, AllowFilter, AllowSearch, SubscribeTo,
     AcceptInput, ValidateUnique, CreateAs, AfterSave, ShowChart,
     DisplayAggregation, DisplayText, StructuredAggregation, SectionStart,
@@ -354,6 +354,25 @@ def lower(program: Program) -> AppSpec:
                     resolved_content = c
                     break
 
+        # v0.9.2 L8: When-rules whose predicate references `appended_entry`
+        # don't carry a content prefix in the CEL — `appended_entry.kind ==
+        # "user" && session.message_count >= 3` has no `<content>.<verb>`
+        # head to extract from. Fall back to the FIRST Append action's
+        # target content as the routing key. The OVERSEER pattern listens
+        # to and writes to the same `<content>.<field>`, so this gives the
+        # right routing key without a separate source-content declaration.
+        if (not resolved_content and ev.condition_expr
+                and "appended_entry" in (ev.condition_expr or "")):
+            for a in getattr(ev, "actions", None) or []:
+                if isinstance(a, AppendAction):
+                    target_obj = (
+                        content_by_name.get(a.record)
+                        or content_by_singular.get(a.record)
+                    )
+                    if target_obj:
+                        resolved_content = target_obj
+                        break
+
         source_content = _snake(resolved_content.name) if resolved_content else _snake(ev.content_name)
 
         cond = None
@@ -363,39 +382,116 @@ def lower(program: Program) -> AppSpec:
                 operator="lte" if "below" in ev.condition.operator else ev.condition.operator,
                 right_column=_snake(ev.condition.field2),
             )
-        action = None
-        if ev.action:
-            if ev.action.send_channel:
-                # Channel send action: "Send X to "channel""
-                action = EventActionSpec(
-                    send_content=ev.action.send_content,
-                    send_channel=ev.action.send_channel,
+        # v0.9.2 L8 (tech-design §13.2): When-rule bodies may carry a
+        # heterogeneous sequence of actions. Lower each AST item to an
+        # EventActionSpec and accumulate. The legacy `action` field
+        # holds the FIRST EventAction (Create or Send) so existing
+        # single-action consumers stay correct; the new `actions` tuple
+        # carries the full sequence including Append actions.
+        def _lower_event_action(a) -> Optional[EventActionSpec]:
+            """Lower an AST EventAction or AppendAction to EventActionSpec."""
+            if isinstance(a, EventAction):
+                if a.send_channel:
+                    return EventActionSpec(
+                        send_content=a.send_content,
+                        send_channel=a.send_channel,
+                    )
+                if a.create_content:
+                    target_content_obj = content_by_name.get(a.create_content)
+                    if not target_content_obj:
+                        target_content_obj = content_by_singular.get(a.create_content)
+                    source_content_obj = resolved_content
+                    mapping = []
+                    if target_content_obj and source_content_obj:
+                        source_cols = {_snake(f.name) for f in source_content_obj.fields}
+                        for target_field_name in a.fields:
+                            tcol = _snake(target_field_name)
+                            if tcol in source_cols:
+                                mapping.append((tcol, tcol))
+                            elif tcol == "current_quantity":
+                                mapping.append((tcol, "quantity"))
+                            elif tcol == "threshold":
+                                mapping.append((tcol, "reorder_threshold"))
+                            else:
+                                mapping.append((tcol, tcol))
+                    return EventActionSpec(
+                        target_content=_snake(target_content_obj.name) if target_content_obj else _snake(a.create_content),
+                        column_mapping=tuple(mapping),
+                    )
+                return None
+            if isinstance(a, AppendAction):
+                # Resolve the record reference (singular or plural form
+                # of a content name) to the canonical snake_case content
+                # name. The lower-time resolution mirrors what `_do_append`
+                # expects on the runtime side and keeps the IR JSON
+                # backend-agnostic.
+                target_obj = content_by_name.get(a.record) or content_by_singular.get(a.record)
+                resolved_content_name = _snake(target_obj.name) if target_obj else _snake(a.record)
+                # Decompose the metadata tail (`, source: \`X\`, parent_id: \`Y\``)
+                # into (key, expr) pairs. Each clause is `key: \`expr\``;
+                # split on commas at the top level (no nested commas in
+                # CEL expressions are expected here — the tail is intended
+                # for short metadata literals/refs).
+                metadata_pairs = []
+                tail = a.metadata_tail.strip()
+                if tail:
+                    # Tail starts with a leading comma after the body
+                    # backtick. Split into clauses on commas; for each
+                    # clause, find the first colon, take the key, and
+                    # then the backtick-bounded expression.
+                    if tail.startswith(","):
+                        tail = tail[1:].strip()
+                    # Naive split — works for the v0.9.2 surface where
+                    # metadata clauses don't carry top-level commas
+                    # inside their expressions. A more robust splitter
+                    # is a future-slice concern when richer expressions
+                    # land.
+                    for clause in tail.split(","):
+                        c = clause.strip()
+                        if not c:
+                            continue
+                        ci = c.find(":")
+                        if ci < 0:
+                            continue
+                        k = c[:ci].strip()
+                        v = c[ci + 1:].strip()
+                        # Strip surrounding backticks if present;
+                        # otherwise treat as a quoted literal (the
+                        # double-quote shell is a literal source value
+                        # like `source: "OVERSEER"`).
+                        if v.startswith("`") and v.endswith("`"):
+                            v = v[1:-1].strip()
+                        metadata_pairs.append((k, v))
+                return EventActionSpec(
+                    append_content=resolved_content_name,
+                    append_field=_snake(a.field),
+                    append_kind=a.kind,
+                    append_body_expr=a.body_expr,
+                    append_metadata=tuple(metadata_pairs),
                 )
-            elif ev.action.create_content:
-                # Content create action: "Create a X with fields"
-                target_content_obj = content_by_name.get(ev.action.create_content)
-                if not target_content_obj:
-                    target_content_obj = content_by_singular.get(ev.action.create_content)
-                source_content_obj = resolved_content
-                mapping = []
-                if target_content_obj and source_content_obj:
-                    source_cols = {_snake(f.name) for f in source_content_obj.fields}
-                    for target_field_name in ev.action.fields:
-                        tcol = _snake(target_field_name)
-                        # Direct match in source
-                        if tcol in source_cols:
-                            mapping.append((tcol, tcol))
-                        elif tcol == "current_quantity":
-                            mapping.append((tcol, "quantity"))
-                        elif tcol == "threshold":
-                            mapping.append((tcol, "reorder_threshold"))
-                        else:
-                            mapping.append((tcol, tcol))
+            return None
 
-                action = EventActionSpec(
-                    target_content=_snake(target_content_obj.name) if target_content_obj else _snake(ev.action.create_content),
-                    column_mapping=tuple(mapping),
-                )
+        # Build the actions tuple in source order. If the AST has the
+        # new `actions` list populated (post-L8 parsing), lower each
+        # item; else fall back to the legacy single `action` field
+        # (everything before L8 only emitted one action per When-rule).
+        action = None
+        actions_list: list[EventActionSpec] = []
+        ast_actions = getattr(ev, "actions", None) or []
+        if ast_actions:
+            for a in ast_actions:
+                spec = _lower_event_action(a)
+                if spec is None:
+                    continue
+                actions_list.append(spec)
+                if action is None and not spec.append_field:
+                    action = spec
+        elif ev.action:
+            spec = _lower_event_action(ev.action)
+            if spec is not None:
+                actions_list.append(spec)
+                if not spec.append_field:
+                    action = spec
         events.append(EventSpec(
             source_content=source_content,
             trigger=ev.trigger,
@@ -403,6 +499,7 @@ def lower(program: Program) -> AppSpec:
             action=action,
             condition_expr=ev.condition_expr,
             log_level=ev.log_level or "INFO",
+            actions=tuple(actions_list),
         ))
 
     # ── Auto-generate CRUD routes for every Content (D-11) ──

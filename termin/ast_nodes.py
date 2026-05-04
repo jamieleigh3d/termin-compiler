@@ -205,6 +205,16 @@ class EventRule:
     action: Optional[EventAction] = None
     condition_expr: Optional[str] = None  # v2: When [expr]:
     log_level: Optional[str] = None  # v2: Log level: WARN
+    # v0.9.2 L8 (tech-design §13.2): When-rule bodies may carry a
+    # heterogeneous sequence of actions — `Create a X with ...`,
+    # `Send X to "..."`, `Append to X.Y as "kind" with body \`...\``,
+    # etc. — that execute sequentially in source order.
+    # Each entry is either an EventAction (for create/send) or an
+    # AppendAction (for append). The legacy `action` field stays
+    # populated with the first non-append EventAction for callers
+    # that still walk the single-action path; the lowering pass mirrors
+    # the same convention into EventSpec.
+    actions: list = field(default_factory=list)
     line: int = 0
 
 

@@ -600,6 +600,132 @@ def test_parse_append_action_line():
     assert rule == "append_action_line", f"classifier returned {rule!r}"
 
 
+# ── v0.9.2 L8: Append in When-rule action lists ──
+
+
+class TestWhenRuleAppendAction:
+    """v0.9.2 L8 (tech-design §13.2): a `When` event-rule body may use
+    the `Append to <content>.<field> as "<kind>" with body \\`<expr>\\``
+    verb in its action list. The trigger predicate may reference
+    `appended_entry` (the new entry on the upstream append, per §9.1)
+    so the When-rule can filter by kind without double-loading the
+    conversation column.
+
+    These tests cover the parser side: the source compiles cleanly,
+    the AST EventRule carries the predicate verbatim in
+    `condition_expr`, and the body's Append action lands in
+    `EventRule.actions` as an AppendAction node with the parsed
+    record/field/kind/body_expr.
+    """
+
+    _SRC = '''Application: When Append parser smoke
+  Description: L8
+Id: 7e1b3a2c-4f9d-4e1a-b3c5-1d2e8f4a9c11
+
+Identity:
+  Scopes are "chat.use"
+  An "anonymous" has "chat.use"
+
+Content called "chat_threads":
+  Each chat_thread has a title which is text, default "Conversation"
+  Each chat_thread has a conversation which is conversation
+  Anyone with "chat.use" can view chat_threads
+  Anyone with "chat.use" can create chat_threads
+  Anyone with "chat.use" can append to chat_threads.conversation
+
+When `appended_entry.kind == "user" && session.message_count >= 3`:
+  Append to chat_threads.conversation as "system_event" with body `"echo: " + appended_entry.body`, source: "OVERSEER"
+
+As anonymous, I want to chat so:
+  Show a page called "Chat"
+'''
+
+    def test_when_rule_with_append_parses(self):
+        """The full source compiles cleanly (parser + analyzer).
+        Predicate carries `appended_entry` reference verbatim — the
+        analyzer doesn't reject it as an unknown identifier (CEL
+        bindings are runtime-resolved, not analyzer-known)."""
+        from termin.peg_parser import parse_peg
+        from termin.analyzer import analyze
+        prog, perr = parse_peg(self._SRC)
+        assert perr.ok, perr.format()
+        aerr = analyze(prog)
+        assert aerr.ok, aerr.format()
+        assert len(prog.events) == 1
+        ev = prog.events[0]
+        assert ev.trigger == "expr"
+        assert ev.condition_expr == (
+            'appended_entry.kind == "user" && session.message_count >= 3'
+        )
+
+    def test_when_rule_actions_carry_append(self):
+        """The new `EventRule.actions` list carries an AppendAction in
+        source order. The legacy single `action` field stays None
+        when the body has only Append actions (Append is not a
+        Create/Send EventAction)."""
+        from termin.peg_parser import parse_peg
+        from termin.ast_nodes import AppendAction
+        prog, perr = parse_peg(self._SRC)
+        assert perr.ok, perr.format()
+        ev = prog.events[0]
+        assert len(ev.actions) == 1, ev.actions
+        a = ev.actions[0]
+        assert isinstance(a, AppendAction), a
+        assert a.record == "chat_threads"
+        assert a.field == "conversation"
+        assert a.kind == "system_event"
+        assert "echo:" in a.body_expr
+        assert "appended_entry.body" in a.body_expr
+        assert a.metadata_tail.startswith(", source:") or "source:" in a.metadata_tail
+        # Legacy field stays None — Append is not Create/Send.
+        assert ev.action is None
+
+    def test_when_rule_undefined_append_target_errors(self):
+        """Analyzer catches a typo in the Append target's content
+        reference (§13.2 prerequisite — TERMIN-S059). Without this
+        the runtime fails silently inside the dispatch loop."""
+        from termin.peg_parser import parse_peg
+        from termin.analyzer import analyze
+        bad = self._SRC.replace(
+            "Append to chat_threads.conversation",
+            "Append to chat_thread.conversation",  # singular — not declared as a content
+        )
+        prog, perr = parse_peg(bad)
+        assert perr.ok, perr.format()
+        aerr = analyze(prog)
+        # The fallback resolution recognizes singular forms (`chat_thread` →
+        # `chat_threads`) so no error in this case. Use a clearly bogus
+        # name to confirm the error fires.
+        bad2 = self._SRC.replace(
+            "Append to chat_threads.conversation",
+            "Append to nonexistent_content.conversation",
+        )
+        prog2, perr2 = parse_peg(bad2)
+        assert perr2.ok, perr2.format()
+        aerr2 = analyze(prog2)
+        assert not aerr2.ok
+        assert any(
+            getattr(e, "code", "") == "TERMIN-S059" for e in aerr2.errors
+        ), aerr2.format()
+
+    def test_when_rule_undefined_append_field_errors(self):
+        """Analyzer catches a typo in the Append target's field name
+        (TERMIN-S060). The field must exist on the resolved content."""
+        from termin.peg_parser import parse_peg
+        from termin.analyzer import analyze
+        bad = self._SRC.replace(
+            "Append to chat_threads.conversation",
+            "Append to chat_threads.bogus_field",
+        )
+        prog, perr = parse_peg(bad)
+        assert perr.ok, perr.format()
+        aerr = analyze(prog)
+        assert not aerr.ok
+        assert any(
+            getattr(e, "code", "") == "TERMIN-S060" for e in aerr.errors
+        ), aerr.format()
+
+
 # ── v0.9.2 L6: `Conversation is <content>.<field>` compute source line ──
 #
 # Per tech design §10, ai-agent computes wire conversation context with a

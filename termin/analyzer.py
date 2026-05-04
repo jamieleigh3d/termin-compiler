@@ -1087,6 +1087,11 @@ class Analyzer:
                         ))
 
     def _check_events(self) -> None:
+        # Local import to avoid a top-level cycle: ast_nodes is already
+        # imported by analyzer.py at module load, so this is just a
+        # name binding for the isinstance check below.
+        from .ast_nodes import AppendAction
+
         for event in self.program.events:
             if event.action and event.action.create_content:
                 found = False
@@ -1103,6 +1108,60 @@ class Analyzer:
                         line=event.action.line,
                         code="TERMIN-S010",
                         suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
+                    ))
+
+            # v0.9.2 L8 (tech-design §13.2): When-rule bodies may carry
+            # Append actions. Validate that the `<content>.<field>`
+            # reference resolves: the content exists, and the named
+            # field is declared on it. This catches typos before runtime
+            # — `Append to session.conversation_log` (singular missing
+            # the 's') would otherwise fail silently inside the dispatch
+            # loop. Reuses the same content_name + content_singulars
+            # name-resolution path the rest of the analyzer uses.
+            for a in getattr(event, "actions", []) or []:
+                if not isinstance(a, AppendAction):
+                    continue
+                # Resolve record reference to a canonical content name.
+                resolved_name = None
+                if a.record in self.content_names:
+                    resolved_name = a.record
+                elif a.record in self.content_singulars:
+                    # Find the content whose singular matches.
+                    for c in self.program.contents:
+                        if c.singular == a.record:
+                            resolved_name = c.name
+                            break
+                elif a.record + "s" in self.content_names:
+                    resolved_name = a.record + "s"
+                if resolved_name is None:
+                    suggestion = _fuzzy_match(a.record, self.content_names)
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'Append action targets undefined content '
+                            f'"{a.record}" (in `Append to '
+                            f'{a.record}.{a.field} as ...`)'
+                        ),
+                        line=a.line,
+                        code="TERMIN-S059",
+                        suggestion=(
+                            f'Did you mean "{suggestion}"?' if suggestion else None
+                        ),
+                    ))
+                    continue
+                # Field must exist on the resolved content.
+                fields = self.content_field_names.get(resolved_name, set())
+                if a.field not in fields:
+                    suggestion = _fuzzy_match(a.field, fields)
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'Append action targets undefined field '
+                            f'"{a.field}" on content "{resolved_name}"'
+                        ),
+                        line=a.line,
+                        code="TERMIN-S060",
+                        suggestion=(
+                            f'Did you mean "{suggestion}"?' if suggestion else None
+                        ),
                     ))
 
     def _check_stories(self) -> None:

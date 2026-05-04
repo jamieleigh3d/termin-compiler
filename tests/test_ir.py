@@ -1257,6 +1257,108 @@ Content called "chat_threads":
 
 
 # ============================================================
+# v0.9.2 L8: When-rule with Append action (tech-design §13.2)
+# ============================================================
+
+
+class TestWhenRuleAppendActionIR:
+    """v0.9.2 L8: When-rule bodies may carry the Append verb in their
+    action list. The IR lowering produces an EventActionSpec with
+    `append_*` fields populated, the source content gets inferred from
+    the Append target (When-rules with `appended_entry` predicates have
+    no content prefix in the CEL), and the new actions tuple on
+    EventSpec carries the action in source order.
+
+    The OVERSEER pattern from §13.2 — When-rule predicate filters by
+    `appended_entry.kind == "user"`; action injects a `system_event`
+    entry into the same conversation column. The discriminator on
+    kind is what prevents loops: the When-rule's own append fires its
+    own `.appended` event but the predicate (`kind == "user"`) doesn't
+    match the new entry's `system_event` kind.
+    """
+
+    _PREAMBLE = '''Identity:
+  Scopes are "chat.use"
+  An "anonymous" has "chat.use"
+
+Content called "chat_threads":
+  Each chat_thread has a title which is text
+  Each chat_thread has a conversation which is conversation
+  Anyone with "chat.use" can view chat_threads
+  Anyone with "chat.use" can create chat_threads
+  Anyone with "chat.use" can append to chat_threads.conversation
+'''
+
+    def _parse_and_lower(self, source):
+        program, errors = parse(self._PREAMBLE + source)
+        assert errors.ok, errors.format()
+        result = analyze(program)
+        assert result.ok, result.format()
+        return lower(program)
+
+    def test_when_rule_append_lowers_to_event_action_spec(self):
+        """A When-rule with an Append action lowers to an EventSpec
+        whose `actions` tuple carries one EventActionSpec with
+        `append_*` fields populated. The legacy `action` field stays
+        None (Append is not a Create/Send EventAction)."""
+        spec = self._parse_and_lower('''
+When `appended_entry.kind == "user"`:
+  Append to chat_threads.conversation as "system_event" with body `"echo: " + appended_entry.body`, source: "OVERSEER"
+
+As anonymous, I want a page so:
+  Show a page called "Chat"
+''')
+        assert len(spec.events) == 1
+        ev = spec.events[0]
+        # source_content inferred from the Append action's target —
+        # When-rules with `appended_entry` predicates have no content
+        # prefix in the CEL, so the lowering uses the first Append's
+        # target as the routing key.
+        assert ev.source_content == "chat_threads"
+        assert ev.condition_expr == 'appended_entry.kind == "user"'
+        # Legacy single-action field stays None for append-only bodies.
+        assert ev.action is None
+        # New actions tuple carries the Append.
+        assert len(ev.actions) == 1
+        a = ev.actions[0]
+        assert a.append_content == "chat_threads"
+        assert a.append_field == "conversation"
+        assert a.append_kind == "system_event"
+        assert "appended_entry.body" in a.append_body_expr
+        # Metadata tail decomposes into (key, expr) pairs.
+        assert ("source", '"OVERSEER"') in a.append_metadata
+
+    def test_when_rule_append_serializes_to_ir_json(self):
+        """The new fields round-trip through serialize_ir → asdict;
+        the runtime side reads JSON, not dataclasses, so the JSON
+        shape is the contract."""
+        from termin_core.ir.serialize import serialize_ir
+        import json
+        spec = self._parse_and_lower('''
+When `appended_entry.kind == "user"`:
+  Append to chat_threads.conversation as "system_event" with body `appended_entry.body`
+
+As anonymous, I want a page so:
+  Show a page called "Chat"
+''')
+        ir_json = serialize_ir(spec)
+        ir = json.loads(ir_json)
+        events = ir["events"]
+        assert len(events) == 1
+        ev = events[0]
+        assert ev["source_content"] == "chat_threads"
+        assert ev["condition_expr"] == 'appended_entry.kind == "user"'
+        # actions list survives the JSON round-trip with append fields.
+        assert "actions" in ev
+        assert len(ev["actions"]) == 1
+        a = ev["actions"][0]
+        assert a["append_content"] == "chat_threads"
+        assert a["append_field"] == "conversation"
+        assert a["append_kind"] == "system_event"
+        assert a["append_body_expr"] == "appended_entry.body"
+
+
+# ============================================================
 # v0.9 multi-state-machine IR lowering
 # ============================================================
 

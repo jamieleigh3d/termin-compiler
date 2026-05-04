@@ -244,9 +244,21 @@ def _assemble(parsed: list) -> Program:
             prog.contents.append(ct)
         elif k == "event_header":
             ev = item[1]; i += 1
-            for ch in _collect(lambda x: x in ("event_action","log_level")):
-                if ch[0] == "event_action": ev.action = ch[1]
-                elif ch[0] == "log_level": ev.log_level = ch[1]
+            # v0.9.2 L8 (tech-design §13.2): When-rule body collects a
+            # heterogeneous list of actions — Create / Send / Append —
+            # in source order. The legacy `action` field continues to
+            # mirror the FIRST EventAction (Create or Send) so the
+            # existing single-action lowering + analyzer paths still
+            # see what they expect; new callers walk `ev.actions`.
+            for ch in _collect(lambda x: x in ("event_action", "append_action", "log_level")):
+                if ch[0] == "event_action":
+                    if ev.action is None:
+                        ev.action = ch[1]
+                    ev.actions.append(ch[1])
+                elif ch[0] == "append_action":
+                    ev.actions.append(ch[1])
+                elif ch[0] == "log_level":
+                    ev.log_level = ch[1]
             prog.events.append(ev)
         elif k == "error_header":
             h = item[1]; i += 1
