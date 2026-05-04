@@ -123,53 +123,54 @@ class TestActsAsGrammar:
         assert prog.computes[0].identity_mode == "delegate"
 
 
-# ── compute_refusals sidecar ──
+# ── compute_refusals sidecar — RETIRED in v0.9.2 L7.5 ──
+#
+# The sidecar Content type that Phase 3 slice (e) auto-generated for
+# every ai-agent app is gone. The WARN-level audit log entry is the
+# audit-trail surface; L7.4 appends a kind="assistant", type="refusal"
+# conversation entry as the chat surface (where the compute has a
+# Conversation source). These tests confirm the absence + that the
+# audit path still fires.
 
 
-class TestComputeRefusalsSidecar:
-    def test_generated_for_ai_agent_app(self):
+class TestComputeRefusalsSidecarRetired:
+    def test_sidecar_not_generated_for_ai_agent_app(self):
+        """v0.9.2 L7.5: the compute_refusals sidecar is no longer
+        auto-generated for ai-agent apps. Replaced by audit log +
+        conversation refusal entry."""
         _, spec = _compile(_AGENT_SOURCE_DEFAULT)
-        sidecar = _find(spec, "compute_refusals")
-        assert sidecar is not None, (
-            "Apps with at least one ai-agent compute must "
-            "auto-generate the compute_refusals sidecar"
-        )
-
-    def test_not_generated_for_llm_only_app(self):
-        _, spec = _compile(_LLM_SOURCE)
         sidecar = _find(spec, "compute_refusals")
         assert sidecar is None, (
-            "Apps with no ai-agent computes do not need the sidecar"
+            "compute_refusals sidecar should be retired in v0.9.2"
         )
 
-    def test_sidecar_fields(self):
-        _, spec = _compile(_AGENT_SOURCE_DEFAULT)
+    def test_sidecar_not_generated_for_llm_only_app(self):
+        """LLM-only apps already had no sidecar; this stays the same."""
+        _, spec = _compile(_LLM_SOURCE)
         sidecar = _find(spec, "compute_refusals")
-        names = {f.name for f in sidecar.fields}
-        expected = {
-            "compute_name",
-            "invocation_id",
-            "reason",
-            "refused_at",
-            "invoked_by_principal_id",
-            "on_behalf_of_principal_id",
-        }
-        assert expected.issubset(names), (
-            f"Missing sidecar fields: {expected - names}"
+        assert sidecar is None
+
+    def test_no_compute_refusals_routes_emitted(self):
+        """The /api/v1/compute_refusals routes are gone too."""
+        _, spec = _compile(_AGENT_SOURCE_DEFAULT)
+        bad_routes = [
+            r for r in spec.routes
+            if "compute_refusals" in r.path or r.content_ref == "compute_refusals"
+        ]
+        assert bad_routes == [], (
+            f"compute_refusals routes should be retired; got {bad_routes!r}"
         )
 
-    def test_sidecar_grants_audit_scope(self):
-        """Anyone with the agent's audit scope can VIEW + AUDIT
-        the sidecar."""
+    def test_no_compute_refusals_grants_emitted(self):
+        """Access grants for the retired sidecar should be gone."""
         _, spec = _compile(_AGENT_SOURCE_DEFAULT)
-        from termin_core.ir.types import Verb
-        sidecar_grants = [
+        bad_grants = [
             g for g in spec.access_grants
             if g.content == "compute_refusals"
         ]
-        assert sidecar_grants, "no grants for compute_refusals sidecar"
-        scopes = {g.scope for g in sidecar_grants}
-        assert "audit.x" in scopes
+        assert bad_grants == [], (
+            f"compute_refusals grants should be retired; got {bad_grants!r}"
+        )
 
 
 # ── Outcome enum / system_refuse tool surface ──
@@ -202,12 +203,16 @@ class TestRefusalAuditWiring:
 
 
 class TestRefusalEndToEnd:
-    """Drive the agent loop with a stub-shaped legacy provider that
-    invokes system_refuse, and verify (a) the audit record has
-    outcome=refused, (b) compute_refusals row exists, (c) the
-    refusal event fires on the bus."""
+    """v0.9.2 L7.5: drive the agent loop with a stub-shaped legacy
+    provider that invokes system_refuse, and verify the audit record
+    has outcome=refused and refusal_reason populated.
 
-    def test_refusal_writes_sidecar_and_audit(self, tmp_path):
+    The Phase 3 slice (e) sidecar write + `compute.<name>.refused`
+    event publish are retired (per JL Wave 3 callout); the audit log
+    is the single audit-trail surface. L7.4 (next slice) adds the
+    parallel conversation-entry append for the chat surface."""
+
+    def test_refusal_writes_audit(self, tmp_path):
         import asyncio
         from termin_server.context import RuntimeContext
         from termin_server.compute_runner import _execute_agent_compute
@@ -263,24 +268,8 @@ class TestRefusalEndToEnd:
                 _f("cost_currency_amount", "text", "TEXT"),
             ],
         }
-        sidecar_schema = {
-            "name": {
-                "display": "compute refusals",
-                "snake": "compute_refusals",
-                "pascal": "ComputeRefusals",
-            },
-            "singular": "compute_refusals",
-            "audit": "none",
-            "verbs": [],
-            "fields": [
-                _f("compute_name", "text", "TEXT"),
-                _f("invocation_id", "text", "TEXT"),
-                _f("reason", "text", "TEXT"),
-                _f("refused_at", "datetime", "TIMESTAMP"),
-                _f("invoked_by_principal_id", "text", "TEXT"),
-                _f("on_behalf_of_principal_id", "text", "TEXT"),
-            ],
-        }
+        # v0.9.2 L7.5: sidecar_schema removed; audit log is the only
+        # audit-trail surface for refusals now.
 
         comp = {
             "name": {"display": "moderator", "snake": "moderator"},
@@ -299,9 +288,8 @@ class TestRefusalEndToEnd:
         ctx = RuntimeContext()
         ctx.db_path = db_path
         ctx.event_bus = EventBus()
-        ctx.ir = {"content": [audit_schema, sidecar_schema], "computes": [comp]}
-        ctx.content_lookup = {"compute_audit_log_moderator": audit_schema,
-                              "compute_refusals": sidecar_schema}
+        ctx.ir = {"content": [audit_schema], "computes": [comp]}
+        ctx.content_lookup = {"compute_audit_log_moderator": audit_schema}
         ctx.singular_lookup = {}
         ctx.sm_lookup = {}
 
@@ -323,53 +311,26 @@ class TestRefusalEndToEnd:
 
         ctx.compute_providers = {"moderator": _StubProvider()}
 
-        # Capture refusal events.
-        events_seen = []
-
-        async def _capture():
-            queue = ctx.event_bus.subscribe(channel_id="compute.moderator.refused")
-            try:
-                while True:
-                    ev = await queue.get()
-                    events_seen.append(ev)
-            except asyncio.CancelledError:
-                pass
-
         async def _run():
-            await init_db([audit_schema, sidecar_schema], db_path)
-            tap = asyncio.create_task(_capture())
+            await init_db([audit_schema], db_path)
             await _execute_agent_compute(
                 ctx, comp, record={"id": 1}, content_name="messages",
                 main_loop=None,
             )
-            await asyncio.sleep(0.05)  # let event drain
-            tap.cancel()
-            try:
-                await tap
-            except asyncio.CancelledError:
-                pass
             db = await get_db(db_path)
             try:
                 audit_rows = await list_records(db, audit_ref)
-                refusal_rows = await list_records(db, "compute_refusals")
             finally:
                 await db.close()
-            return audit_rows, refusal_rows
+            return audit_rows
 
-        audit_rows, refusal_rows = asyncio.run(_run())
+        audit_rows = asyncio.run(_run())
 
         # Audit row has outcome=refused, refusal_reason populated.
+        # v0.9.2 L7.5: this is the only assertion now — no sidecar
+        # row, no separate refusal event. The audit log entry is the
+        # single audit-trail surface for refusals.
         assert len(audit_rows) == 1
         ar = audit_rows[0]
         assert ar["outcome"] == "refused"
         assert ar["refusal_reason"] == "not allowed"
-
-        # Sidecar row exists with the reason.
-        assert len(refusal_rows) == 1
-        rr = refusal_rows[0]
-        assert rr["reason"] == "not allowed"
-        assert rr["invocation_id"] == ar["invocation_id"]
-
-        # Refusal event fired on the bus.
-        assert len(events_seen) >= 1
-        assert events_seen[0]["data"]["reason"] == "not allowed"

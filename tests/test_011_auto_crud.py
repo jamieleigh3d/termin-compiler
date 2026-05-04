@@ -323,15 +323,11 @@ class TestExistingExamplesCompile:
         assert spec is not None
         # After D-11, every Content should have auto-generated CRUD routes
         # D-20: Audit log Content (compute_audit_log_*) is read-only — only LIST + GET
-        # v0.9 Phase 3 slice (e): compute_refusals sidecar is also
-        # read-only (runtime writes the refusal records; operators
-        # don't create or update them through the API).
+        # v0.9.2 L7.5: compute_refusals sidecar retired; no exclusion
+        # needed for it anymore.
         for content in spec.content:
             routes = _find_routes(spec, content.name.snake)
-            if (
-                content.name.snake.startswith("compute_audit_log_")
-                or content.name.snake == "compute_refusals"
-            ):
+            if content.name.snake.startswith("compute_audit_log_"):
                 assert len(routes) >= 2, (
                     f"{example_name}: read-only Content '{content.name.display}' has only "
                     f"{len(routes)} routes, expected at least 2 read routes"

@@ -965,78 +965,13 @@ def lower(program: Program) -> AppSpec:
     grants.extend(audit_log_grants)
     routes.extend(audit_log_routes)
 
-    # ── v0.9 Phase 3 slice (e): compute_refusals sidecar ──
-    # Per design Q6, refusal is a first-class agent tool call
-    # (system.refuse(reason)). The agent-driven refusal records land in a
-    # runtime-managed sidecar Content type, queryable by anyone with any
-    # ai-agent compute's audit scope. One sidecar table for all
-    # ai-agent computes in the app — they're correlated by
-    # invocation_id with the per-compute audit log.
-    has_ai_agent = any(c.provider == "ai-agent" for c in computes)
-    if has_ai_agent:
-        refusals_qname = QualifiedName(
-            display="compute refusals",
-            snake="compute_refusals",
-            pascal="ComputeRefusals",
-        )
-        refusal_fields = (
-            FieldSpec(name="compute_name", display_name="compute name",
-                      business_type="text", column_type=FieldType.TEXT),
-            FieldSpec(name="invocation_id", display_name="invocation id",
-                      business_type="text", column_type=FieldType.TEXT),
-            FieldSpec(name="reason", display_name="reason",
-                      business_type="text", column_type=FieldType.TEXT),
-            FieldSpec(name="refused_at", display_name="refused at",
-                      business_type="datetime", column_type=FieldType.TIMESTAMP),
-            FieldSpec(name="invoked_by_principal_id",
-                      display_name="invoked by principal id",
-                      business_type="text", column_type=FieldType.TEXT),
-            FieldSpec(name="on_behalf_of_principal_id",
-                      display_name="on behalf of principal id",
-                      business_type="text", column_type=FieldType.TEXT),
-        )
-        content_schemas.append(ContentSchema(
-            name=refusals_qname,
-            fields=refusal_fields,
-            singular="compute_refusals",
-            audit="none",  # the sidecar IS the audit; don't recursively log
-        ))
-        # Grant view+audit access to anyone with any ai-agent compute's
-        # audit scope. Operators define a single broad audit role for
-        # this in practice; the sidecar is a single shared resource.
-        seen_audit_scopes: set[str] = set()
-        for cs in computes:
-            if cs.provider != "ai-agent":
-                continue
-            if cs.audit_scope and cs.audit_scope not in seen_audit_scopes:
-                seen_audit_scopes.add(cs.audit_scope)
-                grants.append(AccessGrant(
-                    content="compute_refusals",
-                    scope=cs.audit_scope,
-                    verbs=frozenset({Verb.VIEW}),
-                ))
-                grants.append(AccessGrant(
-                    content="compute_refusals",
-                    scope=cs.audit_scope,
-                    verbs=frozenset({Verb.AUDIT}),
-                ))
-        # CRUD routes for the sidecar — list + get-one only.
-        # Refusal records are runtime-written; operators don't create
-        # or update them through the API.
-        routes.append(RouteSpec(
-            kind=RouteKind.LIST,
-            method="GET",
-            path="/api/v1/compute_refusals",
-            content_ref="compute_refusals",
-            required_scope=next(iter(seen_audit_scopes), None),
-        ))
-        routes.append(RouteSpec(
-            kind=RouteKind.GET_ONE,
-            method="GET",
-            path="/api/v1/compute_refusals/{id}",
-            content_ref="compute_refusals",
-            required_scope=next(iter(seen_audit_scopes), None),
-        ))
+    # v0.9.2 L7.5 (JL Wave 3 callout): the `compute_refusals` sidecar
+    # Content type that Phase 3 slice (e) (2026-04-26) auto-generated
+    # for every ai-agent app is RETIRED. The WARN-level audit log entry
+    # written on system.refuse is the audit-trail surface; the
+    # conversation entry the runtime appends (kind: "assistant",
+    # type: "refusal") is the chat surface. Two surfaces, one event
+    # source — no separate sidecar table.
 
     # ── Build reclassification points from Compute specs ──
     reclass_points = []

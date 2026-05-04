@@ -561,12 +561,9 @@ class TestComputeDemoFidelity:
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}
         # D-20: Filter out auto-generated audit log Content
-        # v0.9 Phase 3 slice (e): also filter the compute_refusals
-        # sidecar (auto-generated for ai-agent apps).
         user_content = {
             n for n in names
             if not n.startswith("compute_audit_log_")
-            and n != "compute_refusals"
         }
         assert user_content == {"orders", "order_lines", "reports"}
 
@@ -687,12 +684,9 @@ class TestSecurityAgentFidelity:
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}
         # D-20: Filter out auto-generated audit log Content
-        # v0.9 Phase 3 slice (e): also filter the compute_refusals
-        # sidecar (auto-generated for ai-agent apps).
         user_content = {
             n for n in names
             if not n.startswith("compute_audit_log_")
-            and n != "compute_refusals"
         }
         assert user_content == {"findings", "scan_runs"}
 
@@ -828,12 +822,9 @@ class TestHRPortalFidelity:
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}
         # D-20: Filter out auto-generated audit log Content
-        # v0.9 Phase 3 slice (e): also filter the compute_refusals
-        # sidecar (auto-generated for ai-agent apps).
         user_content = {
             n for n in names
             if not n.startswith("compute_audit_log_")
-            and n != "compute_refusals"
         }
         assert user_content == {"employees", "departments", "salary_reviews"}
 
@@ -1060,12 +1051,9 @@ class TestAgentSimpleFidelity:
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}
         # D-20: Filter out auto-generated audit log Content
-        # v0.9 Phase 3 slice (e): also filter the compute_refusals
-        # sidecar (auto-generated for ai-agent apps).
         user_content = {
             n for n in names
             if not n.startswith("compute_audit_log_")
-            and n != "compute_refusals"
         }
         assert user_content == {"completions"}
 
@@ -1101,12 +1089,9 @@ class TestAgentChatbotFidelity:
     def test_content_names(self):
         names = {c.name.snake for c in self.spec.content}
         # D-20: Filter out auto-generated audit log Content
-        # v0.9 Phase 3 slice (e): also filter the compute_refusals
-        # sidecar (auto-generated for ai-agent apps).
         user_content = {
             n for n in names
             if not n.startswith("compute_audit_log_")
-            and n != "compute_refusals"
         }
         assert user_content == {"messages"}
 
