@@ -1615,6 +1615,39 @@ class Analyzer:
                         code="TERMIN-S058",
                     ))
 
+                # TERMIN-S061 (v0.9.2 §11.5): a compute that wires
+                # `Conversation is X.Y` cannot also declare
+                # `Output into field A.B`. Conversation-mode agents
+                # auto-write back into the conversation field — their
+                # "output" is the entries the runtime appends, not a
+                # separate set_output dictionary. The runtime strips
+                # set_output from the tool surface on this path, so
+                # any `Output into field` declaration would be
+                # silently ignored. Reject it at compile time so
+                # authors get a pointed error.
+                if compute.output_fields:
+                    out_refs = ", ".join(
+                        f"{c}.{f}" for (c, f) in compute.output_fields
+                    )
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'Compute "{compute.name}" declares both '
+                            f'`Conversation is {cs_content_raw}.{cs_field}` '
+                            f'and `Output into field {out_refs}`. '
+                            f'Conversation-mode agents communicate by '
+                            f'auto-writing back into the conversation '
+                            f'field — `set_output` is removed from the '
+                            f'tool surface on this path, so the '
+                            f'`Output into field` declaration would '
+                            f'have no effect. Remove the `Output into '
+                            f'field` line, or remove the `Conversation '
+                            f'is` line if you want the legacy '
+                            f'set_output completion path.'
+                        ),
+                        line=compute.line,
+                        code="TERMIN-S061",
+                    ))
+
     def _check_compute_has_access(self) -> None:
         """Every Compute must have an access rule.
 

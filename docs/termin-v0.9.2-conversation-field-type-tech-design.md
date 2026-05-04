@@ -528,9 +528,11 @@ Verified against the official Anthropic API docs ([Tool use](https://platform.cl
 When the agent's invocation completes successfully, the runtime appends to the conversation field:
 
 - **Final text response** → `kind: "assistant"` entry (no `type`; defaults to response) with the text in `body`.
-- **Tool calls the agent made along the way** → `kind: "tool_call"` entries (one per call), with `tool_call_id` from Anthropic's response, `tool_name`, `tool_args`, and a human-readable summary in `body`.
+- **Tool calls the agent made along the way** → `kind: "tool_call"` entries (one per call), with `tool_call_id` from Anthropic's response, `tool_name`, `tool_args`, and `body = "<tool_name>(<json args>)"` — the structured fields hold the data; `body` is the at-a-glance summary for chat UI and audit reads. **No truncation in v0.9.2.** A future v0.9.3+ slice will add an optional `purpose` field on tool entries (a 6-words-or-less display string the agent supplies, hard-truncated with ellipsis after 12 words) so chat UIs can show a short label without parsing args.
 - **Tool results returned by the runtime** → `kind: "tool_result"` entries, linked by `tool_call_id`, with the result text in `body`.
 - All entries written in this pipeline get the same `parent_id` (the user message that triggered the agent), so reviewers can reconstruct turn boundaries.
+
+The runtime imposes **no context-window management** in v0.9.2 — the full conversation field is materialized and sent on every turn. When apps grow long enough to hit Anthropic's context-window limit, the provider call errors and the runtime falls through to the standard error path (no auto-append; chat UI shows a stale-state). A future v0.9.3+ slice will add a hierarchical-summarization layer (a projection that runs before `materialize_to_anthropic`, summarizing older turns so the active window stays under budget). The shape of that projection is deliberately deferred until real usage shows what tradeoffs matter.
 
 If the agent calls `system.refuse(reason)` along the way, the runtime:
 
@@ -575,8 +577,9 @@ Compute called "reply":
 
 **Validation at compile time:**
 
-- A compute with `Conversation is X` cannot also have `Accesses X` for the same field.
-- A compute with `Conversation is X.Y` must trigger on `X.Y.appended` (the runtime needs to know which conversation activity the agent reacts to). Computes triggered by other events can read a conversation field via legacy `content.query` but won't get the native materialization.
+- A compute with `Conversation is X` cannot also have `Accesses X` for the same field. **(TERMIN-S057)**
+- A compute with `Conversation is X.Y` must trigger on `X.Y.appended` (the runtime needs to know which conversation activity the agent reacts to). Computes triggered by other events can read a conversation field via legacy `content.query` but won't get the native materialization. **(TERMIN-S058)**
+- A compute with `Conversation is X.Y` cannot also declare `Output into field A.B` — conversation-mode agents auto-write back per §11.5; `set_output` is removed from the tool surface on this path, so the declaration would be silently ignored. **(TERMIN-S061)**
 - `Invokes` lists tools by name; each must resolve to a declared Compute or sub-agent.
 - The `system.refuse` tool is always available; declaring it explicitly is a warning (it's already there).
 
@@ -903,7 +906,7 @@ v0.9.2 must satisfy:
 | **L4 — WebSocket append frame** | termin-server | Extend the existing record-subscription WebSocket protocol with an `append` frame type. Same payload shape as REST. Routes through the same event bus. | 0.5 day |
 | **L5 — Event class** | termin-core + termin-server | New event class `<content>.<field>.appended`. Payload shape per §9.1. Trigger predicate parsing (`appended_entry.kind == ...`). Event envelope fields. | 0.5–1 day |
 | **L6 — `Conversation is` source line** | Termin compiler | Grammar addition. Validation: cannot coexist with `Accesses` for the same field; compute must trigger on the same field's `appended` event. Compile error otherwise. | 0.5 day |
-| **L7 — ai-agent provider Protocol updates** | termin-core + termin-server | `AgentContext.conversation` field. Runtime canonical kind → Anthropic mapping per §11.4 with adjacent-role merging. Auto-write-back per §11.5 (final text + tool_call + tool_result entries with linkage). Refusal path: append `kind: "assistant", type: "refusal"` entry + WARN audit log entry; retire `compute_refusals` sidecar (Phase 3 slice (e) shipped it; v0.9.2 CHANGELOG documents the migration). Backwards compat for legacy computes. | 1.5–2 days |
+| **L7 — ai-agent provider Protocol updates** | termin-core + termin-server | `AgentContext.conversation` field. Runtime canonical kind → Anthropic mapping per §11.4 with adjacent-role merging. Auto-write-back per §11.5 (final text + tool_call + tool_result entries with linkage). Refusal path: append `kind: "assistant", type: "refusal"` entry + WARN audit log entry; retire `compute_refusals` sidecar (Phase 3 slice (e) shipped it; v0.9.2 CHANGELOG documents the migration). Backwards compat for legacy computes. **L7.1+L7.2+L7.3 shipped 2026-05-04** (one slice — the three were tightly coupled: `ConversationContext` on `AgentContext`, `materialize_to_anthropic` per §11.4, `agent_loop_with_conversation` + `_on_writeback` callback per §11.5; TERMIN-S061 added at the same time gates the `Conversation + Output into field` mistake the analyzer would otherwise miss). **L7.4 + L7.5 shipped earlier** (refusal path + `compute_refusals` retirement). | 1.5–2 days |
 | **L8 — When-rule semantics for non-LLM listeners** | Termin compiler + termin-server | When rules can subscribe to `*.appended` events. New `Append to` action available in When-rule action lists. | 0.5 day |
 | **L9 — Chat presentation contract update** | termin-core + termin-server (Tailwind built-in) | `presentation-base.chat` binding accepts `<content>.<field>` form (no clause sub-block — pure semantics, see §14). Tailwind chat component renders the §7.2 entry shape with sensible per-kind defaults; sets `data-termin-{kind,type,source,tool-name}` attributes for CSS hooks. Subscribes to `<content>.<field>.appended` events; sends user messages via the WS append frame. Refusal rendered as a distinguished assistant entry (`type == "refusal"`). | 0.5–1 day |
 | **L10 — Multi-row ownership** | Termin compiler | Extend `is owned by` to support non-unique fields. Compile-time semantics per §15.3. | 1 day |
@@ -929,6 +932,8 @@ With two parallel agents: ~6–7 days clock time. The grammar foundations (L1, L
 - **OpenAI / Bedrock provider conversation support** unless someone's actively using them. Anthropic ships in v0.9.2; others can follow.
 - **Per-kind aliases** (e.g., letting an app declare "player" as the display label for `user`-kind entries). Handle via the chat provider's deploy config, not in source.
 - **Field-level semantic hints on the conversation type itself** (e.g., `which is conversation, kind: "debug"` to mark a field as not-user-facing). Real future slice for when the conversation type needs internal discrimination, but no app needs it in v0.9.2. Picked up as v0.9.3 / v0.10 when Airlock or another app shows the use case. JL's Wave 3 callout is logged here so we don't forget it.
+- **Optional `purpose` field on tool entries** (a 6-words-or-less display string the agent supplies when calling a tool — e.g. `"checking calendar availability"` rather than the long `tool_name(json args)` body). Hard-truncates with ellipsis after 12 words. Lets chat UIs show a short label without parsing args. v0.9.3+. The body-as-`tool_name(args)` shape that v0.9.2 ships is not blocking: chat providers already collapse tool entries by default.
+- **Hierarchical context-window summarization** (a projection that runs before `materialize_to_anthropic`, summarizing older turns so the active conversation window stays under the provider's context budget as the conversation grows). v0.9.3+. v0.9.2 sends the full materialized field every turn; when an app first hits the limit, the provider call errors and the chat shows a stale state. The shape of the projection is deferred until real usage shows what tradeoffs matter.
 
 ---
 

@@ -736,6 +736,89 @@ Content called "chat_threads":
         assert result.ok, result.format()
 
 
+# ── v0.9.2 L7.1: Conversation + Output into field conflict ──
+#
+# Per tech design §11.5: a compute with `Conversation is X.Y` does
+# auto-write-back into the conversation field — its "output" is the
+# entries the runtime appends, not a separate set_output dictionary.
+# Declaring `Output into field` on a conversation-mode compute is a
+# category error: the legacy set_output completion signal doesn't
+# exist on the conversation path (the runtime strips set_output from
+# the tool surface). Reject it at compile time so authors get a
+# pointed error, not a silently-ignored declaration.
+
+class TestConversationOutputConflict:
+    _PREAMBLE = '''Identity:
+  Scopes are "chat.use"
+  An "anonymous" has "chat.use"
+
+Content called "chat_threads":
+  Each chat_thread has a title which is text
+  Each chat_thread has a conversation which is conversation
+  Anyone with "chat.use" can view or create chat_threads
+
+Content called "completions":
+  Each completion has a prompt which is text, required
+  Each completion has a response which is text
+  Anyone with "chat.use" can view or create completions
+'''
+
+    def test_conversation_plus_output_field_rejected(self):
+        # TERMIN-S061: declaring both `Conversation is X.Y` and
+        # `Output into field A.B` on the same compute is a category
+        # error — conversation-mode agents auto-write back, set_output
+        # is not in the tool surface.
+        result = _analyze(self._PREAMBLE + '''Compute called "reply":
+  Provider is "ai-agent"
+  Trigger on event "chat_threads.conversation.appended"
+  Conversation is chat_threads.conversation
+  Output into field completion.response
+  Anyone with "chat.use" can execute this
+  Directive is ```
+    Reply.
+  ```
+''')
+        assert not result.ok, "Expected TERMIN-S061 to fire"
+        codes = [e.code for e in result.errors]
+        assert "TERMIN-S061" in codes, (
+            f"Expected TERMIN-S061 in {codes}; got errors:\n{result.format()}"
+        )
+        msg = " | ".join(str(e) for e in result.errors)
+        # Diagnostic should name both lines so author knows which to drop.
+        assert "Conversation is" in msg
+        assert "Output into field" in msg
+
+    def test_conversation_without_output_field_accepted(self):
+        # Positive control: a conversation-only compute compiles.
+        result = _analyze(self._PREAMBLE + '''Compute called "reply":
+  Provider is "ai-agent"
+  Trigger on event "chat_threads.conversation.appended"
+  Conversation is chat_threads.conversation
+  Anyone with "chat.use" can execute this
+  Directive is ```
+    Reply.
+  ```
+''')
+        assert result.ok, result.format()
+
+    def test_output_field_without_conversation_accepted(self):
+        # Positive control: legacy non-conversation agent with
+        # `Output into field` still compiles — the conflict only fires
+        # when both directives coexist on the same compute.
+        result = _analyze(self._PREAMBLE + '''Compute called "complete":
+  Provider is "llm"
+  Accesses completions
+  Input from field completion.prompt
+  Output into field completion.response
+  Trigger on event "completion.created"
+  Anyone with "chat.use" can execute this
+  Directive is ```
+    Reply.
+  ```
+''')
+        assert result.ok, result.format()
+
+
 class TestStateMachineAnalyzer:
     """Analyzer checks for v0.9 inline state machines (design doc §7)."""
 
