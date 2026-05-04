@@ -218,10 +218,11 @@ class TestAuditVerb:
         assert Verb.AUDIT.value == "audit"
 
     def test_audit_verb_in_enum_members(self):
-        """AUDIT should be one of the five verbs."""
+        """AUDIT should be one of the six verbs (v0.9.2 added APPEND)."""
         verb_names = [v.name for v in Verb]
         assert "AUDIT" in verb_names
-        assert len(verb_names) == 5  # VIEW, CREATE, UPDATE, DELETE, AUDIT
+        # v0.9.2 L3 added APPEND for field-targeted conversation appends.
+        assert set(verb_names) == {"VIEW", "CREATE", "UPDATE", "DELETE", "AUDIT", "APPEND"}
 
 
 # ===== Step 1b: `can audit` Syntax Tests =====
