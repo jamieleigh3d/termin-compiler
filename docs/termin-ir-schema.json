@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://termin.dev/schemas/ir/0.9.0/appspec.json",
+  "$id": "https://termin.dev/schemas/ir/0.9.2/appspec.json",
   "title": "Termin AppSpec IR",
   "description": "The complete Intermediate Representation of a compiled Termin application. Produced by the Termin compiler, consumed by any conforming Termin runtime.",
   "type": "object",
@@ -9,7 +9,7 @@
   "properties": {
     "ir_version": {
       "type": "string",
-      "const": "0.9.0",
+      "const": "0.9.2",
       "description": "Semantic version of the IR schema. Runtimes should reject versions they don't support."
     },
     "reflection_enabled": {
@@ -548,7 +548,7 @@
 
     "EventActionSpec": {
       "type": "object",
-      "description": "Action to take when an event fires: create a record in target Content, or send data to a Channel.",
+      "description": "Action to take when an event fires: create a record in target Content, send data to a Channel, or append an entry to a conversation field (v0.9.2 L8).",
       "additionalProperties": false,
       "properties": {
         "target_content": {
@@ -576,6 +576,37 @@
           "type": "string",
           "default": "",
           "description": "Channel name to send data to (for Channel send actions)."
+        },
+        "append_content": {
+          "type": "string",
+          "default": "",
+          "description": "v0.9.2 L8: snake_case Content name owning the conversation field to append to (for append actions). Empty for non-append actions."
+        },
+        "append_field": {
+          "type": "string",
+          "default": "",
+          "description": "v0.9.2 L8: snake_case field name on append_content (must be a conversation field) for append actions."
+        },
+        "append_kind": {
+          "type": "string",
+          "default": "",
+          "description": "v0.9.2 L8: kind of the appended entry (one of the closed conversation-entry kinds: user, agent, tool_call, tool_result, system_event; assistant accepted as legacy back-compat)."
+        },
+        "append_body_expr": {
+          "type": "string",
+          "default": "",
+          "description": "v0.9.2 L8: CEL expression evaluated against the triggering record + appended_entry context, producing the body of the new entry."
+        },
+        "append_metadata": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "default": [],
+          "description": "v0.9.2 L8: array of [key, cel_expr] pairs for additional metadata on the appended entry."
         }
       }
     },
@@ -609,7 +640,13 @@
             { "type": "null" }
           ],
           "default": null,
-          "description": "Action to perform when the event fires."
+          "description": "Single action to perform when the event fires. v0.9.1 and earlier shape; v0.9.2 retains this for back-compat — when an event has multiple actions, the first action is mirrored here so v0.9.1 consumers continue to work."
+        },
+        "actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EventActionSpec" },
+          "default": [],
+          "description": "v0.9.2 L8: ordered list of actions to perform when the event fires. Each action carries its own verb (create, send, append) via the populated subset of EventActionSpec fields. Runtimes dispatch each action through its matching handler family. Empty for events with no actions; single-action events populate both `action` (mirror) and `actions` (length-1 list)."
         },
         "condition_expr": {
           "type": ["string", "null"],

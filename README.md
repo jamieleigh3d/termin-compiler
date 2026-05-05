@@ -27,7 +27,7 @@ python -m termin.cli compile examples/helpdesk.termin
 python -m termin.cli serve helpdesk.termin.pkg
 ```
 
-The app runs at `http://localhost:8100` with stub authentication (role selector in the UI).
+The app runs at `http://localhost:8000` with stub authentication (role selector in the UI).
 
 ## What Termin Does
 
@@ -89,7 +89,7 @@ examples/                Example .termin applications
   hrportal.termin            HR system with field-level confidentiality
 
 docs/                    Specifications and design documents
-  termin-ir-schema.json      JSON Schema (draft 2020-12) for IR v0.9.0
+  termin-ir-schema.json      JSON Schema (draft 2020-12) for IR v0.9.2
   termin-runtime-implementers-guide.md
   termin-confidentiality-brd.md
   termin-confidentiality-spec.md
@@ -120,7 +120,40 @@ Content-level scoping (`Scoped to "access_salary"`) gates entire content types. 
 
 ## Conformance Suite
 
-The [termin-conformance](https://github.com/jamieleigh3d/termin-conformance) repository contains the v0.9.1 behavioral test suite (1036 passing on the in-process `reference` adapter + 10 Playwright browser tests on the `served-reference` adapter, plus 32 adapter-gated skips) that validate any conforming runtime. v0.9.1 added the Phase 3 (compute provider, 45 tests) and Phase 4 (channel provider, 77 tests) cross-runtime conformance packs that v0.9.0 left deferred. Tests use an adapter pattern --- swap the adapter to test your runtime without changing a single test. The `served-reference` adapter launches the runtime on a real localhost port for browser-automation tests; the default in-process `reference` adapter runs the HTTP suite in under 50 seconds.
+The [termin-conformance](https://github.com/jamieleigh3d/termin-conformance) repository contains the v0.9.2 behavioral test suite (1066 passing on the in-process `reference` adapter + 10 Playwright browser tests on the `served-reference` adapter, plus 32 adapter-gated skips) that validate any conforming runtime. v0.9.2 adds the conversation-field contract (~700-line spec at `specs/conversation-field-contract.md` + 45 cross-runtime tests) and the refusal-terminates-loop contract (12 tests) on top of the v0.9.1 Phase 3 (compute provider) and Phase 4 (channel provider) packs. Tests use an adapter pattern --- swap the adapter to test your runtime without changing a single test. The `served-reference` adapter launches the runtime on a real localhost port for browser-automation tests; the default in-process `reference` adapter runs the HTTP suite in under 60 seconds.
+
+### v0.9 release arc
+
+- **v0.9.0** (2026-04-30) — runtime extraction. Phase 7 of the v0.9
+  Termin milestone split the monolithic `termin-compiler` into three
+  packages: `termin-core` (framework-free contract surface, IR types,
+  expression eval), `termin-server` (FastAPI hosting layer + IO-bound
+  builtin providers), and this `termin-compiler` (compiler only).
+  `termin-compiler` now depends on `termin-core>=0.9.0` and
+  `termin-server>=0.9.0`; alternate runtimes built on `termin-core`
+  do not depend on `termin-server`. The legacy `termin_runtime/`
+  shim layer that carried tests through the transition was deleted
+  in slice 7.5a.
+- **v0.9.1** (2026-05-01) — correctness + hygiene patch. Closed the
+  audit-trail gaps surfaced by the Phase 3 conformance pack
+  (manual-trigger CEL audit, anonymous-principal stamping), fixed
+  the stale-action hydrator on warehouse, made `surface-as-error`
+  channel failure mode behave deterministically per the contract.
+  IR shape unchanged at 0.9.0.
+- **v0.9.2** (2026-05-05) — conversation-field type. Adds two new
+  IR base types (`structured` and `conversation`), the `Append`
+  CRUD verb with its own append-only access rule, a
+  `Conversation is X.Y` source line on `Compute` so AI-agent
+  computes can stream against a typed message log, multi-row
+  `is owned by` ownership predicates, and a
+  `Show a chat for <content>.<field>` presentation binding that
+  turns any conversation field into a hydrated chat surface. The
+  reference runtime in `termin-server` ships materialize-to-Anthropic
+  + auto-write-back + token streaming; the conformance suite pins
+  the `system_refuse(reason)` → terminate-loop contract and the
+  canonical kind rename `assistant` → `agent` (with `assistant`
+  accepted as legacy back-compat). IR bumps to 0.9.2 (additive,
+  patch per `RELEASE_PROCESS.md` §2).
 
 ## IR and Package Format
 

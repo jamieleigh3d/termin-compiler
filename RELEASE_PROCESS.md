@@ -20,27 +20,58 @@ The IR version is the most impactful. When it bumps, every `.termin.pkg`, every 
 
 ## 2. When to Bump What
 
-### Patch (e.g., 0.7.0 &rarr; 0.7.1)
+### Patch (e.g., 0.9.1 &rarr; 0.9.2)
 
-Bug fix. No IR schema changes. No new fields. No breaking syntax.
+**Pre-v1.0:** any backwards-compatible change is a patch &mdash; including
+**additive IR fields, new DSL syntax, and new runtime features.** The
+contract is "old `.termin` files still compile, old `.termin.pkg`
+artifacts still load, conformant runtimes still pass." Bug fixes,
+hardening, and documentation are also patches.
 
-- Bump compiler version only (`setup.py`, `termin/__init__.py`)
-- No IR version change, no fixture regeneration
-- Run tests, commit, push
+Anything that breaks one of those three is a minor (see below).
 
-### Minor (e.g., 0.7.0 &rarr; 0.8.0)
+A v0.X.Y patch typically:
 
-New IR fields (additive). New DSL syntax. New runtime features.
+- Bumps compiler + server + core + spectrum-provider versions
+  (`setup.py` / `pyproject.toml` / `__init__.py` in each)
+- Bumps the IR version in `termin-core/termin_core/ir/types.py`
+  and `termin-compiler/docs/termin-ir-schema.json` if any IR fields
+  were added (additive only)
+- Regenerates `.termin.pkg` fixtures into the conformance repo if
+  the IR or compiler changed
+- Adds a CHANGELOG entry in every affected repo
+- Runs the full test matrix across all four test repos (compiler,
+  server, core, conformance)
 
-- Use `release.py` (see step-by-step below)
+Use `release.py` (see step-by-step below) for additive-IR patches;
+straight bug-fix patches with no IR work can skip the fixture
+regeneration step.
+
+### Minor (e.g., 0.9.x &rarr; 0.10.0)
+
+**Pre-v1.0:** breaking changes &mdash; field renames, field removals,
+semantic changes, grammar tightening that rejects previously-valid
+sources, runtime behavior changes that break conformant
+implementations.
+
+- Use `release.py`
+- Migration notes in CHANGELOG explaining what existing
+  `.termin` files / runtimes / deploy configs need to update
+- Update conformance suite version check to reject old IR if
+  the change is incompatible at the schema level
 
 ### Major (e.g., 0.x &rarr; 1.0.0)
 
-Breaking IR change. Field renames, removals, semantic changes.
+The 1.0 commitment. After 1.0 the patch/minor/major distinction
+follows strict semver:
 
-Same as minor, plus:
-- Migration guide for existing `.termin` files
-- Update conformance suite version check to reject old IR
+- patch = backwards-compatible bug fixes only
+- minor = backwards-compatible additions
+- major = anything breaking
+
+Pre-1.0 we use the looser "additive = patch, breaking = minor"
+convention because the schema is still actively evolving and we
+want the version arc to reflect what *broke*, not what *grew*.
 
 ---
 

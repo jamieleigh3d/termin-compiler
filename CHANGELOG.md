@@ -1,5 +1,128 @@
 # Changelog
 
+## [0.9.2] — 2026-05-05
+
+The conversation-field release. Adds two new IR base types
+(`structured` and `conversation`), a CRUD-level `Append` verb with
+its own append-only access rule, a `Conversation is X.Y` source line
+on `Compute` so AI-agent computes can stream against a typed message
+log, multi-row `is owned by` ownership predicates, and a
+`Show a chat for <content>.<field>` presentation binding that turns
+any conversation field into a hydrated chat surface. The reference
+runtime in `termin-server` ships the matching wiring; the
+conformance suite pins the materialize-to-Anthropic shape, the
+refusal-terminates-loop contract, and the kind enum rename
+(`assistant` → `agent`, with `assistant` accepted as back-compat).
+
+Per the v0.9.2 patch policy clarification in `RELEASE_PROCESS.md`
+§2: additive IR fields are patches pre-v1.0. The compiler accepts
+existing v0.9.1 sources unchanged.
+
+### Added
+
+- **L1 — `structured` base type** (`termin/lower_columns.py`).
+  Opaque JSON-shaped fields. Stored as TEXT, parsed at boundary
+  read. `Each ticket has a metadata which is structured` is now
+  legal.
+- **L2 — `conversation` base type** (`termin/lower_columns.py`,
+  schema validator). Typed message log: ordered list of entries,
+  each with a closed `kind` enum (`user`, `agent`, `tool_call`,
+  `tool_result`, `system_event`; `assistant` accepted as legacy
+  back-compat). The runtime (`termin-server`) materializes these
+  to provider-specific message lists; the type itself is provider-
+  agnostic.
+- **L3 — `Append` CRUD verb** (grammar + AST + IR + analyzer +
+  lowering). Fifth verb alongside view/create/update/delete.
+  Access rule syntax pivoted from apostrophe to dot:
+  `Anyone with "scope" can append to <content>.<field>`. The
+  field part is required — `Append` has no whole-record meaning.
+  Lowers to a `RouteSpec` for `POST <resource>/{id}/<field>:append`
+  plus a `Verb.APPEND` audit-log entry.
+- **L5 — When-rule trigger predicates against `appended_entry`.**
+  `When [content.field.appended where appended_entry.kind == "user"]:`
+  fires the rule body with the appended entry available as a CEL
+  variable. Lets author-declared computes react to a specific
+  entry kind without observing earlier entries.
+- **L6 — `Conversation is X.Y` source line on `Compute`.** Pairs
+  with `Provider is "ai-agent"` to declare which conversation
+  field the agent writes back to. The runtime resolves the
+  binding at trigger time and feeds the materialized history to
+  the provider's `agent_loop_with_conversation` entry point.
+- **L8 — When-rule action lists + Append action shape.** A
+  When rule body can now declare a list of actions instead of a
+  single one; each action carries its own `verb` (currently
+  `create`, `update`, `append`) and CEL-expression payload. Lets
+  authors fan one event into multiple writes without nesting
+  rules.
+- **L9 — `Show a chat for <content>.<field>` presentation
+  binding.** New chat-component shape that targets a typed
+  conversation field rather than the v0.8 `messages_table`
+  legacy form. Lowers to a `chat` `ComponentNode` with
+  `binding="conversation-field"`, `source`, `conversation_field`
+  props.
+- **L10 — `is owned by` extended to non-unique fields.**
+  Ownership-predicate access rules (`Anyone with "X" can update
+  their own <singular>`) previously required the ownership
+  field to be a unique column (one row per identity). v0.9.2
+  drops that constraint: a content type can declare
+  `is owned by user_id` on a non-unique field, and the analyzer
+  generates row-level filters across all matching rows. Catches
+  the multi-row case (e.g. each user has many chat threads they
+  own) without forcing a synthetic unique key.
+- **L11 — `examples/agent_chatbot.termin` refresh.** Demonstrates
+  the v0.9.2 shape end-to-end: `chat_threads` content with a
+  `conversation` field, append access rule with dot syntax,
+  `Conversation is chat_threads.conversation` on the agent
+  compute, `Invokes "current_time"` for tool-binding, and the
+  chat presentation binding. Replaces the v0.9.1 messages-table
+  demonstration; the v0.9.1 form is preserved as
+  `agent_chatbot_legacy.termin` for back-compat coverage.
+- **L13 — D-01 final pass** (`docs/termin-design-decisions/`).
+  Tightens the conversation-field design doc with the
+  agent-kind rename, the L9 chat-binding form, the L11 example
+  refresh, and the §11.5 auto-write-back contract that the
+  server-side runtime implements.
+- **TERMIN-S061 — `Conversation` source line on a non-`ai-agent`
+  Compute** (analyzer error). Catches authors declaring
+  `Conversation is X.Y` on a CEL or LLM compute, since neither
+  knows what to do with a conversation source. Fix-it suggests
+  switching `Provider is "ai-agent"` or removing the line.
+- **TERMIN-S062 — `is owned by <singular>` on a non-unique
+  field** (analyzer error, renumbered from S057 during the
+  v0.9.2 work to avoid collision with the L6 Conversation+Accesses
+  S057 case). Per L10, this is no longer an error when the field
+  is plausibly multi-row; S062 keeps catching the
+  semantically-broken case where the field doesn't reference
+  identity at all.
+
+### Changed
+
+- **Conversation entry `kind` rename** (semantics-only,
+  back-compat preserved): canonical kind for AI-agent entries
+  is now `agent` instead of `assistant`. Validators accept both;
+  the compiler emits `agent` going forward. The server-side
+  hydrator + UI labels follow in `termin-server` v0.9.2 (label
+  is "AI Agent"). JL flagged the rename: "Assistant" is the
+  brand of one product family, not a Termin term.
+- **`compute_refusals` sidecar collection retired.** v0.9.x
+  used a separate sidecar table to record `system_refuse(reason)`
+  calls. v0.9.2 records refusals directly as a conversation
+  entry with `kind="agent"` and `type="refusal"`. The audit
+  trail still captures the refusal verbatim, but it lives in
+  the conversation timeline where readers see it next to the
+  user message that triggered it. Sidecar table is no longer
+  created.
+
+### Suite
+
+2643 tests passing on Windows (was 2552; +91 from L1–L13 across
+type validation, append-verb lowering, when-rule action lists,
+multi-row ownership, conversation-field presentation, agent-chatbot
+e2e, the kind rename back-compat, and fixture regeneration). Full
+compile-smoke + serve-smoke verified end-to-end. Five
+`examples/agent_chatbot*` artifacts cover the new shape and the
+legacy back-compat path.
+
 ## [0.9.1] — 2026-05-01
 
 Correctness + hygiene patch on top of v0.9.0. **No IR schema

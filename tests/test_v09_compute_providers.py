@@ -50,7 +50,7 @@ class TestComputeRegistration:
             rec = providers.get(cat, contract, product)
             assert rec is not None, f"missing {cat=} {contract=} {product=}"
             assert rec.factory is not None
-            assert rec.version == "0.9.0"
+            assert rec.version == "0.9.2"
 
     def test_factory_constructs_correct_class(self):
         contracts = ContractRegistry.default()

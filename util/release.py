@@ -33,7 +33,11 @@ from pathlib import Path
 # ── Constants ──
 
 COMPILER_ROOT = Path(__file__).parent.parent
-CONFORMANCE_ROOT = COMPILER_ROOT.parent / "termin-conformance"
+WORKSPACE_ROOT = COMPILER_ROOT.parent
+CORE_ROOT = WORKSPACE_ROOT / "termin-core"
+SERVER_ROOT = WORKSPACE_ROOT / "termin-server"
+CONFORMANCE_ROOT = WORKSPACE_ROOT / "termin-conformance"
+SPECTRUM_ROOT = WORKSPACE_ROOT / "termin-spectrum-provider"
 
 EXAMPLES_DIR = COMPILER_ROOT / "examples"
 CONFORMANCE_PKG_DIR = CONFORMANCE_ROOT / "fixtures"
@@ -47,18 +51,39 @@ CASCADE_FIXTURES_DIR = COMPILER_ROOT / "tests" / "fixtures" / "cascade"
 CONFORMANCE_CASCADE_PKG_DIR = CONFORMANCE_ROOT / "fixtures-cascade"
 CONFORMANCE_SPECS_DIR = CONFORMANCE_ROOT / "specs"
 
-# Files that contain version strings
+# Files that contain version strings.
+#
+# v0.9.2 (2026-05-05): the five-repo layout settled in v0.9.0/v0.9.1
+# moves in lockstep pre-v1.0. The compiler-version flag bumps every
+# Python package version (compiler, core, server, spectrum-provider)
+# at once — there is no scenario where they diverge while we're
+# still actively co-evolving them.
+#
+# IR version still bumps independently because the IR shape can
+# stay constant across patch releases (e.g. v0.9.0 → v0.9.1 was a
+# pure runtime/audit patch, IR const stayed at 0.9.0).
 VERSION_FILES = {
     "ir_version": [
-        (COMPILER_ROOT / "termin" / "ir.py", r'ir_version: str = "[\d.]+"', 'ir_version: str = "{version}"'),
+        # IR types live in termin-core since slice 7.3 (the legacy
+        # termin-compiler/termin/ir.py shim was retired in 7.5a along
+        # with the rest of termin_runtime/).
+        (CORE_ROOT / "termin_core" / "ir" / "types.py", r'ir_version: str = "[\d.]+"', 'ir_version: str = "{version}"'),
         (COMPILER_ROOT / "docs" / "termin-ir-schema.json", None, None),  # special handling
         (COMPILER_ROOT / "README.md", r'IR v[\d.]+', 'IR v{version}'),
         (COMPILER_ROOT / "docs" / "termin-runtime-implementers-guide.md", r'\*\*Version:\*\* [\d.]+', '**Version:** {version}'),
         (CONFORMANCE_ROOT / "tests" / "test_reflection.py", r'== "[\d.]+"', '== "{version}"'),
     ],
     "compiler_version": [
+        # termin-compiler
         (COMPILER_ROOT / "setup.py", r'version="[\d.]+"', 'version="{version}"'),
         (COMPILER_ROOT / "termin" / "__init__.py", r'__version__ = "[\d.]+"', '__version__ = "{version}"'),
+        # termin-core
+        (CORE_ROOT / "pyproject.toml", r'version = "[\d.]+"', 'version = "{version}"'),
+        (CORE_ROOT / "termin_core" / "__init__.py", r'__version__ = "[\d.]+"', '__version__ = "{version}"'),
+        # termin-server
+        (SERVER_ROOT / "pyproject.toml", r'version = "[\d.]+"', 'version = "{version}"'),
+        # termin-spectrum-provider
+        (SPECTRUM_ROOT / "setup.py", r'version="[\d.]+"', 'version="{version}"'),
     ],
 }
 
@@ -345,7 +370,17 @@ def main():
     if not COMPILER_ROOT.exists():
         print(f"  ERROR: Compiler repo not found at {COMPILER_ROOT}")
         sys.exit(1)
-    print(f"  Compiler repo: {COMPILER_ROOT}")
+    print(f"  Compiler repo:   {COMPILER_ROOT}")
+
+    for label, root in (("Core repo", CORE_ROOT),
+                        ("Server repo", SERVER_ROOT),
+                        ("Spectrum repo", SPECTRUM_ROOT)):
+        if root.exists():
+            print(f"  {label}:{' ' * (16 - len(label))}{root}")
+        else:
+            print(f"  WARNING: {label} not found at {root}")
+            if args.compiler_version:
+                print(f"  Version bump for that repo will be skipped.")
 
     conformance_ok = CONFORMANCE_ROOT.exists()
     if args.ir_version and not conformance_ok:
@@ -396,15 +431,39 @@ def main():
             print(f"  {n} files copied")
 
     # ── Run tests ──
+    #
+    # v0.9.2 (2026-05-05): expanded from compiler+conformance to the
+    # full four-repo test matrix. termin-core (contract Protocols, IR
+    # types, expression eval) and termin-server (FastAPI hosting layer +
+    # IO builtins) post-date the original release script and were
+    # previously run by hand. Spectrum-provider stays out of scope here
+    # because its tests need npm-built bundle for the JS unit suite —
+    # the Python conformance side runs in CI separately.
     if not args.skip_tests and not args.dry_run:
         print("\n" + "-" * 40)
-        ok1 = run_tests(COMPILER_ROOT, "compiler")
-        ok2 = True
-        if conformance_ok and args.ir_version:
-            ok2 = run_tests(CONFORMANCE_ROOT, "conformance")
+        results: list[tuple[str, bool]] = []
 
-        if not ok1 or not ok2:
-            print("\n  TESTS FAILED. Fix issues before committing.")
+        results.append(("compiler", run_tests(COMPILER_ROOT, "compiler")))
+
+        if CORE_ROOT.exists():
+            results.append(("core", run_tests(CORE_ROOT, "core")))
+        else:
+            print(f"\n  SKIP core tests — repo not at {CORE_ROOT}")
+
+        if SERVER_ROOT.exists():
+            results.append(("server", run_tests(SERVER_ROOT, "server")))
+        else:
+            print(f"\n  SKIP server tests — repo not at {SERVER_ROOT}")
+
+        # Conformance fixtures only get regenerated when the IR version
+        # bumps, but the conformance suite always validates the runtime
+        # contracts — run it regardless of whether IR moved this release.
+        if conformance_ok:
+            results.append(("conformance", run_tests(CONFORMANCE_ROOT, "conformance")))
+
+        failed = [name for name, ok in results if not ok]
+        if failed:
+            print(f"\n  TESTS FAILED in: {', '.join(failed)}. Fix issues before committing.")
             sys.exit(1)
 
     # ── Pre-commit checklist ──
@@ -415,27 +474,26 @@ def main():
     if args.dry_run:
         print("\n  [DRY RUN] No files were modified.")
     else:
-        print(f"\n  Files modified in compiler repo: {len(changed) + (7 if args.ir_version else 0)}")
+        print(f"\n  Version-string bumps: {len(changed)} files across the five repos")
         if conformance_ok and args.ir_version:
-            print(f"  Files modified in conformance repo: ~21")
+            print(f"  Conformance fixtures: regenerated (.termin.pkg + IR schema)")
         print()
         print("  ┌─────────────────────────────────────────────────────────┐")
         print("  │  MANDATORY CHECKLIST — do NOT skip these steps:        │")
         print("  ├─────────────────────────────────────────────────────────┤")
-        print("  │  [ ] 1. Update CHANGELOG.md in compiler repo           │")
+        print("  │  [ ] 1. Update CHANGELOG.md in every affected repo:    │")
+        print("  │         compiler, core, server, conformance, spectrum  │")
         print("  │  [ ] 2. Update README.md in conformance repo:          │")
         print("  │         - IR version number                            │")
         print("  │         - Test count                                   │")
         print("  │         - Fixture list (new .termin.pkg files)         │")
         print("  │         - Changelog section for this version           │")
-        print("  │  [ ] 3. Review git diff in BOTH repos                  │")
-        print("  │  [ ] 4. Run tests in BOTH repos                        │")
-        print("  │  [ ] 5. Commit compiler repo                           │")
-        print("  │  [ ] 6. Commit conformance repo                        │")
-        print("  │  [ ] 7. Tag both repos: git tag vX.Y.Z                 │")
-        print("  │  [ ] 8. Push both repos with --tags                    │")
-        print("  │  [ ] 9. Rebase messages branch onto new main           │")
-        print("  │  [ ] 10. Update open threads with release status       │")
+        print("  │  [ ] 3. Review git diff in EVERY repo                  │")
+        print("  │  [ ] 4. Tests already ran above (compiler + core +     │")
+        print("  │         server + conformance) — re-verify clean        │")
+        print("  │  [ ] 5. Commit each repo separately (DCO -s required)  │")
+        print("  │  [ ] 6. Tag each repo: git tag vX.Y.Z                  │")
+        print("  │  [ ] 7. Push each repo with --tags AFTER explicit GO   │")
         print("  └─────────────────────────────────────────────────────────┘")
     print()
 
