@@ -379,34 +379,34 @@ class TestContentSnapshotEdgeCases:
     """Cover __getattr__ and __getitem__ error paths."""
 
     def test_getattr_existing_content(self):
-        from termin_server.transaction import ContentSnapshot
+        from termin_core.transaction import ContentSnapshot
         snap = ContentSnapshot({"orders": [{"id": 1}]})
         assert snap.orders == [{"id": 1}]
 
     def test_getattr_missing_content_raises(self):
-        from termin_server.transaction import ContentSnapshot
+        from termin_core.transaction import ContentSnapshot
         snap = ContentSnapshot({})
         with pytest.raises(AttributeError, match="no content type"):
             _ = snap.nonexistent
 
     def test_getattr_private_raises(self):
-        from termin_server.transaction import ContentSnapshot
+        from termin_core.transaction import ContentSnapshot
         snap = ContentSnapshot({})
         with pytest.raises(AttributeError):
             _ = snap._private
 
     def test_getitem_result(self):
-        from termin_server.transaction import ContentSnapshot
+        from termin_core.transaction import ContentSnapshot
         snap = ContentSnapshot({}, result=42)
         assert snap["result"] == 42
 
     def test_getitem_content(self):
-        from termin_server.transaction import ContentSnapshot
+        from termin_core.transaction import ContentSnapshot
         snap = ContentSnapshot({"items": [{"id": 1}]})
         assert snap["items"] == [{"id": 1}]
 
     def test_getitem_missing_raises(self):
-        from termin_server.transaction import ContentSnapshot
+        from termin_core.transaction import ContentSnapshot
         snap = ContentSnapshot({})
         with pytest.raises(KeyError):
             _ = snap["nonexistent"]

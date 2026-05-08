@@ -21,10 +21,10 @@ from termin_server.app import (
     _discover_external_providers,
     _populate_presentation_providers,
 )
-from termin_server.providers import (
+from termin_core.providers import (
     Category, ContractRegistry, ProviderRegistry,
 )
-from termin_server.providers.presentation_contract import (
+from termin_core.providers.presentation_contract import (
     PRESENTATION_BASE_CONTRACTS,
 )
 
@@ -390,7 +390,7 @@ def test_populate_expands_package_namespace_binding(tmp_path):
     # Register the demo-pkg.* contracts so the provider registry
     # accepts them. Phase 5c.3 will likely auto-register from the
     # package registry; for this test we do it inline.
-    from termin_server.providers.contracts import (
+    from termin_core.providers.contracts import (
         Category, ContractDefinition, Tier,
     )
     for short in ("thingy", "widget"):

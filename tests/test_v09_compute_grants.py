@@ -259,7 +259,7 @@ class TestToolSurfaceConstruction:
 
 class TestToolSurfaceContract:
     def test_full_grant_set(self):
-        from termin_server.providers import ToolSurface
+        from termin_core.providers import ToolSurface
         s = ToolSurface(
             content_rw=("orders",),
             content_ro=("products",),

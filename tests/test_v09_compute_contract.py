@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from termin_server.providers import (
+from termin_core.providers import (
     AgentContext, AgentEvent, AgentResult, AuditableAction, AuditRecord,
     Cost, CompletionResult, Completed, Failed,
     DefaultCelComputeProvider, LlmComputeProvider, AiAgentComputeProvider,

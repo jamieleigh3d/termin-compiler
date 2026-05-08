@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from termin_server.providers import (
+from termin_core.providers import (
     AgentContext, AgentResult, AuditRecord, Category, CompletionResult,
     Completed, ContractRegistry, ProviderRegistry, ToolSurface,
     Principal,
@@ -269,7 +269,7 @@ class TestStubAgentProvider:
         async for ev in p.invoke_streaming("dir", "obj", ctx, ToolSurface()):
             events.append(ev)
         # Expect: ToolCalled, ToolResult, Completed
-        from termin_server.providers import ToolCalled, ToolResult
+        from termin_core.providers import ToolCalled, ToolResult
         types = [type(e).__name__ for e in events]
         assert "ToolCalled" in types
         assert "ToolResult" in types

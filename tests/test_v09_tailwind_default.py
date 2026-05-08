@@ -28,9 +28,9 @@ from termin_server.providers.builtins import (
     register_tailwind_default,
     register_builtins,
 )
-from termin_server.providers.contracts import Category, ContractRegistry
-from termin_server.providers.registry import ProviderRegistry
-from termin_server.providers.presentation_contract import (
+from termin_core.providers.contracts import Category, ContractRegistry
+from termin_core.providers.registry import ProviderRegistry
+from termin_core.providers.presentation_contract import (
     PRESENTATION_BASE_CONTRACTS,
     PresentationProvider,
     PresentationData,

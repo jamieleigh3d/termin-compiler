@@ -1,4 +1,4 @@
-# Termin v0.9.3 — Airlock-on-Termin Technical Design
+# Termin v0.9.4 — Airlock-on-Termin Technical Design
 
 **Status:** Draft v2.1 — aligned with the simplified v0.9.2 design (canonical conversation kinds, `Conversation is` wiring, no per-author Map clauses, refusal as a tool call not a kind, `structured` as a real type). Earlier `termin-v0.9.2-airlock-on-termin-tech-design.md` is superseded by this document plus its v0.9.2 companion.
 **Date:** 2026-05-03.
@@ -8,13 +8,13 @@
 - `airlock-termin-sketch.md` — the v0.9-era design exercise this document lifts heavily from. Read it first if you haven't; it is the canonical prior art.
 - `termin-runtime-implementers-guide.md` — for implementers who need to run a different runtime against this app.
 
-**Phasing:** v0.9.2 ships the **conversation field type** (and supporting changes — see companion doc). v0.9.3 ships **Airlock-on-Termin**, an advanced sample app that consumes the v0.9.2 primitives. v0.10 ships the multi-tenant hosted platform that auto-seeds Airlock-on-Termin into every new tenant.
+**Phasing:** v0.9.2 ships the **conversation field type** (and supporting changes — see companion doc). v0.9.3 ships the **runtime extraction** (alt-runtime-enabling Python API moves from `termin-server` into `termin-core`; see `termin-v0.9.3-runtime-extraction-tech-design.md`). v0.9.4 ships **Airlock-on-Termin**, an advanced sample app that consumes the v0.9.2 primitives. v0.10 ships the multi-tenant hosted platform that auto-seeds Airlock-on-Termin into every new tenant.
 
 ---
 
 ## 1. Purpose & Scope
 
-This document is the technical design for **v0.9.3 — Airlock-on-Termin**: porting an existing AI-fluency-assessment product (a separately-shipped Clarity Intelligence application currently running on a React + Express + PostgreSQL stack) onto the Termin platform as an **advanced sample app**.
+This document is the technical design for **v0.9.4 — Airlock-on-Termin**: porting an existing AI-fluency-assessment product (a separately-shipped Clarity Intelligence application currently running on a React + Express + PostgreSQL stack) onto the Termin platform as an **advanced sample app**.
 
 The product itself — Airlock — has its own product BRD and product spec maintained outside this repo by Clarity Intelligence. This document treats those as authoritative for product behavior and concentrates only on the technical design of the Termin port.
 
@@ -24,11 +24,11 @@ The product itself — Airlock — has its own product BRD and product spec main
 - How does ARIA's tool surface map onto Termin's closed-tool-surface compute contract?
 - How does the meta-evaluator fire and write back?
 - How is the CRT presentation layer delivered as a Termin presentation provider?
-- What are the explicit boundaries of v0.9.3 vs the existing Airlock production deployment (which continues to run independently)?
+- What are the explicit boundaries of v0.9.4 vs the existing Airlock production deployment (which continues to run independently)?
 
 **This document does NOT:**
 
-- Re-specify the Airlock product. The product BRD and product spec (Clarity Intelligence-internal) are the authoritative product references. v0.9.3 is a port, not a re-design.
+- Re-specify the Airlock product. The product BRD and product spec (Clarity Intelligence-internal) are the authoritative product references. v0.9.4 is a port, not a re-design.
 - Specify the conversation field type, append verb, conversation-appended event class, or ai-agent provider Protocol updates — those live in the v0.9.2 companion document and are dependencies of this design.
 - Cover multi-tenancy, the platform admin console, NL→.termin compilation, or any v0.10 platform concern. Those are v0.10.
 - Specify code-level function signatures. It defines the architectural shape; implementation details belong in the implementing slices.
@@ -39,7 +39,7 @@ The product itself — Airlock — has its own product BRD and product spec main
 
 1. **Validate the presentation provider system on a real branded app.** The CRT theme is delivered through a custom Termin presentation provider, not hardcoded into the runtime.
 2. **Validate that Termin can host a non-trivial Anthropic-backed compute pipeline.** ARIA + meta-evaluator are real declared agent computes with audit, refusal semantics, and identity propagation.
-3. **Validate the v0.9.2 conversation field type on a real workload.** The agent_chatbot refresh in v0.9.2 is the small-surface validation; ARIA on v0.9.3 is the production-shaped validation.
+3. **Validate the v0.9.2 conversation field type on a real workload.** The agent_chatbot refresh in v0.9.2 is the small-surface validation; ARIA on v0.9.4 is the production-shaped validation.
 4. **End-to-end exercise of the security thesis on a real product.** Building Airlock on Termin is a forcing function — if Termin's structural-immunity claims hold, they must hold for a product as adversarial as Airlock (which deliberately invites prompt injection in its scoring rubric).
 
 A non-goal: **replacing the production Airlock**. The current PostgreSQL-backed deployment continues to run independently. Airlock-on-Termin is a **second instance of the Airlock product**, hosted on Termin, with a different storage substrate and identity flow. They are not migrated; they coexist.
@@ -89,10 +89,10 @@ A non-goal: **replacing the production Airlock**. The current PostgreSQL-backed 
 **Key architectural choices, justified inline below:**
 
 - **No separate API server.** The Express server in the current Airlock stack disappears. Termin-server's auto-generated CRUD endpoints + compute triggers + conversation append handler replace it. This is the dogfood test of the platform.
-- **Sessions as Content, lifecycle as a state field, conversation as a field.** The session model lifts from `airlock-termin-sketch.md` §4 with one v0.9.3-specific change: the messages content type is replaced by a `conversation` typed field on the session record (per the v0.9.2 companion doc). Per-message identity is preserved via the auto-generated entry IDs the field type provides.
+- **Sessions as Content, lifecycle as a state field, conversation as a field.** The session model lifts from `airlock-termin-sketch.md` §4 with one v0.9.4-specific change: the messages content type is replaced by a `conversation` typed field on the session record (per the v0.9.2 companion doc). Per-message identity is preserved via the auto-generated entry IDs the field type provides.
 - **Custom presentation provider package** (`termin-airlock-provider`), parallel to `termin-spectrum-provider`. The Tailwind built-in provider doesn't support theme override in v0.9.1, so the Airlock theme cannot be a config; it must be a provider package.
 - **React 19 + Vite components from the current Airlock frontend** are ported into the provider's CSR bundle. The provider's job is to register the components against six new presentation contracts and bundle them.
-- **All computes run as delegate (default identity).** No `Identity: service` on ARIA, OVERSEER (which is no longer a compute anyway — see §4.7), evaluator, or profile_aggregator. Each invocation runs on behalf of the player whose action triggered the chain, inheriting their permissions. Service identity is reserved for timer-triggered work; nothing in v0.9.3 qualifies.
+- **All computes run as delegate (default identity).** No `Identity: service` on ARIA, OVERSEER (which is no longer a compute anyway — see §4.7), evaluator, or profile_aggregator. Each invocation runs on behalf of the player whose action triggered the chain, inheriting their permissions. Service identity is reserved for timer-triggered work; nothing in v0.9.4 qualifies.
 
 ---
 
@@ -121,7 +121,7 @@ When a user sends a message:
 - **Server-side state is in PostgreSQL.** No client-side state for the conversation; the client just renders what the server returns and posts new user messages.
 - **Each session is its own row.** Sessions are not "mixed in one big table queried to reconstruct context" — each session's transcript is its own JSONB blob, loaded as a unit.
 
-This is the model v0.9.3 preserves. The v0.9.2 conversation field type makes it native to Termin: the session row carries a `conversation_log` field, the runtime materializes it as a structured input to the ai-agent provider, and providers natively translate to Anthropic's messages array.
+This is the model v0.9.4 preserves. The v0.9.2 conversation field type makes it native to Termin: the session row carries a `conversation_log` field, the runtime materializes it as a structured input to the ai-agent provider, and providers natively translate to Anthropic's messages array.
 
 ---
 
@@ -225,7 +225,7 @@ Content called "sessions":
 
 **Notes:**
 
-- **`is owned by player_principal` on a non-unique field requires the v0.9.2 multi-row ownership work** (companion doc §15). This is a v0.9.3 dependency on v0.9.2.
+- **`is owned by player_principal` on a non-unique field requires the v0.9.2 multi-row ownership work** (companion doc §15). This is a v0.9.4 dependency on v0.9.2.
 - **`lifecycle` as a state field type** is the canonical way to model session status. Transitions are scope-gated (the user-driven `survey → scenario`) or CEL-expression-driven (the three event-driven transitions). When `lifecycle` enters `scoring`, the `sessions.lifecycle.scoring.entered` state-machine event fires automatically (per BRD #3 §5 — resolved); that is what triggers the meta-evaluator (§4.8).
 - **The lifecycle expiry condition** uses `session.timer_seconds` directly as a numeric comparison, not `duration(...)`. The earlier draft's `duration(string(session.timer_seconds) + "s")` doesn't appear in `termin-cel-types.md` and is unsafe to assume.
 - **`conversation_log` is a v0.9.2 field type** (companion doc §7). Per-entry shape is canonical (kind ∈ {user, assistant, tool_call, tool_result, system_event}, plus body, optional source/tool_call_id/parent_id/tool_name/tool_args/attachments). The runtime owns the shape; this content type does not redeclare it.
@@ -235,9 +235,9 @@ Content called "sessions":
 
 Earlier drafts modeled messages as their own content type. With the v0.9.2 conversation field type, that disappears. Messages live as entries in `sessions.conversation_log` with canonical kinds. Each entry has an auto-generated `id` so the meta-evaluator can cite specific entries as evidence.
 
-The kinds map to v0.9.3's three voice sources:
+The kinds map to v0.9.4's three voice sources:
 
-| Voice in production Airlock | v0.9.3 entry kind | source field |
+| Voice in production Airlock | v0.9.4 entry kind | source field |
 |---|---|---|
 | Player message | `user` | — |
 | ARIA's response (text) | `assistant` | — |
@@ -597,7 +597,7 @@ The port lifts each component into the provider's `frontend/src/components/`, re
 
 Every authenticated user is a Termin Principal. Identity flows through the existing `auth.getclarit.ai` JWT (HS256) per the Clarity Intelligence Infrastructure Guide §4. The `sub` claim from Google OAuth becomes the Principal ID.
 
-**Anonymous play** (BYOK guests without Google sign-in) is **deferred**. v0.9.3 requires Google sign-in (matches the v0.10 platform identity model). BYOK / anonymous flows are a post-v0.9.3 consideration.
+**Anonymous play** (BYOK guests without Google sign-in) is **deferred**. v0.9.4 requires Google sign-in (matches the v0.10 platform identity model). BYOK / anonymous flows are a post-v0.9.4 consideration.
 
 ### 6.2 Scope model
 
@@ -613,19 +613,19 @@ Every authenticated user is a Termin Principal. Identity flows through the exist
 
 Session ownership is enforced via `is owned by player_principal` + `their own sessions` permission verbs. This depends on the v0.9.2 multi-row ownership work. Without it, fall back to CEL-expression access predicates (`where record.player_principal == identity.principal_id`).
 
-This is the v0.9.3 demonstration of structural enforcement: a player attempting to read another player's session hits a structural refusal, audited, with a clear error.
+This is the v0.9.4 demonstration of structural enforcement: a player attempting to read another player's session hits a structural refusal, audited, with a clear error.
 
 ---
 
 ## 7. Conformance Targets
 
-v0.9.3 must satisfy the following conformance contracts:
+v0.9.4 must satisfy the following conformance contracts:
 
 - **`compute-contract.md`** — ARIA, evaluator, profile_aggregator, and all per-tool computes pass the contract suite (closed tool surface, mandatory audit, refusal semantics, identity propagation).
 - **The v0.9.2 conversation field type contract** (defined in companion doc §15) — ARIA's conversation handling is the production-shaped validation for that contract.
 - **Browser conformance** — Airlock-on-Termin should pass any `pytest -m browser` tests against its deployed surface using `data-termin-*` selectors. Airlock's existing test suite stays orthogonal (it tests the production deployment, not the Termin port).
 
-A new conformance pack — **`airlock-app-contract.md`** — could specify the Airlock-on-Termin behavioral surface for cross-runtime validation. **Optional for v0.9.3 itself** (it doesn't gate the ship); it is the natural home for "Airlock as a reference benchmark for any Termin runtime." Defer the decision to slice A5.
+A new conformance pack — **`airlock-app-contract.md`** — could specify the Airlock-on-Termin behavioral surface for cross-runtime validation. **Optional for v0.9.4 itself** (it doesn't gate the ship); it is the natural home for "Airlock as a reference benchmark for any Termin runtime." Defer the decision to slice A5.
 
 ---
 
@@ -633,10 +633,10 @@ A new conformance pack — **`airlock-app-contract.md`** — could specify the A
 
 ### 8.1 Risks
 
-- **The v0.9.2 conversation field type ships first.** Any slip in v0.9.2 slips v0.9.3. Mitigation: v0.9.3 design is independent of v0.9.2 implementation details; the work can begin on v0.9.3's `.termin` source authorship and provider package the moment v0.9.2 lands.
+- **The v0.9.2 conversation field type ships first.** Any slip in v0.9.2 slips v0.9.4. Mitigation: v0.9.4 design is independent of v0.9.2 implementation details; the work can begin on v0.9.4's `.termin` source authorship and provider package the moment v0.9.2 lands.
 - **Multi-row ownership is a v0.9.2 dependency.** If v0.9.2 doesn't include it, sessions can't declare `is owned by` and the access rules need a CEL-expression workaround. This is more verbose but functionally equivalent.
-- **Provider system gaps.** termin-spectrum-provider's CI was Windows-broken before v0.9.1; the airlock provider may surface latent provider-API issues. Treat any gap as a v0.9.3 blocker requiring a `termin-server` patch.
-- **Anthropic API cost.** ~$0.15-$0.45 per assessment in production Airlock. With prompt caching enabled (which the v0.9.2 conversation field type makes possible natively), expect ~30-50% reduction on the ARIA-call portion. The standalone v0.9.3 deployment needs a hard rate limit on the platform Anthropic key, plus the config-keyed self-host path so people can run it with their own quota.
+- **Provider system gaps.** termin-spectrum-provider's CI was Windows-broken before v0.9.1; the airlock provider may surface latent provider-API issues. Treat any gap as a v0.9.4 blocker requiring a `termin-server` patch.
+- **Anthropic API cost.** ~$0.15-$0.45 per assessment in production Airlock. With prompt caching enabled (which the v0.9.2 conversation field type makes possible natively), expect ~30-50% reduction on the ARIA-call portion. The standalone v0.9.4 deployment needs a hard rate limit on the platform Anthropic key, plus the config-keyed self-host path so people can run it with their own quota.
 - **Tool output format flexibility.** Airlock tools return rich JSON with structured shapes; CEL's expressiveness for synthesizing this output may bottleneck. If a tool's output logic exceeds CEL, escalate that tool to a sub-agent compute.
 - **CEL grammar for profile_aggregator.** The `update X:` form and `max_by_order` helper used in §4.10 may need verification against the v0.9.2 CEL surface. If they don't exist, the equivalent can be expressed via conditional CEL.
 
@@ -647,11 +647,11 @@ A new conformance pack — **`airlock-app-contract.md`** — could specify the A
 | Q1 | Where does `termin-airlock-provider` live? | RESOLVED: public `github.com/jamieleigh3d/termin-airlock-provider`. |
 | Q2 | Survey + calibration in scope? | RESOLVED: yes, both. |
 | Q3 | Standalone vs only-as-v0.10-seed? | RESOLVED: standalone first. `.termin` source ships in `examples/airlock.termin` as an advanced sample app; anyone can self-host. v0.10 also auto-seeds it. |
-| Q4 | BYOK in scope for v0.9.3? | RESOLVED: standalone uses platform Anthropic key by default but **the key is config-keyed** for self-hosting. In-app BYOK is v0.10. |
+| Q4 | BYOK in scope for v0.9.4? | RESOLVED: standalone uses platform Anthropic key by default but **the key is config-keyed** for self-hosting. In-app BYOK is v0.10. |
 | Q5 | Sonnet vs Opus for evaluator? | RESOLVED: Sonnet first. Revisit empirically. |
-| Q6 | Ship `airlock-app-contract.md` conformance pack? | RESOLVED: defer. Not a v0.9.3 blocker. |
+| Q6 | Ship `airlock-app-contract.md` conformance pack? | RESOLVED: defer. Not a v0.9.4 blocker. |
 | Q7 | Conversation primitive — clause vs field type? | RESOLVED: field type. See v0.9.2 companion doc. |
-| Q8 | Multi-row ownership in v0.9.1? | RESOLVED: not supported in v0.9.1; included as v0.9.2 work since v0.9.3 needs it. |
+| Q8 | Multi-row ownership in v0.9.1? | RESOLVED: not supported in v0.9.1; included as v0.9.2 work since v0.9.4 needs it. |
 
 ---
 
@@ -659,7 +659,7 @@ A new conformance pack — **`airlock-app-contract.md`** — could specify the A
 
 JL asked whether the slices are reasonable. Below is the breakdown calibrated against the v0.9.2 dependency landing first.
 
-**Sequencing assumption:** v0.9.2 (conversation field type, append verb, conversation.appended event class, ai-agent provider Protocol updates, multi-row ownership, agent_chatbot refresh, chat presentation contract update) ships before any v0.9.3 slice begins. If the two phases overlap in time with parallel agents, A1 and A3a can begin against the in-flight v0.9.2 work as long as the surface is stable.
+**Sequencing assumption:** v0.9.2 (conversation field type, append verb, conversation.appended event class, ai-agent provider Protocol updates, multi-row ownership, agent_chatbot refresh, chat presentation contract update) ships before any v0.9.4 slice begins. If the two phases overlap in time with parallel agents, A1 and A3a can begin against the in-flight v0.9.2 work as long as the surface is stable.
 
 | Slice | Owner | Scope | Dependencies | Realistic effort |
 |-------|-------|-------|--------------|------------------|
@@ -670,21 +670,21 @@ JL asked whether the slices are reasonable. Below is the breakdown calibrated ag
 | **A4 — Meta-evaluator + profile aggregator** | `.termin` author | Evaluator compute. Profile aggregator compute. Score JSON matches Airlock schema verbatim. Profile updates via `the user's profile`. End-to-end: complete a session, get scored, profile updates. Meets the production NFR-13.1 60s scoring target. | A3b | 0.5–1 day |
 | **A5 — Pages + standalone deploy** | Provider frontend + `.termin` author + ops | Pages: Landing, Survey, Scenario, Scoring, Results (per `airlock-termin-sketch.md` §6). Deploy to `airlock-on-termin.getclarit.ai` or equivalent. Document the self-host path (config-keyed Anthropic API key). | A4 | 1 day |
 
-**Realistic v0.9.3-only total:** 5.5–8 days. Mid-range ~7 days.
+**Realistic v0.9.4-only total:** 5.5–8 days. Mid-range ~7 days.
 
 **With parallelism** (two agents across disjoint slices A1/A2 + A3a/A3b): **~4–5 days clock time** post-v0.9.2.
 
-The v0.10 BRD's earlier "~2-3 days for v0.9.2 with parallel agent assistance" estimate was optimistic and predates this design pass + the v0.9.2/v0.9.3 split. Calibrating expectations now is better than slipping later.
+The v0.10 BRD's earlier "~2-3 days for v0.9.2 with parallel agent assistance" estimate was optimistic and predates this design pass + the v0.9.2/v0.9.4 split. Calibrating expectations now is better than slipping later.
 
 ### 9.1 What ships at the end of A5
 
-A standalone Airlock-on-Termin deployment running on Termin v0.9.3, accessible at `airlock-on-termin.getclarit.ai` (or equivalent), playable end-to-end: enter, survey, scenario, scoring, results, profile, replay. No multi-tenancy, no admin console, no waitlist — those are v0.10. The `.termin` source lives in `termin-compiler/examples/airlock.termin` as an advanced sample app for self-hosters.
+A standalone Airlock-on-Termin deployment running on Termin v0.9.4, accessible at `airlock-on-termin.getclarit.ai` (or equivalent), playable end-to-end: enter, survey, scenario, scoring, results, profile, replay. No multi-tenancy, no admin console, no waitlist — those are v0.10. The `.termin` source lives in `termin-compiler/examples/airlock.termin` as an advanced sample app for self-hosters.
 
 ---
 
-## 10. Out of Scope (v0.9.3 boundary)
+## 10. Out of Scope (v0.9.4 boundary)
 
-Explicitly excluded from v0.9.3:
+Explicitly excluded from v0.9.4:
 
 - **Multi-tenancy.** v0.10.
 - **Allowlist / invite-gate management.** Use the platform-level allowlist (v0.10) for any access control.
@@ -694,9 +694,9 @@ Explicitly excluded from v0.9.3:
 - **Public profile sharing.** v0.10.
 - **Adversary-mode red-team page.** v0.10.
 - **Conformance bridge / curl recipe.** v0.10.
-- **Anonymous / BYOK in-app flow** (paste-your-key UI, BYOK guest JWTs). The standalone v0.9.3 deployment uses the platform Anthropic key; the self-host config supports anyone supplying their own key at deploy time. The runtime in-app BYOK flow is v0.10.
+- **Anonymous / BYOK in-app flow** (paste-your-key UI, BYOK guest JWTs). The standalone v0.9.4 deployment uses the platform Anthropic key; the self-host config supports anyone supplying their own key at deploy time. The runtime in-app BYOK flow is v0.10.
 - **Migration of Airlock production data** (existing PostgreSQL sessions/profiles) onto Termin. Out — these are two separate deployments.
-- **Scenario variation between replays.** Future Airlock v1.1 feature; not in v0.9.3 either.
+- **Scenario variation between replays.** Future Airlock v1.1 feature; not in v0.9.4 either.
 
 ---
 
@@ -710,7 +710,7 @@ Explicitly excluded from v0.9.3:
 - `tenets.md` — Termin's five standing tenets.
 - The Airlock product BRD and product spec (Clarity Intelligence-internal) — authoritative product references; not linked here because they live outside this repo.
 - The Clarity Intelligence Infrastructure Guide (Clarity Intelligence-internal) — auth, DNS, SSL, JWT integration.
-- The v0.10 BRD (Clarity Intelligence-internal) — the multi-tenant platform that consumes this v0.9.3 deliverable as an auto-seeded sample.
+- The v0.10 BRD (Clarity Intelligence-internal) — the multi-tenant platform that consumes this v0.9.4 deliverable as an auto-seeded sample.
 
 ---
 

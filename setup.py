@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="termin-compiler",
-    version="0.9.2",
+    version="0.9.3",
     description="Termin: A secure-by-construction application compiler",
     author="Jamie-Leigh Blake",
     packages=find_packages(),

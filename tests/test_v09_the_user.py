@@ -22,12 +22,12 @@ from __future__ import annotations
 
 import pytest
 
-from termin_server.providers.identity_contract import (
+from termin_core.providers.identity_contract import (
     ANONYMOUS_PRINCIPAL,
     Principal,
 )
 from termin_server.identity import _build_user_dict, _build_the_user_object
-from termin_server.expression import (
+from termin_core.expression.cel import (
     ExpressionEvaluator,
     _rewrite_the_user,
 )

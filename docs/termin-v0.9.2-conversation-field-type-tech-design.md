@@ -3,14 +3,14 @@
 **Status:** Draft v2 for JL review. Major simplification of v1: convention over configuration throughout, `Conversation is` wiring (not `Accesses`), refusal as a tool call (not a kind), Anthropic-native mappings verified against official API docs, `structured` base type added, attachments first-party.
 **Date:** 2026-05-03.
 **Author:** JL + Claude.
-**Companion:** `termin-v0.9.3-airlock-on-termin-tech-design.md` — the application-layer consumer that motivated this work.
+**Companion:** `termin-v0.9.4-airlock-on-termin-tech-design.md` — the application-layer consumer that motivated this work (originally planned as v0.9.3; renumbered to v0.9.4 when the v0.9.3 slot was reassigned to the runtime extraction work).
 **Aligns with:** `airlock-termin-sketch.md` §4–§5 (the v0.9-era design that established sessions-as-content + a separate `messages` content type, which v0.9.2 supersedes for conversation modeling).
 
 ---
 
 ## 1. Purpose & Scope
 
-This document specifies the **conversation field type** and supporting language work landing in Termin v0.9.2. The motivation is the v0.9.3 Airlock-on-Termin port and any future agent-shaped Termin app.
+This document specifies the **conversation field type** and supporting language work landing in Termin v0.9.2. The motivation is the v0.9.4 Airlock-on-Termin port (originally v0.9.3, renumbered when v0.9.3 was reassigned to runtime extraction) and any future agent-shaped Termin app.
 
 The current `agent_chatbot.termin` pattern reconstructs conversation history per agent invocation via `content.query("messages")` and writes responses via `content.create("messages", ...)`. This is three runtime-mediated round-trips per turn (query → Anthropic call → create), doesn't match Anthropic's native conversation API shape (a `messages` array passed on every request), and prevents the runtime from making the prompt-cache hits that native conversation handling enables.
 
@@ -34,7 +34,7 @@ v0.9.2 introduces a **`conversation` field type** on Content. Conceptually:
 
 **This document does NOT:**
 
-- Specify the Airlock-on-Termin app. That's the v0.9.3 companion doc.
+- Specify the Airlock-on-Termin app. That's the v0.9.4 companion doc.
 - Specify composite or transitive ownership. v0.10.
 - Forbid update or delete on conversation entries. There is no current use case (debug-style entry mutation might emerge later); v0.9.2 just doesn't build the verbs.
 - Add refusal as a conversation kind. Refusal is a tool call (`system.refuse(reason)`) per the existing compute-provider-design, with the result captured in the runtime-managed `compute_refusals` sidecar — not a conversation entry.
@@ -935,9 +935,9 @@ With two parallel agents: ~6–7 days clock time. The grammar foundations (L1, L
 - **Files API integration** for blob-sized attachments. Defer until needed.
 - **OpenAI / Bedrock provider conversation support** unless someone's actively using them. Anthropic ships in v0.9.2; others can follow.
 - **Per-kind aliases** (e.g., letting an app declare "player" as the display label for `user`-kind entries). Handle via the chat provider's deploy config, not in source.
-- **Field-level semantic hints on the conversation type itself** (e.g., `which is conversation, kind: "debug"` to mark a field as not-user-facing). Real future slice for when the conversation type needs internal discrimination, but no app needs it in v0.9.2. Picked up as v0.9.3 / v0.10 when Airlock or another app shows the use case. JL's Wave 3 callout is logged here so we don't forget it.
-- **Hierarchical context-window summarization** (a projection that runs before `materialize_to_anthropic`, summarizing older turns so the active conversation window stays under the provider's context budget as the conversation grows). v0.9.3+. v0.9.2 sends the full materialized field every turn; when an app first hits the limit, the provider call errors and the chat shows a stale state. The shape of the projection is deferred until real usage shows what tradeoffs matter.
-- **LLM and ai-agent invocations as tools** — `Invokes "X"` where X is itself an `llm` or `ai-agent` compute. v0.9.2 wired default-CEL invokable tools; other provider categories are skipped at tool-surface build time. v0.9.3+ when a use case lands.
+- **Field-level semantic hints on the conversation type itself** (e.g., `which is conversation, kind: "debug"` to mark a field as not-user-facing). Real future slice for when the conversation type needs internal discrimination, but no app needs it in v0.9.2. Picked up as v0.9.4 / v0.10 when Airlock or another app shows the use case. JL's Wave 3 callout is logged here so we don't forget it.
+- **Hierarchical context-window summarization** (a projection that runs before `materialize_to_anthropic`, summarizing older turns so the active conversation window stays under the provider's context budget as the conversation grows). v0.9.4+. v0.9.2 sends the full materialized field every turn; when an app first hits the limit, the provider call errors and the chat shows a stale state. The shape of the projection is deferred until real usage shows what tradeoffs matter.
+- **LLM and ai-agent invocations as tools** — `Invokes "X"` where X is itself an `llm` or `ai-agent` compute. v0.9.2 wired default-CEL invokable tools; other provider categories are skipped at tool-surface build time. v0.9.4+ when a use case lands.
 - **Compute shape for pure-return CEL bodies** — Transform/Reduce conventions mutate a named output param (the runtime returns that param record to the agent). A future `Returns is <expr>` shape would let a CEL compute return the value of an expression directly without the param-mutation dance — cleaner for tools like `current_time` that conceptually return a value rather than transforming a record. Out of v0.9.2 scope.
 
 ---
@@ -945,7 +945,7 @@ With two parallel agents: ~6–7 days clock time. The grammar foundations (L1, L
 ## 22. References
 
 - `airlock-termin-sketch.md` — v0.9-era design exercise; contains the original "messages content type" pattern that v0.9.2 supersedes for conversation modeling.
-- `termin-v0.9.3-airlock-on-termin-tech-design.md` — companion application doc; consumes everything specified here.
+- `termin-v0.9.4-airlock-on-termin-tech-design.md` — companion application doc; consumes everything specified here. (Originally v0.9.3.)
 - `termin-source-refinements-brd-v0.9.md` — BRD #3; the resolved ownership and `the user` semantics this document extends (multi-row ownership in §15).
 - `termin-streaming-protocol.md` — existing streaming protocol; ai-agent computes producing conversation appends still stream per this protocol.
 - `compute-provider-design.md` — Phase 3 compute provider design; `system.refuse(reason)` and the `compute_refusals` sidecar are specified here.

@@ -31,7 +31,7 @@ existing role/scope test files; this file is contract-shape only.
 
 import pytest
 
-from termin_server.providers import (
+from termin_core.providers import (
     Category, ContractRegistry, ProviderRegistry,
     Principal, IdentityProvider, ANONYMOUS_PRINCIPAL,
 )
@@ -425,7 +425,7 @@ class TestAuditLogPrincipalRecording:
         import asyncio
         from termin_server.compute_runner import write_audit_trace
         from termin_server.storage import get_db, init_db, list_records
-        from termin_server.providers import Principal
+        from termin_core.providers import Principal
 
         # Minimal IR-shape with one audit-enabled compute. Synthesize
         # directly to avoid the compile path.
@@ -480,7 +480,7 @@ class TestAuditLogPrincipalRecording:
         import asyncio
         from termin_server.compute_runner import write_audit_trace
         from termin_server.storage import get_db, init_db, list_records
-        from termin_server.providers import Principal
+        from termin_core.providers import Principal
 
         audit_ref = "compute_audit_log_demo"
         schema = self._audit_schema_dict(audit_ref)

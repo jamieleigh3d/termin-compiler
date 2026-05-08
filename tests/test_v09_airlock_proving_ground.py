@@ -227,10 +227,10 @@ def test_airlock_provider_dispatch_proving_ground(airlock_registry):
     the proving ground.
     """
     from termin_server.app import _populate_presentation_providers
-    from termin_server.providers import (
+    from termin_core.providers import (
         Category, ContractRegistry, ProviderRegistry,
     )
-    from termin_server.providers.contracts import (
+    from termin_core.providers.contracts import (
         ContractDefinition, Tier,
     )
 

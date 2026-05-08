@@ -15,7 +15,7 @@ make them green.
 
 import pytest
 
-from termin_server.providers.channel_contract import (
+from termin_core.providers.channel_contract import (
     ChannelAuditRecord,
     ChannelSendResult,
     MessageRef,
@@ -31,7 +31,7 @@ from termin_server.providers.builtins.channel_email_stub import (
     EmailChannelStub, CapturedEmail,
 )
 from termin_server.providers.builtins.channel_messaging_stub import MessagingChannelStub
-from termin_server.providers import (
+from termin_core.providers import (
     Category, ContractRegistry, ProviderRegistry,
 )
 from termin_server.providers.builtins import register_builtins

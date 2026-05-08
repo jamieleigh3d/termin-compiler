@@ -120,7 +120,7 @@ Content-level scoping (`Scoped to "access_salary"`) gates entire content types. 
 
 ## Conformance Suite
 
-The [termin-conformance](https://github.com/jamieleigh3d/termin-conformance) repository contains the v0.9.2 behavioral test suite (1066 passing on the in-process `reference` adapter + 10 Playwright browser tests on the `served-reference` adapter, plus 32 adapter-gated skips) that validate any conforming runtime. v0.9.2 adds the conversation-field contract (~700-line spec at `specs/conversation-field-contract.md` + 45 cross-runtime tests) and the refusal-terminates-loop contract (12 tests) on top of the v0.9.1 Phase 3 (compute provider) and Phase 4 (channel provider) packs. Tests use an adapter pattern --- swap the adapter to test your runtime without changing a single test. The `served-reference` adapter launches the runtime on a real localhost port for browser-automation tests; the default in-process `reference` adapter runs the HTTP suite in under 60 seconds.
+The [termin-conformance](https://github.com/jamieleigh3d/termin-conformance) repository contains the v0.9.3 behavioral test suite (1121 passing on the in-process `reference` adapter + 10 Playwright browser tests on the `served-reference` adapter, plus 22 adapter-gated skips) that validate any conforming runtime. v0.9.3 adds the alt-runtime import-stability pack (55 tests pinning the `termin-core` public surface alt runtimes depend on, including the anti-shim guard) on top of v0.9.2's conversation-field contract (~700-line spec + 45 cross-runtime tests), the refusal-terminates-loop contract (12 tests), the v0.9.1 Phase 3 (compute provider) and Phase 4 (channel provider) packs. Tests use an adapter pattern --- swap the adapter to test your runtime without changing a single test. The `served-reference` adapter launches the runtime on a real localhost port for browser-automation tests; the default in-process `reference` adapter runs the HTTP suite in under 60 seconds.
 
 ### v0.9 release arc
 
@@ -154,6 +154,27 @@ The [termin-conformance](https://github.com/jamieleigh3d/termin-conformance) rep
   canonical kind rename `assistant` → `agent` (with `assistant`
   accepted as legacy back-compat). IR bumps to 0.9.2 (additive,
   patch per `RELEASE_PROCESS.md` §2).
+- **v0.9.3** (2026-05-07) — runtime extraction. Internal API
+  surface only; no IR change (`ir_version` stays at 0.9.2), no
+  DSL change. Moves the framework-free orchestration code out of
+  `termin-server` into `termin-core`: events, scheduler,
+  transactions, reflection, boundaries, colorblind helpers, the
+  markdown sanitizer, the IR migrations package, channel
+  dispatch (incl. outbound WebSocket), the v0.9.2 `Append`
+  handler, the SDK-agnostic conversation materialization
+  helpers, plus a `build_route_specs(ctx)` walker and a
+  `dispatch_http_request(ctx, request)` convenience for adapter
+  authors. Drops the slice 7.1 re-export shim layer in
+  `termin-server` (the no-shims policy from v0.9.0 finally
+  enforced). `termin-spectrum-provider` ships a 0.9.3
+  alignment-only release with imports updated to the
+  shim-free layout. Conformance gains a 55-test
+  alt-runtime-imports pack pinning the new `termin-core` public
+  surface and asserting (via 26 parametrized cases) that no
+  back-compat shim has been re-introduced. The point of the
+  release: an alternate Termin runtime can now build on
+  `termin-core>=0.9.3` alone, without inheriting FastAPI,
+  aiosqlite, or Anthropic transitively from `termin-server`.
 
 ## IR and Package Format
 

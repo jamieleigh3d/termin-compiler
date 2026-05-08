@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import pytest
 
-from termin_server.colorblind import (
+from termin_core.colorblind import (
     TAILWIND_HEX,
     contrast_ratio,
     cvd_distinguishable,

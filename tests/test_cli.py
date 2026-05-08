@@ -246,7 +246,7 @@ class TestCLIUtils:
         through the v0.9 strict deploy-config validator. Mixes:
         no-contract fallback channels + each known provider_contract
         path (webhook/email/messaging/event-stream) + LLM compute."""
-        from termin_server.providers.deploy_config import parse_deploy_config
+        from termin_core.providers.deploy_config import parse_deploy_config
 
         ir_dict = {
             "auth": {"provider": "stub"},

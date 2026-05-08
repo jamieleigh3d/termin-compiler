@@ -1,5 +1,142 @@
 # Changelog
 
+## [0.9.3] — 2026-05-07
+
+The runtime extraction release. Internal API surface only — no IR
+change, no DSL change, no breaking change to any public Termin app.
+Existing `.termin` sources compile and serve unchanged; existing
+`.termin.pkg` artifacts load unchanged. Per `RELEASE_PROCESS.md`
+§2, this is a patch release: additive Python API surface, no
+removal of public surface.
+
+This release moves the framework-free orchestration code from
+`termin-server` into `termin-core`, enabling alternate Termin
+runtimes — whether AWS-native, third-party-Rust, or anything else
+— to build on `termin-core>=0.9.3` alone, without inheriting
+FastAPI, aiosqlite, or Anthropic transitively.
+
+Tech design at `docs/termin-v0.9.3-runtime-extraction-tech-design.md`.
+
+### Added (in `termin-core`)
+
+- **Runtime infrastructure**: `EventBus`, `Scheduler`,
+  `Transaction`/`ContentSnapshot`/`StagedWrite`, `ReflectionEngine`
+  — pure asyncio, no framework deps. Top-level modules
+  `termin_core.events`, `.scheduler`, `.transaction`, `.reflection`.
+- **Security + accessibility primitives**: `boundaries.py`
+  (`build_boundary_maps`, `check_boundary_access`,
+  `check_boundary_identity`), `colorblind.py` (CVD simulation +
+  WCAG contrast), `presentation/markdown_sanitizer.py`
+  (BRD-mandated sanitizer for `presentation-base.markdown`).
+- **IR migrations**: `termin_core.migrations` package
+  (`classifier`, `validate`, `introspect`, `ack`, `errors`).
+- **Channel dispatch**: `termin_core.channels` (`ChannelDispatcher`),
+  `channel_config` (deploy config loader + validator), `channel_ws`
+  (outbound WebSocket connection with auto-reconnect).
+- **`build_compute_js`** at `termin_core.expression.compute_js` —
+  client-side Compute JS registration builder.
+- **`extract_page_reqs`** at `termin_core.presentation.compose` —
+  page-IR data dependency walker.
+- **Append CRUD verb handler**: `termin_core.routing.append` —
+  `append_to_field`, `AppendValidationError`, `AppendNotFoundError`,
+  `CANONICAL_KINDS`.
+- **HTTP route dispatch**: `termin_core.routing.dispatch` —
+  `build_route_specs(ctx)` walks IR + channels and returns
+  `list[RouteSpec]`; `dispatch_http_request(ctx, request)` is a
+  convenience that path-matches and dispatches to the per-class
+  core handler. Adapters that prefer per-route binding iterate
+  the spec list; adapters that prefer single-entry-point dispatch
+  call the convenience.
+- **Compute orchestration helpers**: `termin_core.compute.materialize`
+  — SDK-agnostic transformations (`materialize_to_anthropic`,
+  `entry_role`, `build_content_blocks`,
+  `build_invokable_compute_tools`, `build_output_tool`,
+  `build_agent_tools`, `truncate_purpose`, `purpose_property`,
+  `add_purpose_to_tool`, `ConversationMaterializationError`,
+  plus the canonical kind sets and the `purpose` field constants).
+
+### Removed (from `termin-server`)
+
+The pre-v1.0 no-shims policy retires the slice 7.1 re-export shim
+layer. Server-internal code and external callers
+(`termin-spectrum-provider`, `termin-conformance`) update their
+imports to `termin_core.X` directly:
+
+- `termin_server.errors`, `.state`, `.validation`, `.expression`,
+  `.confidentiality`, `.cel_predicate` — deleted (re-exports of
+  `termin_core.X` from slice 7.1 of v0.9.0).
+- `termin_server.providers.binding`, `.contracts`, `.deploy_config`,
+  `.registry`, `.storage_contract`, `.identity_contract`,
+  `.channel_contract`, `.compute_contract`, `.presentation_contract`
+  — deleted (re-exports of `termin_core.providers.X`).
+- `termin_server.providers/` itself stays as a package marker; the
+  concrete IO providers (`builtins/`) are unaffected.
+
+### Added (in `termin-conformance`)
+
+- `tests/test_alt_runtime_imports.py` — 55-test pack pinning the
+  alt-runtime-facing public surface of `termin-core`. Includes the
+  anti-shim guard (26 parametrized cases asserting that no
+  `termin_server.X` re-export shim exists for code that moved to
+  core in v0.9.3 or earlier).
+
+### Changed
+
+- `termin-spectrum-provider` updates its 4 import sites
+  (`termin_server.providers.*` → `termin_core.providers.*`).
+  No surface change; alignment-only release with a `0.9.3` version
+  bump.
+- `termin-v0.9.3-airlock-on-termin-tech-design.md` renamed to
+  `termin-v0.9.4-airlock-on-termin-tech-design.md` (the airlock
+  port now occupies the v0.9.4 slot since v0.9.3 was reassigned to
+  runtime extraction). Internal v0.9.3 references updated to
+  v0.9.4. Cross-doc references updated in
+  `termin-v0.9.2-conversation-field-type-tech-design.md`,
+  `design-decisions/D-01-provider-taxonomy.md`, and
+  `ClarityDocs/termin-v0.10-brd.md`.
+
+### Implementation deviations (per tech design §8.5)
+
+Four places where implementation diverged from the planning shape:
+
+1. **Page composition extraction reduced**: only `extract_page_reqs`
+   moved to core. The `build_*template` functions return Jinja2
+   `Template` objects and use the Jinja-bound `render_component`
+   dispatch table inside `termin_server.presentation`; moving them
+   to core would drag Jinja2 into core's dep graph for marginal
+   benefit. Documented as v0.10 backlog if a concrete need surfaces.
+2. **`channel_ws.py` moved alongside `channels.py`**: the plan
+   deferred WS, but `channels.py` imports `WebSocketConnection`
+   directly. Keeping `channel_ws` in server would have created a
+   backwards `core → server` dependency, which is worse than just
+   moving it. The module is 159 lines of pure asyncio with optional
+   `websockets` library import.
+3. **`build_agent_tools` / `build_output_tool` kept dual**: server's
+   `ai_provider.py` has richer versions (with `state_transition`,
+   `system_refuse`, per-content schema elaboration) than what landed
+   in `termin_core.compute.materialize`. Core's versions are a
+   scaffold for alt runtimes to extend; server keeps its richer
+   local versions. v1.0 cleanup either teaches core's version to
+   match or drops the server-local versions entirely.
+4. **Append handler dual-implementation**: server's `_do_append` in
+   `routes.py` keeps a parallel implementation that uses
+   aiosqlite-direct event suppression. Core's `append_to_field`
+   uses `ctx.storage.update(...)` via the StorageProvider Protocol
+   (which doesn't expose event suppression today). Alt runtimes get
+   the core implementation; the reference runtime keeps its
+   server-local version pending v0.10 cleanup.
+
+### Test counts
+
+- termin-core: 273 passing
+- termin-server: 98 passing
+- termin-compiler: 2643 passing
+- termin-conformance: 1121 passing, 22 skipped (was 1066 + 32
+  skipped at v0.9.2; +55 from the new
+  `test_alt_runtime_imports.py` pack; some previously-skipped cases
+  now run)
+- termin-spectrum-provider: 16 passing (Python tests; JS unchanged)
+
 ## [0.9.2] — 2026-05-05
 
 The conversation-field release. Adds two new IR base types

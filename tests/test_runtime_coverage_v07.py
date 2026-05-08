@@ -196,7 +196,7 @@ class TestBuildAgentTools:
 # transaction.py
 # ═══════════════════════════════════════════════════════════════
 
-from termin_server.transaction import Transaction, ContentSnapshot, StagedWrite
+from termin_core.transaction import Transaction, ContentSnapshot, StagedWrite
 
 
 class TestContentSnapshot:
@@ -409,7 +409,7 @@ class TestTransaction:
 # expression.py
 # ═══════════════════════════════════════════════════════════════
 
-from termin_server.expression import (
+from termin_core.expression.cel import (
     ExpressionEvaluator, _cel_to_python, SYSTEM_FUNCTIONS,
     _cel_sum, _cel_avg, _cel_min, _cel_max, _cel_flatten, _cel_unique,
     _cel_first, _cel_last, _cel_sort, _cel_days_between, _cel_days_until,
@@ -632,7 +632,7 @@ class TestExpressionEvaluator:
 # reflection.py
 # ═══════════════════════════════════════════════════════════════
 
-from termin_server.reflection import ReflectionEngine
+from termin_core.reflection import ReflectionEngine
 
 
 class TestReflectionEngine:
@@ -775,7 +775,7 @@ class TestReflectionEngine:
         # When the user dict carries a typed Principal, isAnonymous
         # is read from the contract (Principal.is_anonymous), not
         # by comparing the role string. This is the v0.9 path.
-        from termin_server.providers.identity_contract import (
+        from termin_core.providers.identity_contract import (
             ANONYMOUS_PRINCIPAL,
         )
         ctx = engine.identity_context({
@@ -822,7 +822,7 @@ class TestReflectionEngine:
 # errors.py
 # ═══════════════════════════════════════════════════════════════
 
-from termin_server.errors import TerminError, TerminAtor
+from termin_core.errors import TerminError, TerminAtor
 
 
 class TestTerminError:
@@ -1033,7 +1033,7 @@ class TestTerminAtor:
 # channels.py — config/validation functions (non-WebSocket)
 # ═══════════════════════════════════════════════════════════════
 
-from termin_server.channels import (
+from termin_core.channels import (
     _resolve_env_vars, _resolve_config_env, load_deploy_config,
     check_deploy_config_warnings, validate_channel_config,
     _check_unresolved_vars, ChannelError,
@@ -1150,7 +1150,7 @@ class TestValidateChannelConfig:
 # channels.py — config types and dispatcher
 # ═══════════════════════════════════════════════════════════════
 
-from termin_server.channels import (
+from termin_core.channels import (
     ChannelAuthConfig, ChannelConfig, ChannelConfigError,
     ChannelDispatcher, ChannelScopeError, WebSocketConnection,
 )
@@ -1392,7 +1392,7 @@ class TestChannelDispatcher:
         # v0.9: strict mode raises for provider-contract channels with no binding.
         # A channel without provider_contract is not checked at runtime
         # (TERMIN-S026 catches it at compile time instead).
-        from termin_server.providers import ProviderRegistry, ContractRegistry
+        from termin_core.providers import ProviderRegistry, ContractRegistry
         from termin_server.providers.builtins import register_builtins
         reg = ProviderRegistry()
         register_builtins(reg, ContractRegistry.default())

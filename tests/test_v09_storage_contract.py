@@ -34,7 +34,7 @@ from pathlib import Path
 
 import pytest
 
-from termin_server.providers import (
+from termin_core.providers import (
     Eq, Ne, Gt, Gte, Lt, Lte, In, Contains, And, Or, Not,
     OrderBy, QueryOptions, Page, CascadeMode,
     FieldChange, ContentChange, MigrationDiff, initial_deploy_diff,
@@ -44,8 +44,8 @@ from termin_server.providers.builtins.storage_sqlite import (
     SqliteStorageProvider, _compile_predicate,
     _encode_cursor, _decode_cursor, register_sqlite_storage,
 )
-from termin_server.providers.contracts import Category, ContractRegistry
-from termin_server.providers.registry import ProviderRegistry
+from termin_core.providers.contracts import Category, ContractRegistry
+from termin_core.providers.registry import ProviderRegistry
 
 
 # ─────────────────────────────────────────────────────────────────────

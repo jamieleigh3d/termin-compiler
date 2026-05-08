@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from termin_server.markdown_sanitizer import (
+from termin_core.presentation.markdown_sanitizer import (
     sanitize_markdown,
     _is_safe_url,
 )

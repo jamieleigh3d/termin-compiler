@@ -27,18 +27,18 @@ from pathlib import Path
 
 import pytest
 
-from termin_server.providers.storage_contract import (
+from termin_core.providers.storage_contract import (
     FieldChange, ContentChange, MigrationDiff, CLASSIFICATIONS,
     worst_classification, BackupFailedError, MigrationValidationError,
 )
 from termin_server.providers.builtins.storage_sqlite import SqliteStorageProvider
-from termin_server.migrations import (
+from termin_core.migrations import (
     compute_migration_diff, classify_field_change, classify_content_change,
     apply_rename_mappings, downgrade_for_empty_tables,
     fingerprint_change, ack_covers,
 )
-from termin_server.migrations.ack import collect_required_fingerprints
-from termin_server.migrations.errors import RenameMappingError
+from termin_core.migrations.ack import collect_required_fingerprints
+from termin_core.migrations.errors import RenameMappingError
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
@@ -402,14 +402,14 @@ class _FakeProviderEmpty:
     """Minimal stand-in for downgrade_for_empty_tables — query()
     returns an empty page. Treats every table as empty."""
     async def query(self, content_type, predicate, options):
-        from termin_server.providers.storage_contract import Page
+        from termin_core.providers.storage_contract import Page
         return Page(records=(), next_cursor=None, estimated_total=0)
 
 
 class _FakeProviderNonEmpty:
     """Returns one record so the downgrade pass treats tables as non-empty."""
     async def query(self, content_type, predicate, options):
-        from termin_server.providers.storage_contract import Page
+        from termin_core.providers.storage_contract import Page
         return Page(records=({"id": 1},), next_cursor=None, estimated_total=1)
 
 
@@ -580,7 +580,7 @@ class TestProviderMigrationPaths:
         v1 = _schema("things", fields=(
             _field("label", business_type="text", required=True),
         ))
-        from termin_server.providers.storage_contract import initial_deploy_diff
+        from termin_core.providers.storage_contract import initial_deploy_diff
         await provider.migrate(initial_deploy_diff([v1]))
         # Add some data.
         await provider.create("things", {"label": "first"})
@@ -600,7 +600,7 @@ class TestProviderMigrationPaths:
     async def test_remove_table_drops(self, tmp_db):
         provider = SqliteStorageProvider({"db_path": tmp_db})
         v1 = _schema("things", fields=(_field("label"),))
-        from termin_server.providers.storage_contract import initial_deploy_diff
+        from termin_core.providers.storage_contract import initial_deploy_diff
         await provider.migrate(initial_deploy_diff([v1]))
         # Remove (empty) — classification="low" via downgrade.
         diff = MigrationDiff(changes=(
@@ -618,7 +618,7 @@ class TestProviderMigrationPaths:
         v1 = _schema("things", fields=(_field("old_label",
                                               business_type="text",
                                               required=True),))
-        from termin_server.providers.storage_contract import initial_deploy_diff
+        from termin_core.providers.storage_contract import initial_deploy_diff
         await provider.migrate(initial_deploy_diff([v1]))
         await provider.create("things", {"old_label": "value"})
         # Now rename old_label → new_label.
@@ -655,7 +655,7 @@ class TestProviderMigrationPaths:
             _field("parent", business_type="reference", required=True,
                    foreign_key="parents", cascade_mode="restrict"),
         ))
-        from termin_server.providers.storage_contract import initial_deploy_diff
+        from termin_core.providers.storage_contract import initial_deploy_diff
         await provider.migrate(initial_deploy_diff([parent_v1, child_v1]))
 
         # Insert data.
@@ -679,14 +679,14 @@ class TestProviderMigrationPaths:
         assert page.records[0]["label"] == "c1"
 
         # New cascade behavior: deleting parent now removes child.
-        from termin_server.providers.storage_contract import CascadeMode
+        from termin_core.providers.storage_contract import CascadeMode
         await provider.delete("parents", p["id"], cascade_mode=CascadeMode.CASCADE)
         page = await provider.query("children", None, _opts(limit=10))
         assert page.records == ()
 
 
 def _opts(**kwargs):
-    from termin_server.providers.storage_contract import QueryOptions
+    from termin_core.providers.storage_contract import QueryOptions
     return QueryOptions(**kwargs)
 
 
@@ -698,7 +698,7 @@ class TestSchemaMetadata:
     async def test_metadata_round_trip(self, tmp_db):
         provider = SqliteStorageProvider({"db_path": tmp_db})
         schemas = [_schema("things", fields=(_field("label"),))]
-        from termin_server.providers.storage_contract import initial_deploy_diff
+        from termin_core.providers.storage_contract import initial_deploy_diff
         await provider.migrate(initial_deploy_diff(schemas))
         await provider.write_schema_metadata(schemas)
 
@@ -744,7 +744,7 @@ class TestBackup:
         provider = SqliteStorageProvider({"db_path": tmp_db})
         # Initialize with some data so the file exists and isn't empty.
         v1 = _schema("things", fields=(_field("label"),))
-        from termin_server.providers.storage_contract import initial_deploy_diff
+        from termin_core.providers.storage_contract import initial_deploy_diff
         await provider.migrate(initial_deploy_diff([v1]))
         await provider.create("things", {"label": "data"})
 

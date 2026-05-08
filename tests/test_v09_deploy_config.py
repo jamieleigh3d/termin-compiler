@@ -26,8 +26,8 @@ import json
 import pytest
 from pathlib import Path
 
-from termin_server.providers import Category
-from termin_server.providers.deploy_config import (
+from termin_core.providers import Category
+from termin_core.providers.deploy_config import (
     DeployConfig, parse_deploy_config, DeployConfigError,
 )
 

@@ -429,7 +429,7 @@ def test_principal_preferences_hydrated_with_stored_theme(tmp_path):
     carrying it after hydration — making `the_user.preferences.theme`
     resolvable in CEL contexts."""
     from termin_server.identity import _hydrate_principal_preferences
-    from termin_server.providers.identity_contract import Principal
+    from termin_core.providers.identity_contract import Principal
 
     db_path = str(tmp_path / "fresh.db")
     _seed_pref_for_principal(db_path, "alice-id", "dark")
@@ -445,7 +445,7 @@ def test_anonymous_principal_not_hydrated_from_db(tmp_path):
     """Anonymous principals get session-cookie storage, never the DB.
     Hydration is a no-op for them."""
     from termin_server.identity import _hydrate_principal_preferences
-    from termin_server.providers.identity_contract import ANONYMOUS_PRINCIPAL
+    from termin_core.providers.identity_contract import ANONYMOUS_PRINCIPAL
 
     db_path = str(tmp_path / "anon.db")
     p2 = _hydrate_principal_preferences(
@@ -460,7 +460,7 @@ def test_theme_locked_masks_principal_preferences(tmp_path):
     into Principal.preferences so CEL sees the same effective theme
     that the GET endpoint returns."""
     from termin_server.identity import _hydrate_principal_preferences
-    from termin_server.providers.identity_contract import Principal
+    from termin_core.providers.identity_contract import Principal
 
     db_path = str(tmp_path / "lock.db")
     _seed_pref_for_principal(db_path, "alice-id", "light")
@@ -478,7 +478,7 @@ def test_theme_default_fills_in_when_no_stored_value(tmp_path):
     stored value, so CEL `the_user.preferences.theme` is never undefined
     when the boundary configures a default."""
     from termin_server.identity import _hydrate_principal_preferences
-    from termin_server.providers.identity_contract import Principal
+    from termin_core.providers.identity_contract import Principal
 
     db_path = str(tmp_path / "default.db")
     p = Principal(id="brand-new-id", type="human", display_name="New")

@@ -709,7 +709,7 @@ class TestComputeCelContext:
 
 # ── G2: Before/After snapshots for postconditions ──
 
-from termin_server.transaction import ContentSnapshot
+from termin_core.transaction import ContentSnapshot
 
 
 class TestContentSnapshot:
@@ -824,7 +824,7 @@ class TestBeforeAfterPostconditions:
 
 # ── G5: Runtime scheduler for Trigger on schedule ──
 
-from termin_server.scheduler import Scheduler, parse_schedule_interval
+from termin_core.scheduler import Scheduler, parse_schedule_interval
 
 
 class TestScheduleParser:

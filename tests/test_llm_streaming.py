@@ -26,7 +26,7 @@ import uuid
 import pytest
 
 from termin_server.ai_provider import AIProvider
-from termin_server.events import EventBus
+from termin_core.events import EventBus
 
 
 # ── Provider simulate_stream helper ─────────────────────────────────
@@ -920,7 +920,7 @@ class TestStreamEventsCarryTargetLocation:
         bus must include the content_name and record_id so the client
         can find `td[data-termin-row-id=...][data-termin-field=...]`."""
         async def run():
-            from termin_server.events import EventBus
+            from termin_core.events import EventBus
             bus = EventBus()
             q = bus.subscribe("compute.stream.")
 

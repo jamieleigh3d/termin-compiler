@@ -29,7 +29,7 @@ without regression.
 
 import pytest
 
-from termin_server.providers import (
+from termin_core.providers import (
     ContractRegistry, ProviderRegistry, ContractDefinition,
     ProviderRecord, Category, Tier,
 )
@@ -279,25 +279,27 @@ class TestProviderRegistry:
         no provider import. Read from the canonical location.
         """
         import importlib
+        # v0.9.3 (2026-05-07): provider Protocol surface fully lives in
+        # ``termin_core.providers``; the v0.9.0 ``termin_server.providers``
+        # shim was deleted in slice item 9 of the runtime-extraction
+        # release. Channels moved to ``termin_core.channels`` in the same
+        # release, so ``termin_server.channels`` no longer exists.
+        # Wire-up guard now accepts EITHER the legacy server-side import
+        # OR the new core-side import — what we're guarding against is the
+        # entire reference being commented out, not the namespace.
         for module_name in (
             "termin_server.identity",
             "termin_server.app",
             "termin_server.routes",
             "termin_server.pages",
-            "termin_server.channels",  # Phase 4: channels wired in v0.9
         ):
             m = importlib.import_module(module_name)
             with open(m.__file__, encoding="utf-8") as f:
                 content = f.read()
-            # Match an actual import line (not commented out). The
-            # substring check `"from .providers" in content` would
-            # match `# from .providers import ...` too, which is the
-            # exact form a "I'll quickly comment this out" revert
-            # produces — so we enforce an uncommented import line.
             import re
             imports_providers = bool(re.search(
-                r'(?m)^\s*(?:from\s+termin_server\.providers'
-                r'|import\s+termin_server\.providers'
+                r'(?m)^\s*(?:from\s+termin_(?:server|core)\.providers'
+                r'|import\s+termin_(?:server|core)\.providers'
                 r'|from\s+\.providers)\b',
                 content,
             ))
@@ -353,7 +355,7 @@ class TestRuntimeUsesIdentityProvider:
     def test_identity_provider_is_constructed_at_startup(self):
         """ctx.identity_provider must be a real IdentityProvider
         instance after create_termin_app returns."""
-        from termin_server.providers import IdentityProvider
+        from termin_core.providers import IdentityProvider
         app, ctx = self._make_test_app()
         assert ctx is not None, "RuntimeContext should be on app.state.ctx"
         assert ctx.identity_provider is not None
@@ -387,7 +389,7 @@ class TestRuntimeUsesIdentityProvider:
         """Per BRD §6.1: Anonymous bypasses the provider entirely.
         The runtime must construct ANONYMOUS_PRINCIPAL directly,
         never call authenticate."""
-        from termin_server.providers import ANONYMOUS_PRINCIPAL
+        from termin_core.providers import ANONYMOUS_PRINCIPAL
         app, ctx = self._make_test_app()
         class _Req:
             cookies = {"termin_role": "Anonymous"}

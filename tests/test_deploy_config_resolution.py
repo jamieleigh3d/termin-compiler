@@ -37,7 +37,7 @@ class TestLoadDeployConfigCollapsedDigits:
     compiler without the underscore-before-digit."""
 
     def test_collapsed_digit_variant_found(self, tmp_path, monkeypatch):
-        from termin_server.channel_config import load_deploy_config
+        from termin_core.channel_config import load_deploy_config
 
         monkeypatch.chdir(tmp_path)
         # Simulate what the compiler wrote.
@@ -51,7 +51,7 @@ class TestLoadDeployConfigCollapsedDigits:
         assert config.get("ai_provider", {}).get("service") == "anthropic"
 
     def test_exact_app_name_variant_still_preferred(self, tmp_path, monkeypatch):
-        from termin_server.channel_config import load_deploy_config
+        from termin_core.channel_config import load_deploy_config
 
         monkeypatch.chdir(tmp_path)
         # Both forms exist — the exact-match app_name file should win.
@@ -71,7 +71,7 @@ class TestLoadDeployConfigCollapsedDigits:
     def test_no_collapse_when_app_name_has_no_digit(self, tmp_path, monkeypatch):
         """A collapsed-variant lookup must not fire if there's no
         underscore-before-digit in the supplied app_name."""
-        from termin_server.channel_config import load_deploy_config
+        from termin_core.channel_config import load_deploy_config
 
         monkeypatch.chdir(tmp_path)
         # Only a differently-named file exists.

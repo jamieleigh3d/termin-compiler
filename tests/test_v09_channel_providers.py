@@ -21,9 +21,9 @@ import asyncio
 
 import pytest
 
-from termin_server.channels import ChannelDispatcher
-from termin_server.channel_config import ChannelConfigError
-from termin_server.providers import Category, ProviderRegistry, ContractRegistry
+from termin_core.channels import ChannelDispatcher
+from termin_core.channel_config import ChannelConfigError
+from termin_core.providers import Category, ProviderRegistry, ContractRegistry
 from termin_server.providers.builtins import register_builtins
 from termin_server.providers.builtins.channel_webhook_stub import WebhookChannelStub
 from termin_server.providers.builtins.channel_email_stub import EmailChannelStub
@@ -279,7 +279,7 @@ class TestLogAndDrop:
 
     def test_send_on_unknown_channel_raises_channel_error(self):
         """Unknown channel name → ChannelError (not log-and-drop — spec violation)."""
-        from termin_server.channel_config import ChannelError
+        from termin_core.channel_config import ChannelError
         ir = _ir(_ch("alerts", "webhook"))
         deploy = _deploy("alerts", _binding())
         dispatcher = ChannelDispatcher(ir, deploy, _registry())
@@ -308,7 +308,7 @@ class TestSurfaceAsError:
 
     def test_surface_as_error_re_raises_provider_exception(self):
         """Provider raising → ChannelError propagates to caller."""
-        from termin_server.channel_config import ChannelError
+        from termin_core.channel_config import ChannelError
         ir = self._ir_with_mode("surface-as-error")
         deploy = _deploy("alerts", _binding())
         d = ChannelDispatcher(ir, deploy, _registry())
@@ -327,7 +327,7 @@ class TestSurfaceAsError:
 
     def test_surface_as_error_chains_original_exception(self):
         """Re-raised ChannelError carries the original exception via __cause__."""
-        from termin_server.channel_config import ChannelError
+        from termin_core.channel_config import ChannelError
         ir = self._ir_with_mode("surface-as-error")
         deploy = _deploy("alerts", _binding())
         d = ChannelDispatcher(ir, deploy, _registry())

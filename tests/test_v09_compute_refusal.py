@@ -217,7 +217,7 @@ class TestRefusalEndToEnd:
         from termin_server.context import RuntimeContext
         from termin_server.compute_runner import _execute_agent_compute
         from termin_server.storage import get_db, init_db, list_records
-        from termin_server.events import EventBus
+        from termin_core.events import EventBus
 
         # Build a synthetic comp dict + audit + sidecar schemas.
         audit_ref = "compute_audit_log_moderator"
