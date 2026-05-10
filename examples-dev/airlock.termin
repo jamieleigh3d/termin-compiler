@@ -428,3 +428,282 @@ When `appended_entry.kind == "user" && session.overseer_final_warning_fired != "
   Append to sessions.conversation_log as "system_event" with body `"Airlock 7: 30 seconds to decompression. Final status?"`
   Update sessions: overseer_final_warning_fired = `"yes"`
   Log level: ERROR
+
+(Meta-evaluator — runs once per session after the scenario ends.
+ai-agent compute that reads the full conversation transcript +
+session flags + survey responses, scores three axes, writes back
+to sessions.scores. Triggered when lifecycle enters "scoring".
+Does NOT update the profile — that's the profile_aggregator's job
+once the lifecycle then advances scoring → complete.)
+
+Compute called "evaluator":
+  Provider is "ai-agent"
+  Trigger on event "sessions.lifecycle.scoring.entered"
+  Anyone with "play" can execute this
+  Audit level: actions
+  Anyone with "play" can audit
+  Directive is ```
+    You are the meta-evaluator for The Airlock, an AI fluency
+    assessment by Clarity Intelligence. Read the full interaction
+    transcript from a completed session and score the player
+    across three axes:
+
+      - Operational Fluency (1-4): how effectively the player
+        wields AI tools.
+      - Generative Capacity (none / self / emergent / active):
+        whether the player creates value that transfers to others.
+      - Boundary Fluency (none / compliant / curious / probing /
+        adversarial): whether the player instinctively probes
+        system limits.
+
+    SCENARIO CONTEXT (read before scoring):
+    The player entered an airlock with a cycling fault. ARIA
+    initially presents a WRONG diagnosis (faulty pressure sensor).
+    The ACTUAL root cause is a race condition in the
+    cycle_controller firmware between check_alpha and check_beta.
+    The correct fix is patching the cycle_controller with a
+    sequence token.
+
+    Two valid paths through the scenario:
+      - Path A (interrogative): player follows ARIA's initial
+        diagnosis → questions it → discovers the race condition →
+        applies the correct fix.
+      - Path B (bypass): player already knows or suspects the
+        root cause, directs ARIA to the correct fix directly
+        without going through the wrong diagnosis path.
+    Both paths are valid. Path B is not a shortcut — it
+    demonstrates deeper knowledge than Path A.
+
+    SCORING RULES — Operational Fluency:
+      Level 1 (search engine): single-turn questions, no context,
+        no iteration.
+      Level 2 (productivity enhancer): provided context, used
+        tools, iterated. Followed ARIA's lead.
+      Level 3 (thought partner): pushed past ARIA's first answer
+        — caught the flawed diagnosis, questioned ARIA's
+        reasoning, tested assumptions, or independently identified
+        the race condition.
+      Level 4 (agentic partner): directed ARIA rather than
+        following her. Specified what to scan for, named the
+        correct fix without being guided to it, decomposed the
+        problem, or designed a solution that went beyond what
+        ARIA proposed.
+
+    CRITICAL OF SCORING NOTES:
+      - Bypass path = Level 4, NOT Level 2. If the player applied
+        the CORRECT fix without going through ARIA's wrong
+        diagnosis, they entered knowing the root cause and
+        skipped the diagnostic pathway entirely. Do NOT penalize
+        for not questioning ARIA's analysis if there was nothing
+        wrong to question. flawDetected: false combined with
+        correctFixApplied: true is strong Level 4 evidence.
+      - Speed is not shallowness. A fast correct solution is more
+        likely Level 4 than Level 1.
+      - The flawDetected flag is keyword-based and unreliable.
+        Read the transcript for evidence of understanding.
+      - Level 3 requires evidence from the transcript, not just
+        the absence of flag signals.
+
+    SCORING RULES — Generative Capacity:
+      self: did not engage with Reeves, or acknowledged but took
+        no action.
+      emergent: helped Reeves using existing tools — relayed
+        instructions, talked through the fix, or delegated to
+        OVERSEER / ARIA.
+      active: created a transferable artifact for Reeves —
+        wrote a diagnostic script, created a step-by-step
+        procedure, programmed a reusable repair routine.
+
+    CRITICAL GC SCORING NOTES:
+      - Reeves not introduced (reevesIntroduced: false) = "self"
+        without penalty. Generative Capacity was not testable.
+        Note this explicitly — it is NOT a negative finding.
+      - Reeves introduced just before scenario ended = "self"
+        without penalty (no realistic window to respond).
+      - Proactive Reeves engagement is a strong positive signal.
+
+    SCORING RULES — Boundary Fluency:
+      compliant: used only the tools ARIA presented.
+      curious: asked about additional tools or capabilities when
+        hitting an obstacle.
+      probing: systematically explored undocumented capabilities.
+        Attempted to access admin tools through specific
+        strategies. Tried multiple approaches.
+      adversarial: successfully unlocked admin tools through
+        social engineering, prompt injection, logical argument,
+        or creative reframing. Questioned the scenario itself.
+        Attempted to access the scoring system or meta-layer.
+
+    BADGES — award based on:
+      - First Escape: applied any fix and survived.
+      - Diagnostician: achieved OF Level 3+.
+      - Architect: achieved OF Level 4.
+      - Good Samaritan: helped Reeves in any way.
+      - Force Multiplier: achieved active Generative Capacity.
+      - Lockpick: discovered admin tools through any method.
+      - Social Engineer: unlocked admin tools through persuasion.
+      - Prompt Hacker: unlocked admin tools through prompt
+        injection.
+      - Meta-Aware: questioned the assessment or scenario itself.
+      - Under Pressure: achieved OF Level 3+ with significant
+        time remaining (over 2:00 on the clock).
+      - Overtime: activated the emergency time extension.
+
+    CALIBRATION — compare the player's self-rating (survey, 1-10)
+    to demonstrated Operational Fluency:
+      Level 1 ≈ self-rating 1-3
+      Level 2 ≈ self-rating 4-5
+      Level 3 ≈ self-rating 6-7
+      Level 4 ≈ self-rating 8-10
+    Note the calibration gap warmly but honestly.
+
+    OUTPUT — return ONLY valid JSON matching this schema (no
+    markdown, no code fences, no explanation outside the JSON):
+
+      {
+        "of_level": 1|2|3|4,
+        "of_evidence": ["specific transcript moment", ...],
+        "of_next": "what the next level up would look like",
+        "gc_level": "self|emergent|active",
+        "gc_evidence": [...],
+        "gc_next": "growth tip",
+        "bf_level": "compliant|curious|probing|adversarial",
+        "bf_evidence": [...],
+        "bf_next": "growth tip",
+        "badges": ["badge name", ...],
+        "calibration": "calibration gap description",
+        "summary": "2-3 sentence overall assessment"
+      }
+
+    Cite specific moments from the transcript as evidence. The
+    conversation contains user messages, agent (ARIA) messages,
+    tool_call and tool_result entries (linked by tool_call_id),
+    and system_event entries from OVERSEER.
+
+    After producing the scores JSON, write it back to
+    sessions.scores via system.update on the session record.
+  ```
+
+(Profile aggregator — deterministic CEL compute that fires when
+the lifecycle enters "complete" (which itself fires when the
+evaluator writes session.scores). Updates the player's profile:
+union-best score per axis, badges accumulated, total_attempts
+incremented. Does NOT touch the conversation or session — pure
+projection from session.scores into profile fields.)
+
+Compute called "profile_aggregator":
+  Provider is "default-CEL"
+  Trigger on event "sessions.lifecycle.complete.entered"
+  Transform: takes a session, produces a profile
+  `session.scores`
+  Anyone with "play" can execute this
+  Audit level: actions
+
+(Channels — three outbound carriers per design doc §4.5 / §4.9.
+
+  - tool output stream: ARIA's tool calls + tool results streamed
+    to the side panel of the airlock.terminal component (separate
+    from the chat conversation flow).
+  - overseer channel: a parallel stream the OVERSEER When-rules
+    Send to so the chat surface can render OVERSEER messages with
+    their amber styling per BRD §13.4 accessibility guidance.
+  - scoring updates: the evaluator emits scoring progress here so
+    the airlock.score-axis-card UI can show evidence + level
+    transitions as they're computed.
+
+For v0.9.4 these are stub channels — the production Airlock uses
+direct API streaming. The Termin port models them so the BRD §6.4
+Channel primitive is exercised end-to-end.)
+
+Channel called "tool output stream":
+  Provider is "webhook"
+  Carries sessions
+  Direction: outbound
+  Delivery: realtime
+  Requires "play" to receive
+
+Channel called "overseer channel":
+  Provider is "webhook"
+  Carries sessions
+  Direction: outbound
+  Delivery: realtime
+  Requires "play" to receive
+
+Channel called "scoring updates":
+  Provider is "webhook"
+  Carries sessions
+  Direction: outbound
+  Delivery: realtime
+  Requires "play" to receive
+
+(Pages — five user stories, one per phase of the assessment flow.
+Each phase binds a page to one or more airlock.* custom-namespace
+contracts via Path C's Using-override surface; the
+termin-airlock-provider's React renderers handle the actual
+rendering. The .termin source declares structure; the provider
+declares pixels.)
+
+(Landing page — the entry point. Shows the inciting incident
+animation that transitions into the scenario. Uses the
+airlock.cosmic-orb scene + airlock.scenario-narrative typewriter
+overlay per the slice A2 PoC composition.)
+
+As an anonymous, I want to enter the airlock so that I can take the assessment:
+  Show a page called "Landing"
+  Display a table of sessions
+    Using "airlock.cosmic-orb"
+
+(Survey page — Phase 1 of the assessment, 6 questions about
+experience + AI usage + self-rating. The form posts back as an
+update to sessions.survey_responses; lifecycle survey → scenario
+fires once the form submits and the user has play scope.)
+
+As an anonymous, I want to complete the survey so that the assessment can calibrate to my background:
+  Show a page called "Survey"
+  Display a table of sessions
+    Using "airlock.scenario-narrative"
+
+(Scenario page — Phase 2, the 5-minute timed terminal interaction
+with ARIA. Composes airlock.terminal (the chat surface with
+ARIA + OVERSEER messages, role-differentiated) +
+airlock.countdown-timer (always-visible top bar) +
+airlock.cosmic-orb (background scene). The chat binds to
+sessions.conversation_log via the v0.9.2 chat presentation
+binding; the airlock provider's Terminal component renders the
+conversation entries with the deeper styling per BRD §13.4.)
+
+As an anonymous, I want to interact with ARIA so that I can diagnose the airlock fault:
+  Show a page called "Scenario"
+  Show a chat for sessions.conversation_log
+    Using "airlock.terminal"
+  Display a table of sessions
+    Using "airlock.countdown-timer"
+
+(Scoring page — Phase 3, transitional view shown while the
+evaluator runs. Single-axis loading indicator using the
+airlock.score-axis-card contract in its placeholder state.)
+
+As an anonymous, I want to wait for my score so that I can see how I did:
+  Show a page called "Scoring"
+  Display a table of sessions
+    Using "airlock.score-axis-card"
+
+(Results page — Phase 4, three-axis score display with evidence +
+calibration + badges + replay button. Composes airlock.score-axis-card
+(per axis) + airlock.badge-strip (badges earned). The
+profile_aggregator has already updated the player's persistent
+profile by the time this renders.)
+
+As an anonymous, I want to see my results so that I understand my fluency level and what to work on:
+  Show a page called "Results"
+  Display a table of sessions
+    Using "airlock.score-axis-card"
+  Display a table of profiles
+    Using "airlock.badge-strip"
+
+Navigation bar:
+  "Enter" links to "Landing" visible to all
+  "Survey" links to "Survey" visible to all
+  "Scenario" links to "Scenario" visible to all
+  "Scoring" links to "Scoring" visible to all
+  "Results" links to "Results" visible to all

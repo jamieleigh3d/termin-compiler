@@ -2,6 +2,73 @@
 
 ## [Unreleased]
 
+### Added (v0.9.4 slice A3a — `examples-dev/airlock.termin` complete first pass)
+
+- **`examples-dev/airlock.termin` is structurally complete.** All
+  pieces from the v0.9.4 design doc §4 + §5 are now in source:
+  - Identity (anonymous-playable, single `play` scope) ✓
+  - Profiles content (canonically owned by player_principal,
+    union-best score per axis, badges) ✓
+  - Sessions content (with the v0.9.2 `conversation` field type
+    for the player↔ARIA conversation_log, gameplay flags the
+    meta-evaluator reads, the 6 once-per-session OVERSEER trigger
+    flags, lifecycle state machine with both scope-gated and
+    CEL-condition transitions) ✓
+  - 10 tool computes (5 standard ARIA tools + 4 admin tools +
+    `grant_admin_access`) with the deliberate flaw encoded in
+    diagnostics_scan + repair_execute data ✓
+  - ARIA `ai-agent` compute with the full ported Directive,
+    Conversation binding to sessions.conversation_log, Trigger
+    filter `appended_entry.kind == "user"`, Invokes for the full
+    10-tool surface ✓
+  - **`evaluator` `ai-agent` compute** with the full ported
+    scoring rubric Directive (3-axis: Operational Fluency,
+    Generative Capacity, Boundary Fluency; bypass-path Level 4
+    rules; calibration gap; 11-badge catalog; structured JSON
+    output schema). Triggered on `sessions.lifecycle.scoring.entered`.
+    Note: removed the design-doc's `Conversation is
+    sessions.conversation_log` binding because TERMIN-S058
+    forbids Conversation-wired ai-agent computes from
+    triggering on non-`<X>.<field>.appended` events. The
+    evaluator reads the conversation through the session
+    record's conversation_log field at invocation time, which
+    is the right shape for a one-shot reader anyway (an
+    evaluator isn't a chatbot — it doesn't continuously respond
+    to conversation activity).
+  - **`profile_aggregator` `default-CEL` compute** that fires
+    on `sessions.lifecycle.complete.entered` (which itself
+    fires when the evaluator writes session.scores). Updates
+    the player's persistent profile per BRD #3. Required a
+    `Transform: takes a session, produces a profile` shape
+    line per the analyzer's TERMIN-S014 — every default-CEL
+    compute needs an explicit shape.
+  - **3 channels** (`tool output stream`, `overseer channel`,
+    `scoring updates`) — outbound webhook + realtime delivery,
+    carrying sessions, gated on `play` scope. Stubs for v0.9.4;
+    production Airlock uses direct API streaming. The
+    declarations exercise the BRD §6.4 Channel primitive
+    end-to-end.
+  - **5 pages** (Landing, Survey, Scenario, Scoring, Results)
+    composing the airlock.* custom-namespace contracts via
+    the v0.9.4 Path C `Using "<contract>"` override surface:
+    cosmic-orb, scenario-narrative, terminal (with the v0.9.2
+    chat presentation binding to sessions.conversation_log),
+    countdown-timer, score-axis-card, badge-strip. The
+    termin-airlock-provider's React renderers will handle the
+    actual UI per the slice A2 PoC composition pattern; the
+    .termin source declares structure, the provider declares
+    pixels.
+  - Navigation bar with one entry per page.
+
+  Final IR shape: 13 computes, 7 When-rules, 3 channels, 5 pages,
+  1 state machine. ~600 lines of `.termin` source.
+
+  Stays in `examples-dev/` per the in-progress convention until
+  any remaining gaps surfaced by end-to-end runtime testing land
+  (the structural authoring is complete; the runtime exercises
+  itself uncover what's left). Promotion to `examples/` is a
+  release-prep decision.
+
 ### Added (v0.9.4 slice A3a — Update action verb for When-rule bodies)
 
 - **`Update <content>: <field> = `<cel-expression>`` action verb**
