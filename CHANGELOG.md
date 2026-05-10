@@ -2,6 +2,95 @@
 
 ## [Unreleased]
 
+### Added (v0.9.4 slice A3a — `examples-dev/airlock.termin` first authoring pass)
+
+- **`examples-dev/airlock.termin`** — first complete-shape pass at
+  the v0.9.4 Airlock-on-Termin sample app. Authors the production
+  Airlock product (Clarity Intelligence's AI fluency assessment)
+  in `.termin` source: identity (anonymous-playable, single `play`
+  scope), profiles content (canonically owned by `player_principal`,
+  union-best score per axis, badges), sessions content (with the
+  v0.9.2 `conversation` field type for the player↔ARIA
+  conversation_log, gameplay flags the meta-evaluator reads, the
+  6 once-per-session OVERSEER trigger flags, and a
+  `lifecycle` state machine with two scope-gated and three
+  CEL-condition transitions), 10 tool computes (5 standard ARIA
+  tools + 4 admin tools + `grant_admin_access`) with the
+  deliberate flaw encoded into the `diagnostics_scan` and
+  `repair_execute` data, the ARIA `ai-agent` compute carrying
+  the full ported system prompt as a multi-line `Directive is
+  ```...```` block, and one OVERSEER `When`-rule (the time-warning
+  pattern) as a smoke test for the bundle. Compiles clean as of
+  the current pass; remaining work (5 more OVERSEER rules,
+  evaluator + profile_aggregator computes, 3 channels, 5 pages)
+  lands in the next slice. Lives under `examples-dev/` per the
+  in-progress convention; promotes to `examples/` once all of
+  A3a's structural pieces are in place and the runtime smoke
+  test against airlock-on-termin runtime green-lights it.
+
+### Fixed (v0.9.4 slice A3a — compiler classifier gaps surfaced by Airlock authoring)
+
+- **Classifier early-return for `role_bare_line` no longer
+  shadows state-transition lines and Directive/Strategy/Objective
+  blocks.** ``classify.py`` had a heuristic at line ~110 that
+  matched any line containing both `" has "` and `"` and
+  classified it as `role_bare_line` before the prefix-loop
+  dispatch could route it correctly. This bit two real authoring
+  shapes:
+  - Quoted-scope state transitions (`X can become Y if the user
+    has "scope"`) — the natural form every other access-rule
+    line in the codebase uses — were misclassified, making the
+    destination state appear unreachable to the analyzer.
+    Workaround was bare scope (`if the user has scope`).
+  - `Directive is ```...```` blocks (and Strategy / Objective)
+    whose body contained quoted phrases AND the word `has`
+    (almost any real directive does, e.g. "the user has access
+    to..." or quoting tool names) were misclassified as role
+    declarations after the preprocessor joined the multi-line
+    block. Workaround was rewriting prose to drop double-quotes.
+  Fix: structural exclusions in the heuristic — `" can become "`
+  in the line, or starting with `Directive `, `Strategy `,
+  `Objective `, all skip the heuristic and let the prefix loop
+  run. 16 new tests in
+  `tests/test_classifier_gaps_v094.py` covering both cases plus
+  the legitimate `role_bare_line` cases the heuristic was
+  originally written to catch (Anonymous-style identity blocks)
+  to guard against regression.
+
+### Added (v0.9.4 slice A3a — CEL-condition state transitions)
+
+- **CEL-condition state transitions promoted from parser
+  placeholder to a first-class transition gate.** The PEG grammar
+  already supported `X can become Y if `<cel-expression>`` (sm_
+  transition_line second alternative), but the parser handler at
+  `parse_handlers.py:498-505` stored the CEL into `required_scope`
+  as a placeholder, and the analyzer rejected it as an undefined
+  scope. The compiler-side fix:
+  - **`Transition.condition_expr: Optional[str]`** added to the
+    AST node (`ast_nodes.py`). Mutually exclusive with
+    `required_scope` in source.
+  - **`parse_handlers.py` sm_transition_line handler** now stores
+    the stripped CEL text into `condition_expr` and leaves
+    `required_scope` empty, instead of the previous placeholder.
+  - **`TransitionSpec.condition_expr`** added to the IR
+    (in `termin-core`'s `ir/types.py`).
+  - **`lower.py`** passes `condition_expr` through to the IR.
+  - **Analyzer** (`analyzer.py`) skips the
+    "undefined scope" check (TERMIN-S009) when `condition_expr`
+    is set; the security-invariant check (TERMIN-X002) accepts
+    either a scope OR a condition expression as a valid gate.
+  - **IR JSON Schema** (`docs/termin-ir-schema.json`)
+    documents `TransitionSpec.condition_expr` as the new optional
+    field, with mutual-exclusivity guidance and CEL-context
+    documentation.
+  - **`tests/test_cel_transition_v094.py`** — 6 new tests
+    covering parse, AST shape, lower, mixed transitions on the
+    same machine, and the actual airlock lifecycle shape.
+
+  The runtime side of the same gap (state engine evaluating
+  the condition at `state.transition(...)` time) lands in the
+  paired `termin-core` and `termin-server` commits.
+
 ### Added (Path B fixture for the airlock-on-termin runtime preview)
 
 - **`examples-dev/airlock_smoke.termin`** — minimal `.termin`

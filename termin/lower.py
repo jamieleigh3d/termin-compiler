@@ -316,6 +316,7 @@ def lower(program: Program) -> AppSpec:
                     from_state=t.from_state,
                     to_state=t.to_state,
                     required_scope=t.required_scope,
+                    condition_expr=t.condition_expr,
                     feedback=tuple(
                         TransitionFeedbackSpec(
                             trigger=fb.trigger,

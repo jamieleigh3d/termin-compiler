@@ -107,7 +107,27 @@ def classify_line(text: str) -> str:
     if text.startswith(("success ", "error ")) and " shows " in text: return "transition_feedback_line"
     if text.startswith('"') and " is alias for " in text: return "role_alias_line"
     if text.startswith(('A "', 'An "')) and " has " in text: return "role_standard_line"
-    if " has " in text and '"' in text and not text.startswith(("A ", "An ", '"', "Content", "Each")):
+    # role_bare_line heuristic: ``<bare-role> has <quoted-scopes>`` per
+    # termin.peg line 71-73. The exclusion list keeps the heuristic
+    # from racing past other constructs that legitimately contain
+    # ``" has "`` and ``"`` in their bodies. v0.9.4 additions:
+    #   * `" can become "` — state-machine transition lines like
+    #     ``X can become Y if the user has "scope"`` (Gap #1 from
+    #     Airlock-on-Termin slice A3a authoring).
+    #   * Directive/Strategy/Objective `is `` ``...```` blocks
+    #     joined by the preprocessor — the joined body almost always
+    #     contains both ``"`` (quoted phrases) and ``has`` (in
+    #     prose), and the prefix-loop entry below would route them
+    #     correctly if not for this early-return (Gap #2).
+    if (
+        " has " in text
+        and '"' in text
+        and not text.startswith(
+            ("A ", "An ", '"', "Content", "Each",
+             "Directive ", "Strategy ", "Objective ")
+        )
+        and " can become " not in text
+    ):
         return "role_bare_line"
     # v0.9: inline state machine sub-block lines.
     # `<field> starts as <state>`, `<field> can also be <list>`, `<from> can become <to> if ...`

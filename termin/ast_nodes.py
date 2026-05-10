@@ -161,6 +161,15 @@ class Transition:
     required_scope: str
     feedback: list = field(default_factory=list)  # list[TransitionFeedback]
     line: int = 0
+    # v0.9.4 Gap #3: CEL-condition state transitions. When set, the
+    # transition is gated by this expression rather than (or in
+    # addition to) `required_scope`. The runtime evaluates the
+    # expression at `state.transition(...)` time and refuses the
+    # transition when it returns falsy. Source form:
+    #   <from> can become <to> if `<cel-expression>`
+    # Mutually exclusive with `required_scope` in source — exactly
+    # one of (scope, expression) is set per transition.
+    condition_expr: Optional[str] = None
 
 
 @dataclass

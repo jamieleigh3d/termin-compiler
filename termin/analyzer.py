@@ -1002,6 +1002,17 @@ class Analyzer:
                         code="TERMIN-S008",
                         suggestion=f'Did you mean "{suggestion}"?' if suggestion else None,
                     ))
+                # v0.9.4 Gap #3: skip the scope-check when the
+                # transition is CEL-conditioned (`condition_expr` set).
+                # The runtime evaluates the expression at
+                # state.transition(...) time; there is no scope to
+                # validate at compile time. Future analyzer
+                # enhancement: verify the CEL is well-formed and
+                # references valid columns on the owning content
+                # type. For now, syntax + reference checking happens
+                # at runtime — same as compute-body CEL.
+                if tr.condition_expr:
+                    continue
                 if tr.required_scope not in self.scope_names:
                     suggestion = _fuzzy_match(tr.required_scope, self.scope_names)
                     self.errors.add(SemanticError(
@@ -1330,14 +1341,25 @@ class Analyzer:
                 ))
 
     def _check_transitions_have_scopes(self) -> None:
-        """Every State transition must require a Scope."""
+        """Every State transition must require a Scope OR a CEL
+        condition expression. v0.9.4 Gap #3 added the CEL form
+        (`X can become Y if `<cel>``); the runtime evaluates the
+        expression at state.transition(...) time, so the
+        secure-by-construction invariant is preserved — a
+        transition cannot fire without an explicit, audit-visible
+        gate (scope or CEL). The audit trail records which form
+        gated the transition and (for CEL) the evaluated result.
+        """
         for sm in self.program.state_machines:
             for tr in sm.transitions:
-                if not tr.required_scope:
+                if not tr.required_scope and not tr.condition_expr:
                     self.errors.add(SecurityError(
                         message=f'State transition from "{tr.from_state}" to '
                                 f'"{tr.to_state}" in "{sm.machine_name}" has no '
-                                f'scope requirement. Every transition must require a scope.',
+                                f'scope requirement or condition expression. '
+                                f'Every transition must require a scope (`if the '
+                                f'user has "X"`) or a CEL condition '
+                                f'(`if `<expression>``).',
                         line=tr.line,
                         code="TERMIN-X002",
                     ))

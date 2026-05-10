@@ -474,7 +474,7 @@
 
     "TransitionSpec": {
       "type": "object",
-      "description": "A single allowed state transition, with a required scope and optional user feedback.",
+      "description": "A single allowed state transition. Gated by either a required scope (the caller's identity must hold it) or a CEL condition expression (the runtime evaluates it against the record context at transition time and refuses when the result is falsy). Exactly one of `required_scope` (non-empty) or `condition_expr` (non-null) is set per transition; the other carries an empty/null sentinel.",
       "required": ["from_state", "to_state", "required_scope"],
       "additionalProperties": false,
       "properties": {
@@ -482,7 +482,11 @@
         "to_state": { "type": "string" },
         "required_scope": {
           "type": "string",
-          "description": "Scope the caller's identity must hold to perform this transition."
+          "description": "Scope the caller's identity must hold to perform this transition. Empty string when the transition is gated by a CEL condition expression instead (see `condition_expr`)."
+        },
+        "condition_expr": {
+          "type": ["string", "null"],
+          "description": "v0.9.4 Gap #3: CEL expression the runtime evaluates against the record context at state.transition(...) time. The transition is refused when the result is falsy. The CEL context exposes the record under both its singular name (e.g. `session.field`) and a generic `record` alias, plus `the_user` (principal dict per BRD #3 §4.2) and `now` (ISO-8601 timestamp). Null when the transition is scope-gated instead. Source form: `<from> can become <to> if `<cel-expression>``."
         },
         "feedback": {
           "type": "array",

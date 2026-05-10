@@ -495,12 +495,23 @@ def _parse_line(text: str, rule: str, ln: int):
                 required_scope=scope_text,
                 line=ln,
             ))
-        # CEL expression form (placeholder — store raw scope string).
+        # v0.9.4 Gap #3: CEL-condition transition. Source form:
+        #   <from> can become <to> if `<cel-expression>`
+        # The CEL goes into Transition.condition_expr;
+        # required_scope is left empty (not the CEL placeholder
+        # the pre-Gap-#3 handler used). The analyzer skips the
+        # scope-check when condition_expr is set; the runtime
+        # state engine evaluates the expression at
+        # state.transition(...) time.
+        cel_text = cond_text.strip()
+        if cel_text.startswith("`") and cel_text.endswith("`"):
+            cel_text = cel_text[1:-1]
         from .ast_nodes import Transition
         return ("sm_transition", Transition(
             from_state=from_state,
             to_state=to_state,
-            required_scope=cond_text.strip("`"),
+            required_scope="",
+            condition_expr=cel_text,
             line=ln,
         ))
     if rule == "transition_feedback_line":
