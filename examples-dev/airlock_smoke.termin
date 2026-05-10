@@ -1,0 +1,16 @@
+Application: Airlock Smoke
+  Description: End-to-end runtime preview for the termin-airlock-provider CSR shell path. Renders the cosmic-orb custom-namespace contract via the Using override, exercising the v0.9.3 provider dispatch end-to-end through termin-server's CSR shell path. Pair with airlock_smoke.deploy.json. The .termin source itself is generic (no Airlock product content); the React component renders pure aesthetic geometry from termin-airlock-provider.
+Id: 6f9bff80-30c2-4a70-b441-8b0f50e4ee21
+
+Identity:
+  Scopes are "play"
+  Anonymous has "play"
+
+Content called "scenes":
+  Each scene has a name which is text
+  Anyone with "play" can view scenes
+
+As an anonymous, I want to see the airlock scene:
+  Show a page called "Airlock"
+  Display a table of scenes
+    Using "airlock.cosmic-orb"

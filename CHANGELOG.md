@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### Added (Path B fixture for the airlock-on-termin runtime preview)
+
+- **`examples-dev/airlock_smoke.termin`** — minimal `.termin`
+  source that uses the `Using "airlock.cosmic-orb"` override on a
+  `Display a table of scenes` directive to bind one component to
+  the `airlock.*` custom namespace. Generic Termin-themed content
+  (no Airlock product material). Compiles clean against today's
+  compiler.
+- **`examples-dev/airlock_smoke.deploy.json`** — matching deploy
+  config: binds `airlock` namespace → `airlock` provider product,
+  with `presentation-base` falling through to `tailwind-default`
+  for the page chrome. Pair with the smoke `.termin`.
+- **`.claude/launch.json` workspace-level** — added two entries:
+  `airlock-frontend-dev` (Vite dev preview at port 5173) and
+  `airlock-smoke-runtime` (compiled .pkg served via termin.cli at
+  port 8767). Both are reachable via the Claude Preview MCP.
+
+### Notes (Path B status — fixture ready, dispatch deferred to Path C)
+
+- The smoke source compiles and serves. **The runtime currently
+  ignores the `Using "airlock.cosmic-orb"` override** because
+  `bootstrap.py::page_should_use_shell` in termin-server only
+  triggers the CSR shell path when the bound provider for
+  `presentation-base.page` is CSR-only. With the standard
+  tailwind-default binding for the page contract, the SSR
+  pipeline runs, and `presentation.py::render_component` line
+  1033 dispatches by `node.type` rather than consulting
+  `node.contract`. The Tailwind `data_table` renderer wins.
+- This is the gap the docstring of `page_should_use_shell` calls
+  out as "5b.3 full per-contract dispatch" — Path C of the
+  v0.9.4 work. ~3-4 strategic lines in `termin-server/presentation.py`
+  + `pages.py` per the v0.9.4 dispatch audit.
+- The `airlock_smoke.*` fixture is ready for Path C to validate
+  end-to-end via the same `airlock-smoke-runtime` launch entry.
+
 ### Added
 
 - **`docs/version-policy.md`** (~317 lines) — explicit policy for

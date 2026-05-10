@@ -1,0 +1,16 @@
+{
+  "version": "1.0.0",
+  "comment": "Path B end-to-end runtime preview for the termin-airlock-provider CSR shell path. Binds the `airlock` namespace to the `airlock` provider product, with `presentation-base` falling through to tailwind-default for any built-in shells the runtime emits around the custom contract. Pair with airlock_smoke.termin. Requires the termin-airlock-provider package (pip install -e ../termin-airlock-provider) and a built bundle at src/termin_airlock_provider/static/bundle.js (cd ../termin-airlock-provider/frontend && npm run build).",
+  "bindings": {
+    "presentation": {
+      "airlock": {
+        "provider": "airlock",
+        "config": {}
+      },
+      "presentation-base": {
+        "provider": "tailwind-default",
+        "config": {}
+      }
+    }
+  }
+}
