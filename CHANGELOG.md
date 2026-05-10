@@ -1,5 +1,48 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`docs/version-policy.md`** (~317 lines) — explicit policy for
+  the two version tracks (IR vs package), the source-of-truth
+  convention for each (one canonical declaration per track,
+  everything else imports), the hygiene grep that should return
+  only canonical sources before any tag, and a migration table
+  for the v0.9.x drift state. Companion to `RELEASE_PROCESS.md`
+  (which covers *how* to release; this doc covers *where versions
+  live and why*).
+- **`util/release.py` VERSION_FILES expanded** to match
+  `version-policy.md` §4 — adds the canonical `__version__`
+  declarations the v0.9.3 release missed:
+  - `termin-server/termin_server/__init__.py::__version__`
+    (newly declared as part of this work)
+  - `termin-spectrum-provider/termin_spectrum/__init__.py::__version__`
+  - `termin-spectrum-provider/package.json::version` (the only
+    canonical source not derived from a Python `__version__`)
+  - `termin-core/tests/test_smoke.py` (the canary test that pins
+    the package version on purpose)
+
+### Changed
+
+- **`tests/test_runtime.py::test_registry_returns_json`** asserts
+  against `from termin_server import __version__` instead of the
+  hardcoded `"0.9.2"` literal, per the policy doc §2.1.
+- **`tests/test_v09_compute_providers.py::test_register_builtins_includes_compute`**
+  asserts `rec.version == _server_version` (imported from
+  `termin_server`) instead of the hardcoded `"0.9.2"` literal,
+  per the policy doc §2.3 (provider-record `version=` kwarg
+  tracks the package version of the providing package).
+
+### Compatibility
+
+- This is internal hygiene — no `.termin` source change, no IR
+  change, no compiler-output change. The drift cleanup is
+  observable only on the wire (server's `runtime_version`
+  reflection now correctly reports the package version) and in
+  the provider-record `version=` field on every built-in
+  provider.
+
 ## [0.9.3] — 2026-05-07
 
 The runtime extraction release. Internal API surface only — no IR

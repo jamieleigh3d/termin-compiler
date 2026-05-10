@@ -184,11 +184,16 @@ class TestRuntimeRegistry:
         self.pkgs = compiled_packages
 
     def test_registry_returns_json(self):
+        # The runtime_version reflects the package version of the
+        # running server. Per docs/version-policy.md §2.1 we assert
+        # against termin_server.__version__ (the canonical source)
+        # rather than a literal so the test moves with the package.
+        from termin_server import __version__
         with _make_client(self.pkgs["warehouse"]) as client:
             r = client.get("/runtime/registry")
             assert r.status_code == 200
             data = r.json()
-            assert data["runtime_version"] == "0.9.2"
+            assert data["runtime_version"] == __version__
             assert "boundaries" in data
             assert "protocols" in data
             assert data["protocols"]["realtime"] == "websocket"

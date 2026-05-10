@@ -62,6 +62,18 @@ CONFORMANCE_SPECS_DIR = CONFORMANCE_ROOT / "specs"
 # IR version still bumps independently because the IR shape can
 # stay constant across patch releases (e.g. v0.9.0 → v0.9.1 was a
 # pure runtime/audit patch, IR const stayed at 0.9.0).
+#
+# Per `docs/version-policy.md` (the source of truth for what release.py
+# touches), this list contains ONLY the canonical declarations of each
+# version track. Everything else in the codebase imports from one of
+# these declarations — provider records via `from termin_server import
+# __version__`, test assertions against the imported value, runtime
+# reflection through the same import. If a new file shows up that
+# would need adding here, the right fix is usually to make it import
+# instead.
+#
+# The policy doc enumerates exactly what belongs here in §4. If this
+# list and that list ever drift, the doc is the spec.
 VERSION_FILES = {
     "ir_version": [
         # IR types live in termin-core since slice 7.3 (the legacy
@@ -71,6 +83,10 @@ VERSION_FILES = {
         (COMPILER_ROOT / "docs" / "termin-ir-schema.json", None, None),  # special handling
         (COMPILER_ROOT / "README.md", r'IR v[\d.]+', 'IR v{version}'),
         (COMPILER_ROOT / "docs" / "termin-runtime-implementers-guide.md", r'\*\*Version:\*\* [\d.]+', '**Version:** {version}'),
+        # The one test that legitimately pins ir_version as a literal
+        # because its job is to verify the runtime *reports* the right
+        # version (BRD §6 reflection contract). Other tests read the
+        # value from the runtime instead — see version-policy.md §2.2.
         (CONFORMANCE_ROOT / "tests" / "test_reflection.py", r'== "[\d.]+"', '== "{version}"'),
     ],
     "compiler_version": [
@@ -80,10 +96,22 @@ VERSION_FILES = {
         # termin-core
         (CORE_ROOT / "pyproject.toml", r'version = "[\d.]+"', 'version = "{version}"'),
         (CORE_ROOT / "termin_core" / "__init__.py", r'__version__ = "[\d.]+"', '__version__ = "{version}"'),
-        # termin-server
+        # termin-core: smoke test pins the package version (the only
+        # place in tests/ that does, by design — this IS the
+        # "did release.py bump us?" canary test).
+        (CORE_ROOT / "tests" / "test_smoke.py", r'__version__ == "[\d.]+"', '__version__ == "{version}"'),
+        # termin-server (now declares __version__ as of v0.9.4 —
+        # builtin providers + routes.runtime_version + tests all
+        # import from here per docs/version-policy.md §2.1).
         (SERVER_ROOT / "pyproject.toml", r'version = "[\d.]+"', 'version = "{version}"'),
+        (SERVER_ROOT / "termin_server" / "__init__.py", r'__version__ = "[\d.]+"', '__version__ = "{version}"'),
         # termin-spectrum-provider
         (SPECTRUM_ROOT / "setup.py", r'version="[\d.]+"', 'version="{version}"'),
+        (SPECTRUM_ROOT / "termin_spectrum" / "__init__.py", r'__version__ = "[\d.]+"', '__version__ = "{version}"'),
+        # package.json is the only canonical source not derived from a
+        # Python __version__ — separate ecosystem, kept in lockstep
+        # by explicit bump per docs/version-policy.md §2.1.
+        (SPECTRUM_ROOT / "package.json", r'"version": "[\d.]+"', '"version": "{version}"'),
     ],
 }
 

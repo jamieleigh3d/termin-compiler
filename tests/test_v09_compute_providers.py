@@ -50,7 +50,14 @@ class TestComputeRegistration:
             rec = providers.get(cat, contract, product)
             assert rec is not None, f"missing {cat=} {contract=} {product=}"
             assert rec.factory is not None
-            assert rec.version == "0.9.2"
+            # Provider-record version tracks the package version of
+            # the providing package (termin_server here, since these
+            # are the server's built-in providers). Per
+            # docs/version-policy.md §2.3, assert against the
+            # imported __version__ so the test moves with the
+            # package rather than requiring a literal bump.
+            from termin_server import __version__ as _server_version
+            assert rec.version == _server_version
 
     def test_factory_constructs_correct_class(self):
         contracts = ContractRegistry.default()
