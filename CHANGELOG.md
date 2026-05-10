@@ -2,6 +2,68 @@
 
 ## [Unreleased]
 
+### Added (v0.9.4 slice A3a — Update action verb for When-rule bodies)
+
+- **`Update <content>: <field> = `<cel-expression>`` action verb**
+  for When-rule bodies. Surfaced by Airlock-on-Termin OVERSEER
+  rules that need to flip the `session.overseer_X_fired` flags
+  to single-shot per session — without an Update verb, OVERSEER
+  re-fires on every player append and spams the conversation.
+  - **Grammar:** new `update_action_line` rule
+    (termin.peg). One field per Update line; multi-field updates
+    use multiple Update lines (executes in source order).
+  - **Classifier:** routes `Update <X>: <field> = ...` lines
+    via the prefix-loop dispatch (classify.py).
+  - **AST:** `EventAction.update_content` + `update_assignments`
+    fields added (ast_nodes.py). Mutually exclusive with the
+    pre-existing create / send fields per the existing union
+    pattern.
+  - **Parse handler:** unpacks the TatSu parse-tree dict for
+    `value:expr` and stores the stripped CEL into the
+    assignments tuple (parse_handlers.py).
+  - **Lower:** new branch in `_lower_event_action` ahead of
+    create / send — checked first because update_content is
+    the discriminator for this variant. Targets resolved via
+    the same content_by_name / content_by_singular lookups
+    the create branch uses.
+  - **IR:** `EventActionSpec.update_content` +
+    `update_assignments: tuple[tuple[str, str], ...]` fields
+    added (in `termin-core`'s `ir/types.py`).
+  - **Tests:** 8 new tests in
+    `tests/test_when_rule_update_action_v094.py` covering
+    classifier routing, parser-vs-Directive disambiguation,
+    parse + AST shape, lower into IR, multiple Update actions
+    on the same rule, and Update coexisting with Append + Log
+    level. The runtime executor is tested at the integration
+    level via 2 new tests in `termin-server`'s
+    `tests/test_integration.py::TestWhenRuleUpdateAction`
+    (single-fire + single-shot semantics).
+
+  Total termin-compiler tests: 2665 → 2673. All green.
+
+### Changed (v0.9.4 slice A3a — `examples-dev/airlock.termin` continued)
+
+- **6 OVERSEER `When`-rules** added to `airlock.termin` covering
+  the production overseer.ts trigger schedule (time_warning_1,
+  reeves_crisis, pressure_hint, reeves_followup, time_warning_2,
+  final_warning). Each fires on `appended_entry.kind == "user"`
+  and gates on a session.overseer_X_fired single-shot flag that
+  the rule's Update action flips on first fire. A separate
+  helper rule increments `session.message_count` so the
+  threshold checks (`session.message_count >= 3`) work.
+- **`yes/no` field comparisons** use the string-equality form
+  (`session.X != "yes"`, `session.X == "yes"`) consistently.
+  CEL `!string` doesn't have an overload in cel-py; the string-
+  comparison form is the idiomatic v0.9.4 pattern given that
+  yes/no is implemented as a constrained text type, not a real
+  boolean. (A future v0.10 native boolean type would unlock the
+  `!flag` form; deferred.)
+- **`defaults to "no"`** (quoted) instead of bare `defaults to no`
+  for yes/no field defaults. The grammar's `DefaultLiteral`
+  alternative requires a quoted string; bare yes/no doesn't match
+  any default form. Default values are correctly persisted on
+  create (verified end-to-end against `storage.create`).
+
 ### Added (v0.9.4 slice A3a — `examples-dev/airlock.termin` first authoring pass)
 
 - **`examples-dev/airlock.termin`** — first complete-shape pass at

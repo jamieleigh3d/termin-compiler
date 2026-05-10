@@ -161,6 +161,14 @@ def classify_line(text: str) -> str:
     # ("Append to ") so it doesn't collide with anything else. Used
     # in compute bodies, page form handlers, When-rule actions (L8).
     if text.startswith("Append to "): return "append_action_line"
+    # v0.9.4 Gap #5: Update action verb for When-rule bodies. Source
+    # form `Update <content>: <field> = `<cel>``. Distinct prefix
+    # ("Update ") so it doesn't collide with anything else (the
+    # legacy "Update content with X" CRUD shape was never DSL-level
+    # — it's an HTTP verb). The colon-equals body shape distinguishes
+    # this from any future Update-prefixed top-level construct.
+    if text.startswith("Update ") and ":" in text and "=" in text:
+        return "update_action_line"
     for prefix, rule in _PREFIXES:
         if text.startswith(prefix):
             # Disambiguate "For each X, show actions:" from "For each X, show Y grouped by Z"

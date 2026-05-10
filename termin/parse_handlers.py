@@ -547,6 +547,49 @@ def _parse_line(text: str, rule: str, ln: int):
             else:
                 content = parts; channel = ""
         return ("event_action", EventAction(send_content=content, send_channel=channel, line=ln))
+    if rule == "update_action_line":
+        # v0.9.4 Gap #5: Update action verb for When-rule bodies.
+        # Source form: `Update <content>: <field> = `<cel>``
+        # Returns an EventAction with update_content set and a
+        # single-element update_assignments tuple. Multi-field
+        # updates use multiple Update lines (one EventAction each).
+        r = P(text, rule)
+        if r:
+            content = str(r.get("content","")).strip()
+            field_name = str(r.get("field","")).strip()
+            # value:expr returns the parse-tree dict {"content": "<text>"}
+            # because the `expr` rule names its inner capture "content".
+            # Unpack to the raw string.
+            value_node = r.get("value")
+            if isinstance(value_node, dict):
+                value_raw = str(value_node.get("content", "")).strip()
+            else:
+                value_raw = str(value_node or "").strip()
+        else:
+            # Fallback for the platform-dependent TatSu state-leak
+            # path (per workspace MEMORY.md / TatSu fallback rule
+            # in CLAUDE.md). Manual parse must produce the same
+            # AST shape as the TatSu path.
+            rest = text[len("Update "):].strip()
+            colon_at = rest.find(":")
+            if colon_at < 0:
+                return None
+            content = rest[:colon_at].strip()
+            after_colon = rest[colon_at + 1:].strip()
+            eq_at = after_colon.find("=")
+            if eq_at < 0:
+                return None
+            field_name = after_colon[:eq_at].strip()
+            value_raw = after_colon[eq_at + 1:].strip()
+        # Strip backticks from the CEL expression — same convention
+        # as Append's body and the CEL-condition state transition.
+        if value_raw.startswith("`") and value_raw.endswith("`"):
+            value_raw = value_raw[1:-1]
+        return ("event_action", EventAction(
+            update_content=content,
+            update_assignments=((field_name, value_raw),),
+            line=ln,
+        ))
     if rule == "log_level_line":
         r = P(text, rule); return ("log_level", str(r.get("level","")).strip() if r else text.split(":",1)[1].strip())
     if rule == "error_from_line":

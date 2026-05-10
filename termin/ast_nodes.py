@@ -204,6 +204,20 @@ class EventAction:
     send_content: str = ""       # Content to send via Channel
     send_channel: str = ""       # Channel name to send to
     line: int = 0
+    # v0.9.4 Gap #5: Update action verb for When-rule bodies.
+    # Source form: `Update <content>: <field> = `<cel-expression>``.
+    # Targets the parent record (passed in via the runtime's event
+    # context as `record`). The CEL expression is evaluated against
+    # the same predicate context the rule's trigger condition saw.
+    # One field per Update line; multi-field updates use multiple
+    # Update lines. The runtime dispatches on update_content being
+    # non-empty.
+    update_content: str = ""
+    # tuple of (column_name, cel_expression) pairs — single-element
+    # for the v0.9.4 one-field-per-line shape; tuple-shaped to leave
+    # the door open for a future multi-assignment syntactic-sugar
+    # form without a downstream API change.
+    update_assignments: tuple = field(default_factory=tuple)
 
 
 @dataclass

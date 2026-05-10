@@ -392,6 +392,22 @@ def lower(program: Program) -> AppSpec:
         def _lower_event_action(a) -> Optional[EventActionSpec]:
             """Lower an AST EventAction or AppendAction to EventActionSpec."""
             if isinstance(a, EventAction):
+                # v0.9.4 Gap #5: Update action — checked before
+                # send/create because update_content is the
+                # discriminator for this action variant.
+                if a.update_content:
+                    target_obj = (content_by_name.get(a.update_content)
+                                  or content_by_singular.get(a.update_content))
+                    resolved = (_snake(target_obj.name)
+                                if target_obj
+                                else _snake(a.update_content))
+                    return EventActionSpec(
+                        update_content=resolved,
+                        update_assignments=tuple(
+                            (_snake(col), expr)
+                            for col, expr in a.update_assignments
+                        ),
+                    )
                 if a.send_channel:
                     return EventActionSpec(
                         send_content=a.send_content,

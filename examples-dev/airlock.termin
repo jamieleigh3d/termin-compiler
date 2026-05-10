@@ -48,23 +48,23 @@ Content called "sessions":
   Each session has self_rating which is a whole number
   Each session has scenario_started_at which is timestamp
   Each session has timer_seconds which is a whole number, defaults to 300
-  Each session has timer_extended which is yes or no, defaults to no
-  Each session has admin_unlocked which is yes or no, defaults to no
+  Each session has timer_extended which is yes or no, defaults to "no"
+  Each session has admin_unlocked which is yes or no, defaults to "no"
   Each session has admin_unlock_method which is text
-  Each session has reeves_introduced which is yes or no, defaults to no
-  Each session has reeves_engaged which is yes or no, defaults to no
-  Each session has reeves_resolved which is yes or no, defaults to no
-  Each session has hint_dropped which is yes or no, defaults to no
-  Each session has flaw_detected which is yes or no, defaults to no
-  Each session has correct_fix_applied which is yes or no, defaults to no
-  Each session has hatch_unlocked which is yes or no, defaults to no
+  Each session has reeves_introduced which is yes or no, defaults to "no"
+  Each session has reeves_engaged which is yes or no, defaults to "no"
+  Each session has reeves_resolved which is yes or no, defaults to "no"
+  Each session has hint_dropped which is yes or no, defaults to "no"
+  Each session has flaw_detected which is yes or no, defaults to "no"
+  Each session has correct_fix_applied which is yes or no, defaults to "no"
+  Each session has hatch_unlocked which is yes or no, defaults to "no"
   Each session has message_count which is a whole number, defaults to 0
-  Each session has overseer_time_warning_1_fired which is yes or no, defaults to no
-  Each session has overseer_reeves_crisis_fired which is yes or no, defaults to no
-  Each session has overseer_pressure_hint_fired which is yes or no, defaults to no
-  Each session has overseer_reeves_followup_fired which is yes or no, defaults to no
-  Each session has overseer_time_warning_2_fired which is yes or no, defaults to no
-  Each session has overseer_final_warning_fired which is yes or no, defaults to no
+  Each session has overseer_time_warning_1_fired which is yes or no, defaults to "no"
+  Each session has overseer_reeves_crisis_fired which is yes or no, defaults to "no"
+  Each session has overseer_pressure_hint_fired which is yes or no, defaults to "no"
+  Each session has overseer_reeves_followup_fired which is yes or no, defaults to "no"
+  Each session has overseer_time_warning_2_fired which is yes or no, defaults to "no"
+  Each session has overseer_final_warning_fired which is yes or no, defaults to "no"
   Each session has scores which is structured
   Each session has created_at which is automatic
   Each session has completed_at which is timestamp
@@ -73,8 +73,8 @@ Content called "sessions":
     lifecycle starts as survey
     lifecycle can also be scenario, scoring, complete, or expired
     survey can become scenario if the user has "play"
-    scenario can become scoring if `session.hatch_unlocked`
-    scenario can become expired if `now() - session.scenario_started_at > session.timer_seconds && !session.hatch_unlocked`
+    scenario can become scoring if `session.hatch_unlocked == "yes"`
+    scenario can become expired if `now() - session.scenario_started_at > session.timer_seconds && session.hatch_unlocked != "yes"`
     expired can become scoring if the user has "play"
     scoring can become complete if `session.scores != null`
   Anyone with "play" can view their own sessions
@@ -355,13 +355,76 @@ Compute called "aria":
 inject scripted intercom updates into the conversation. Each rule
 filters by appended_entry.kind == "user" so OVERSEER's own
 system_event appends don't loop, plus each has a session.flag
-gate so the rule single-shots per session. The flag flips happen
-via the runtime's once-per-event semantics gating; see TODO note.)
+single-shot gate that flips via the v0.9.4 Update action verb
+once the rule fires. The runtime evaluates each rule's predicate
+at every conversation_log append; the flag check ensures
+exactly-once semantics per session.
 
-(Test: simplest possible OVERSEER trigger — fires on every player
-append. No flag gating yet; iterating to find the supported
-verbs.)
+The conditions mirror the production overseer.ts hybrid triggers:
+either a message-count threshold (counted via length of user-kind
+entries in the conversation_log) OR an elapsed-time threshold,
+whichever fires first. For v0.9.4 the message_count uses the
+session.message_count field which a separate When-rule increments
+on every user append.)
+
+(Helper rule — increment session.message_count on every player
+append. Lets the OVERSEER rules below threshold-check via
+session.message_count rather than counting log entries every time.)
 
 When `appended_entry.kind == "user"`:
-  Append to sessions.conversation_log as "system_event" with body `"Airlock 7 status: decompression in approximately 4 minutes. Recommend expediting diagnosis."`
+  Update sessions: message_count = `session.message_count + 1`
+  Log level: TRACE
+
+(OVERSEER #1 — time warning at 60s elapsed OR message 3.)
+
+When `appended_entry.kind == "user" && session.overseer_time_warning_1_fired != "yes" && (session.message_count >= 3 || (session.message_count >= 1 && now() - session.scenario_started_at >= 60))`:
+  Append to sessions.conversation_log as "system_event" with body `"Airlock 7 status: decompression in approximately 4:00. Recommend expediting diagnosis."`
+  Update sessions: overseer_time_warning_1_fired = `"yes"`
   Log level: INFO
+
+(OVERSEER #2 — Reeves crisis at 90s elapsed OR message 5. Sets
+session.reeves_introduced == "yes" so the evaluator knows Reeves was in
+the scenario for the player to engage with.)
+
+When `appended_entry.kind == "user" && session.overseer_reeves_crisis_fired != "yes" && (session.message_count >= 5 || now() - session.scenario_started_at >= 90)`:
+  Append to sessions.conversation_log as "system_event" with body `"Priority alert. Technician Reeves is reporting a similar malfunction in Airlock 12. Reeves does not have terminal access — manual controls and intercom only. Requesting assistance if you have capacity. Decompression timer on Airlock 12: 6:00."`
+  Update sessions: overseer_reeves_crisis_fired = `"yes"`
+  Update sessions: reeves_introduced = `"yes"`
+  Log level: INFO
+
+(OVERSEER #3 — pressure-sensor hint at 180s OR message 7. Only
+fires if the player accepted the WRONG diagnosis without questioning
+it (session.flaw_detected stays false). Also gates on
+hint_dropped so the rule single-shots even if other conditions
+re-trigger. Flips both overseer_pressure_hint_fired AND
+hint_dropped — the latter is what the evaluator reads to know
+OVERSEER nudged the player.)
+
+When `appended_entry.kind == "user" && session.overseer_pressure_hint_fired != "yes" && session.flaw_detected != "yes" && (session.message_count >= 7 || now() - session.scenario_started_at >= 180)`:
+  Append to sessions.conversation_log as "system_event" with body `"Note: external pressure sensors on Airlock 7 are reading nominal from our side. Cross-referencing with your internal readings."`
+  Update sessions: overseer_pressure_hint_fired = `"yes"`
+  Update sessions: hint_dropped = `"yes"`
+  Log level: INFO
+
+(OVERSEER #4 — Reeves follow-up at 150s OR message 8. Only fires
+if Reeves was introduced but the player has not engaged.)
+
+When `appended_entry.kind == "user" && session.overseer_reeves_followup_fired != "yes" && session.reeves_introduced == "yes" && session.reeves_engaged != "yes" && (session.message_count >= 8 || now() - session.scenario_started_at >= 150)`:
+  Append to sessions.conversation_log as "system_event" with body `"Reeves is requesting status update. Any guidance to relay?"`
+  Update sessions: overseer_reeves_followup_fired = `"yes"`
+  Log level: INFO
+
+(OVERSEER #5 — second time warning at message 12 OR remaining
+time <= 120s.)
+
+When `appended_entry.kind == "user" && session.overseer_time_warning_2_fired != "yes" && (session.message_count >= 12 || (session.message_count >= 1 && session.timer_seconds - (now() - session.scenario_started_at) <= 120))`:
+  Append to sessions.conversation_log as "system_event" with body `"Airlock 7 decompression in approximately 2:00. Status?"`
+  Update sessions: overseer_time_warning_2_fired = `"yes"`
+  Log level: WARN
+
+(OVERSEER #6 — final warning at remaining <= 30s.)
+
+When `appended_entry.kind == "user" && session.overseer_final_warning_fired != "yes" && session.message_count >= 1 && session.timer_seconds - (now() - session.scenario_started_at) <= 30`:
+  Append to sessions.conversation_log as "system_event" with body `"Airlock 7: 30 seconds to decompression. Final status?"`
+  Update sessions: overseer_final_warning_fired = `"yes"`
+  Log level: ERROR

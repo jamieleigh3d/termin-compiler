@@ -343,6 +343,19 @@ event_send_line
     = 'Send' content:word_or_quoted 'to' channel:quoted_string $
     ;
 
+# v0.9.4 Gap #5: Update action verb for When-rule bodies. Source form:
+#   Update <content>: <field> = `<cel-expression>`
+# Targets the parent record (the same record the When-rule fired on,
+# typically passed in via the event context as `record`). The CEL
+# expression is evaluated against the same predicate context the
+# rule's trigger condition saw. One field per Update line; multi-
+# field updates use multiple Update lines (and execute in source
+# order). Surfaced by Airlock-on-Termin OVERSEER rules needing to
+# flip the `session.overseer_X_fired` once-per-session flags.
+update_action_line
+    = 'Update' content:word ':' field:word '=' value:expr $
+    ;
+
 log_level_line
     = 'Log' 'level:' level:log_level $
     ;
