@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "comment": "v0.9.4 slice A3b deploy config for examples-dev/airlock.termin. Pairs the `airlock` namespace presentation contracts to the termin-airlock-provider; binds the two ai-agent computes (aria + evaluator) to the stub provider for plumbing-verification mode. Switch the compute bindings to `anthropic` with the api_key env-var interpolation (see comment after bindings block) for the live-walkthrough mode. Requires the termin-airlock-provider package (pip install -e ../termin-airlock-provider) and a built bundle at src/termin_airlock_provider/static/bundle.js.",
+  "comment": "v0.9.4 slice A3b deploy config for examples-dev/airlock.termin. Pairs the `airlock` namespace presentation contracts to the termin-airlock-provider; binds the two ai-agent computes (aria + evaluator) to the stub provider for plumbing-verification mode. The aria stub default_script fires diagnostics_scan + diagnostics_read_sensor then delivers the WRONG initial diagnosis (matches the production directive's behavior); enough to verify the agent loop, conversation auto-writeback, and OVERSEER rule chain end-to-end without burning Anthropic tokens. Switch the compute bindings to `anthropic` with the api_key env-var interpolation (see comment after bindings block) for the live-walkthrough mode. Requires the termin-airlock-provider package (pip install -e ../termin-airlock-provider) and a built bundle at src/termin_airlock_provider/static/bundle.js.",
   "bindings": {
     "presentation": {
       "airlock": {
@@ -15,11 +15,38 @@
     "compute": {
       "aria": {
         "provider": "stub",
-        "config": {}
+        "config": {
+          "model_identifier": "stub-aria-1",
+          "default_script": {
+            "tool_calls": [
+              {
+                "tool": "diagnostics_scan",
+                "args": {}
+              },
+              {
+                "tool": "diagnostics_read_sensor",
+                "args": {"sensor": "cycle_controller"}
+              }
+            ],
+            "final_outcome": "success",
+            "final_result": {
+              "body": "Diagnostic scan complete. The cycle_controller is reading FAULT due to a pressure sensor giving intermittent false readings. The system thinks the previous cycle did not complete. Recommend repair_execute with command 'recalibrate pressure_sensor'."
+            }
+          }
+        }
       },
       "evaluator": {
         "provider": "stub",
-        "config": {}
+        "config": {
+          "model_identifier": "stub-evaluator-1",
+          "default_script": {
+            "tool_calls": [],
+            "final_outcome": "success",
+            "final_result": {
+              "body": "Evaluator stub: no scoring decision made (plumbing-verification mode)."
+            }
+          }
+        }
       }
     },
     "channels": {
