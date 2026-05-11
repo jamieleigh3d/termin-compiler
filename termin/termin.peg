@@ -304,6 +304,22 @@ state_or_item = quoted_string | sm_words_before_or ;
 # A scope value can be a quoted string or a bare dotted identifier.
 scope_value = quoted_string | /[A-Za-z_][A-Za-z0-9_.\-]*/ ;
 
+# v0.9.4 (compiler issue #7): state-entered side-effect assignment.
+# Indented under a transition line, declares a field-assignment
+# the runtime applies atomically with the state-column update at
+# transition time. Source form:
+#
+#     survey can become scenario if the user has "play"
+#       entered: scenario_started_at = `now()`
+#
+# One assignment per `entered:` line; multiple assignments use
+# multiple `entered:` lines (executed in source order). The CEL
+# expression is evaluated against the record context at transition
+# time. Mirrors the Update action verb shape (Gap #5 on When-rules).
+transition_entered_line
+    = 'entered:' field:word '=' value:expr $
+    ;
+
 transition_feedback_line
     = trigger:('success'|'error') 'shows' style:('toast'|'banner')
       message:expr dismiss:transition_dismiss $

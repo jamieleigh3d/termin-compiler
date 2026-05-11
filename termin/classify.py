@@ -105,6 +105,14 @@ def classify_line(text: str) -> str:
     if text == "Identity:": return "identity_block_open_line"
     # Transition feedback must be checked early — CEL messages can contain " has " which triggers role_bare_line
     if text.startswith(("success ", "error ")) and " shows " in text: return "transition_feedback_line"
+    # v0.9.4 (compiler issue #7): transition entered: side-effect line.
+    # Source form: `entered: <field> = `<cel-expression>``. Same indent
+    # context as transition_feedback_line — both attach to the most
+    # recent `<from> can become <to> if ...` transition. Routed early
+    # for the same reason: the CEL value can contain `"`, " has ",
+    # etc. that would trip downstream heuristics.
+    if text.startswith("entered:") and "=" in text:
+        return "transition_entered_line"
     if text.startswith('"') and " is alias for " in text: return "role_alias_line"
     if text.startswith(('A "', 'An "')) and " has " in text: return "role_standard_line"
     # role_bare_line heuristic: ``<bare-role> has <quoted-scopes>`` per

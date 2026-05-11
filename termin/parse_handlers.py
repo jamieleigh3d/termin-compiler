@@ -516,6 +516,36 @@ def _parse_line(text: str, rule: str, ln: int):
         ))
     if rule == "transition_feedback_line":
         return ("transition_feedback", _build_feedback(text, ln))
+    if rule == "transition_entered_line":
+        # v0.9.4 (compiler issue #7): transition entered: side-effect.
+        # Source form: `entered: <field> = `<cel-expression>``
+        # Returns ("transition_entered", (field, expr_text)) which the
+        # peg_parser assembler attaches to the most recent transition.
+        r = P(text, rule)
+        if r:
+            field_name = str(r.get("field", "")).strip()
+            value_node = r.get("value")
+            if isinstance(value_node, dict):
+                expr_text = str(value_node.get("content", "")).strip()
+            else:
+                expr_text = str(value_node or "").strip()
+        else:
+            # Fallback for the platform-dependent TatSu state-leak
+            # path (per workspace MEMORY.md / TatSu fallback rule
+            # in CLAUDE.md). Manual parse must produce the same
+            # AST shape as the TatSu path.
+            rest = text[len("entered:"):].strip()
+            eq_at = rest.find("=")
+            if eq_at < 0:
+                return None
+            field_name = rest[:eq_at].strip()
+            expr_text = rest[eq_at + 1:].strip()
+        # Strip surrounding backticks from the CEL expression — same
+        # convention as the Append body and the CEL-condition state
+        # transition (Gap #3) and the Update action (Gap #5).
+        if expr_text.startswith("`") and expr_text.endswith("`"):
+            expr_text = expr_text[1:-1]
+        return ("transition_entered", (field_name, expr_text))
     if rule == "event_expr_line":
         r = P(text, rule); j = _qs(r.get("cel","")) if r else (_eb(text) or "")
         return ("event_header", EventRule(content_name="", trigger="expr", condition_expr=j, line=ln))

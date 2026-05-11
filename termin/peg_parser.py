@@ -183,6 +183,7 @@ def _assemble(parsed: list) -> Program:
                 "field", "access", "content_scoped", "content_audit", "dependent_value",
                 "state_field", "sm_starts_as", "sm_also", "sm_transition",
                 "transition_feedback",
+                "transition_entered",  # v0.9.4 Gap #7
                 "content_owned_by",  # v0.9 Phase 6a.2
             )
             for ch in _collect(lambda x: x in content_kinds):
@@ -225,6 +226,15 @@ def _assemble(parsed: list) -> Program:
                         last_transition = ch[1]
                 elif ch[0] == "transition_feedback" and last_transition is not None:
                     last_transition.feedback.append(ch[1])
+                elif ch[0] == "transition_entered" and last_transition is not None:
+                    # v0.9.4 Gap #7: append to the transition's
+                    # entered_assignments tuple. ch[1] is a
+                    # (field_name, cel_expr) pair from the parse
+                    # handler.
+                    last_transition.entered_assignments = (
+                        tuple(last_transition.entered_assignments)
+                        + (ch[1],)
+                    )
                 elif ch[0] == "access":
                     ct.access_rules.append(ch[1])
                     current_sm = None

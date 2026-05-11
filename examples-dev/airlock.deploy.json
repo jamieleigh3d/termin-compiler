@@ -1,0 +1,40 @@
+{
+  "version": "1.0.0",
+  "comment": "v0.9.4 slice A3b deploy config for examples-dev/airlock.termin. Pairs the `airlock` namespace presentation contracts to the termin-airlock-provider; binds the two ai-agent computes (aria + evaluator) to the stub provider for plumbing-verification mode. Switch the compute bindings to `anthropic` with the api_key env-var interpolation (see comment after bindings block) for the live-walkthrough mode. Requires the termin-airlock-provider package (pip install -e ../termin-airlock-provider) and a built bundle at src/termin_airlock_provider/static/bundle.js.",
+  "bindings": {
+    "presentation": {
+      "airlock": {
+        "provider": "airlock",
+        "config": {}
+      },
+      "presentation-base": {
+        "provider": "tailwind-default",
+        "config": {}
+      }
+    },
+    "compute": {
+      "aria": {
+        "provider": "stub",
+        "config": {}
+      },
+      "evaluator": {
+        "provider": "stub",
+        "config": {}
+      }
+    },
+    "channels": {
+      "tool output stream": {
+        "provider": "stub",
+        "config": {}
+      },
+      "overseer channel": {
+        "provider": "stub",
+        "config": {}
+      },
+      "scoring updates": {
+        "provider": "stub",
+        "config": {}
+      }
+    }
+  }
+}
