@@ -593,10 +593,15 @@ def lower(program: Program) -> AppSpec:
             content_ref=content_ref,
             required_scope=create_scope,
         ))
-        # GET one
+        # GET one. The placeholder is `{key}` to match the
+        # `request.path_params["key"]` read in
+        # `termin_core.routing.crud.get_content_handler` — adapters
+        # using `dispatch_http_request` or `build_route_specs` can
+        # pass the regex-extracted path params straight through to
+        # the handler without renaming.
         routes.append(RouteSpec(
             method=HttpMethod.GET,
-            path=f"{base_path}/{{id}}",
+            path=f"{base_path}/{{key}}",
             kind=RouteKind.GET_ONE,
             content_ref=content_ref,
             required_scope=view_scope,
@@ -605,7 +610,7 @@ def lower(program: Program) -> AppSpec:
         # PUT update
         routes.append(RouteSpec(
             method=HttpMethod.PUT,
-            path=f"{base_path}/{{id}}",
+            path=f"{base_path}/{{key}}",
             kind=RouteKind.UPDATE,
             content_ref=content_ref,
             required_scope=update_scope,
@@ -614,37 +619,36 @@ def lower(program: Program) -> AppSpec:
         # DELETE
         routes.append(RouteSpec(
             method=HttpMethod.DELETE,
-            path=f"{base_path}/{{id}}",
+            path=f"{base_path}/{{key}}",
             kind=RouteKind.DELETE,
             content_ref=content_ref,
             required_scope=delete_scope,
             row_filter=delete_filter,
         ))
 
-        # State transition routes (D-11.2).
-        # v0.9: a content may own multiple state machines. The route path
-        # must include the machine_name so the runtime can disambiguate
-        # (two different machines may legitimately share a `to_state` name
-        # — e.g. "approved" on both approval_status and review_status).
-        # Deduplicate per machine by target_state: several transitions on
-        # the same machine may land on the same state from different
-        # sources with different scopes; the runtime's do_state_transition()
-        # handler authorizes based on (from_state, to_state).
-        for sm in sm_by_content.get(c.name, []):
-            sm_col = _snake(sm.machine_name)
-            seen_targets: set[str] = set()
-            for tr in sm.transitions:
-                if tr.to_state not in seen_targets:
-                    seen_targets.add(tr.to_state)
-                    routes.append(RouteSpec(
-                        method=HttpMethod.POST,
-                        path=f"{base_path}/{{id}}/_transition/{sm_col}/{tr.to_state}",
-                        kind=RouteKind.TRANSITION,
-                        content_ref=content_ref,
-                        required_scope=None,  # enforced by do_state_transition
-                        target_state=tr.to_state,
-                        machine_name=sm_col,
-                    ))
+        # State transition route (v0.9.4 — canonical path).
+        # One transition route per content with state machines, with
+        # `{machine}`, `{key}`, and `{target}` as path placeholders.
+        # Matches both `termin-server`'s `register_transition_routes`
+        # catch-all and the conformance suite's path shape
+        # (`POST /_transition/{content}/{machine_name}/{record_id}/
+        # {target_state}`). Earlier compiler versions emitted one
+        # route per `(machine, target_state)` tuple under
+        # `/api/v1/{content}/{id}/_transition/...` — that path was
+        # registered in the runtime but never used by the conformance
+        # suite or the production JS, so it was effectively dead code.
+        # Closes (4) of termin-core issue #6.
+        plural_snake = _snake(c.name)
+        if sm_by_content.get(c.name):
+            routes.append(RouteSpec(
+                method=HttpMethod.POST,
+                path=f"/_transition/{plural_snake}/{{machine}}/{{key}}/{{target}}",
+                kind=RouteKind.TRANSITION,
+                content_ref=content_ref,
+                required_scope=None,  # enforced by do_state_transition
+                target_state=None,    # placeholder now, resolved at request
+                machine_name=None,    # placeholder now, resolved at request
+            ))
 
         # v0.9.2 L3: append routes for conversation fields with grants.
         # Each `Anyone with X can append to <plural>' <field>` access rule
@@ -671,7 +675,7 @@ def lower(program: Program) -> AppSpec:
             )
             routes.append(RouteSpec(
                 method=HttpMethod.POST,
-                path=f"{base_path}/{{id}}/{field_snake}:append",
+                path=f"{base_path}/{{key}}/{field_snake}:append",
                 kind=RouteKind.APPEND,
                 content_ref=content_ref,
                 required_scope=rule.scope,
@@ -1086,7 +1090,7 @@ def lower(program: Program) -> AppSpec:
         ))
         audit_log_routes.append(RouteSpec(
             method=HttpMethod.GET,
-            path=f"{audit_base_path}/{{id}}",
+            path=f"{audit_base_path}/{{key}}",
             kind=RouteKind.GET_ONE,
             content_ref=audit_table_name,
             required_scope=audit_view_scope,

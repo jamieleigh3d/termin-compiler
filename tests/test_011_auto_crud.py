@@ -161,16 +161,19 @@ class TestAutoCrudRoutes:
         assert create_route.path == "/api/v1/items"
         assert create_route.method == HttpMethod.POST
 
+        # v0.9.4: CRUD path placeholder is `{key}` to match
+        # `request.path_params['key']` in the core handlers
+        # (closes termin-core #6).
         get_route = _find_route(spec, "items", RouteKind.GET_ONE)
-        assert get_route.path == "/api/v1/items/{id}"
+        assert get_route.path == "/api/v1/items/{key}"
         assert get_route.method == HttpMethod.GET
 
         update_route = _find_route(spec, "items", RouteKind.UPDATE)
-        assert update_route.path == "/api/v1/items/{id}"
+        assert update_route.path == "/api/v1/items/{key}"
         assert update_route.method == HttpMethod.PUT
 
         delete_route = _find_route(spec, "items", RouteKind.DELETE)
-        assert delete_route.path == "/api/v1/items/{id}"
+        assert delete_route.path == "/api/v1/items/{key}"
         assert delete_route.method == HttpMethod.DELETE
 
     def test_crud_route_scopes(self):
@@ -225,11 +228,17 @@ class TestHeadlessService:
 
     def test_headless_has_state_machine_transitions(self):
         spec = _compile(HEADLESS_SERVICE)
+        # v0.9.4: ONE generic transition route per content; machine
+        # and target are placeholders. Target-state coverage is
+        # validated against the state machine spec, not the route.
         transition_routes = [r for r in spec.routes
                              if r.content_ref == "orders" and r.kind == RouteKind.TRANSITION]
-        assert len(transition_routes) >= 2, f"Expected at least 2 transition routes, got {len(transition_routes)}"
-
-        target_states = {r.target_state for r in transition_routes}
+        assert len(transition_routes) == 1, (
+            f"Expected exactly 1 generic transition route, "
+            f"got {len(transition_routes)}"
+        )
+        sm = next(s for s in spec.state_machines if s.content_ref == "orders")
+        target_states = {t.to_state for t in sm.transitions}
         assert "confirmed" in target_states
         assert "shipped" in target_states
 
@@ -238,9 +247,10 @@ class TestHeadlessService:
         transition_routes = [r for r in spec.routes
                              if r.content_ref == "orders" and r.kind == RouteKind.TRANSITION]
         paths = {r.path for r in transition_routes}
-        # v0.9: transition path includes the snake_case machine_name segment.
-        assert "/api/v1/orders/{id}/_transition/order_lifecycle/confirmed" in paths
-        assert "/api/v1/orders/{id}/_transition/order_lifecycle/shipped" in paths
+        # v0.9.4 canonical shape: top-level path, all four positions
+        # are placeholders or content-literal. Closes
+        # termin-core #6 (4).
+        assert "/_transition/orders/{machine}/{key}/{target}" in paths
 
     def test_headless_transition_scopes(self):
         """Transition routes don't set route-level scope; do_state_transition checks it."""
@@ -276,9 +286,11 @@ class TestStateTransitionRoutes:
 
     def test_state_machine_produces_transition_routes(self):
         spec = _compile(HEADLESS_SERVICE)
+        # v0.9.4: ONE generic transition route per content with state
+        # machines (machine + target are path placeholders).
         transition_routes = [r for r in spec.routes
                              if r.kind == RouteKind.TRANSITION]
-        assert len(transition_routes) >= 2
+        assert len(transition_routes) >= 1
 
     def test_transition_routes_are_post(self):
         spec = _compile(HEADLESS_SERVICE)

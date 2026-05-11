@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+### Changed (canonical transition + CRUD path shapes — closes termin-core #6 (4))
+
+- **Transition routes now use the canonical top-level path
+  shape**: `POST /_transition/{plural}/{{machine}}/{{key}}/{{target}}`.
+  One transition route per content (where state machines exist),
+  with `machine`, `key`, and `target` as path placeholders. The
+  earlier compiler emitted one route per `(machine, target)`
+  tuple at `POST /api/v1/{content}/{id}/_transition/{machine}/
+  {target}` with the machine and target baked in as literals; that
+  path was registered by the reference runtime but was not used
+  by the conformance suite, the production JS, or
+  `termin-server`'s `register_transition_routes`. Adapters
+  iterating `build_route_specs(ctx)` to bind routes received the
+  unused path and saw 37 state-machine conformance tests 404
+  because the URL the test client hit never matched the bound
+  path.
+
+- **CRUD path placeholder is now `{key}`** (was `{id}`) for
+  GET_ONE, UPDATE, DELETE, APPEND, and audit-log GET_ONE routes.
+  The framework-agnostic handlers in
+  `termin_core.routing.crud` read the row key from
+  `request.path_params["key"]`; the IR used to declare the
+  placeholder as `{id}`, requiring adapters to rename the path
+  param before dispatching. After this change adapters can pass
+  the regex-extracted path params straight through to the
+  handlers.
+
+- **`termin-server`'s `_make_transition_route` updated** to read
+  `machine`, `key`, and `target` from `request.path_params`
+  (since they are now path placeholders, not baked-in
+  RouteSpec metadata). `register_transition_routes` (the
+  legacy global catch-all) is unchanged and still registered as
+  belt-and-braces — both routes now share the same path shape
+  so the dual registration is benign.
+
+- **Test path updates** across `test_e2e.py`, `test_helpdesk.py`,
+  `test_projectboard.py`, `test_011_auto_crud.py`,
+  `test_runtime.py`,
+  `test_transition_entered_assignments_v094.py`, and `test_ir.py`
+  to assert on the canonical shape. New
+  `tests/test_canonical_transition_path_v094.py` (8 tests) pins
+  the IR-shape contract — top-level path, placeholders for
+  machine/key/target, one route per content.
+
+  Closes (4) of `termin-core` issue #6.
+
 ### Fixed (v0.9.4 A3b #10 — Update-only When-rules infer source_content)
 
 - **`lower._lower_events`** L8 fallback for `appended_entry`-only

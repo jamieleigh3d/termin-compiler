@@ -118,32 +118,32 @@ class TestHelpdeskStateTransitions:
             "submitted_by": "user@test.com"
         })
         # D-11: Transition routes use /_transition/{target_state}
-        r = client.post("/api/v1/tickets/2/_transition/ticket_lifecycle/in progress",
+        r = client.post("/_transition/tickets/ticket_lifecycle/2/in progress",
                         cookies={"termin_role": "support agent"})
         assert r.status_code == 200
         assert r.json()["ticket_lifecycle"] == "in progress"
 
     def test_in_progress_to_waiting(self, client):
-        r = client.post("/api/v1/tickets/2/_transition/ticket_lifecycle/waiting on customer",
+        r = client.post("/_transition/tickets/ticket_lifecycle/2/waiting on customer",
                         cookies={"termin_role": "support agent"})
         assert r.status_code == 200
         assert r.json()["ticket_lifecycle"] == "waiting on customer"
 
     def test_waiting_to_in_progress(self, client):
         """Customer responds, ticket goes back to in progress."""
-        r = client.post("/api/v1/tickets/2/_transition/ticket_lifecycle/in progress",
+        r = client.post("/_transition/tickets/ticket_lifecycle/2/in progress",
                         cookies={"termin_role": "customer"})
         assert r.status_code == 200
         assert r.json()["ticket_lifecycle"] == "in progress"
 
     def test_in_progress_to_resolved(self, client):
-        r = client.post("/api/v1/tickets/2/_transition/ticket_lifecycle/resolved",
+        r = client.post("/_transition/tickets/ticket_lifecycle/2/resolved",
                         cookies={"termin_role": "support agent"})
         assert r.status_code == 200
         assert r.json()["ticket_lifecycle"] == "resolved"
 
     def test_resolved_to_closed(self, client):
-        r = client.post("/api/v1/tickets/2/_transition/ticket_lifecycle/closed",
+        r = client.post("/_transition/tickets/ticket_lifecycle/2/closed",
                         cookies={"termin_role": "support manager"})
         assert r.status_code == 200
         assert r.json()["ticket_lifecycle"] == "closed"
@@ -155,7 +155,7 @@ class TestHelpdeskStateTransitions:
             "priority": "critical", "category": "bug",
             "submitted_by": "user@test.com"
         })
-        r = client.post("/api/v1/tickets/3/_transition/ticket_lifecycle/closed",
+        r = client.post("/_transition/tickets/ticket_lifecycle/3/closed",
                         cookies={"termin_role": "support manager"})
         assert r.status_code == 409
 
@@ -166,9 +166,9 @@ class TestHelpdeskStateTransitions:
             "priority": "low", "category": "question",
             "submitted_by": "user@test.com"
         })
-        client.post("/api/v1/tickets/4/_transition/ticket_lifecycle/in progress",
+        client.post("/_transition/tickets/ticket_lifecycle/4/in progress",
                     cookies={"termin_role": "support agent"})
-        r = client.post("/api/v1/tickets/4/_transition/ticket_lifecycle/resolved",
+        r = client.post("/_transition/tickets/ticket_lifecycle/4/resolved",
                         cookies={"termin_role": "customer"})
         assert r.status_code == 403
 

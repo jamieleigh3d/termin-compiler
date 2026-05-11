@@ -9,8 +9,9 @@
 Uses FastAPI's TestClient for in-process testing — no subprocess needed.
 The generated app.py is compiled, imported, and tested directly.
 
-D-11: Routes are now auto-generated. All CRUD uses /api/v1/{content}/{id}.
-Transition routes use /api/v1/{content}/{id}/_transition/{target_state}.
+D-11: Routes are now auto-generated. All CRUD uses /api/v1/{content}/{key}.
+v0.9.4: Transition routes use /_transition/{content}/{machine}/{key}/{target}
+(closes termin-core #6 (4)).
 Content paths use snake_case (e.g., /api/v1/stock_levels, not /stock-levels).
 """
 
@@ -141,14 +142,14 @@ class TestSpec82_APIRoutes:
 
     def test_activate_product(self, client):
         pid = _create_product(client, "ACT-001", "Activatable")
-        r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active")
+        r = client.post(f"/_transition/products/product_lifecycle/{pid}/active")
         assert r.status_code == 200
         assert r.json()["product_lifecycle"] == "active"
 
     def test_discontinue_product(self, client):
         pid = _create_product(client, "DIS-001", "Discontinuable")
-        client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active")
-        r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/discontinued",
+        client.post(f"/_transition/products/product_lifecycle/{pid}/active")
+        r = client.post(f"/_transition/products/product_lifecycle/{pid}/discontinued",
                         cookies={"termin_role": "warehouse manager"})
         assert r.status_code == 200
         assert r.json()["product_lifecycle"] == "discontinued"
@@ -189,32 +190,32 @@ class TestSpec83_AccessControl:
 class TestSpec84_StateTransitions:
     def test_cannot_activate_already_active(self, client):
         pid = _create_product(client, "ST-001", "State Test")
-        client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active")
-        r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active")
+        client.post(f"/_transition/products/product_lifecycle/{pid}/active")
+        r = client.post(f"/_transition/products/product_lifecycle/{pid}/active")
         assert r.status_code == 409
 
     def test_cannot_discontinue_draft(self, client):
         """No direct draft -> discontinued path exists."""
         pid = _create_product(client, "ST-002", "Draft Only")
-        r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/discontinued",
+        r = client.post(f"/_transition/products/product_lifecycle/{pid}/discontinued",
                         cookies={"termin_role": "warehouse manager"})
         assert r.status_code == 409
 
     def test_clerk_cannot_discontinue(self, client):
         """Clerk lacks admin scope for active -> discontinued."""
         pid = _create_product(client, "ST-003", "Clerk Block")
-        client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active")
-        r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/discontinued",
+        client.post(f"/_transition/products/product_lifecycle/{pid}/active")
+        r = client.post(f"/_transition/products/product_lifecycle/{pid}/discontinued",
                         cookies={"termin_role": "warehouse clerk"})
         assert r.status_code == 403
 
     def test_reactivate_discontinued(self, client):
         """Discontinued -> active with admin scope."""
         pid = _create_product(client, "ST-004", "Reactivate")
-        client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active")
-        client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/discontinued",
+        client.post(f"/_transition/products/product_lifecycle/{pid}/active")
+        client.post(f"/_transition/products/product_lifecycle/{pid}/discontinued",
                     cookies={"termin_role": "warehouse manager"})
-        r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/active",
+        r = client.post(f"/_transition/products/product_lifecycle/{pid}/active",
                         cookies={"termin_role": "warehouse manager"})
         assert r.status_code == 200
         assert r.json()["product_lifecycle"] == "active"
@@ -372,7 +373,7 @@ class TestSecurityInvariants:
 
     def test_invalid_transition_rejected(self, client):
         pid = _create_product(client, "SEC-001", "Security")
-        r = client.post(f"/api/v1/products/{pid}/_transition/product_lifecycle/discontinued",
+        r = client.post(f"/_transition/products/product_lifecycle/{pid}/discontinued",
                         cookies={"termin_role": "warehouse manager"})
         assert r.status_code == 409
 

@@ -177,46 +177,46 @@ class TestTaskLifecycle:
 
         # D-11: Transition routes use /_transition/{target_state}
         # backlog → in sprint (project manager)
-        r = client.post(f"/api/v1/tasks/{tid}/_transition/task_lifecycle/in sprint",
+        r = client.post(f"/_transition/tasks/task_lifecycle/{tid}/in sprint",
                         cookies={"termin_role": "project manager"})
         assert r.status_code == 200
         assert r.json()["task_lifecycle"] == "in sprint"
 
         # in sprint → in progress (developer)
-        r = client.post(f"/api/v1/tasks/{tid}/_transition/task_lifecycle/in progress",
+        r = client.post(f"/_transition/tasks/task_lifecycle/{tid}/in progress",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 200
         assert r.json()["task_lifecycle"] == "in progress"
 
         # in progress → in review (developer)
-        r = client.post(f"/api/v1/tasks/{tid}/_transition/task_lifecycle/in review",
+        r = client.post(f"/_transition/tasks/task_lifecycle/{tid}/in review",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 200
         assert r.json()["task_lifecycle"] == "in review"
 
         # Rework: in review → in progress
-        r = client.post(f"/api/v1/tasks/{tid}/_transition/task_lifecycle/in progress",
+        r = client.post(f"/_transition/tasks/task_lifecycle/{tid}/in progress",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 200
         assert r.json()["task_lifecycle"] == "in progress"
 
         # Back to review → done
-        client.post(f"/api/v1/tasks/{tid}/_transition/task_lifecycle/in review", cookies={"termin_role": "developer"})
-        r = client.post(f"/api/v1/tasks/{tid}/_transition/task_lifecycle/done",
+        client.post(f"/_transition/tasks/task_lifecycle/{tid}/in review", cookies={"termin_role": "developer"})
+        r = client.post(f"/_transition/tasks/task_lifecycle/{tid}/done",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 200
         assert r.json()["task_lifecycle"] == "done"
 
     def test_reopen_done_task(self, client, seeded):
         """Done tasks can be sent back to in progress."""
-        r = client.post("/api/v1/tasks/1/_transition/task_lifecycle/in progress",
+        r = client.post("/_transition/tasks/task_lifecycle/1/in progress",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 200
         assert r.json()["task_lifecycle"] == "in progress"
 
     def test_cannot_skip_to_done(self, client, seeded):
         """Cannot jump from backlog to done."""
-        r = client.post("/api/v1/tasks/2/_transition/task_lifecycle/done",
+        r = client.post("/_transition/tasks/task_lifecycle/2/done",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 409
 
@@ -230,7 +230,7 @@ class TestTaskLifecycle:
         })
         tid = r.json()["id"]
         # Developer lacks 'manage sprints' → can't plan
-        r = client.post(f"/api/v1/tasks/{tid}/_transition/task_lifecycle/in sprint",
+        r = client.post(f"/_transition/tasks/task_lifecycle/{tid}/in sprint",
                         cookies={"termin_role": "developer"})
         assert r.status_code == 403
 

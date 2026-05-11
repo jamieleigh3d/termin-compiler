@@ -143,11 +143,17 @@ class TestWarehouseIR:
     def test_routes(self):
         routes_by_path = {r.path: r for r in self.spec.routes}
         assert "/api/v1/products" in routes_by_path
-        # v0.9: transition routes include the machine_name segment so
-        # multi-state-machine content can disambiguate.
-        activate = next(r for r in self.spec.routes if r.target_state == "active")
-        assert activate.kind == RouteKind.TRANSITION
-        assert activate.path == "/api/v1/products/{id}/_transition/product_lifecycle/active"
+        # v0.9.4: One generic transition route per content with state
+        # machines; machine and target are path placeholders, resolved
+        # at request time. Closes termin-core #6 (4).
+        trans = [r for r in self.spec.routes
+                 if r.kind == RouteKind.TRANSITION and r.content_ref == "products"]
+        assert len(trans) == 1, (
+            f"Expected one transition route for 'products', got {len(trans)}"
+        )
+        assert trans[0].path == (
+            "/_transition/products/{machine}/{key}/{target}"
+        )
 
     def test_route_scopes(self):
         create_route = next(r for r in self.spec.routes
@@ -242,9 +248,17 @@ class TestHelpdeskIR:
         assert "resolved" in sm.states
 
     def test_transition_resolution(self):
-        # D-11: Auto-generated transition routes use /_transition/{target_state}
-        transition_routes = [r for r in self.spec.routes if r.kind == RouteKind.TRANSITION and r.content_ref == "tickets"]
-        target_states = {r.target_state for r in transition_routes}
+        # v0.9.4: One generic transition route per content. The
+        # declared target states are validated against the state
+        # machine spec, not the route (the route's `target` segment
+        # is a placeholder, resolved at request time).
+        transition_routes = [r for r in self.spec.routes
+                             if r.kind == RouteKind.TRANSITION
+                             and r.content_ref == "tickets"]
+        assert len(transition_routes) == 1
+        sm = next(s for s in self.spec.state_machines
+                  if s.content_ref == "tickets")
+        target_states = {t.to_state for t in sm.transitions}
         assert "in progress" in target_states
         assert "waiting on customer" in target_states
         assert "resolved" in target_states
@@ -306,12 +320,18 @@ class TestProjectBoardIR:
         assert "done" in sm.states
 
     def test_plan_transition(self):
-        # v0.9: Transition routes are namespaced by machine_name (snake_case
-        # field name) so multiple state machines per content can coexist:
-        # /_transition/{machine_name}/{target_state}
-        plan_route = next(r for r in self.spec.routes if r.target_state == "in sprint")
-        assert plan_route.kind == RouteKind.TRANSITION
-        assert plan_route.path == "/api/v1/tasks/{id}/_transition/task_lifecycle/in sprint"
+        # v0.9.4: One generic transition route per content. The
+        # declared target state lives on the state machine's
+        # TransitionSpec, not on the route (the route's `target`
+        # segment is a placeholder).
+        trans = [r for r in self.spec.routes
+                 if r.kind == RouteKind.TRANSITION
+                 and r.content_ref == "tasks"]
+        assert len(trans) == 1
+        assert trans[0].path == "/_transition/tasks/{machine}/{key}/{target}"
+        sm = next(s for s in self.spec.state_machines
+                  if s.content_ref == "tasks")
+        assert "in sprint" in {t.to_state for t in sm.transitions}
 
     def test_create_task_form_fields(self):
         ct = next(p for p in self.spec.pages if p.slug == "create_task")
@@ -1077,8 +1097,10 @@ class TestAppendVerb:
         assert g.append_field == "conversation"
 
     def test_append_route_emitted_with_field_path(self):
-        """The lowering emits POST /api/v1/chat_threads/{id}/conversation:append
-        with kind=APPEND and field_name set."""
+        """The lowering emits POST /api/v1/chat_threads/{key}/conversation:append
+        with kind=APPEND and field_name set. ``{key}`` placeholder
+        (v0.9.4) matches the handler's ``request.path_params['key']``
+        read."""
         spec = self._parse_and_lower('''Content called "chat_threads":
   Each chat_thread has a title which is text
   Each chat_thread has a conversation which is conversation
@@ -1089,7 +1111,7 @@ class TestAppendVerb:
         assert len(append_routes) == 1, f"expected one append route, got {append_routes!r}"
         r = append_routes[0]
         assert r.method == HttpMethod.POST
-        assert r.path == "/api/v1/chat_threads/{id}/conversation:append"
+        assert r.path == "/api/v1/chat_threads/{key}/conversation:append"
         assert r.content_ref == "chat_threads"
         assert r.field_name == "conversation"
         assert r.required_scope == "chat.use"
@@ -1110,8 +1132,8 @@ class TestAppendVerb:
             key=lambda r: r.path,
         )
         assert [r.field_name for r in append_routes] == ["chat", "debug_log"]
-        assert append_routes[0].path == "/api/v1/sessions/{id}/chat:append"
-        assert append_routes[1].path == "/api/v1/sessions/{id}/debug_log:append"
+        assert append_routes[0].path == "/api/v1/sessions/{key}/chat:append"
+        assert append_routes[1].path == "/api/v1/sessions/{key}/debug_log:append"
 
 
 # ============================================================

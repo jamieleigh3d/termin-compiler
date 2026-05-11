@@ -161,7 +161,7 @@ class TestEnteredAssignmentsAtRuntime:
             )
             # Transition lifecycle survey → scenario.
             tr = c.post(
-                f"/api/v1/sessions/{session_id}/_transition/lifecycle/scenario",
+                f"/_transition/sessions/lifecycle/{session_id}/scenario",
                 json={},
             )
             assert tr.status_code in (200, 201), tr.text
