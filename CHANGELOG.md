@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Fixed (v0.9.4 A3b #10 — Update-only When-rules infer source_content)
+
+- **`lower._lower_events`** L8 fallback for `appended_entry`-only
+  When-rules now also considers `EventAction` with non-empty
+  `update_content` as a routing key, not just `AppendAction`.
+  Closes compiler issue #10.
+
+  Pre-fix: an `appended_entry`-only When-rule with an Update-only
+  body (e.g. the airlock message_count incrementer) compiled to
+  `EventSpec.source_content == ""`. The runtime dispatch loop
+  matches `content_name == source_content`, so Update-only
+  `appended_entry`-rules silently never fired.
+
+  Surfaced by Airlock-on-Termin slice A3b smoke:
+
+  ```
+  When `appended_entry.kind == "user"`:
+    Update sessions: message_count = `session.message_count + 1`
+    Log level: TRACE
+  ```
+
+  Pre-fix `message_count` stayed 0 across every user append; every
+  OVERSEER threshold rule that gated on `session.message_count >= N`
+  silently never fired as a downstream consequence. Post-fix the
+  airlock smoke shows `message_count` incrementing 0 → 1 → 2 across
+  two user appends, with all 6 OVERSEER rules then evaluating their
+  predicates against current message_count values (the timestamp-
+  arithmetic CEL errors are tracked separately as compiler #9).
+
+  2 new tests in `tests/test_when_rule_update_action_v094.py::
+  TestSourceContentInferenceFromUpdateAction`. Compiler suite:
+  2684 → 2692, all green.
+
 ### Added (v0.9.4 slice A3a — `examples-dev/airlock.termin` complete first pass)
 
 - **`examples-dev/airlock.termin` is structurally complete.** All

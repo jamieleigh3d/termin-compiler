@@ -359,17 +359,34 @@ def lower(program: Program) -> AppSpec:
         # v0.9.2 L8: When-rules whose predicate references `appended_entry`
         # don't carry a content prefix in the CEL — `appended_entry.kind ==
         # "user" && session.message_count >= 3` has no `<content>.<verb>`
-        # head to extract from. Fall back to the FIRST Append action's
-        # target content as the routing key. The OVERSEER pattern listens
-        # to and writes to the same `<content>.<field>`, so this gives the
-        # right routing key without a separate source-content declaration.
+        # head to extract from. Fall back to the FIRST routing-relevant
+        # action's target content as the routing key. The OVERSEER pattern
+        # listens to and writes to the same `<content>.<field>`, so this
+        # gives the right routing key without a separate source-content
+        # declaration.
+        #
+        # v0.9.4 (Airlock #11 follow-up to gap #5): originally only checked
+        # AppendAction. Update-only When-rules
+        # (`Update <content>: <field> = ...`, gap #5 added the verb)
+        # weren't covered, so the airlock message_count incrementer
+        # (`When appended_entry.kind == "user": Update sessions:
+        # message_count = session.message_count + 1`) compiled to
+        # source_content="" and the runtime dispatcher silently dropped
+        # it on every user append. Extended to also consider EventAction
+        # with non-empty update_content.
         if (not resolved_content and ev.condition_expr
                 and "appended_entry" in (ev.condition_expr or "")):
             for a in getattr(ev, "actions", None) or []:
+                target_name: str | None = None
                 if isinstance(a, AppendAction):
+                    target_name = a.record
+                elif isinstance(a, EventAction) and getattr(
+                        a, "update_content", ""):
+                    target_name = a.update_content
+                if target_name:
                     target_obj = (
-                        content_by_name.get(a.record)
-                        or content_by_singular.get(a.record)
+                        content_by_name.get(target_name)
+                        or content_by_singular.get(target_name)
                     )
                     if target_obj:
                         resolved_content = target_obj

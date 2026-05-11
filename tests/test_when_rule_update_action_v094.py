@@ -231,3 +231,99 @@ When `appended_entry.kind == "user" && !session.fired`:
             f"expected [append, update] in source order; got {kinds}"
         )
         assert ev.log_level == "WARN"
+
+
+class TestSourceContentInferenceFromUpdateAction:
+    """v0.9.4 (Airlock #11 follow-up to gap #5): the L8 fallback that
+    infers ``source_content`` for ``appended_entry``-only When-rules
+    only checked AppendAction. Update-only rules (gap #5 added the
+    verb) fall through and get ``source_content=""`` in the IR. The
+    runtime dispatch loop matches on ``content_name == source_content``
+    so the rule never fires.
+
+    Surfaced by the airlock message_count incrementer:
+
+        When `appended_entry.kind == "user"`:
+          Update sessions: message_count = `session.message_count + 1`
+          Log level: TRACE
+
+    Pre-fix: ``message_count`` stayed 0 across every user append even
+    though the rule's predicate evaluated true. Every OVERSEER threshold
+    rule that depends on message_count silently never fires.
+
+    Fix: extend the L8 fallback in ``lower._lower_events`` to also
+    consider EventAction with non-empty ``update_content`` as a
+    routing key (mirrors the AppendAction case).
+    """
+
+    _SRC_UPDATE_ONLY = '''Application: Update-Only Smoke
+  Description: appended_entry-only When-rule with sole Update action
+Id: 8a9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d
+
+Identity:
+  Scopes are "play"
+  Anonymous has "play"
+
+Content called "sessions":
+  Each session has counter which is a whole number, defaults to 0
+  Each session has a conversation which is conversation
+  Anyone with "play" can view sessions
+  Anyone with "play" can update sessions
+  Anyone with "play" can create sessions
+  Anyone with "play" can append to their own sessions.conversation
+
+When `appended_entry.kind == "user"`:
+  Update sessions: counter = `session.counter + 1`
+  Log level: TRACE
+'''
+
+    def test_source_content_inferred_from_update_target(self):
+        from termin.lower import lower
+        program, errors = parse(self._SRC_UPDATE_ONLY)
+        assert errors.ok
+        spec = lower(program)
+        assert len(spec.events) == 1
+        ev = spec.events[0]
+        # The runtime dispatcher matches content_name == source_content,
+        # so an empty source_content here means the rule never fires.
+        assert ev.source_content == "sessions", (
+            f"Update-only When-rule should infer source_content from "
+            f"update target; got {ev.source_content!r}"
+        )
+
+    _SRC_UPDATE_THEN_APPEND = '''Application: Update Before Append
+  Description: appended_entry-only When-rule with Update first, Append second
+Id: 9b0c1d2e-3f4a-5b6c-8d7e-8f9a0b1c2d3e
+
+Identity:
+  Scopes are "play"
+  Anonymous has "play"
+
+Content called "sessions":
+  Each session has counter which is a whole number, defaults to 0
+  Each session has a conversation which is conversation
+  Anyone with "play" can view sessions
+  Anyone with "play" can update sessions
+  Anyone with "play" can create sessions
+  Anyone with "play" can append to their own sessions.conversation
+
+When `appended_entry.kind == "user"`:
+  Update sessions: counter = `session.counter + 1`
+  Append to sessions.conversation as "system_event" with body `"counted"`
+  Log level: INFO
+'''
+
+    def test_first_action_wins_when_both_present(self):
+        """When the rule has both Update and Append actions, the L8
+        fallback breaks at the first match. The order of attempts
+        (Update first vs Append first) doesn't matter because both
+        target the same content (sessions) — the test pins behavior
+        to whatever the first-match resolution is so a future
+        refactor doesn't silently change semantics."""
+        from termin.lower import lower
+        program, errors = parse(self._SRC_UPDATE_THEN_APPEND)
+        assert errors.ok
+        spec = lower(program)
+        assert len(spec.events) == 1
+        ev = spec.events[0]
+        assert ev.source_content == "sessions"
