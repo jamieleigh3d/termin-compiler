@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### Fixed (v0.9.4 A5 — multi-`Display a table` pages drop all but the last)
+
+- **`lower_pages` collects every `Display a table` directive in
+  source order** instead of accumulating one `cur_data_table` and
+  overwriting it. Pages with multiple table directives — the
+  airlock Results page being the first real example (sessions
+  scored via `airlock.score-axis-card` + profile badges via
+  `airlock.badge-strip`) — used to silently drop every table
+  except the last one. After the fix every table appears in the
+  page's children, in source order, inserted at the top of the
+  children list (preserves the "tables first, other renderables
+  below" layout convention single-table pages depended on).
+
+  Modifier directives (`Allow filtering by`, `Allow searching by`,
+  `For each X, show actions:`, `Allow inline editing of`, etc.)
+  continue to attach to the latest declared table — they always
+  belong to the most recently declared `Display a table`.
+
+  Single-data-table pages (the only shape in the
+  `examples/` set: warehouse, helpdesk, projectboard, hrportal,
+  agent_chatbot, security_agent) are unaffected. Multi-table
+  pages are new to v0.9.4 via the airlock sample.
+
+  5 new tests in `tests/test_multi_data_table_page_v094.py`:
+  two-table page, source-order preservation, three-table
+  defensive case, single-table baseline, single-table-with-
+  stat_breakdown ordering.
+
 ### Changed (canonical transition + CRUD path shapes — closes termin-core #6 (4))
 
 - **Transition routes now use the canonical top-level path

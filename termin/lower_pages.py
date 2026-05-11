@@ -189,6 +189,17 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
         # special-case data_table whose modifiers are appended as
         # children rather than siblings.
         cur_renderable = None
+        # v0.9.4: tracks every Display-a-table directive in source
+        # order so multi-table pages (airlock Results: score-axis-
+        # card + badge-strip on the same page) emit one ComponentNode
+        # per directive. Pre-v0.9.4 only the *last* cur_data_table
+        # made it into children — earlier tables were silently
+        # overwritten. All tables get inserted at the top of children
+        # at end-of-loop (preserves the "tables first, other
+        # renderables below" convention single-table pages
+        # depended on; for single-table pages this is a no-op
+        # behavior change).
+        data_tables_in_source_order: list = []
 
         for d in story.directives:
             if isinstance(d, ShowPage):
@@ -238,6 +249,15 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
             elif isinstance(d, DisplayTable):
                 dt_content = content_by_name.get(d.content_name)
                 if dt_content:
+                    # v0.9.4: stash the previous data_table in source
+                    # order before starting a new one. Earlier
+                    # behavior overwrote the reference and dropped
+                    # the prior table. Modifier directives (filter,
+                    # search, row_actions, inline_edit) still attach
+                    # to the latest cur_data_table — they always
+                    # belong to the most recently declared table.
+                    if cur_data_table is not None:
+                        data_tables_in_source_order.append(cur_data_table)
                     cols = [{"field": _snake(col), "label": col} for col in d.columns]
                     cur_data_table = ComponentNode(
                         type="data_table",
@@ -607,9 +627,17 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
                         ))
                     cur_data_table.props["row_actions"] = row_actions
 
-        # Finalize accumulated data_table and form
-        if cur_data_table:
-            children.insert(0, cur_data_table)
+        # Finalize accumulated data_tables and form.
+        # v0.9.4: every data_table (collected per directive in source
+        # order) gets inserted at the top of children, in source
+        # order. Earlier behavior only kept the LAST cur_data_table
+        # and inserted it at position 0; multi-table pages lost the
+        # earlier ones. Reversing then insert(0)'ing each one yields
+        # the source-order list at the top of children.
+        if cur_data_table is not None:
+            data_tables_in_source_order.append(cur_data_table)
+        for dt in reversed(data_tables_in_source_order):
+            children.insert(0, dt)
         if cur_form:
             if form_target_name:
                 for c in program.contents:
