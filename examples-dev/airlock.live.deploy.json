@@ -1,0 +1,46 @@
+{
+  "version": "1.0.0",
+  "comment": "v0.9.4 slice A3b LIVE deploy config for examples-dev/airlock.termin. Same presentation + channel bindings as airlock.deploy.json (stub mode); the difference is the aria + evaluator computes route to the real Anthropic SDK via ${ANTHROPIC_API_KEY} env-var interpolation. Use this config for the live-walkthrough phase of A3b smoke. Stub config (airlock.deploy.json) remains the cheap-iteration plumbing-verification mode.",
+  "bindings": {
+    "presentation": {
+      "airlock": {
+        "provider": "airlock",
+        "config": {}
+      },
+      "presentation-base": {
+        "provider": "tailwind-default",
+        "config": {}
+      }
+    },
+    "compute": {
+      "aria": {
+        "provider": "anthropic",
+        "config": {
+          "api_key": "${ANTHROPIC_API_KEY}",
+          "model": "claude-sonnet-4-6"
+        }
+      },
+      "evaluator": {
+        "provider": "anthropic",
+        "config": {
+          "api_key": "${ANTHROPIC_API_KEY}",
+          "model": "claude-sonnet-4-6"
+        }
+      }
+    },
+    "channels": {
+      "tool output stream": {
+        "provider": "stub",
+        "config": {}
+      },
+      "overseer channel": {
+        "provider": "stub",
+        "config": {}
+      },
+      "scoring updates": {
+        "provider": "stub",
+        "config": {}
+      }
+    }
+  }
+}
