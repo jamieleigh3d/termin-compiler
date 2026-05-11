@@ -197,6 +197,34 @@ def _parse_type_text(text: str, ln: int = 0) -> TypeExpr:
             expr.default_expr = dm.group(1)
             expr.default_is_expr = False
             text = text[:dm.start()] + text[dm.end():]
+        else:
+            # v0.9.4 (compiler issues #4 + #6): bare default literals.
+            # Numbers (positive, negative, integer, decimal) and the
+            # bare yes/no tokens. The natural form for
+            # `defaults to 300` and `defaults to no`. Matched after
+            # the backtick + quoted alternatives so those win when
+            # both could apply (a quoted "300" stays a quoted
+            # literal). Anchored on word boundary so we don't
+            # match the `no` inside `not`, the `yes` inside `yesterday`,
+            # etc. The bare number regex requires a digit, so the
+            # alternation is unambiguous: either it's a number or
+            # it's exactly "yes" / "no".
+            dm = re.search(
+                r',?\s*defaults\s+to\s+(\-?\d+(?:\.\d+)?|yes|no)\b',
+                text, re.IGNORECASE,
+            )
+            if dm:
+                value = dm.group(1)
+                expr.default_expr = value
+                # v0.9.4 (compiler issue #6): bare numeric defaults
+                # mark as expression so the runtime evaluates them as
+                # CEL int/float (matching the backtick `300` form)
+                # rather than storing them as text strings. yes/no
+                # tokens are text literals — same shape as
+                # `defaults to "no"`.
+                is_numeric = bool(re.fullmatch(r'\-?\d+(?:\.\d+)?', value))
+                expr.default_is_expr = is_numeric
+                text = text[:dm.start()] + text[dm.end():]
 
     while True:
         tl = text.lower().rstrip()

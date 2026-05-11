@@ -144,7 +144,24 @@ constraint
     | 'is' 'one' 'of:' vals:literal_list  #IsOneOf
     | 'defaults' 'to' expr:expr        #DefaultExpr
     | 'defaults' 'to' lit:quoted_string    #DefaultLiteral
+    # v0.9.4 (compiler issues #4 + #6): bare literal defaults — bare
+    # integers / floats and bare yes/no tokens. The natural form
+    # for `Each session has timer_seconds which is a whole number,
+    # defaults to 300` and `Each session has fired which is yes
+    # or no, defaults to no`. Pre-v0.9.4 these silently failed to
+    # match either of the two alternatives above and the constraint
+    # was dropped, leaving the field with no declared default.
+    | 'defaults' 'to' bare:bare_default_literal    #DefaultBare
     | 'confidentiality' 'is' scopes:quoted_list  #Confidentiality
+    ;
+
+# v0.9.4 (compiler issues #4 + #6): bare literal default values.
+# Numbers + the yes/no tokens. Lowered to the same default_expr
+# slot the other constraint alternatives populate.
+bare_default_literal
+    = /\-?\d+(?:\.\d+)?/   # integer or decimal, optional leading minus
+    | 'yes'                 # yes/no boolean-ish (constrained text type)
+    | 'no'
     ;
 
 content_scoped_line
