@@ -1,0 +1,38 @@
+Application: Owner Keyed Update Test
+  Description: v0.9.4 cross-content slice — conformance fixture covering the new `When <singular> <field> enters <state>:` trigger and the new `Update the user's <singular>: <field> = ` action. Single source content (rounds) projects into a singleton owner-keyed target (profiles) on state-machine entry.
+Id: 69b4a49d-b08b-4626-9914-f773e5d2a834
+
+Identity:
+  Scopes are "play"
+  A "player" has "play"
+
+(Profiles — singleton per player. Owner-keyed Update targets these via player_principal == the user's principal id.)
+
+Content called "profiles":
+  Each profile has a player_principal which is principal, required, unique
+  Each profile is owned by player_principal
+  Each profile has best_score which is a whole number, defaults to 0
+  Each profile has games_played which is a whole number, defaults to 0
+  Anyone with "play" can view their own profiles
+  Anyone with "play" can update their own profiles
+  Anyone with "play" can create profiles
+
+(Rounds — multi-row per player. The `status` state machine drives the projection trigger.)
+
+Content called "rounds":
+  Each round has a player_principal which is principal, required
+  Each round is owned by player_principal
+  Each round has points which is a whole number, defaults to 0
+  Each round has a status which is state:
+    status starts as in_progress
+    status can also be done
+    in_progress can become done if the user has "play"
+  Anyone with "play" can view their own rounds
+  Anyone with "play" can create rounds
+  Anyone with "play" can update their own rounds
+
+(B1a + B1b + B5: state-entered trigger fires owner-keyed Update on round completion, projecting per-player aggregates into the singleton profile.)
+
+When round status enters done:
+  Update the user's profile: games_played = `profile.games_played + 1`
+  Update the user's profile: best_score = `max(profile.best_score, round.points)`
