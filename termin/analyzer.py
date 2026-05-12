@@ -171,6 +171,7 @@ class Analyzer:
         self._check_row_action_access_rules()
         self._check_inline_editing()
         self._check_ownership()  # v0.9 Phase 6a.2
+        self._check_cross_content_updates()  # v0.9.4 cross-content slice
         self._check_using_overrides()  # v0.9 Phase 5b.1
         self._check_transition_event_triggers()  # v0.9 Phase 6b
 
@@ -1178,6 +1179,213 @@ class Analyzer:
                             f'Did you mean "{suggestion}"?' if suggestion else None
                         ),
                     ))
+
+    def _check_cross_content_updates(self) -> None:
+        """v0.9.4 cross-content slice: validate the two new grammar
+        forms — state-entered When-rule trigger and owner-keyed
+        Update action — at compile time so the deterministic-zone
+        invariants the runtime depends on are guaranteed before
+        dispatch.
+
+        Errors raised:
+
+          TERMIN-A101 — owner-keyed Update target singular doesn't
+                        resolve to a content.
+          TERMIN-A102 — owner-keyed Update target lacks
+                        `is owned by <field>` declaration.
+          TERMIN-A103 — owner-keyed Update assignment column doesn't
+                        exist on the target content.
+          TERMIN-A104 — owner-keyed Update target's ownership field
+                        does not declare `unique`. Without unique,
+                        the lookup might match multiple records,
+                        violating the single-target contract per
+                        design doc §3 goal 2 (deterministic resolve).
+          TERMIN-A105 — state-entered trigger names a state field
+                        that doesn't exist on the resolved content.
+          TERMIN-A106 — state-entered trigger names a state value
+                        that isn't declared on the matched state
+                        machine.
+          TERMIN-A107 — RESERVED for v0.10 scheduled-trigger
+                        contexts (forward-prep gate per design doc
+                        §12.2). v0.9.4 has no scheduled triggers,
+                        so the gate is a no-op today.
+        """
+        from .ast_nodes import EventAction
+
+        for event in self.program.events:
+            # ── State-entered trigger validation (B1a + B2) ──
+            state_field = getattr(event, "trigger_state_field", "") or ""
+            if state_field:
+                singular = event.content_name or ""
+                target = self._find_content_by_name(singular)
+                if target is None:
+                    # Singular doesn't resolve. Re-use TERMIN-S010-style
+                    # phrasing for consistency, but with A105 code so
+                    # the cross-content slice's errors group together.
+                    suggestion = _fuzzy_match(
+                        singular, list(self.content_names) + list(self.content_singulars))
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'When-rule state-entered trigger references '
+                            f'undefined content "{singular}".'
+                        ),
+                        line=event.line,
+                        code="TERMIN-A105",
+                        suggestion=(
+                            f'Did you mean "{suggestion}"?' if suggestion else None
+                        ),
+                    ))
+                else:
+                    # Find the state machine on the target whose
+                    # machine_name (snake_case state-field) matches.
+                    target_plural = target.name
+                    state_machine = None
+                    for sm in self.program.state_machines:
+                        if sm.content_name == target_plural and (
+                            sm.machine_name == state_field
+                            or sm.machine_name.replace(" ", "_") == state_field
+                        ):
+                            state_machine = sm
+                            break
+                    if state_machine is None:
+                        # State field doesn't match any declared
+                        # state machine on the target.
+                        candidates = [
+                            sm.machine_name for sm in self.program.state_machines
+                            if sm.content_name == target_plural
+                        ]
+                        suggestion = _fuzzy_match(state_field, candidates)
+                        self.errors.add(SemanticError(
+                            message=(
+                                f'When-rule state-entered trigger references '
+                                f'undefined state field "{state_field}" on '
+                                f'content "{target_plural}". Declared state '
+                                f'machines: {candidates or "<none>"}.'
+                            ),
+                            line=event.line,
+                            code="TERMIN-A105",
+                            suggestion=(
+                                f'Did you mean "{suggestion}"?' if suggestion else None
+                            ),
+                        ))
+                    else:
+                        # State value must be a declared state on
+                        # the matched machine.
+                        state_value = getattr(event, "trigger_state_value", "") or ""
+                        valid_states = set()
+                        if getattr(state_machine, "initial_state", None):
+                            valid_states.add(state_machine.initial_state)
+                        for s in getattr(state_machine, "states", ()) or ():
+                            valid_states.add(s)
+                        for tr in getattr(state_machine, "transitions", ()) or ():
+                            if getattr(tr, "from_state", None):
+                                valid_states.add(tr.from_state)
+                            if getattr(tr, "to_state", None):
+                                valid_states.add(tr.to_state)
+                        # Compare with snake-case tolerance — source
+                        # may use either underscores or spaces in
+                        # state names.
+                        sv_norm = state_value.replace("_", " ").lower()
+                        valid_norm = {s.replace("_", " ").lower() for s in valid_states}
+                        if sv_norm not in valid_norm:
+                            suggestion = _fuzzy_match(
+                                state_value, list(valid_states))
+                            self.errors.add(SemanticError(
+                                message=(
+                                    f'When-rule state-entered trigger references '
+                                    f'undefined state "{state_value}" on '
+                                    f'machine "{state_machine.machine_name}" of '
+                                    f'content "{target_plural}". Declared '
+                                    f'states: {sorted(valid_states)}.'
+                                ),
+                                line=event.line,
+                                code="TERMIN-A106",
+                                suggestion=(
+                                    f'Did you mean "{suggestion}"?' if suggestion else None
+                                ),
+                            ))
+
+            # ── Owner-keyed Update action validation (B1b + B2) ──
+            for a in getattr(event, "actions", []) or []:
+                if not isinstance(a, EventAction):
+                    continue
+                if getattr(a, "update_target_kind", "") != "owner-keyed":
+                    continue
+                singular = a.update_content or ""
+                target = self._find_content_by_name(singular)
+                if target is None:
+                    suggestion = _fuzzy_match(
+                        singular, list(self.content_names) + list(self.content_singulars))
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'Owner-keyed Update action targets undefined '
+                            f'content "{singular}" (in "Update the user\'s '
+                            f'{singular}: ...").'
+                        ),
+                        line=a.line,
+                        code="TERMIN-A101",
+                        suggestion=(
+                            f'Did you mean "{suggestion}"?' if suggestion else None
+                        ),
+                    ))
+                    continue
+                # A102: target must declare ownership.
+                ownership_decls = list(
+                    getattr(target, "owned_by_declarations", []) or [])
+                if not ownership_decls:
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'Owner-keyed Update targets "{target.name}" but '
+                            f'"{target.name}" has no ownership declaration. '
+                            f'Add "Each {target.singular or target.name} is '
+                            f'owned by <principal-field>" to enable the '
+                            f'"Update the user\'s {singular}" form.'
+                        ),
+                        line=a.line,
+                        code="TERMIN-A102",
+                    ))
+                    continue
+                # A104: ownership field must declare `unique`.
+                ownership_field_name = ownership_decls[0]
+                ownership_field = next(
+                    (f for f in target.fields if f.name == ownership_field_name),
+                    None,
+                )
+                if ownership_field is None or not getattr(
+                    ownership_field.type_expr, "unique", False):
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'Owner-keyed Update targets "{target.name}" '
+                            f'whose ownership field "{ownership_field_name}" '
+                            f'does not declare "unique". The "Update the '
+                            f'user\'s {singular}" form requires single-row '
+                            f'ownership (so the runtime can resolve the '
+                            f'target deterministically). Add "unique" to the '
+                            f'"{ownership_field_name}" field declaration, or '
+                            f'use a different update form (multi-row owner '
+                            f'updates are out of scope for v0.9.4).'
+                        ),
+                        line=a.line,
+                        code="TERMIN-A104",
+                    ))
+                    continue
+                # A103: assignment columns must exist on the target.
+                target_field_names = self.content_field_names.get(
+                    target.name, set())
+                for col, _cel in (a.update_assignments or ()):
+                    if col not in target_field_names:
+                        suggestion = _fuzzy_match(col, target_field_names)
+                        self.errors.add(SemanticError(
+                            message=(
+                                f'Owner-keyed Update assigns to undefined '
+                                f'column "{col}" on content "{target.name}".'
+                            ),
+                            line=a.line,
+                            code="TERMIN-A103",
+                            suggestion=(
+                                f'Did you mean "{suggestion}"?' if suggestion else None
+                            ),
+                        ))
 
     def _check_stories(self) -> None:
         role_names_lower = {r.lower() for r in self.role_names}
