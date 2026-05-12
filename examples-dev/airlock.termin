@@ -585,20 +585,32 @@ Compute called "evaluator":
     sessions.scores via system.update on the session record.
   ```
 
-(Profile aggregator — deterministic CEL compute that fires when
-the lifecycle enters "complete" (which itself fires when the
-evaluator writes session.scores). Updates the player's profile:
-union-best score per axis, badges accumulated, total_attempts
-incremented. Does NOT touch the conversation or session — pure
-projection from session.scores into profile fields.)
+(Profile aggregator — fires when the session lifecycle enters
+"complete" (which itself fires when the evaluator writes
+session.scores). Updates the player's profile: best score per
+axis, total_attempts incremented. Does NOT touch the conversation
+or session — pure projection from session.scores into profile
+fields.
 
-Compute called "profile_aggregator":
-  Provider is "default-CEL"
-  Trigger on event "sessions.lifecycle.complete.entered"
-  Transform: takes a session, produces a profile
-  `session.scores`
-  Anyone with "play" can execute this
-  Audit level: actions
+v0.9.4 cross-content slice: this used to be a default-CEL Compute
+(`Compute called "profile_aggregator"` with `Transform: takes a
+session, produces a profile`), but the runtime had no path for
+cross-type Transform write-back — the CEL body evaluated and the
+result was dropped on the floor. The new
+`Update the user's profile:` action gives a direct expression
+of the projection without invoking a separate compute, and the new
+`When session lifecycle enters complete:` trigger replaces the
+compute's `Trigger on event "..."` declaration.
+
+The numeric of_level uses max() directly. The enum-string axes
+(gc_level, bf_level) and the all_badges JSON-array union are
+deferred to a future CEL-helper landing — they would need
+ordinal-string-max and list-union builtins, which are out of
+scope for v0.9.4.)
+
+When session lifecycle enters complete:
+  Update the user's profile: best_of_level = `max(profile.best_of_level, session.scores.of_level)`
+  Update the user's profile: total_attempts = `profile.total_attempts + 1`
 
 (Channels — three outbound carriers per design doc §4.5 / §4.9.
 
