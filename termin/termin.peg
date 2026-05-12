@@ -354,6 +354,27 @@ event_v1_line
       condition:[event_condition] ':' $
     ;
 
+# v0.9.4 cross-content slice: state-machine entered-event When-rule
+# trigger. Source form:
+#
+#   When <singular> <state-field> enters <state-name>:
+#   When <singular> <state-field> enters "<multi word state>":
+#
+# Subscribes to the same `<plural>.<state-field>.<state-name>.entered`
+# event class computes already use via `Trigger on event "..."`.
+# Fills the gap that today forces the OVERSEER once-shot guard-flag
+# pattern in airlock.termin.
+#
+# The `singular`, `state_field`, and `state` slots use bare-word
+# tokens (snake_case identifiers); multi-word states use the
+# quoted_string fallback. The analyzer maps singular → plural and
+# validates that <state-field> exists as a state field on the
+# resolved content (TERMIN-A105) and that <state> is a declared
+# state of the matched machine (TERMIN-A106).
+event_state_entered_line
+    = 'When' singular:word state_field:word 'enters' state:word_or_quoted ':' $
+    ;
+
 trigger_kw = 'created' | 'updated' | 'deleted' ;
 
 event_condition
@@ -387,6 +408,23 @@ event_send_line
 # flip the `session.overseer_X_fired` once-per-session flags.
 update_action_line
     = 'Update' content:word ':' field:word '=' value:expr $
+    ;
+
+# v0.9.4 cross-content slice: owner-keyed Update action verb. Source
+# form:
+#   Update the user's <singular>: <field> = `<cel-expression>`
+# Resolves the target by querying <singular>'s plural for the row
+# whose ownership field equals the event's "user" principal id. The
+# target's ownership field must declare `unique` (analyzer error
+# TERMIN-A104 — the deterministic-resolve gate per design doc §3
+# goal 2). Upserts when no target exists yet; CEL eval scope binds
+# the target by its singular ("profile.X") so max() / union() over
+# old vs new values works trivially. The "user's" token is split
+# across `'the' 'user' "'" 's'` because TatSu tokenizes apostrophes
+# as their own char.
+update_owned_action_line
+    = 'Update' 'the' 'user' "'" 's' singular:word ':'
+      field:word '=' value:expr $
     ;
 
 log_level_line

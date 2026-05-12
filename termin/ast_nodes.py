@@ -228,16 +228,31 @@ class EventAction:
     # the door open for a future multi-assignment syntactic-sugar
     # form without a downstream API change.
     update_assignments: tuple = field(default_factory=tuple)
+    # v0.9.4 cross-content slice: target-resolution discriminator.
+    # "" / "source-record" — A3a behavior, target id is record["id"].
+    # "owner-keyed" — target found by querying update_content for the
+    #   row whose ownership field equals the event's "user" principal
+    #   id (singular form, e.g. `Update the user's profile: ...`).
+    update_target_kind: str = ""
 
 
 @dataclass
 class EventRule:
     content_name: str
-    trigger: str  # "created", "updated", "deleted"
+    trigger: str  # "created", "updated", "deleted", "" for predicate / state-entered
     condition: Optional[EventCondition] = None
     action: Optional[EventAction] = None
     condition_expr: Optional[str] = None  # v2: When [expr]:
     log_level: Optional[str] = None  # v2: Log level: WARN
+    # v0.9.4 cross-content slice: state-machine entered-event trigger
+    # form. Source: `When <singular> <state-field> enters <state>:`.
+    # When non-empty, both fields are populated together; trigger,
+    # condition, and condition_expr stay empty (the state-entered
+    # form is its own discriminator). content_name carries the
+    # singular as authored — the analyzer and lower passes resolve
+    # to the plural for event-channel subscription.
+    trigger_state_field: str = ""
+    trigger_state_value: str = ""
     # v0.9.2 L8 (tech-design §13.2): When-rule bodies may carry a
     # heterogeneous sequence of actions — `Create a X with ...`,
     # `Send X to "..."`, `Append to X.Y as "kind" with body \`...\``,

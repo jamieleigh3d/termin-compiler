@@ -176,7 +176,30 @@ def classify_line(text: str) -> str:
     # — it's an HTTP verb). The colon-equals body shape distinguishes
     # this from any future Update-prefixed top-level construct.
     if text.startswith("Update ") and ":" in text and "=" in text:
+        # v0.9.4 cross-content slice: owner-keyed Update action.
+        # Shape: `Update the user's <singular>: <field> = `<cel>``.
+        # Discriminator vs A3a same-record Update is the literal
+        # `the user's ` prefix (matched as substring to allow
+        # whitespace tolerance). Goes here so the more-specific
+        # owner-keyed shape is detected before falling through to
+        # the A3a same-record shape on the next return.
+        if text.startswith("Update the user's ") or text.startswith(
+            "Update the user’s "
+        ):
+            return "update_owned_action_line"
         return "update_action_line"
+    # v0.9.4 cross-content slice: state-entered When-rule trigger.
+    # Shape: `When <singular> <state-field> enters <state>:`. The
+    # ` enters ` keyword is the discriminator vs every other
+    # When-prefixed line shape (event_expr_line, event_v1_line,
+    # content_when_line). Goes here (before the _PREFIXES loop) so
+    # the existing `When `/`When a ` prefix matches don't claim it.
+    if (
+        text.startswith("When ")
+        and " enters " in text
+        and text.endswith(":")
+    ):
+        return "event_state_entered_line"
     for prefix, rule in _PREFIXES:
         if text.startswith(prefix):
             # Disambiguate "For each X, show actions:" from "For each X, show Y grouped by Z"

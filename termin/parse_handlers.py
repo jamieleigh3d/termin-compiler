@@ -551,6 +551,47 @@ def _parse_line(text: str, rule: str, ln: int):
         return ("event_header", EventRule(content_name="", trigger="expr", condition_expr=j, line=ln))
     if rule == "event_v1_line":
         return ("event_header", _build_ev1(text, ln))
+    if rule == "event_state_entered_line":
+        # v0.9.4 cross-content slice (B1a): state-entered When-rule
+        # trigger. Source form: `When <singular> <field> enters <state>:`.
+        # Populates content_name (with the singular as authored — the
+        # analyzer maps to the plural for event subscription) plus the
+        # two new trigger fields. trigger / condition / condition_expr
+        # stay empty; trigger_state_field non-empty IS the
+        # discriminator.
+        r = P(text, rule)
+        if r:
+            singular = str(r.get("singular", "")).strip()
+            state_field = str(r.get("state_field", "")).strip()
+            state_value = _qs(r.get("state", ""))
+        else:
+            # Fallback parse for the WSL TatSu state-leak case
+            # (mirrors the pattern used elsewhere in this file —
+            # see workspace CLAUDE.md rule 9). Source shape is
+            # fixed: `When <singular> <field> enters <state>:`.
+            inner = text[len("When "):-1].strip()  # strip "When " and trailing ":"
+            parts = inner.split(" enters ", 1)
+            if len(parts) != 2:
+                # Shouldn't happen — classify_line gated on " enters "
+                # being present. Defensive.
+                return ("event_header", EventRule(
+                    content_name="", trigger="", line=ln))
+            head, state = parts[0].strip(), parts[1].strip()
+            head_tokens = head.split()
+            if len(head_tokens) >= 2:
+                singular = head_tokens[0]
+                state_field = " ".join(head_tokens[1:])
+            else:
+                singular = head
+                state_field = ""
+            state_value = state.strip().strip('"')
+        return ("event_header", EventRule(
+            content_name=singular,
+            trigger="",
+            trigger_state_field=state_field,
+            trigger_state_value=state_value,
+            line=ln,
+        ))
     if rule == "event_action_line":
         r = P(text, rule)
         if r: return ("event_action", EventAction(create_content=_qs(r.get("name","")), fields=_cl(r.get("fields")), line=ln))
@@ -618,6 +659,55 @@ def _parse_line(text: str, rule: str, ln: int):
         return ("event_action", EventAction(
             update_content=content,
             update_assignments=((field_name, value_raw),),
+            line=ln,
+        ))
+    if rule == "update_owned_action_line":
+        # v0.9.4 cross-content slice (B1b): owner-keyed Update action.
+        # Source form: `Update the user's <singular>: <field> = `<cel>``.
+        # Returns an EventAction with update_content set to the singular
+        # as authored (the lower pass maps to the plural snake-case),
+        # update_target_kind="owner-keyed" as the discriminator,
+        # update_assignments as a single-element tuple matching the
+        # A3a one-field-per-line convention.
+        r = P(text, rule)
+        if r:
+            singular = str(r.get("singular", "")).strip()
+            field_name = str(r.get("field", "")).strip()
+            value_node = r.get("value")
+            if isinstance(value_node, dict):
+                value_raw = str(value_node.get("content", "")).strip()
+            else:
+                value_raw = str(value_node or "").strip()
+        else:
+            # WSL TatSu state-leak fallback (per workspace MEMORY.md
+            # / TatSu fallback rule in CLAUDE.md). Manual parse must
+            # produce the same AST shape as the TatSu path. Source
+            # shape after stripping the literal prefix:
+            # `<singular>: <field> = `<cel>``
+            for prefix in ("Update the user's ", "Update the user’s "):
+                if text.startswith(prefix):
+                    rest = text[len(prefix):].strip()
+                    break
+            else:
+                return None
+            colon_at = rest.find(":")
+            if colon_at < 0:
+                return None
+            singular = rest[:colon_at].strip()
+            after_colon = rest[colon_at + 1:].strip()
+            eq_at = after_colon.find("=")
+            if eq_at < 0:
+                return None
+            field_name = after_colon[:eq_at].strip()
+            value_raw = after_colon[eq_at + 1:].strip()
+        # Strip backticks from the CEL expression — same convention
+        # as A3a Update / Append / state-transition condition.
+        if value_raw.startswith("`") and value_raw.endswith("`"):
+            value_raw = value_raw[1:-1]
+        return ("event_action", EventAction(
+            update_content=singular,
+            update_assignments=((field_name, value_raw),),
+            update_target_kind="owner-keyed",
             line=ln,
         ))
     if rule == "log_level_line":
