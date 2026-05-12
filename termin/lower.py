@@ -419,12 +419,27 @@ def lower(program: Program) -> AppSpec:
                     resolved = (_snake(target_obj.name)
                                 if target_obj
                                 else _snake(a.update_content))
+                    # v0.9.4 cross-content slice: owner-keyed Update
+                    # carries the discriminator + owner-field name.
+                    # Default same-record updates leave both empty —
+                    # the runtime treats empty kind as source-record.
+                    target_kind = getattr(a, "update_target_kind", "") or ""
+                    target_owner = ""
+                    if target_kind == "owner-keyed" and target_obj:
+                        ownership_decls = list(
+                            getattr(target_obj, "owned_by_declarations", [])
+                            or []
+                        )
+                        if ownership_decls:
+                            target_owner = _snake(ownership_decls[0])
                     return EventActionSpec(
                         update_content=resolved,
                         update_assignments=tuple(
                             (_snake(col), expr)
                             for col, expr in a.update_assignments
                         ),
+                        update_target_kind=target_kind,
+                        update_target_owner=target_owner,
                     )
                 if a.send_channel:
                     return EventActionSpec(
@@ -527,6 +542,14 @@ def lower(program: Program) -> AppSpec:
                 actions_list.append(spec)
                 if not spec.append_field:
                     action = spec
+        # v0.9.4 cross-content slice: state-entered When-rule trigger.
+        # When the AST EventRule carries trigger_state_field, source the
+        # plural snake-case content name from the resolved Content
+        # (analyzer guaranteed it resolves) and pass through the field
+        # + state-name for runtime subscription. trigger / condition /
+        # condition_expr stay empty.
+        trigger_state_field = getattr(ev, "trigger_state_field", "") or ""
+        trigger_state_value = getattr(ev, "trigger_state_value", "") or ""
         events.append(EventSpec(
             source_content=source_content,
             trigger=ev.trigger,
@@ -535,6 +558,8 @@ def lower(program: Program) -> AppSpec:
             condition_expr=ev.condition_expr,
             log_level=ev.log_level or "INFO",
             actions=tuple(actions_list),
+            trigger_state_field=_snake(trigger_state_field) if trigger_state_field else "",
+            trigger_state_value=trigger_state_value,
         ))
 
     # ── Auto-generate CRUD routes for every Content (D-11) ──

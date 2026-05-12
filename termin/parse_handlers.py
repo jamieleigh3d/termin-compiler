@@ -587,7 +587,11 @@ def _parse_line(text: str, rule: str, ln: int):
             state_value = state.strip().strip('"')
         return ("event_header", EventRule(
             content_name=singular,
-            trigger="",
+            # v0.9.4: explicit "state-entered" discriminator value
+            # so schema validation has a non-empty enum match. The
+            # actual routing key for downstream code is the
+            # non-empty `trigger_state_field` field.
+            trigger="state-entered",
             trigger_state_field=state_field,
             trigger_state_value=state_value,
             line=ln,

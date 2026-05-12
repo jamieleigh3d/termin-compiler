@@ -611,6 +611,33 @@
           },
           "default": [],
           "description": "v0.9.2 L8: array of [key, cel_expr] pairs for additional metadata on the appended entry."
+        },
+        "update_content": {
+          "type": "string",
+          "default": "",
+          "description": "v0.9.4 A3a / A4: snake_case Content name the Update action targets. Source: `Update <content>: <field> = <cel>` (same-record) or `Update the user's <singular>: <field> = <cel>` (owner-keyed cross-content). The lower pass converts singular forms to plural snake_case."
+        },
+        "update_assignments": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "default": [],
+          "description": "v0.9.4 A3a: array of [column, cel_expression] pairs the Update action evaluates and applies via storage.update on the target record."
+        },
+        "update_target_kind": {
+          "type": "string",
+          "enum": ["", "source-record", "owner-keyed"],
+          "default": "",
+          "description": "v0.9.4 A4 cross-content slice: target-resolution discriminator. \"\" (or \"source-record\") — A3a behavior, target id is the event source record's id. \"owner-keyed\" — target found by querying update_content for the row whose update_target_owner field equals the event's \"user\" principal id. The compiler validates uniqueness of the ownership field at compile time (TERMIN-A104) so the runtime can resolve a single target deterministically."
+        },
+        "update_target_owner": {
+          "type": "string",
+          "default": "",
+          "description": "v0.9.4 A4 cross-content slice: when update_target_kind == \"owner-keyed\", names the snake_case ownership field on the target content. Empty for source-record updates."
         }
       }
     },
@@ -627,8 +654,8 @@
         },
         "trigger": {
           "type": "string",
-          "enum": ["created", "updated", "deleted", "expr"],
-          "description": "What triggers the event. 'expr' uses the condition_expr expression."
+          "enum": ["created", "updated", "deleted", "expr", "state-entered"],
+          "description": "What triggers the event. 'expr' uses the condition_expr expression. 'state-entered' (v0.9.4 A4) uses the trigger_state_field + trigger_state_value pair to subscribe to state-machine entered events."
         },
         "condition": {
           "oneOf": [
@@ -662,6 +689,16 @@
           "enum": ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"],
           "default": "INFO",
           "description": "Severity level for event bus logging."
+        },
+        "trigger_state_field": {
+          "type": "string",
+          "default": "",
+          "description": "v0.9.4 A4 cross-content slice: state-machine entered-event trigger. When non-empty, the rule subscribes to the `<source_content>.<trigger_state_field>.<trigger_state_value>.entered` event class — the same channel computes already use via `Trigger on event \"...\"`. Source: `When <singular> <field> enters <state>:`. trigger / condition / condition_expr stay empty when this is set."
+        },
+        "trigger_state_value": {
+          "type": "string",
+          "default": "",
+          "description": "v0.9.4 A4 cross-content slice: paired with trigger_state_field — the state name being entered. Multi-word states (e.g. \"in progress\") preserve their spaces."
         }
       }
     },
