@@ -2,14 +2,24 @@ Application: Airlock
   Description: AI fluency assessment by Clarity Intelligence. The user is a certified airlock AI technician aboard space station Meridian-6. Airlock 7's self-cleaning cycle is malfunctioning. ARIA (the diagnostic AI) helps them diagnose and repair under a 5-minute decompression countdown. OVERSEER (station ops) injects scripted updates. Reeves (a buddy in Airlock 12) is in similar trouble. A meta-evaluator scores the transcript across three axes (Operational Fluency, Generative Capacity, Boundary Fluency) and updates a persistent profile.
 Id: 7a1e4d52-3c8b-4e1a-8d7f-9c3b1e5a4e21
 
-(Identity surface — Airlock is anonymous-playable. The production
-app gates by Google OAuth + invite list; the v0.9.4 Termin port
-lifts that gate to the deploy boundary, so the .termin source itself
-just needs one scope that lets a participant create + own their
-session and profile.)
+(Identity surface — Airlock is anonymous-playable AND supports an
+authenticated "player" role. The production app gates by Google OAuth
++ invite list; the v0.9.4 Termin port lifts that gate to the deploy
+boundary, so the .termin source itself just needs:
+  - one scope that lets a participant create + own their session
+    and profile ("play");
+  - the Anonymous fallback so the sample app stays one-click playable;
+  - a named "player" role so any real identity provider bound at
+    deploy time (stub picker in dev, real OAuth in production) has
+    a target role to assign authenticated users to.
+
+Anonymous and player both carry "play"; the access rules below are
+keyed on the scope, not the role, so both audiences hit the same
+ownership-scoped views of their sessions and profiles.)
 
 Identity:
   Scopes are "play"
+  A "player" has "play"
   Anonymous has "play"
 
 (Profiles — one per principal. Stores the union-best score per
