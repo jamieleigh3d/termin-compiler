@@ -528,6 +528,24 @@ risks freezing surfaces that later phases would need to revise.
 
 ---
 
+## v0.9.5 Backlog — "Detail-Page Follow-Ups + Field Polish"
+
+Theme: small slices that land naturally on top of the v0.9.4 cross-content
++ detail-page work — both architectural notes from the Phase 2 ship plus
+any v0.9.4 stabilization items that fall out of release prep.
+
+| Item | Source | Notes |
+|------|--------|-------|
+| **`Display the <singular>` primitive for true single-record bindings** | v0.9.4 Phase 2 ship note (2026-05-16) | The Phase 2 detail-page contract is attached via `Display a table of <plural> / Using "<ns>.<contract>"` — the `data_table` IR fragment is a trojan horse for getting a CSR shell with the right contract onto the page, and the React component on the airlock side reads the record id from the URL and ignores the list semantics. It works, but the source spelling lies about what's being rendered. v0.9.5 (or v0.10 if it grows) adds a real `Display the <singular>` directive that lowers to a `data_record` IR fragment carrying the bound record id; the runtime resolves it the same way it resolves a single-record path. Removes the table-of-one fiction from detail pages and gives any future single-record renderer (edit forms, summary cards) the right primitive. Scope: grammar slot + classifier prefix + new IR fragment type + Path C dispatch coverage + conformance test. Estimated effort: ~4–6 hrs across compiler + core + server + conformance. |
+| **`bound_data` threading from server template_ctx into IR fragments** | v0.9.4 Phase 2 ship note (2026-05-16) | Phase 2's runtime handler already fetches the detail page's bound record server-side (for routing + auth gating) and stashes it in template_ctx as `bound_record` + `bound_record_id`. But it doesn't thread that record into the IR fragments — so the React wrapper on the client re-fetches `/api/v1/<plural>/<id>` on mount to get the record again. One wasted HTTP round-trip per detail-page load, plus a small flash-of-loading that the data-already-on-the-server makes avoidable. v0.9.5/v0.10 adds a pass that, when a page has `record_binding`, serializes the bound record into each child IR fragment's `props.bound_record` (or similar). React wrappers degrade to pure-props consumers when the bound record is present; the existing fetch path stays as a fallback for pre-bound IR fragments. The path generalizes: same plumbing can thread `bound_records` (plural) into IR fragments for the list-page case, which closes the data-loading-twice pattern on Landing too. Estimated effort: ~6–8 hrs for the detail-page case + ~4 hrs to generalize to lists; conformance pack additions in both. |
+
+Both items are architectural follow-ups from the v0.9.4 Phase 2
+ship. The first is a primitive correctness issue (the data_table
+trojan horse for single-record bindings); the second is a
+performance + UX polish that closes the data-loading-twice pattern.
+
+---
+
 ## v0.10.0 Backlog — "App Server / Distributed Runtime"
 
 Theme: a hosted Termin app server on `termin.dev` plus the conformance plumbing
