@@ -659,19 +659,20 @@ Channel called "scoring updates":
   Delivery: realtime
   Requires "play" to receive
 
-(Pages — v0.9.4 Phase 1 player surface. Three pages, three jobs:
+(Pages — v0.9.4 Phase 1+2 player surface. Three pages, three jobs:
 
   - Landing is the player's home: aggregate fluency profile + attempt
     history + Begin CTA. All read-only; only navigation interacts.
-  - Assessment is the playable surface. Phase 1 ships it as a thin
+  - Session Detail is bound to one session by id, showing the full
+    meta-evaluator output. Uses the v0.9.4 Phase 2 detail-page
+    grammar primitive (`Show a detail page for sessions called X`),
+    which the runtime registers at `/<page-slug>/{id}` with
+    ownership-scoped server-side fetch.
+  - Assessment is the playable surface. Phase 1+2 ships it as a thin
     placeholder hosting the airlock.cosmic-orb intro; Phase 3 (a
     later state-modulation slice) replaces this with a state-driven
     contract that hosts survey → scenario → scoring → complete on
     one page.
-  - Session Detail (deferred to Phase 2) needs a new grammar
-    primitive (Show a detail page for <plural>) before it can land;
-    the per-row "View Detail" affordance on Landing's session list
-    is inert until then.
 
 The previous five-page split (Landing / Survey / Scenario / Scoring
 / Results) imitated the production Airlock's URL structure, but the
@@ -693,7 +694,18 @@ As an anonymous, I want to see my fluency history so that I can pick up where I 
   Display a table of sessions
     Using "airlock.session-list"
 
-(Assessment page — Phase 1 placeholder. Renders the airlock.cosmic-orb
+(Session Detail page — Phase 2 grammar primitive. The runtime
+registers this at /session_detail/{id} and fetches the bound session
+record with ownership-scoping before rendering. The airlock.session-
+detail React contract shows the three ScoreAxisCards in full mode
+plus the evaluator's summary + calibration + badges.)
+
+As an anonymous, I want to see one session in detail so that I can review my assessment:
+  Show a detail page for sessions called "Session Detail"
+  Display a table of sessions
+    Using "airlock.session-detail"
+
+(Assessment page — Phase 1+2 placeholder. Renders the airlock.cosmic-orb
 intro scene as visual continuity from the production Airlock; Phase 3
 (separate slice) replaces this with the state-modulated
 airlock.assessment contract that hosts survey → scenario → scoring →
