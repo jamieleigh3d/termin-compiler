@@ -276,6 +276,13 @@ class Directive:
 @dataclass
 class ShowPage(Directive):
     page_name: str = ""
+    # v0.9.4 Phase 2: detail-page binding. When set, the page binds
+    # to ONE record from <record_binding> (the plural snake_case
+    # content name) and routes at /<slug>/{id} instead of /<slug>.
+    # The runtime fetches the record via the standard ownership-
+    # scoped storage lookup before rendering the child contracts.
+    # Empty string for regular (list-or-empty) pages.
+    record_binding: str = ""
 
 
 @dataclass

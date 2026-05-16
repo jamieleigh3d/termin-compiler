@@ -172,6 +172,7 @@ class Analyzer:
         self._check_inline_editing()
         self._check_ownership()  # v0.9 Phase 6a.2
         self._check_cross_content_updates()  # v0.9.4 cross-content slice
+        self._check_detail_pages()  # v0.9.4 Phase 2 detail-page primitive
         self._check_using_overrides()  # v0.9 Phase 5b.1
         self._check_transition_event_triggers()  # v0.9 Phase 6b
 
@@ -1386,6 +1387,97 @@ class Analyzer:
                                 f'Did you mean "{suggestion}"?' if suggestion else None
                             ),
                         ))
+
+    def _check_detail_pages(self) -> None:
+        """v0.9.4 Phase 2 — `Show a detail page for <plural>` validation.
+
+        Error codes:
+          TERMIN-A110 — detail page's <plural> doesn't name a declared
+            content type. Without this check the runtime would still
+            register a route at `/<slug>/{id}` but every fetch would
+            404 because no content type matches the binding.
+          TERMIN-A111 — the user story's role lacks any `can view`
+            scope on the bound content. The page would render but
+            instantly 403 on the per-record fetch; surface this at
+            compile time so the author doesn't ship a dead route.
+            Both named roles AND the Anonymous pseudo-role are
+            evaluated through the same scope-intersection check.
+        """
+        # Index: content_name → set of scopes that grant view (verb
+        # in ("view", "create or update", "update"), broad enough to
+        # match how the runtime checks read access on a per-record
+        # fetch). For "can view their own", the rule still grants
+        # the view-scope when the principal is the owner — which is
+        # exactly what a detail page lookup will be — so we count it.
+        view_scopes_by_content: dict[str, set[str]] = {}
+        for content in self.program.contents:
+            scopes: set[str] = set()
+            for rule in content.access_rules:
+                if "view" in [v.lower() for v in rule.verbs]:
+                    scopes.add(rule.scope)
+            view_scopes_by_content[content.name] = scopes
+
+        # Index: role name (case-insensitive) → set of granted scopes.
+        # Anonymous is included if declared.
+        scopes_by_role: dict[str, set[str]] = {}
+        for role in self.program.roles:
+            scopes_by_role[role.name.lower()] = set(role.scopes)
+
+        for story in self.program.stories:
+            for d in story.directives:
+                if not isinstance(d, ShowPage) or not d.record_binding:
+                    continue
+                plural = d.record_binding
+                # A110: plural must name a declared content type.
+                if plural not in self.content_names:
+                    suggestion = _fuzzy_match(plural, list(self.content_names))
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'Detail page "{d.page_name}" binds to '
+                            f'unknown content "{plural}"'
+                        ),
+                        line=d.line,
+                        code="TERMIN-A110",
+                        suggestion=(
+                            f'Did you mean "{suggestion}"?'
+                            if suggestion else None
+                        ),
+                    ))
+                    continue  # downstream checks need a real content
+
+                # A111: story's role must have a scope that grants
+                # view on the bound content.
+                view_scopes = view_scopes_by_content.get(plural, set())
+                if not view_scopes:
+                    # No view rules exist at all on the content — the
+                    # detail page is unreachable for anyone. Still a
+                    # TERMIN-A111 (same shape error).
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'Detail page "{d.page_name}" binds to '
+                            f'"{plural}" which has no `can view` access '
+                            f'rule; the page would 403 on every request'
+                        ),
+                        line=d.line,
+                        code="TERMIN-A111",
+                    ))
+                    continue
+
+                role_lower = story.role.lower()
+                if role_lower in self.role_alias_map:
+                    role_lower = self.role_alias_map[role_lower]
+                role_scopes = scopes_by_role.get(role_lower, set())
+                if not (role_scopes & view_scopes):
+                    self.errors.add(SemanticError(
+                        message=(
+                            f'Detail page "{d.page_name}" is bound to '
+                            f'"{plural}" but the role "{story.role}" '
+                            f'lacks a `can view` scope on it; the page '
+                            f'would 403 on every request'
+                        ),
+                        line=d.line,
+                        code="TERMIN-A111",
+                    ))
 
     def _check_stories(self) -> None:
         role_names_lower = {r.lower() for r in self.role_names}

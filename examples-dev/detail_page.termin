@@ -1,0 +1,34 @@
+Application: Detail Page Test
+  Description: v0.9.4 Phase 2 detail-page primitive conformance fixture. One content type (notes) with an `is owned by` declaration; a list page and a detail page that names the same plural. Validates that any conforming runtime serves the detail page at `/<slug>/{id}`, fetches the record server-side with ownership-scoping, and 404s cleanly on missing or other-principal records.
+Id: 8d3f5e91-7c4a-4b22-9e1a-8b0f2c4d6a51
+
+Identity:
+  Scopes are "play"
+  A "player" has "play"
+
+(Notes — multi-row per player. Ownership comes from the principal
+field; the runtime auto-populates it on create.)
+
+Content called "notes":
+  Each note has a player_principal which is principal, required
+  Each note is owned by player_principal
+  Each note has a title which is text, required
+  Each note has a body which is text
+  Anyone with "play" can view their own notes
+  Anyone with "play" can create notes
+  Anyone with "play" can update their own notes
+
+(Listing page — standard list view of all notes the player can see.
+The new detail-page primitive does NOT replace the list page; both
+coexist at different routes.)
+
+As a player, I want to see my notes so that I can pick one to read:
+  Show a page called "Notes"
+  Display a table of notes
+
+(Detail page — Phase 2 grammar primitive. The runtime registers this
+at `/<page-slug>/{id}` and fetches the record server-side with
+ownership-scoping before rendering.)
+
+As a player, I want to see one note in detail so that I can read its body:
+  Show a detail page for notes called "Note Detail"

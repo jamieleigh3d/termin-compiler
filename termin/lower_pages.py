@@ -178,6 +178,7 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
     pages = []
     for story in program.stories:
         page_name = ""
+        page_record_binding = ""  # v0.9.4 Phase 2 detail-page binding
         children = []
         cur_data_table = None
         cur_form = None
@@ -204,6 +205,10 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
         for d in story.directives:
             if isinstance(d, ShowPage):
                 page_name = d.page_name
+                # v0.9.4 Phase 2: detail-page binding carries from
+                # ShowPage to PageEntry verbatim. Empty string for
+                # regular pages preserves the existing route shape.
+                page_record_binding = getattr(d, "record_binding", "") or ""
 
             elif isinstance(d, ChatDirective):
                 # v0.9.2 L9 (tech design §14): two binding shapes share the
@@ -658,6 +663,7 @@ def lower_pages(program, content_by_name, sm_by_content) -> list:
             pages.append(PageEntry(
                 name=page_name, slug=_snake(page_name), role=story.role,
                 required_scope=req_scope, children=tuple(children),
+                record_binding=page_record_binding,
             ))
 
     return pages

@@ -24,6 +24,11 @@ _PREFIXES: list[tuple[str, str]] = [
     ("On any error:", "error_catch_all_line"), ("Retry ", "error_retry_line"),
     ("Then ", "error_then_line"), ("As ", "story_header"), ("so that ", "so_that_line"),
     ("Show a chat for", "chat_line"),
+    # v0.9.4 Phase 2: detail-page directive (`Show a detail page for`)
+    # MUST be checked before the bare `Show a page called` prefix —
+    # otherwise the "Show a page" prefix would match `Show a detail
+    # page` first and the detail rule would never fire.
+    ("Show a detail page for", "detail_page_line"),
     ("Show a page called", "show_page_line"), ("Display a table of", "display_table_line"),
     ("For each ", "show_related_line"),  # also handles action_header_line — disambiguated below
     ("Mark ", "mark_rows_line"),

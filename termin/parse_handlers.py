@@ -739,6 +739,42 @@ def _parse_line(text: str, rule: str, ln: int):
         r = P(text, rule); return ("so_that", str(r.get("text","")).strip().rstrip(":") if r else text[len("so that "):].strip().rstrip(":"))
     if rule == "show_page_line":
         r = P(text, rule); return ("directive", ShowPage(page_name=_qs(r.get("name","")) if r else _fq(text), line=ln))
+    if rule == "detail_page_line":
+        # v0.9.4 Phase 2: detail-page directive. TatSu yields {plural,
+        # name}; populate ShowPage.record_binding so the lowerer can
+        # mark the PageEntry as detail-bound.
+        r = P(text, rule)
+        if r:
+            return ("directive", ShowPage(
+                page_name=_qs(r.get("name", "")),
+                record_binding=str(r.get("plural", "")).strip(),
+                line=ln,
+            ))
+        # WSL TatSu state-leak fallback (per workspace CLAUDE.md
+        # rule 9). Source form is fixed:
+        #     Show a detail page for <plural> called "<name>"
+        # Parse it by hand to keep behavior consistent with the TatSu
+        # path; fidelity tests guard the shape.
+        # Strip the leading "Show a detail page for " prefix.
+        rest = text[len("Show a detail page for "):].strip()
+        # rest looks like:  <plural>  called "<Name>"
+        if " called " in rest:
+            plural_part, name_part = rest.split(" called ", 1)
+            plural = plural_part.strip()
+            # name_part is `"Name"` — strip surrounding quotes.
+            name = name_part.strip()
+            if name.startswith('"') and name.endswith('"'):
+                name = name[1:-1]
+            return ("directive", ShowPage(
+                page_name=name,
+                record_binding=plural,
+                line=ln,
+            ))
+        # Malformed — bubble back the bare directive with empty
+        # binding so the analyzer can surface a clean error.
+        return ("directive", ShowPage(
+            page_name="", record_binding="", line=ln,
+        ))
     if rule == "chat_line":
         r = P(text, rule)
         if r:
