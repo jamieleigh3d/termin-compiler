@@ -649,74 +649,55 @@ Channel called "scoring updates":
   Delivery: realtime
   Requires "play" to receive
 
-(Pages — five user stories, one per phase of the assessment flow.
-Each phase binds a page to one or more airlock.* custom-namespace
-contracts via Path C's Using-override surface; the
-termin-airlock-provider's React renderers handle the actual
-rendering. The .termin source declares structure; the provider
-declares pixels.)
+(Pages — v0.9.4 Phase 1 player surface. Three pages, three jobs:
 
-(Landing page — the entry point. Shows the inciting incident
-animation that transitions into the scenario. Uses the
-airlock.cosmic-orb scene + airlock.scenario-narrative typewriter
-overlay per the slice A2 PoC composition.)
+  - Landing is the player's home: aggregate fluency profile + attempt
+    history + Begin CTA. All read-only; only navigation interacts.
+  - Assessment is the playable surface. Phase 1 ships it as a thin
+    placeholder hosting the airlock.cosmic-orb intro; Phase 3 (a
+    later state-modulation slice) replaces this with a state-driven
+    contract that hosts survey → scenario → scoring → complete on
+    one page.
+  - Session Detail (deferred to Phase 2) needs a new grammar
+    primitive (Show a detail page for <plural>) before it can land;
+    the per-row "View Detail" affordance on Landing's session list
+    is inert until then.
 
-As an anonymous, I want to enter the airlock so that I can take the assessment:
+The previous five-page split (Landing / Survey / Scenario / Scoring
+/ Results) imitated the production Airlock's URL structure, but the
+playable surface is more honestly modeled as ONE page bound to the
+player's current session, rendered differently per lifecycle state.
+Phase 3 fleshes that out.)
+
+(Landing page — the player's home in the airlock. The
+airlock.profile-summary contract reads the player's one profile
+record and shows aggregate best-per-axis + total attempts. The
+airlock.session-list contract shows the player's attempt history
+with date + lifecycle + top-line score; future Phase 2 wires
+per-row View Detail.)
+
+As an anonymous, I want to see my fluency history so that I can pick up where I left off:
   Show a page called "Landing"
+  Display a table of profiles
+    Using "airlock.profile-summary"
+  Display a table of sessions
+    Using "airlock.session-list"
+
+(Assessment page — Phase 1 placeholder. Renders the airlock.cosmic-orb
+intro scene as visual continuity from the production Airlock; Phase 3
+(separate slice) replaces this with the state-modulated
+airlock.assessment contract that hosts survey → scenario → scoring →
+complete on one page.)
+
+As an anonymous, I want to take the airlock assessment so that I learn my AI fluency level:
+  Show a page called "Assessment"
   Display a table of sessions
     Using "airlock.cosmic-orb"
 
-(Survey page — Phase 1 of the assessment, 6 questions about
-experience + AI usage + self-rating. The form posts back as an
-update to sessions.survey_responses; lifecycle survey → scenario
-fires once the form submits and the user has play scope.)
-
-As an anonymous, I want to complete the survey so that the assessment can calibrate to my background:
-  Show a page called "Survey"
-  Display a table of sessions
-    Using "airlock.scenario-narrative"
-
-(Scenario page — Phase 2, the 5-minute timed terminal interaction
-with ARIA. Composes airlock.terminal (the chat surface with
-ARIA + OVERSEER messages, role-differentiated) +
-airlock.countdown-timer (always-visible top bar) +
-airlock.cosmic-orb (background scene). The chat binds to
-sessions.conversation_log via the v0.9.2 chat presentation
-binding; the airlock provider's Terminal component renders the
-conversation entries with the deeper styling per BRD §13.4.)
-
-As an anonymous, I want to interact with ARIA so that I can diagnose the airlock fault:
-  Show a page called "Scenario"
-  Show a chat for sessions.conversation_log
-    Using "airlock.terminal"
-  Display a table of sessions
-    Using "airlock.countdown-timer"
-
-(Scoring page — Phase 3, transitional view shown while the
-evaluator runs. Single-axis loading indicator using the
-airlock.score-axis-card contract in its placeholder state.)
-
-As an anonymous, I want to wait for my score so that I can see how I did:
-  Show a page called "Scoring"
-  Display a table of sessions
-    Using "airlock.score-axis-card"
-
-(Results page — Phase 4, three-axis score display with evidence +
-calibration + badges + replay button. Composes airlock.score-axis-card
-(per axis) + airlock.badge-strip (badges earned). The
-profile_aggregator has already updated the player's persistent
-profile by the time this renders.)
-
-As an anonymous, I want to see my results so that I understand my fluency level and what to work on:
-  Show a page called "Results"
-  Display a table of sessions
-    Using "airlock.score-axis-card"
-  Display a table of profiles
-    Using "airlock.badge-strip"
+(Navigation — Home is the entry; Begin Assessment routes to the
+playable surface. Phase 3 may add a Restart link once the state-
+modulated Assessment can re-init from scratch.)
 
 Navigation bar:
-  "Enter" links to "Landing" visible to all
-  "Survey" links to "Survey" visible to all
-  "Scenario" links to "Scenario" visible to all
-  "Scoring" links to "Scoring" visible to all
-  "Results" links to "Results" visible to all
+  "Home" links to "Landing" visible to all
+  "Begin Assessment" links to "Assessment" visible to all
